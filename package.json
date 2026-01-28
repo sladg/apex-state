@@ -15,7 +15,10 @@
     "url": ""
   },
   "license": "MIT",
-  "author": "",
+  "author": "Jan Soukup <jan@ssoukup.com>",
+  "contributors": [
+    "Claude"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",

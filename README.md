@@ -1,308 +1,212 @@
 # @sladg/apex-state
 
-Advanced state management wrapper around Valtio with powerful side effects system.
+---
 
-## Features
+_Built with AI._
 
-- **Valtio-powered**: Built on Valtio's efficient proxy-based reactivity
-- **Concerns System**: Reactive validation and UI hints with automatic dependency tracking
-- **Pre-built Concerns**: zodValidation, disabledWhen, visibleWhen, dynamicTooltip, and more
-- **BoolLogic DSL**: Declarative conditions for dynamic field behavior
-- **String Interpolation**: Template-based dynamic text with `{{path}}` syntax
-- **Side Effects**: Sync paths, flip paths, listeners, validators, aggregations, clear paths
-- **Form Hooks**: Convenient form field management with transformations
-- **TypeScript**: Full type safety with deep path inference
-- **Functional**: Factory functions, no classes
-- **Production Ready**: 227+ passing tests with comprehensive coverage
+---
+
+Reactive state management for React where you declare what your fields need (validation, visibility, labels) and the store handles the rest.
+
+## Why
+
+Complex form state typically means scattered validation logic, conditional rendering spread across components, and hundreds of unit tests covering every edge case.
+
+Apex-state inverts this: **define behavior as static configuration, not imperative code**.
+
+The core functions (`evaluateBoolLogic`, `zodValidation`, etc.) are tested once. Your application config is just constants - Lego bricks snapped together. You test the bricks, not every possible tower.
+
+## How
+
+Built on [valtio](https://github.com/pmndrs/valtio) for proxy-based state and [valtio-reactive](https://github.com/jotaijs/valtio-reactive) for automatic dependency tracking.
+
+- **valtio**: Mutable-style API, immutable under the hood. Write `state.count++`, get efficient React updates.
+- **valtio-reactive**: Effects that auto-track which state paths they read. Change `state.user.name` → only effects reading that path re-run.
+
+Concerns wrap this: you declare _what_ to compute, the library handles _when_ to recompute.
 
 ## Installation
 
 ```bash
-npm install @sladg/apex-state
+npm install @sladg/apex-state valtio zod react
 ```
 
-### Peer Dependencies
-
-```bash
-npm install react zod valtio graphology
-```
-
-## Quick Start
+## Example
 
 ```typescript
-import { createGenericStore, prebuilts } from '@sladg/apex-state'
+import { createGenericStore } from '@sladg/apex-state'
 import { z } from 'zod'
 
-// Define your state type
-type AppState = {
-  email: string
-  password: string
-  status: 'editing' | 'locked'
+type OrderState = {
+  product: { name: string; quantity: number; price: number }
+  shipping: { address: string; express: boolean }
+  payment: { method: 'card' | 'cash'; cardNumber: string }
+  status: 'draft' | 'submitted'
 }
 
-// Create a store
-const store = createGenericStore<AppState>()
+const store = createGenericStore<OrderState>()
 
-// Use in React component
-function RegistrationForm() {
-  // Register concerns for reactive validation and UI hints
-  store.useConcerns('registration', {
-    email: {
-      zodValidation: { schema: z.string().email() },
-      visibleWhen: { condition: { IS_EQUAL: ['status', 'editing'] } }
+const OrderForm = () => {
+  // Register concerns - validation, conditional UI, dynamic text
+  // This is just data - a constant. No logic to test here.
+  store.useConcerns('order-form', {
+    'product.quantity': {
+      zodValidation: { schema: z.number().min(1).max(100) },
+      disabledWhen: { condition: { IS_EQUAL: ['status', 'submitted'] } },
     },
-    password: {
-      zodValidation: { schema: z.string().min(8) },
-      disabledWhen: { condition: { IS_EQUAL: ['status', 'locked'] } },
-      dynamicTooltip: { template: 'Min 8 chars, status: {{status}}' }
-    }
+    'shipping.address': {
+      zodValidation: { schema: z.string().min(10) },
+      visibleWhen: { condition: { EXISTS: 'shipping.express' } },
+      dynamicLabel: { template: 'Address ({{shipping.express}} ? Express : Standard)' },
+    },
+    'payment.cardNumber': {
+      zodValidation: { schema: z.string().regex(/^\d{16}$/) },
+      visibleWhen: { condition: { IS_EQUAL: ['payment.method', 'card'] } },
+      disabledWhen: {
+        condition: {
+          OR: [
+            { IS_EQUAL: ['status', 'submitted'] },
+            { LT: ['product.quantity', 1] },
+          ],
+        },
+      },
+      dynamicTooltip: { template: 'Pay ${{product.price}} for {{product.quantity}} items' },
+    },
   })
 
-  const email = store.useFieldStore('email')
-  const emailConcerns = store.useFieldConcerns('email')
+  // Access state with hooks
+  const [quantity, setQuantity] = store.useStore('product.quantity')
+  const address = store.useFieldStore('shipping.address')
+  const cardNumber = store.useFieldStore('payment.cardNumber')
 
-  const password = store.useFieldStore('password')
-  const passwordConcerns = store.useFieldConcerns('password')
+  // Access evaluated concerns
+  const quantityConcerns = store.useFieldConcerns('product.quantity')
+  const addressConcerns = store.useFieldConcerns('shipping.address')
+  const cardConcerns = store.useFieldConcerns('payment.cardNumber')
 
   return (
     <form>
-      {emailConcerns.visibleWhen && (
+      <input
+        type="number"
+        value={quantity}
+        onChange={(e) => setQuantity(Number(e.target.value))}
+        disabled={quantityConcerns.disabledWhen}
+        className={quantityConcerns.zodValidation ? 'valid' : 'invalid'}
+      />
+
+      {addressConcerns.visibleWhen && (
         <input
-          value={email.value}
-          onChange={e => email.setValue(e.target.value)}
-          className={emailConcerns.zodValidation ? 'valid' : 'invalid'}
+          value={address.value}
+          onChange={(e) => address.setValue(e.target.value)}
+          placeholder={addressConcerns.dynamicLabel}
         />
       )}
 
-      <input
-        type="password"
-        value={password.value}
-        onChange={e => password.setValue(e.target.value)}
-        disabled={passwordConcerns.disabledWhen}
-        title={passwordConcerns.dynamicTooltip}
-      />
-
-      <button type="submit">Register</button>
+      {cardConcerns.visibleWhen && (
+        <input
+          value={cardNumber.value}
+          onChange={(e) => cardNumber.setValue(e.target.value)}
+          disabled={cardConcerns.disabledWhen}
+          title={cardConcerns.dynamicTooltip}
+        />
+      )}
     </form>
   )
 }
 
-// Wrap your app with Provider
-function App() {
+const App = () => {
   return (
-    <store.Provider initialState={{
-      email: '',
-      password: '',
-      status: 'editing'
-    }}>
-      <RegistrationForm />
+    <store.Provider
+      initialState={{
+        product: { name: 'Widget', quantity: 1, price: 29.99 },
+        shipping: { address: '', express: false },
+        payment: { method: 'card', cardNumber: '' },
+        status: 'draft',
+      }}
+    >
+      <OrderForm />
     </store.Provider>
   )
 }
 ```
 
-## Core Concepts
+## Concerns
 
-### Store Creation
+Reactive computations that automatically track dependencies and re-evaluate when state changes.
 
-```typescript
-const store = createGenericStore<StateType>({
-  errorStorePath: '_errors', // optional, default is '_errors'
-  maxIterations: 100 // optional, max side-effect iterations
-})
-```
+| Concern              | Props                      | Returns             | Description              |
+| -------------------- | -------------------------- | ------------------- | ------------------------ |
+| `zodValidation`      | `{ schema: ZodSchema }`    | `boolean`           | Schema validation        |
+| `validationState`    | `{ schema: ZodSchema }`    | `{ valid, errors }` | Full validation state    |
+| `disabledWhen`       | `{ condition: BoolLogic }` | `boolean`           | Conditional disable      |
+| `readonlyWhen`       | `{ condition: BoolLogic }` | `boolean`           | Conditional readonly     |
+| `visibleWhen`        | `{ condition: BoolLogic }` | `boolean`           | Conditional visibility   |
+| `dynamicLabel`       | `{ template: string }`     | `string`            | Interpolated label       |
+| `dynamicTooltip`     | `{ template: string }`     | `string`            | Interpolated tooltip     |
+| `dynamicPlaceholder` | `{ template: string }`     | `string`            | Interpolated placeholder |
 
-### Hooks
+## BoolLogic
 
-- **`useStore(path)`**: Get/set value at path (like useState)
-- **`useFieldStore(path)`**: Object API for form fields `{value, setValue}`
-- **`useFieldTransformedStore(path, config)`**: Bidirectional transformations
-- **`useJitStore()`**: Bulk operations and non-reactive reads
-- **`useConcerns(id, config)`**: Register reactive concerns at paths
-- **`useFieldConcerns(path)`**: Get evaluated concerns for a path
-- **`useSideEffects(id, effects)`**: Register side effects (legacy)
-
-### Concerns System
-
-Concerns provide reactive validation, conditional logic, and UI hints that automatically track dependencies:
+Declarative conditions for `disabledWhen`, `readonlyWhen`, `visibleWhen`:
 
 ```typescript
-store.useConcerns('my-concerns', {
-  'products.leg1.strike': {
-    // Validation
-    zodValidation: {
-      schema: z.number().min(0).max(200)
-    },
-
-    // Conditional visibility
-    visibleWhen: {
-      condition: { IS_EQUAL: ['products.leg1.enabled', true] }
-    },
-
-    // Conditional disable
-    disabledWhen: {
-      condition: {
-        OR: [
-          { IS_EQUAL: ['status', 'locked'] },
-          { GT: ['market.spot', 110] }
-        ]
-      }
-    },
-
-    // Dynamic text
-    dynamicTooltip: {
-      template: 'Strike: {{market.spot}}, Status: {{status}}'
-    },
-
-    dynamicLabel: {
-      template: 'Strike (Spot: {{market.spot}})'
-    }
-  }
-})
-
-// Access evaluated concerns
-const concerns = store.useFieldConcerns('products.leg1.strike')
-// concerns = { zodValidation: true, visibleWhen: true, disabledWhen: false, dynamicTooltip: '...', ... }
+{
+  IS_EQUAL: ["path", value]
+} // path === value
+{
+  EXISTS: "path"
+} // path !== undefined && path !== null
+{
+  IS_EMPTY: "path"
+} // !path or empty string/array
+{
+  GT: ["path", number]
+} // path > number
+{
+  LT: ["path", number]
+} // path < number
+{
+  GTE: ["path", number]
+} // path >= number
+{
+  LTE: ["path", number]
+} // path <= number
+{
+  IN: ["path", [values]]
+} // values.includes(path)
+{
+  AND: [conditions]
+} // all conditions true
+{
+  OR: [conditions]
+} // any condition true
+{
+  NOT: condition
+} // invert condition
 ```
 
-### Pre-built Concerns
-
-Import from `prebuilts`:
-- **zodValidation**: Zod schema validation
-- **disabledWhen**: Conditional disable via BoolLogic
-- **readonlyWhen**: Conditional readonly via BoolLogic
-- **visibleWhen**: Conditional visibility via BoolLogic
-- **dynamicLabel**: String interpolation for labels
-- **dynamicPlaceholder**: String interpolation for placeholders
-- **dynamicTooltip**: String interpolation for tooltips
-- **validationState**: Full validation state with errors
-
-### BoolLogic DSL
-
-Declarative conditions for dynamic behavior:
+## Hooks
 
 ```typescript
-type BoolLogic<STATE> =
-  | { IS_EQUAL: [path, value] }
-  | { EXISTS: path }
-  | { IS_EMPTY: path }
-  | { AND: BoolLogic[] }
-  | { OR: BoolLogic[] }
-  | { NOT: BoolLogic }
-  | { GT: [path, number] }
-  | { LT: [path, number] }
-  | { IN: [path, values[]] }
+// useState-like access
+const [value, setValue] = store.useStore("path.to.field")
+
+// Object API for forms
+const field = store.useFieldStore("path.to.field")
+field.value // current value
+field.setValue(v) // update value
+
+// Evaluated concerns for a path
+const concerns = store.useFieldConcerns("path.to.field")
+concerns.zodValidation // boolean
+concerns.disabledWhen // boolean
+concerns.dynamicTooltip // string
+
+// Bulk operations (non-reactive)
+const jit = store.useJitStore()
+jit.setChanges([
+  ["a", 1, {}],
+  ["b", 2, {}],
+])
+jit.getState() // snapshot
 ```
-
-### Side Effects (Legacy)
-
-Side effects for advanced patterns (being superseded by concerns):
-
-```typescript
-store.useSideEffects('my-effects', {
-  syncPaths: { pairs: [{ id: 'sync-1', path1: 'field1', path2: 'field2' }] },
-  flipPaths: { pairs: [{ id: 'flip-1', path1: 'showA', path2: 'showB' }] },
-  listeners: { listeners: [{ key: 'user', fn: (changes, state) => {} }] },
-  validators: { validators: [{ id: 'val-1', scope: 'email', schema: z.string().email() }] },
-  aggregations: { rules: [{ id: 'agg-1', targetPath: 'all', sourcePaths: ['a', 'b'] }] },
-  clearPaths: { rules: [{ id: 'clr-1', triggerPath: 'step', clearPaths: ['f1'] }] }
-})
-```
-
-## Type Safety
-
-Full TypeScript support with deep path inference:
-
-```typescript
-type State = {
-  user: {
-    profile: {
-      name: string
-    }
-  }
-}
-
-const [name, setName] = store.useStore('user.profile.name')
-// name: string (inferred!)
-// setName: (value: string) => void
-```
-
-## Architecture
-
-- **Factory Functions**: No classes, pure functional approach
-- **Two-Proxy Pattern**: Separate `state` and `_concerns` proxies for optimal reactivity
-- **Automatic Dependency Tracking**: Concerns track dependencies via explicit `tracks()` declarations
-- **Batch Processing**: Valtio batches changes, we deduplicate and evaluate concerns once per batch
-- **Graph-based**: Uses graphology for side-effect relationship tracking
-- **Pipeline**: Synchronizer pipeline processes changes with side effects
-- **Immutable Updates**: All changes go through pipeline for consistency
-
-### Tech Stack
-
-- **Valtio** for reactive state management (v2.3+)
-- **valtio-reactive** for concerns dependency tracking
-- **Graphology** for dependency graph operations
-- **Remeda** for functional utilities and pipe operations
-- **Zod** for validation schemas
-- **TypeScript** for type safety
-
-## Performance
-
-- **Smart Re-evaluation**: Concerns deduplicated per batch, each evaluates once
-- **Dependency Tracking**: Only affected concerns recalculate on changes
-- **Optimized Synchronizers**: Early exits and efficient graph lookups
-- **Minimal Re-renders**: Valtio's proxy tracking ensures surgical updates
-- **Batch Updates**: Supported via `useJitStore` for bulk operations
-- **227+ Tests**: Comprehensive test coverage validates performance optimizations
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Type check
-npm run type-check
-
-# Build
-npm run build
-
-# Test
-npm test
-npm run test:watch
-```
-
-## Testing
-
-227+ tests covering all features with Vitest and React Testing Library.
-
-```bash
-npm test        # Run all tests
-npm run test:watch  # Watch mode
-npm run type-check  # TypeScript validation
-```
-
-## Status
-
-✅ Production Ready
-- 227+ tests passing
-- Full TypeScript support with deep path inference
-- Concerns system with automatic dependency tracking
-- Comprehensive side effects system
-- Functional architecture (no classes)
-- Battle-tested patterns from real-world usage
-
-## Documentation
-
-- **README.md** (this file): Quick start and API overview
-- **CONCERNS_REFERENCE.md**: Complete concerns system guide
-- **CODE_STYLE.md**: Code conventions and patterns
-- **src/index.ts**: Full TypeScript API exports
-
-## License
-
-MIT
-
-## Contributing
-
-See contribution guidelines in the repository.
