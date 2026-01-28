@@ -9,7 +9,14 @@
  */
 
 // Export core type utilities
-export type { DeepKey, DeepValue, GenericMeta, ArrayOfChanges } from './types'
+export type {
+  DeepKey,
+  DeepValue,
+  GenericMeta,
+  ArrayOfChanges,
+  DeepKeyFiltered,
+  PathsOfSameValue,
+} from './types'
 
 // Export store factory and types
 export { createGenericStore } from './store/createStore'
@@ -17,9 +24,16 @@ export type { StoreReturn } from './store/createStore'
 export type { StoreConfig, ProviderProps, StoreInstance } from './store/types'
 
 // Export hooks
-export { useStore, useJitStore, useSideEffects, useStoreContext } from './hooks'
-export { useErrors } from './hooks/useErrors'
-export type { JitStoreReturn } from './hooks'
+export {
+  useStore,
+  useJitStore,
+  useSideEffects,
+  useStoreContext,
+  useErrors,
+  useFieldStore,
+  useFieldTransformedStore,
+} from './hooks'
+export type { JitStoreReturn, FieldTransformConfig } from './hooks'
 
 // Export side effects types and registries
 export type { SideEffects } from './types/sideEffects'

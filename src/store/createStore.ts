@@ -13,6 +13,8 @@ import { createProvider } from './Provider'
 import { useStore } from '../hooks/useStore'
 import { useJitStore, type JitStoreReturn } from '../hooks/useJitStore'
 import { useSideEffects } from '../hooks/useSideEffects'
+import { useFieldStore } from '../hooks/useFieldStore'
+import { useFieldTransformedStore, type FieldTransformConfig } from '../hooks/useFieldTransformedStore'
 
 /**
  * Return type of createGenericStore
@@ -40,6 +42,31 @@ export interface StoreReturn<DATA extends object, META extends GenericMeta> {
    * Hook for registering side effects
    */
   useSideEffects: (id: string, effects: SideEffects<DATA>) => void
+
+  /**
+   * Form field hook with convenient object API {value, setValue}
+   */
+  useFieldStore: <P extends DeepKey<DATA>>(
+    path: P
+  ) => {
+    value: DeepValue<DATA, P>
+    setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+  }
+
+  /**
+   * Form field hook with bidirectional transformations
+   */
+  useFieldTransformedStore: <
+    P extends DeepKey<DATA>,
+    VAL extends DeepValue<DATA, P>,
+    CTX
+  >(
+    path: P,
+    config: FieldTransformConfig<VAL, CTX>
+  ) => {
+    value: CTX
+    setValue: (newContext: CTX) => void
+  }
 }
 
 /**
@@ -87,5 +114,22 @@ export function createGenericStore<
     ) => [DeepValue<DATA, P>, (value: DeepValue<DATA, P>, meta?: META) => void],
     useJitStore: useJitStore<DATA, META>,
     useSideEffects: useSideEffects<DATA>,
+    useFieldStore: useFieldStore as <P extends DeepKey<DATA>>(
+      path: P
+    ) => {
+      value: DeepValue<DATA, P>
+      setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+    },
+    useFieldTransformedStore: useFieldTransformedStore as <
+      P extends DeepKey<DATA>,
+      VAL extends DeepValue<DATA, P>,
+      CTX
+    >(
+      path: P,
+      config: FieldTransformConfig<VAL, CTX>
+    ) => {
+      value: CTX
+      setValue: (newContext: CTX) => void
+    },
   }
 }
