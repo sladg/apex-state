@@ -89,6 +89,7 @@ export const createValidatorsSynchronizer = <
     // Convert accumulated error updates to changes
     const newChanges: ArrayOfChanges<DATA, META> = []
     for (const [errorPath, updatedErrors] of errorUpdates.entries()) {
+      // @ts-expect-error - errorPath is dynamically constructed from validator config and may not satisfy DeepKey constraints
       newChanges.push([
         errorPath as DeepKey<DATA>,
         updatedErrors.length > 0 ? updatedErrors : undefined,

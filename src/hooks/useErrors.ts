@@ -42,6 +42,7 @@ export const useErrors = <DATA extends object>(
   const errorPath = `${errorStorePath}.${path}` as DeepKey<DATA>
 
   // Use useStore to get reactive errors
+  // @ts-expect-error - errorPath is dynamically constructed and may not satisfy DeepKey constraints when DATA is primitive/array
   const [errors] = useStore(errorPath)
 
   // Return empty array if no errors
