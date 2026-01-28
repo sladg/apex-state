@@ -127,6 +127,325 @@ describe('Derived Values', () => {
       expect(getByTestId('fullName').textContent).toBe('John Doe')
     })
 
+    it('should reactively update getter when dependency changes', async () => {
+      type TestState = {
+        firstName: string
+        lastName: string
+        get fullName(): string
+      }
+
+      const store = createGenericStore<TestState>()
+
+      const TestComponent = () => {
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const [firstName, setFirstName] = store.useStore('firstName')
+
+        const fullName = (snap as any).fullName
+
+        return (
+          <div>
+            <span data-testid="fullName">{fullName}</span>
+            <button
+              data-testid="change-name"
+              onClick={() => setFirstName('Jane')}
+            >
+              Change
+            </button>
+          </div>
+        )
+      }
+
+      const initialState: TestState = {
+        firstName: 'John',
+        lastName: 'Doe',
+        get fullName() {
+          return `${this.firstName} ${this.lastName}`
+        },
+      }
+
+      const { getByTestId } = render(
+        <store.Provider initialState={initialState}>
+          <TestComponent />
+        </store.Provider>
+      )
+
+      expect(getByTestId('fullName').textContent).toBe('John Doe')
+
+      // Click button to change firstName
+      getByTestId('change-name').click()
+
+      // Wait for React to process the state change
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      // Getter should recalculate
+      expect(getByTestId('fullName').textContent).toBe('Jane Doe')
+    })
+
+    it('should only re-render when accessed getter dependencies change', () => {
+      type TestState = {
+        firstName: string
+        lastName: string
+        age: number
+        get fullName(): string
+      }
+
+      const store = createGenericStore<TestState>()
+
+      let renderCount = 0
+
+      const TestComponent = () => {
+        renderCount++
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const [age, setAge] = store.useStore('age')
+
+        // Only access fullName getter (which depends on firstName and lastName)
+        const fullName = (snap as any).fullName
+
+        return (
+          <div>
+            <span data-testid="fullName">{fullName}</span>
+            <span data-testid="render-count">{renderCount}</span>
+            <button
+              data-testid="change-age"
+              onClick={() => setAge(age + 1)}
+            >
+              Change Age
+            </button>
+          </div>
+        )
+      }
+
+      const initialState: TestState = {
+        firstName: 'John',
+        lastName: 'Doe',
+        age: 30,
+        get fullName() {
+          return `${this.firstName} ${this.lastName}`
+        },
+      }
+
+      const { getByTestId } = render(
+        <store.Provider initialState={initialState}>
+          <TestComponent />
+        </store.Provider>
+      )
+
+      const initialRenderCount = renderCount
+
+      // Change age - should NOT trigger re-render because
+      // component doesn't access age in snapshot
+      getByTestId('change-age').click()
+
+      // Since age is not accessed via snap, changing it shouldn't re-render
+      // (Note: This test verifies Valtio's selective re-rendering)
+      expect(renderCount).toBe(initialRenderCount)
+    })
+
+    it('should support multiple getters with different dependencies', async () => {
+      type TestState = {
+        count: number
+        multiplier: number
+        get doubled(): number
+        get tripled(): number
+        get multiplied(): number
+      }
+
+      const store = createGenericStore<TestState>()
+
+      const TestComponent = () => {
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const [count, setCount] = store.useStore('count')
+        const [multiplier, setMultiplier] = store.useStore('multiplier')
+
+        return (
+          <div>
+            <span data-testid="doubled">{(snap as any).doubled}</span>
+            <span data-testid="tripled">{(snap as any).tripled}</span>
+            <span data-testid="multiplied">{(snap as any).multiplied}</span>
+            <button data-testid="inc-count" onClick={() => setCount(count + 1)}>
+              Inc Count
+            </button>
+            <button
+              data-testid="inc-mult"
+              onClick={() => setMultiplier(multiplier + 1)}
+            >
+              Inc Multiplier
+            </button>
+          </div>
+        )
+      }
+
+      const initialState: TestState = {
+        count: 5,
+        multiplier: 2,
+        get doubled() {
+          return this.count * 2
+        },
+        get tripled() {
+          return this.count * 3
+        },
+        get multiplied() {
+          return this.count * this.multiplier
+        },
+      }
+
+      const { getByTestId } = render(
+        <store.Provider initialState={initialState}>
+          <TestComponent />
+        </store.Provider>
+      )
+
+      // Initial values
+      expect(getByTestId('doubled').textContent).toBe('10')
+      expect(getByTestId('tripled').textContent).toBe('15')
+      expect(getByTestId('multiplied').textContent).toBe('10')
+
+      // Increment count - all getters should update
+      getByTestId('inc-count').click()
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(getByTestId('doubled').textContent).toBe('12')
+      expect(getByTestId('tripled').textContent).toBe('18')
+      expect(getByTestId('multiplied').textContent).toBe('12')
+
+      // Increment multiplier - only multiplied getter should change
+      getByTestId('inc-mult').click()
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(getByTestId('doubled').textContent).toBe('12')
+      expect(getByTestId('tripled').textContent).toBe('18')
+      expect(getByTestId('multiplied').textContent).toBe('18')
+    })
+
+    it('should handle nested object getters', async () => {
+      type TestState = {
+        user: {
+          firstName: string
+          lastName: string
+          get fullName(): string
+        }
+      }
+
+      const store = createGenericStore<TestState>()
+
+      const TestComponent = () => {
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const [firstName, setFirstName] = store.useStore('user.firstName')
+
+        return (
+          <div>
+            <span data-testid="fullName">{(snap.user as any).fullName}</span>
+            <button
+              data-testid="change-name"
+              onClick={() => setFirstName('Jane')}
+            >
+              Change
+            </button>
+          </div>
+        )
+      }
+
+      const initialState: TestState = {
+        user: {
+          firstName: 'John',
+          lastName: 'Doe',
+          get fullName() {
+            return `${this.firstName} ${this.lastName}`
+          },
+        },
+      }
+
+      const { getByTestId } = render(
+        <store.Provider initialState={initialState}>
+          <TestComponent />
+        </store.Provider>
+      )
+
+      expect(getByTestId('fullName').textContent).toBe('John Doe')
+
+      getByTestId('change-name').click()
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(getByTestId('fullName').textContent).toBe('Jane Doe')
+    })
+
+    it('should handle getters with complex logic', async () => {
+      type TestState = {
+        items: Array<{ name: string; price: number }>
+        taxRate: number
+        get total(): number
+        get totalWithTax(): number
+      }
+
+      const store = createGenericStore<TestState>()
+
+      const TestComponent = () => {
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const { setChanges } = store.useJitStore()
+
+        return (
+          <div>
+            <span data-testid="total">{(snap as any).total}</span>
+            <span data-testid="totalWithTax">{(snap as any).totalWithTax}</span>
+            <button
+              data-testid="add-item"
+              onClick={() => {
+                setChanges([
+                  [
+                    'items' as any,
+                    [
+                      ...snap.items,
+                      { name: 'New Item', price: 10 },
+                    ],
+                    {},
+                  ],
+                ])
+              }}
+            >
+              Add Item
+            </button>
+          </div>
+        )
+      }
+
+      const initialState: TestState = {
+        items: [
+          { name: 'Item 1', price: 100 },
+          { name: 'Item 2', price: 200 },
+        ],
+        taxRate: 0.1,
+        get total() {
+          return this.items.reduce((sum, item) => sum + item.price, 0)
+        },
+        get totalWithTax() {
+          return this.total * (1 + this.taxRate)
+        },
+      }
+
+      const { getByTestId } = render(
+        <store.Provider initialState={initialState}>
+          <TestComponent />
+        </store.Provider>
+      )
+
+      // Initial: 100 + 200 = 300, with 10% tax = 330
+      expect(getByTestId('total').textContent).toBe('300')
+      expect(getByTestId('totalWithTax').textContent).toBe('330')
+
+      // Add item
+      getByTestId('add-item').click()
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      // New total: 300 + 10 = 310, with 10% tax = 341
+      expect(getByTestId('total').textContent).toBe('310')
+      expect(getByTestId('totalWithTax').textContent).toBe('341')
+    })
+
     it('should handle computed values with numeric operations', () => {
       type TestState = {
         a: number
