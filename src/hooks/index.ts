@@ -1,17 +1,17 @@
 /**
  * React Hooks for store access
  *
- * Exports all hooks for accessing and manipulating store state.
+ * @internal Package-internal hooks used to implement the store instance API.
+ * End users should import from the store object returned by createGenericStore instead.
+ *
+ * Example:
+ * ```typescript
+ * const store = createGenericStore<AppState>()
+ * function MyComponent() {
+ *   const [value] = store.useStore('path')  // ✓ Use this
+ *   // NOT: useStoreContext()                 // ✗ Don't use this
+ * }
+ * ```
  */
 
-export { useStore } from './useStore'
-export { useJitStore } from './useJitStore'
-export { useSideEffects } from './useSideEffects'
 export { useStoreContext } from './useStoreContext'
-export { useErrors } from './useErrors'
-export { useFieldStore } from './useFieldStore'
-export { useFieldTransformedStore } from './useFieldTransformedStore'
-
-// Re-export types
-export type { JitStoreReturn } from './useJitStore'
-export type { FieldTransformConfig } from './useFieldTransformedStore'

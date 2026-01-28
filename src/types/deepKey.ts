@@ -2,7 +2,13 @@
  * DeepKey utility type
  *
  * Generates a union of all possible dot-notation paths for nested objects.
- * Supports nested objects up to a reasonable depth and handles arrays.
+ * Supports nested objects up to depth 20 to handle deeply nested data structures.
+ * Handles arrays and complex object hierarchies.
+ *
+ * Examples of supported paths:
+ * - Simple: "name", "email"
+ * - Nested: "user.address.street"
+ * - Deep: "g.p.data.optionsCommon.base.ccyPair.forCurrency.id" (11 levels)
  *
  * @example
  * ```typescript
@@ -32,7 +38,7 @@ type ArrayElement<T> = T extends readonly (infer E)[] ? E : never
 type ExcludeArrayKeys<T> = T extends readonly any[] ? never : T
 
 // Main DeepKey implementation with depth limit to prevent infinite recursion
-export type DeepKey<T, Depth extends number = 5> = Depth extends 0
+export type DeepKey<T, Depth extends number = 20> = Depth extends 0
   ? never
   : IsAny<T> extends true
   ? string
@@ -54,8 +60,38 @@ export type DeepKey<T, Depth extends number = 5> = Depth extends 0
             : never)
     }[keyof T & (string | number)]
 
-// Depth counter helper types
-type Prev<N extends number> = N extends 5
+// Depth counter helper types (supports up to depth 20)
+type Prev<N extends number> = N extends 20
+  ? 19
+  : N extends 19
+  ? 18
+  : N extends 18
+  ? 17
+  : N extends 17
+  ? 16
+  : N extends 16
+  ? 15
+  : N extends 15
+  ? 14
+  : N extends 14
+  ? 13
+  : N extends 13
+  ? 12
+  : N extends 12
+  ? 11
+  : N extends 11
+  ? 10
+  : N extends 10
+  ? 9
+  : N extends 9
+  ? 8
+  : N extends 8
+  ? 7
+  : N extends 7
+  ? 6
+  : N extends 6
+  ? 5
+  : N extends 5
   ? 4
   : N extends 4
   ? 3

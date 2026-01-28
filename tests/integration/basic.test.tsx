@@ -7,7 +7,7 @@
 
 import React from 'react'
 import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { createGenericStore } from '../../src'
 
 describe('Integration: Core Features Working Together', () => {
@@ -22,9 +22,7 @@ describe('Integration: Core Features Working Together', () => {
 
     function Component() {
       store.useSideEffects('test', {
-        syncPaths: {
-          pairs: [{ id: 'sync-ab', path1: 'a' as any, path2: 'b' as any }],
-        },
+        syncPaths: [['a', 'b'] as any],
       })
 
       const [a] = store.useStore('a')
@@ -64,12 +62,8 @@ describe('Integration: Core Features Working Together', () => {
 
     function Component() {
       store.useSideEffects('multi-effects', {
-        syncPaths: {
-          pairs: [{ id: 'sync', path1: 'field1' as any, path2: 'field2' as any }],
-        },
-        flipPaths: {
-          pairs: [{ id: 'flip', path1: 'flag1' as any, path2: 'flag2' as any }],
-        },
+        syncPaths: [['field1', 'field2'] as any],
+        flipPaths: [['flag1', 'flag2'] as any],
       })
 
       const [field1] = store.useStore('field1')

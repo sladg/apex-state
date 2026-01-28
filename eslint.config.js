@@ -1,9 +1,9 @@
-import reactConfig from '@sladg/eslint-config-base/next'
+import nodeConfig from '@sladg/eslint-config-base/node'
 import jsonConfig from '@sladg/eslint-config-base/optional/json'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  reactConfig,
+  nodeConfig,
   jsonConfig,
   globalIgnores(['out-of-git', 'node_modules']),
   {

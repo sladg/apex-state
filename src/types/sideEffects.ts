@@ -1,79 +1,50 @@
 /**
  * SideEffects type definition
  *
- * Configuration types for all side effects including sync paths, flip paths,
- * listeners, validators, aggregations, and clear paths.
+ * Configuration types for side effects passed to useSideEffects hook.
+ * Simple tuple-based API: [path1, path2]
  */
 
-import type { DeepKey } from './deepKey'
-import type { ClearPathConfig } from '../sideEffects/clearPaths/types'
-
-/**
- * Configuration for sync paths side-effect
- */
-export interface SyncPathConfig<DATA> {
-  pairs: Array<{
-    id: string
-    path1: DeepKey<DATA>
-    path2: DeepKey<DATA>
-  }>
-}
+import type { SyncPair, FlipPair, AggregationPair } from './pathsOfSameValue'
 
 /**
- * Configuration for flip paths side-effect
+ * Side effects configuration for useSideEffects hook
+ *
+ * @example
+ * ```typescript
+ * useSideEffects('my-effects', {
+ *   syncPaths: [
+ *     ['user.email', 'profile.email'],
+ *   ],
+ *   flipPaths: [
+ *     ['isActive', 'isInactive'],
+ *   ],
+ *   aggregations: [
+ *     ['total', 'price1'],  // target <- source (target always first)
+ *     ['total', 'price2'],
+ *   ],
+ * })
+ * ```
  */
-export interface FlipPathConfig<DATA> {
-  pairs: Array<{
-    id: string
-    path1: DeepKey<DATA>
-    path2: DeepKey<DATA>
-  }>
-}
-
-/**
- * Configuration for clear paths side-effect
- */
-export interface ClearPathsConfig<DATA> {
-  rules: Array<ClearPathConfig<DATA>>
-}
-
-/**
- * Configuration for aggregations side-effect
- */
-export interface AggregationConfig<DATA> {
-  rules: Array<{
-    id: string
-    targetPath: DeepKey<DATA>
-    sourcePaths: DeepKey<DATA>[]
-  }>
-}
-
-/**
- * Side effects configuration for a store
- */
-export interface SideEffects<DATA> {
+export interface SideEffects<DATA extends object> {
   /**
-   * Sync paths configuration - keeps specified paths synchronized
+   * Sync paths - keeps specified paths synchronized
+   * Format: [path1, path2] - both paths stay in sync
    */
-  syncPaths?: SyncPathConfig<DATA>
+  syncPaths?: Array<SyncPair<DATA>>
 
   /**
-   * Flip paths configuration - keeps specified paths with opposite values
+   * Flip paths - keeps specified paths with opposite values
+   * Format: [path1, path2] - paths have inverse boolean values
    */
-  flipPaths?: FlipPathConfig<DATA>
+  flipPaths?: Array<FlipPair<DATA>>
 
   /**
-   * Clear paths configuration - clears paths when triggers fire
+   * Aggregations - aggregates sources into target
+   * Format: [target, source] - target is ALWAYS first (left)
+   * Multiple pairs can point to same target for multi-source aggregation
    */
-  clearPaths?: ClearPathsConfig<DATA>
+  aggregations?: Array<AggregationPair<DATA>>
 
-  /**
-   * Aggregations configuration - aggregates multiple sources into target
-   */
-  aggregations?: AggregationConfig<DATA>
-
-  // Placeholder for future side effects
-  // listeners?: ...
-  // validators?: ...
   [key: string]: unknown
 }

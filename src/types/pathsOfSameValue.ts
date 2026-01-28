@@ -1,34 +1,70 @@
 /**
- * PathsOfSameValue - Type for mapping paths to paths with same value
+ * PathsOfSameValue - Type-safe path tuples for side effects
  *
- * Used for sync paths configuration where multiple paths should maintain
- * the same value (bidirectional synchronization).
+ * Simple tuple-based API for syncPaths, flipPaths, and aggregations.
  *
  * @example
  * ```typescript
- * type UserState = {
+ * type State = {
  *   user: { email: string }
  *   profile: { email: string }
- *   settings: { notificationEmail: string }
+ *   count: number
  * }
  *
- * const syncConfig: Partial<PathsOfSameValue<UserState>> = {
- *   "user.email": ["profile.email", "settings.notificationEmail"],
- *   "profile.email": ["user.email", "settings.notificationEmail"],
- *   "settings.notificationEmail": ["user.email", "profile.email"]
- * }
+ * // ✓ Valid: both paths are string
+ * const sync: SyncPair<State> = ['user.email', 'profile.email']
+ *
+ * // ✗ Error: 'user.email' (string) can't sync with 'count' (number)
+ * const invalid: SyncPair<State> = ['user.email', 'count']
  * ```
  */
 
-import type { DeepKey } from './index'
+import type { DeepKey } from './deepKey'
+import type { DeepValue } from './deepValue'
 
 /**
- * Record mapping each path to an array of paths with the same value.
- *
- * Each key is a path in DATA, and the value is an array of other paths
- * that should be kept in sync with that key.
+ * Get all paths in DATA that have the same value type as the value at PATH
  */
-export type PathsOfSameValue<DATA extends object> = Record<
-  DeepKey<DATA>,
-  Array<DeepKey<DATA>>
->
+export type PathsWithSameValueAs<DATA extends object, PATH extends DeepKey<DATA>> = {
+  [K in DeepKey<DATA>]: DeepValue<DATA, K> extends DeepValue<DATA, PATH>
+    ? DeepValue<DATA, PATH> extends DeepValue<DATA, K>
+      ? K
+      : never
+    : never
+}[DeepKey<DATA>]
+
+/**
+ * A tuple of two paths that must have the same value type.
+ * Format: [path1, path2]
+ *
+ * @example
+ * const pair: SyncPair<State> = ['user.email', 'profile.email']
+ */
+export type SyncPair<DATA extends object> = {
+  [P1 in DeepKey<DATA>]: [P1, PathsWithSameValueAs<DATA, P1>]
+}[DeepKey<DATA>]
+
+/**
+ * A tuple of two paths for flip (alias for SyncPair)
+ * Format: [path1, path2]
+ *
+ * @example
+ * const pair: FlipPair<State> = ['isActive', 'isInactive']
+ */
+export type FlipPair<DATA extends object> = SyncPair<DATA>
+
+/**
+ * A tuple for aggregation: [target, source]
+ * First element (left) is ALWAYS the target (aggregated) path.
+ * Second element is a source path.
+ *
+ * Multiple pairs can point to same target for multi-source aggregation.
+ *
+ * @example
+ * // target <- source (target is always first/left)
+ * const aggs: AggregationPair<State>[] = [
+ *   ['total', 'price1'],
+ *   ['total', 'price2'],
+ * ]
+ */
+export type AggregationPair<DATA extends object> = SyncPair<DATA>

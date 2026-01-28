@@ -2,16 +2,41 @@
  * Store Provider Component
  *
  * React component that initializes and provides the store to child components.
- * Supports derived value auto-detection via getter properties.
+ *
+ * Architecture: Unified _internal pattern
+ * - state: User data (tracked by valtio)
+ * - _concerns: Computed concern values (tracked by valtio)
+ * - _internal: Graphs, registrations, processing queue (NOT tracked - wrapped in ref())
  */
 
 import { useMemo } from 'react'
-import { proxy } from 'valtio'
+import { proxy, ref } from 'valtio'
+import Graph from 'graphology'
 import { StoreContext } from './StoreContext'
-import { createSideEffectsRegistry } from './sideEffectsRegistry'
-import { createDefaultPipeline } from '../pipeline/synchronizers'
-import type { ProviderProps, StoreInstance } from './types'
+import type { ProviderProps, StoreInstance, InternalState, ConcernValues } from './types'
 import type { GenericMeta } from '../types'
+
+/**
+ * Creates the initial internal state structure
+ * Wrapped in ref() to prevent valtio tracking
+ */
+const createInternalState = <DATA extends object, META extends GenericMeta = GenericMeta>(): InternalState<DATA, META> => ({
+  graphs: {
+    sync: new Graph({ type: 'undirected' }),
+    flip: new Graph({ type: 'undirected' }),
+    aggregations: new Graph({ type: 'directed', allowSelfLoops: false }),
+    listeners: new Map(),
+  },
+  registrations: {
+    concerns: new Map(),
+    effectCleanups: new Set(),
+    sideEffectCleanups: new Map(),
+  },
+  processing: {
+    queue: [],
+    isProcessing: false,
+  },
+})
 
 /**
  * Creates a Provider component for a specific data type
@@ -19,24 +44,30 @@ import type { GenericMeta } from '../types'
 export const createProvider = <DATA extends object, META extends GenericMeta = GenericMeta>() => {
   const Provider = ({ initialState, errorStorePath = '_errors', children }: ProviderProps<DATA>) => {
     const store = useMemo<StoreInstance<DATA, META>>(() => {
-      // Create valtio proxy
-      // Getters in the initialState object will work automatically with valtio proxy
-      // as they are part of the object's property descriptors
+      // 1. state: Application data (tracked by valtio)
+      //    - User actions WRITE to this
+      //    - Effects READ from this
       const state = proxy(initialState)
 
-      // Initialize side effects registry
-      const sideEffectsRegistry = createSideEffectsRegistry<DATA>()
+      // 2. _concerns: Computed concern values (tracked by valtio)
+      //    - Effects WRITE to this
+      //    - UI components READ from this
+      //    - Separate from state to prevent infinite loops
+      const _concerns = proxy<ConcernValues>({})
 
-      // Initialize default pipeline configuration
-      const pipelineConfig = createDefaultPipeline<DATA, META>()
+      // 3. _internal: Graphs, registrations, processing (NOT tracked)
+      //    - Wrapped in ref() to prevent valtio proxy tracking
+      //    - Contains side-effect graphs, concern registrations, change queue
+      const _internal = ref(createInternalState<DATA, META>())
 
       return {
         state,
+        _concerns,
+        _internal,
         config: {
           errorStorePath,
+          maxIterations: 100,
         },
-        sideEffectsRegistry,
-        pipelineConfig,
       }
       // Only initialize once - ignore changes to initialState after mount
       // eslint-disable-next-line react-hooks/exhaustive-deps

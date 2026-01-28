@@ -1,95 +1,40 @@
 /**
  * Core store factory
  *
- * Creates a store instance with valtio proxy, derived values support,
- * and React Provider component.
+ * Creates a store instance with valtio proxy and React Provider component.
+ *
+ * Architecture: Unified _internal pattern
+ * - state: User data (tracked by valtio)
+ * - _concerns: Computed concern values (tracked by valtio)
+ * - _internal: Graphs, registrations, processing queue (NOT tracked - wrapped in ref())
  */
 
-import type { FC } from 'react'
-import type { GenericMeta, DeepKey, DeepValue, ArrayOfChanges } from '../types'
-import type { StoreConfig, ProviderProps } from './types'
+import { useCallback, useLayoutEffect, useEffect, useState } from 'react'
+import { useSnapshot, snapshot } from 'valtio'
+import type { GenericMeta, DeepKey, DeepValue, ArrayOfChanges, EvaluatedConcerns, FieldTransformConfig } from '../types'
+import type { StoreConfig } from './types'
 import type { SideEffects } from '../types/sideEffects'
 import { createProvider } from './Provider'
-import { useStore } from '../hooks/useStore'
-import { useJitStore, type JitStoreReturn } from '../hooks/useJitStore'
-import { useSideEffects } from '../hooks/useSideEffects'
-import { useFieldStore } from '../hooks/useFieldStore'
-import { useFieldTransformedStore, type FieldTransformConfig } from '../hooks/useFieldTransformedStore'
-import { useErrors } from '../hooks/useErrors'
-
-/**
- * Return type of createGenericStore
- * Contains the Provider component and hooks for accessing the store
- */
-export interface StoreReturn<DATA extends object, META extends GenericMeta> {
-  /**
-   * React Provider component for wrapping the app or subtree
-   */
-  Provider: FC<ProviderProps<DATA>>
-
-  /**
-   * useState-like hook for accessing and updating specific paths
-   */
-  useStore: <P extends DeepKey<DATA>>(
-    path: P
-  ) => [DeepValue<DATA, P>, (value: DeepValue<DATA, P>, meta?: META) => void]
-
-  /**
-   * Just-In-Time hook for bulk operations and non-reactive reads
-   */
-  useJitStore: () => JitStoreReturn<DATA, META>
-
-  /**
-   * Hook for registering side effects
-   */
-  useSideEffects: (id: string, effects: SideEffects<DATA>) => void
-
-  /**
-   * Form field hook with convenient object API {value, setValue}
-   */
-  useFieldStore: <P extends DeepKey<DATA>>(
-    path: P
-  ) => {
-    value: DeepValue<DATA, P>
-    setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
-  }
-
-  /**
-   * Form field hook with bidirectional transformations
-   */
-  useFieldTransformedStore: <
-    P extends DeepKey<DATA>,
-    VAL extends DeepValue<DATA, P>,
-    CTX
-  >(
-    path: P,
-    config: FieldTransformConfig<VAL, CTX>
-  ) => {
-    value: CTX
-    setValue: (newContext: CTX) => void
-  }
-
-  /**
-   * Hook for accessing validation errors at a specific path
-   */
-  useErrors: (errorPath: string) => string[]
-}
+import { deepGet } from './utils/deepAccess'
+import { processChanges } from './executor'
+import { useStoreContext } from '../hooks/useStoreContext'
+import { defaultConcerns, registerConcernEffects } from '../concerns'
+import { registerSideEffects } from '../sideEffects/registration'
 
 /**
  * Creates a generic store with valtio proxy and React context
  *
  * This is a factory function that returns a configured store with:
  * - Valtio proxy for reactive state
- * - Automatic derived value detection from getter properties
+ * - _concerns proxy for computed values
+ * - _internal (non-tracked) for graphs and processing
  * - React Provider component for context
- * - Deep get/set utilities (via exported utils)
  *
  * @example
  * ```typescript
  * type AppState = {
  *   user: { name: string }
  *   count: number
- *   get doubled() { return this.count * 2 }
  * }
  *
  * const store = createGenericStore<AppState>()
@@ -103,40 +48,201 @@ export interface StoreReturn<DATA extends object, META extends GenericMeta> {
  * }
  * ```
  *
- * @param config - Optional configuration (errorStorePath, etc.)
- * @returns Store object with Provider component
+ * @param config - Optional configuration (errorStorePath, maxIterations, etc.)
+ * @returns Store object with Provider component and hooks
  */
 export const createGenericStore = <
   DATA extends object,
-  META extends GenericMeta = GenericMeta
->(config?: StoreConfig): StoreReturn<DATA, META> => {
+  META extends GenericMeta = GenericMeta,
+  CONCERNS extends readonly any[] = typeof defaultConcerns
+>(config?: StoreConfig) => {
+  // Merge config with defaults
+  const resolvedConfig = {
+    errorStorePath: config?.errorStorePath ?? '_errors',
+    maxIterations: config?.maxIterations ?? 100,
+  }
+
   // Create the Provider component for this store
-  const Provider = createProvider<DATA>()
+  const Provider = createProvider<DATA, META>()
 
   return {
     Provider,
-    useStore: useStore as <P extends DeepKey<DATA>>(
+
+    /**
+     * useState-like hook for accessing and updating specific paths
+     */
+    useStore: <P extends DeepKey<DATA>>(
       path: P
-    ) => [DeepValue<DATA, P>, (value: DeepValue<DATA, P>, meta?: META) => void],
-    useJitStore: useJitStore<DATA, META>,
-    useSideEffects: useSideEffects<DATA>,
-    useFieldStore: useFieldStore as <P extends DeepKey<DATA>>(
+    ): [
+      DeepValue<DATA, P>,
+      (value: DeepValue<DATA, P>, meta?: META) => void
+    ] => {
+      const store = useStoreContext<DATA, META>()
+      const snap = useSnapshot(store.state) as DATA
+      const value = deepGet(snap, path) as DeepValue<DATA, P>
+
+      const setValue = useCallback(
+        (newValue: DeepValue<DATA, P>, meta?: META) => {
+          const changes: ArrayOfChanges<DATA, META> = [
+            [path, newValue, (meta || {}) as META]
+          ]
+          processChanges(store, changes)
+        },
+        [store, path]
+      )
+
+      return [value, setValue]
+    },
+
+    /**
+     * Just-In-Time hook for bulk operations and non-reactive reads
+     */
+    useJitStore: (): {
+      proxyValue: DATA
+      setChanges: (changes: ArrayOfChanges<DATA, META>) => void
+      getState: () => DATA
+    } => {
+      const store = useStoreContext<DATA, META>()
+      const proxyValue = useSnapshot(store.state) as DATA
+
+      const setChanges = useCallback(
+        (changes: ArrayOfChanges<DATA, META>) => {
+          processChanges(store, changes)
+        },
+        [store]
+      )
+
+      const getState = useCallback(() => {
+        return snapshot(store.state) as DATA
+      }, [store])
+
+      return {
+        proxyValue,
+        setChanges,
+        getState,
+      }
+    },
+
+    /**
+     * Hook for registering side effects
+     * Registers directly into _internal.graphs
+     */
+    useSideEffects: (id: string, effects: SideEffects<DATA>): void => {
+      const store = useStoreContext<DATA, META>()
+
+      useLayoutEffect(() => {
+        return registerSideEffects(store, id, effects)
+      }, [store, id, effects])
+    },
+
+    /**
+     * Form field hook with convenient object API {value, setValue}
+     */
+    useFieldStore: <P extends DeepKey<DATA>>(
       path: P
-    ) => {
+    ): {
       value: DeepValue<DATA, P>
       setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+    } => {
+      const store = useStoreContext<DATA, META>()
+      const snap = useSnapshot(store.state) as DATA
+      const value = deepGet(snap, path) as DeepValue<DATA, P>
+
+      const setValue = useCallback(
+        (newValue: DeepValue<DATA, P>, meta?: META) => {
+          const changes: ArrayOfChanges<DATA, META> = [
+            [path, newValue, (meta || {}) as META]
+          ]
+          processChanges(store, changes)
+        },
+        [store, path]
+      )
+
+      return {
+        value,
+        setValue,
+      }
     },
-    useFieldTransformedStore: useFieldTransformedStore as <
+
+    /**
+     * Form field hook with bidirectional transformations
+     */
+    useFieldTransformedStore: <
       P extends DeepKey<DATA>,
       VAL extends DeepValue<DATA, P>,
       CTX
     >(
       path: P,
       config: FieldTransformConfig<VAL, CTX>
-    ) => {
+    ): {
       value: CTX
       setValue: (newContext: CTX) => void
+    } => {
+      const store = useStoreContext<DATA, META>()
+      const { toTemporary, fromTemporary, context } = config
+
+      const snap = useSnapshot(store.state) as DATA
+      const storedValue = deepGet(snap, path) as DeepValue<DATA, P>
+      const temporaryValue = toTemporary(storedValue as VAL, context)
+
+      const [localValue, setLocalValue] = useState<CTX>(temporaryValue)
+
+      useEffect(() => {
+        setLocalValue(toTemporary(storedValue as VAL, context))
+      }, [storedValue, toTemporary, context])
+
+      const setValue = useCallback(
+        (newContext: CTX) => {
+          setLocalValue(newContext)
+          const newStoredValue = fromTemporary(newContext, context)
+          const changes: ArrayOfChanges<DATA, META> = [
+            [path, newStoredValue as DeepValue<DATA, P>, {} as META]
+          ]
+          processChanges(store, changes)
+        },
+        [store, path, fromTemporary, context]
+      )
+
+      return {
+        value: localValue,
+        setValue,
+      }
     },
-    useErrors: useErrors as (errorPath: string) => string[],
+
+    /**
+     * Hook for registering concerns with automatic dependency tracking
+     * Registers on mount, unregisters on unmount
+     * Uses the store's CONCERNS array by default
+     */
+    useConcerns: (
+      id: string,
+      registration: Partial<Record<DeepKey<DATA>, Partial<Record<string, any>>>>,
+      customConcerns?: readonly any[]
+    ): void => {
+      const store = useStoreContext<DATA, META>()
+      const concerns = customConcerns || defaultConcerns
+
+      useLayoutEffect(() => {
+        // Cast store to base type for internal concern registration
+        // Use unknown intermediate to satisfy TypeScript variance constraints
+        return registerConcernEffects(store , registration, concerns)
+        // Re-register if id, registration, or custom concerns change
+      }, [store, id, registration, customConcerns])
+    },
+
+    /**
+     * Hook for reading concern results for a specific path
+     * Returns properly typed concerns based on the CONCERNS array
+     */
+    useFieldConcerns: <P extends DeepKey<DATA>>(
+      path: P
+    ): EvaluatedConcerns<CONCERNS> => {
+      const store = useStoreContext<DATA, META>()
+      const snap = useSnapshot(store._concerns) as Record<string, unknown>
+
+      // Return concerns at path, or empty object if none exist
+      return (snap[path] || {}) as EvaluatedConcerns<CONCERNS>
+    },
+
   }
 }
