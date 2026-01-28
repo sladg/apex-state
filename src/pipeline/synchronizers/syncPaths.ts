@@ -17,10 +17,10 @@ import type { SyncPathsRegistry } from '../../sideEffects/syncPaths/registry'
  * @param registry - The SyncPathsRegistry instance managing sync relationships
  * @returns A synchronizer function that propagates changes across synced paths
  */
-export function createSyncPathsSynchronizer<
+export const createSyncPathsSynchronizer = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
->(registry: SyncPathsRegistry<DATA>): Synchronizer<DATA, META> {
+>(registry: SyncPathsRegistry<DATA>): Synchronizer<DATA, META> => {
   return (changes, _state) => {
     const newChanges: ArrayOfChanges<DATA, META> = []
 

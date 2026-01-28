@@ -33,14 +33,14 @@ import { deepSet } from '../store/utils/deepAccess'
  * )
  * ```
  */
-export function executePipeline<
+export const executePipeline = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
 >(
   initialChanges: ArrayOfChanges<DATA, META>,
   state: DATA,
   config: PipelineConfig<DATA, META>
-): ArrayOfChanges<DATA, META> {
+): ArrayOfChanges<DATA, META> => {
   let currentChanges = initialChanges
   let iteration = 0
 
@@ -87,13 +87,13 @@ export function executePipeline<
  * // Single re-render with both changes applied
  * ```
  */
-export function applyChanges<
+export const applyChanges = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
 >(
   state: DATA,
   changes: ArrayOfChanges<DATA, META>
-): void {
+): void => {
   // Apply all changes to the valtio proxy
   // Valtio batches these automatically in React 18+
   changes.forEach((change) => {

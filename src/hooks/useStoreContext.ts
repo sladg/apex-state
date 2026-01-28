@@ -13,7 +13,7 @@ import type { StoreInstance } from '../store/types'
  * Access the store instance from context
  * @throws Error if used outside Provider
  */
-export function useStoreContext<DATA extends object>(): StoreInstance<DATA> {
+export const useStoreContext = <DATA extends object>(): StoreInstance<DATA> => {
   const store = useContext(StoreContext) as StoreInstance<DATA> | null
 
   if (!store) {

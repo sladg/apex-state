@@ -49,9 +49,9 @@ export interface FlipPathsRegistry<DATA extends object> {
  *
  * Factory function pattern (NOT class) following project architecture.
  */
-export function createFlipPathsRegistry<
+export const createFlipPathsRegistry = <
   DATA extends object
->(): FlipPathsRegistry<DATA> {
+>(): FlipPathsRegistry<DATA> => {
   const state: FlipPathsRegistryState<DATA> = {
     flips: new Map<string, string>(),
     flipIds: new Map<string, [string, string]>(),

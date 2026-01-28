@@ -48,7 +48,7 @@ export interface SyncPathGraph<DATA extends object> {
 /**
  * Create a new SyncPathGraph instance
  */
-export function createSyncPathGraph<DATA extends object>(): SyncPathGraph<DATA> {
+export const createSyncPathGraph = <DATA extends object>(): SyncPathGraph<DATA> => {
   const state: SyncPathGraphState<DATA> = {
     graph: new Graph({ multi: false, type: 'undirected' }),
     edgeIds: new Map(),

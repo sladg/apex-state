@@ -56,10 +56,10 @@ export interface JitStoreReturn<DATA extends object, META extends GenericMeta> {
  *
  * @returns Object with proxyValue (reactive), setChanges (batch updates), and getState (non-reactive read)
  */
-export function useJitStore<
+export const useJitStore = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
->(): JitStoreReturn<DATA, META> {
+>(): JitStoreReturn<DATA, META> => {
   const store = useStoreContext<DATA>()
 
   // Reactive snapshot - triggers re-renders when accessed properties change

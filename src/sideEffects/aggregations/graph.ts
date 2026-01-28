@@ -59,9 +59,9 @@ export interface AggregationGraph<DATA extends object> {
 /**
  * Create a new AggregationGraph instance
  */
-export function createAggregationGraph<
+export const createAggregationGraph = <
   DATA extends object
->(): AggregationGraph<DATA> {
+>(): AggregationGraph<DATA> => {
   const state: AggregationGraphState<DATA> = {
     // Directed graph: edge from source to target represents aggregation flow
     graph: new Graph({ multi: false, type: 'directed' }),

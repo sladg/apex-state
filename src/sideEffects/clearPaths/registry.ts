@@ -40,9 +40,9 @@ export interface ClearPathsRegistry<DATA extends object> {
 /**
  * Create a new ClearPathsRegistry instance
  */
-export function createClearPathsRegistry<
+export const createClearPathsRegistry = <
   DATA extends object
->(): ClearPathsRegistry<DATA> {
+>(): ClearPathsRegistry<DATA> => {
   const state: ClearPathsRegistryState<DATA> = {
     rules: new Map(),
     triggerIndex: new Map(),

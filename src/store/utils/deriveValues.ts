@@ -21,10 +21,10 @@
  * // { fullName: (snap) => snap.firstName + ' ' + snap.lastName }
  * ```
  */
-export function detectGetters<T extends object>(
+export const detectGetters = <T extends object>(
   obj: T,
   prefix = ''
-): Record<string, (snap: any) => any> {
+): Record<string, (snap: any) => any> => {
   const getters: Record<string, (snap: any) => any> = {}
 
   // Get own property descriptors to detect getters
@@ -85,10 +85,10 @@ export function detectGetters<T extends object>(
  * // computed = { sum: (snap) => snap.a + snap.b }
  * ```
  */
-export function extractGetters<T extends object>(obj: T): {
+export const extractGetters = <T extends object>(obj: T): {
   base: Partial<T>
   computed: Record<string, (snap: any) => any>
-} {
+} => {
   const base: any = {}
   const computed: Record<string, (snap: any) => any> = {}
 

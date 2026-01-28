@@ -28,10 +28,10 @@ import { deepGet } from '../../store/utils/deepAccess'
  * @param registry - The AggregationsRegistry instance managing aggregation relationships
  * @returns A synchronizer function that processes aggregation logic
  */
-export function createAggregationsSynchronizer<
+export const createAggregationsSynchronizer = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
->(registry: AggregationsRegistry<DATA>): Synchronizer<DATA, META> {
+>(registry: AggregationsRegistry<DATA>): Synchronizer<DATA, META> => {
   return (changes, state) => {
     const newChanges: ArrayOfChanges<DATA, META> = []
     const processedTargets = new Set<string>()

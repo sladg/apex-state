@@ -8,7 +8,7 @@
 import { useMemo } from 'react'
 import { proxy } from 'valtio'
 import { StoreContext } from './StoreContext'
-import { SideEffectsRegistry } from './sideEffectsRegistry'
+import { createSideEffectsRegistry } from './sideEffectsRegistry'
 import { createDefaultPipeline } from '../pipeline/synchronizers'
 import type { ProviderProps, StoreInstance } from './types'
 import type { GenericMeta } from '../types'
@@ -16,7 +16,7 @@ import type { GenericMeta } from '../types'
 /**
  * Creates a Provider component for a specific data type
  */
-export function createProvider<DATA extends object, META extends GenericMeta = GenericMeta>() {
+export const createProvider = <DATA extends object, META extends GenericMeta = GenericMeta>() => {
   const Provider = ({ initialState, errorStorePath = '_errors', children }: ProviderProps<DATA>) => {
     const store = useMemo<StoreInstance<DATA, META>>(() => {
       // Create valtio proxy
@@ -25,7 +25,7 @@ export function createProvider<DATA extends object, META extends GenericMeta = G
       const state = proxy(initialState)
 
       // Initialize side effects registry
-      const sideEffectsRegistry = new SideEffectsRegistry<DATA>()
+      const sideEffectsRegistry = createSideEffectsRegistry<DATA>()
 
       // Initialize default pipeline configuration
       const pipelineConfig = createDefaultPipeline<DATA, META>()

@@ -32,7 +32,7 @@ import { executePipeline, applyChanges } from '../pipeline/executor'
  * @param path - Path to the field in state
  * @returns Object with value and setValue
  */
-export function useFieldStore<
+export const useFieldStore = <
   DATA extends object,
   P extends DeepKey<DATA>,
   META extends GenericMeta = GenericMeta
@@ -41,7 +41,7 @@ export function useFieldStore<
 ): {
   value: DeepValue<DATA, P>
   setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
-} {
+} => {
   const store = useStoreContext<DATA>()
 
   // Use valtio's useSnapshot for reactive state

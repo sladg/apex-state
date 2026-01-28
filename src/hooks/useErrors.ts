@@ -34,10 +34,10 @@ import { useStore } from './useStore'
  * }
  * ```
  */
-export function useErrors<DATA extends object>(
+export const useErrors = <DATA extends object>(
   path: DeepKey<DATA>,
   errorStorePath = '_errors'
-): string[] {
+): string[] => {
   // Build full error path
   const errorPath = `${errorStorePath}.${path}` as DeepKey<DATA>
 

@@ -22,10 +22,10 @@ import type { SideEffects } from '../types/sideEffects'
  * @param id - Unique identifier for this set of side effects
  * @param effects - Side effects configuration
  */
-export function useSideEffects<DATA extends object>(
+export const useSideEffects = <DATA extends object>(
   id: string,
   effects: SideEffects<DATA>
-): void {
+): void => {
   const store = useStoreContext<DATA>()
 
   useLayoutEffect(() => {

@@ -39,9 +39,9 @@ export interface SyncPathsRegistry<DATA extends object> {
 /**
  * Create a new SyncPathsRegistry instance
  */
-export function createSyncPathsRegistry<
+export const createSyncPathsRegistry = <
   DATA extends object
->(): SyncPathsRegistry<DATA> {
+>(): SyncPathsRegistry<DATA> => {
   const state: SyncPathsRegistryState<DATA> = {
     graph: createSyncPathGraph<DATA>(),
   }

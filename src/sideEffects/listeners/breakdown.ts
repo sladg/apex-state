@@ -48,14 +48,14 @@ import type { ListenersRegistry } from './registry'
  * // Note: 'user.age' NOT included because no listener exists
  * ```
  */
-export function breakdownChanges<
+export const breakdownChanges = <
   DATA extends object,
   META extends GenericMeta
 >(
   changes: ArrayOfChanges<DATA, META>,
   registry: ListenersRegistry<DATA, META>,
   _state: DATA
-): ArrayOfChanges<DATA, META> {
+): ArrayOfChanges<DATA, META> => {
   const result: ArrayOfChanges<DATA, META> = [...changes]
   const processed = new Set<string>()
 

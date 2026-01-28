@@ -106,10 +106,10 @@ export interface StoreReturn<DATA extends object, META extends GenericMeta> {
  * @param config - Optional configuration (errorStorePath, etc.)
  * @returns Store object with Provider component
  */
-export function createGenericStore<
+export const createGenericStore = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
->(config?: StoreConfig): StoreReturn<DATA, META> {
+>(config?: StoreConfig): StoreReturn<DATA, META> => {
   // Create the Provider component for this store
   const Provider = createProvider<DATA>()
 

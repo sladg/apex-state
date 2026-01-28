@@ -19,10 +19,10 @@ import { deepGet } from '../../store/utils/deepAccess'
  * @param registry - The FlipPathsRegistry instance managing flip relationships
  * @returns A synchronizer function that propagates opposite values across flipped paths
  */
-export function createFlipPathsSynchronizer<
+export const createFlipPathsSynchronizer = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
->(registry: FlipPathsRegistry<DATA>): Synchronizer<DATA, META> {
+>(registry: FlipPathsRegistry<DATA>): Synchronizer<DATA, META> => {
   return (changes, state) => {
     const newChanges: ArrayOfChanges<DATA, META> = []
 

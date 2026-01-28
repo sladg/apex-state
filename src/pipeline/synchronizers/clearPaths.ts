@@ -18,10 +18,10 @@ import type { ClearPathsRegistry } from '../../sideEffects/clearPaths/registry'
  * @param registry - The ClearPathsRegistry instance managing clear rules
  * @returns A synchronizer function that clears paths when triggers fire
  */
-export function createClearPathsSynchronizer<
+export const createClearPathsSynchronizer = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
->(registry: ClearPathsRegistry<DATA>): Synchronizer<DATA, META> {
+>(registry: ClearPathsRegistry<DATA>): Synchronizer<DATA, META> => {
   return (changes, _state) => {
     const newChanges: ArrayOfChanges<DATA, META> = []
     const clearedPaths = new Set<string>() // Avoid duplicate clears

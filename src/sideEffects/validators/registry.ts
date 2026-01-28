@@ -61,10 +61,10 @@ export interface ValidatorsRegistry<
  * })
  * ```
  */
-export function createValidatorsRegistry<
+export const createValidatorsRegistry = <
   DATA extends object,
   META extends GenericMeta
->(): ValidatorsRegistry<DATA, META> {
+>(): ValidatorsRegistry<DATA, META> => {
   // Private state
   const validators = new Map<string, ValidatorConfig<DATA>>()
   const scopeIndex = new Map<string, Set<string>>() // scope → Set<validatorId>

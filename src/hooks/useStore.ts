@@ -28,7 +28,7 @@ import type { DeepKey, DeepValue, GenericMeta, ArrayOfChanges } from '../types'
  * @param path - The deep path to access (e.g., 'user.name' or 'items[0].title')
  * @returns Tuple of [value, setValue] like useState
  */
-export function useStore<
+export const useStore = <
   DATA extends object,
   P extends DeepKey<DATA>,
   META extends GenericMeta = GenericMeta
@@ -37,7 +37,7 @@ export function useStore<
 ): [
   DeepValue<DATA, P>,
   (value: DeepValue<DATA, P>, meta?: META) => void
-] {
+] => {
   const store = useStoreContext<DATA>()
 
   // Use valtio's useSnapshot for reactive state

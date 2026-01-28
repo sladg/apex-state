@@ -59,10 +59,10 @@ export { createClearPathsSynchronizer } from './clearPaths'
  * }
  * ```
  */
-export function createDefaultPipeline<
+export const createDefaultPipeline = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
->(): PipelineConfig<DATA, META> {
+>(): PipelineConfig<DATA, META> => {
   return {
     synchronizers: [],
     maxIterations: 100,

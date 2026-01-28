@@ -44,9 +44,9 @@ export interface AggregationsRegistry<DATA extends object> {
 /**
  * Create a new AggregationsRegistry instance
  */
-export function createAggregationsRegistry<
+export const createAggregationsRegistry = <
   DATA extends object
->(): AggregationsRegistry<DATA> {
+>(): AggregationsRegistry<DATA> => {
   const state: AggregationsRegistryState<DATA> = {
     graph: createAggregationGraph<DATA>(),
   }

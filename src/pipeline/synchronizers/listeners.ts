@@ -41,12 +41,12 @@ import { deepGet } from '../../store/utils/deepAccess'
  * // Use in pipeline...
  * ```
  */
-export function createListenersSynchronizer<
+export const createListenersSynchronizer = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
 >(
   registry: ListenersRegistry<DATA, META>
-): Synchronizer<DATA, META> {
+): Synchronizer<DATA, META> => {
   return (changes, state) => {
     // Break down changes for listener triggering
     // This creates virtual nested changes based on registered listeners

@@ -56,10 +56,10 @@ export interface ListenersRegistry<
  * const hasNestedListeners = registry.hasListenerForNestedPath('user')
  * ```
  */
-export function createListenersRegistry<
+export const createListenersRegistry = <
   DATA extends object,
   META extends GenericMeta
->(): ListenersRegistry<DATA, META> {
+>(): ListenersRegistry<DATA, META> => {
   // Map: path → array of listeners for that path
   const listeners = new Map<string, RegisteredListener<DATA, META>[]>()
 

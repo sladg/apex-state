@@ -37,7 +37,8 @@ export type { JitStoreReturn, FieldTransformConfig } from './hooks'
 
 // Export side effects types and registries
 export type { SideEffects } from './types/sideEffects'
-export { SideEffectsRegistry } from './store/sideEffectsRegistry'
+export { createSideEffectsRegistry } from './store/sideEffectsRegistry'
+export type { SideEffectsRegistry } from './store/sideEffectsRegistry'
 
 // Export side effect registry factories
 export { createSyncPathsRegistry, createSyncPathGraph } from './sideEffects/syncPaths'

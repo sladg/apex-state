@@ -21,13 +21,13 @@ import { deepGet } from '../../store/utils/deepAccess'
  * @param errorStorePath - Root path for error storage (default: '_errors')
  * @returns A synchronizer function that validates changes and stores errors
  */
-export function createValidatorsSynchronizer<
+export const createValidatorsSynchronizer = <
   DATA extends object,
   META extends GenericMeta = GenericMeta
 >(
   registry: ValidatorsRegistry<DATA, META>,
   errorStorePath = '_errors'
-): Synchronizer<DATA, META> {
+): Synchronizer<DATA, META> => {
   return (changes, state) => {
     const processedValidators = new Set<string>()
     const errorUpdates = new Map<string, StoredError[]>() // errorPath -> updated errors

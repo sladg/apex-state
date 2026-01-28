@@ -19,10 +19,10 @@ import type { DeepKey, DeepValue } from '../../types'
  * const missing = deepGet(user, 'address.zip') // undefined
  * ```
  */
-export function deepGet<T extends object, P extends DeepKey<T>>(
+export const deepGet = <T extends object, P extends DeepKey<T>>(
   obj: T,
   path: P
-): DeepValue<T, P> | undefined {
+): DeepValue<T, P> | undefined => {
   return _get(obj, path as string) as DeepValue<T, P> | undefined
 }
 
@@ -37,11 +37,11 @@ export function deepGet<T extends object, P extends DeepKey<T>>(
  * // user.address.city is now 'LA'
  * ```
  */
-export function deepSet<T extends object, P extends DeepKey<T>>(
+export const deepSet = <T extends object, P extends DeepKey<T>>(
   obj: T,
   path: P,
   value: DeepValue<T, P>
-): void {
+): void => {
   // lodash set mutates the object, which is what we want for valtio reactivity
   _set(obj, path as string, value)
 }
@@ -56,9 +56,9 @@ export function deepSet<T extends object, P extends DeepKey<T>>(
  * deepHas(user, 'address.zip') // false
  * ```
  */
-export function deepHas<T extends object, P extends DeepKey<T>>(
+export const deepHas = <T extends object, P extends DeepKey<T>>(
   obj: T,
   path: P
-): boolean {
+): boolean => {
   return _get(obj, path as string) !== undefined
 }

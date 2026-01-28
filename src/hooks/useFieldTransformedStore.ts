@@ -61,7 +61,7 @@ export interface FieldTransformConfig<VAL, CTX> {
  * @param config - Transformation configuration
  * @returns Object with transformed value and setValue
  */
-export function useFieldTransformedStore<
+export const useFieldTransformedStore = <
   DATA extends object,
   P extends DeepKey<DATA>,
   VAL extends DeepValue<DATA, P>,
@@ -73,7 +73,7 @@ export function useFieldTransformedStore<
 ): {
   value: CTX
   setValue: (newContext: CTX) => void
-} {
+} => {
   const store = useStoreContext<DATA>()
   const { toTemporary, fromTemporary, context } = config
 
