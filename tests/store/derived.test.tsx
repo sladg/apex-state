@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, act } from '@testing-library/react'
 import { useSnapshot } from 'valtio'
 import { createGenericStore } from '../../src/store/createStore'
 import { extractGetters, detectGetters } from '../../src/store/utils/deriveValues'
@@ -513,6 +513,89 @@ describe('Derived Values', () => {
       )
 
       expect(getByTestId('value').textContent).toBe('test')
+    })
+
+    it('should verify getter recalculation behavior (cache vs recompute)', async () => {
+      type TestState = {
+        value: number
+        get computed(): string
+      }
+
+      const store = createGenericStore<TestState>()
+
+      // Track how many times the getter is called
+      let getterCallCount = 0
+
+      const TestComponent = () => {
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const [value, setValue] = store.useStore('value')
+
+        // Access the getter multiple times
+        const computed1 = (snap as any).computed
+        const computed2 = (snap as any).computed
+        const computed3 = (snap as any).computed
+
+        return (
+          <div>
+            <span data-testid="computed1">{computed1}</span>
+            <span data-testid="computed2">{computed2}</span>
+            <span data-testid="computed3">{computed3}</span>
+            <span data-testid="call-count">{getterCallCount}</span>
+            <button data-testid="increment" onClick={() => setValue(value + 1)}>
+              Increment
+            </button>
+          </div>
+        )
+      }
+
+      const initialState: TestState = {
+        value: 1,
+        get computed() {
+          getterCallCount++
+          return `computed-${this.value}-${getterCallCount}`
+        },
+      }
+
+      const { getByTestId } = render(
+        <store.Provider initialState={initialState}>
+          <TestComponent />
+        </store.Provider>
+      )
+
+      // After first render, check how many times getter was called
+      const initialCallCount = getterCallCount
+
+      // All three accesses should return the same value
+      const c1 = getByTestId('computed1').textContent
+      const c2 = getByTestId('computed2').textContent
+      const c3 = getByTestId('computed3').textContent
+
+      // If cached: all three should be identical (same counter value)
+      // If recalculated: each would have different counter
+      expect(c1).toBe(c2)
+      expect(c2).toBe(c3)
+
+      // This tells us if Valtio caches within a single render
+      // The counter in the computed value shows if it was called once or thrice
+      console.log('Initial getter calls:', initialCallCount)
+      console.log('Computed values:', { c1, c2, c3 })
+
+      // Now change the dependency
+      await act(async () => {
+        getByTestId('increment').click()
+        await new Promise(resolve => setTimeout(resolve, 0))
+      })
+
+      // After dependency change, getter should recalculate
+      const newCallCount = getterCallCount
+      expect(newCallCount).toBeGreaterThan(initialCallCount)
+
+      // The computed value should reflect the new value
+      const newComputed = getByTestId('computed1').textContent
+      expect(newComputed).toContain('computed-2')
+      console.log('After dependency change - getter calls:', newCallCount)
+      console.log('New computed value:', newComputed)
     })
   })
 })

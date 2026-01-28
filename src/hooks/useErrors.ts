@@ -38,7 +38,7 @@ export const useErrors = <DATA extends object>(
   path: DeepKey<DATA>,
   errorStorePath = '_errors'
 ): string[] => {
-  // Build full error path
+  // Build full error path - this is a dynamic string path to the error array
   const errorPath = `${errorStorePath}.${path}` as DeepKey<DATA>
 
   // Use useStore to get reactive errors

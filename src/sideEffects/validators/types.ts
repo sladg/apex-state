@@ -28,8 +28,9 @@ export interface ValidatorConfig<DATA> {
 
   /**
    * Path where errors should be stored (relative to error store root)
+   * Can be any string path, not limited to existing data paths
    */
-  errorPath: DeepKey<DATA>
+  errorPath: DeepKey<DATA> | string
 }
 
 /**

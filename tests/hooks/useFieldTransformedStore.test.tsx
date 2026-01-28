@@ -121,13 +121,13 @@ describe('useFieldTransformedStore', () => {
 
     function TemperatureField({ unit }: { unit: 'C' | 'F' }) {
       const tempField = store.useFieldTransformedStore('temperature', {
-        toTemporary: (celsius: number, context?: 'C' | 'F') => {
+        toTemporary: (celsius: number, context?: string) => {
           if (context === 'F') {
             return `${(celsius * 9) / 5 + 32}°F`
           }
           return `${celsius}°C`
         },
-        fromTemporary: (display: string, context?: 'C' | 'F') => {
+        fromTemporary: (display: string, context?: string) => {
           const value = parseFloat(display)
           if (context === 'F') {
             return ((value - 32) * 5) / 9

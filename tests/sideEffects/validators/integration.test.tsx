@@ -25,6 +25,7 @@ interface TestState {
     email?: StoredError[]
     password?: StoredError[]
     'user.name'?: StoredError[]
+    user?: StoredError[]
   }
 }
 

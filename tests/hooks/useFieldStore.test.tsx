@@ -9,6 +9,7 @@ import { describe, test, expect } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { createGenericStore } from '../../src/store/createStore'
+import type { GenericMeta } from '../../src/types'
 
 describe('useFieldStore', () => {
   test('provides object API with value and setValue', async () => {
@@ -142,7 +143,9 @@ describe('useFieldStore', () => {
 
   test('accepts optional meta parameter', async () => {
     type State = { value: string }
-    type Meta = { source: string }
+    interface Meta extends GenericMeta {
+      source: string
+    }
     const store = createGenericStore<State, Meta>()
 
     function Component() {

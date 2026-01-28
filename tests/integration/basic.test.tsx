@@ -68,7 +68,7 @@ describe('Integration: Core Features Working Together', () => {
           pairs: [{ id: 'sync', path1: 'field1' as any, path2: 'field2' as any }],
         },
         flipPaths: {
-          pairs: [{ id: 'flip', path1: 'flag1' as any, path2: 'flag2' as any, bidirectional: true }],
+          pairs: [{ id: 'flip', path1: 'flag1' as any, path2: 'flag2' as any }],
         },
       })
 

@@ -16,7 +16,8 @@ interface TestState {
     name: string
     age: number
   }
-  _errors?: Record<string, Array<{ id: string; message: string }>>
+  _errors: Record<string, Array<{ id: string; message: string }>>
+  global?: Array<{ id: string; message: string }>
 }
 
 describe('ValidatorsRegistry', () => {
