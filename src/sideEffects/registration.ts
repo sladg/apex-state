@@ -8,11 +8,16 @@
  */
 
 import { connectedComponents } from 'graphology-components'
-import type { GenericMeta, DeepKey, ArrayOfChanges } from '../types'
-import type { SideEffects } from '../types/sideEffects'
-import type { StoreInstance, AggregationRule, OnStateListener } from '../store/types'
-import { deepGet } from '../store/utils/deepAccess'
+
 import { processChanges } from '../store/executor'
+import type {
+  AggregationRule,
+  OnStateListener,
+  StoreInstance,
+} from '../store/types'
+import { deepGetUnsafe } from '../store/utils/deepAccess'
+import type { ArrayOfChanges, GenericMeta } from '../types'
+import type { SideEffects } from '../types/sideEffects'
 
 // ============================================================================
 // Main Registration Function
@@ -27,12 +32,15 @@ import { processChanges } from '../store/executor'
  * @param effects - Side effects configuration
  * @returns Cleanup function that removes all registered effects
  */
-export const registerSideEffects = <DATA extends object, META extends GenericMeta = GenericMeta>(
+export const registerSideEffects = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
   store: StoreInstance<DATA, META>,
   id: string,
-  effects: SideEffects<DATA>
+  effects: SideEffects<DATA>,
 ): (() => void) => {
-  const cleanups: Array<() => void> = []
+  const cleanups: (() => void)[] = []
 
   // Register sync paths: [path1, path2]
   if (effects.syncPaths) {
@@ -66,7 +74,7 @@ export const registerSideEffects = <DATA extends object, META extends GenericMet
     for (const target of targets) {
       if (sources.has(target)) {
         throw new Error(
-          `[apex-state] Circular aggregation: "${target}" cannot be both target and source`
+          `[apex-state] Circular aggregation: "${target}" cannot be both target and source`,
         )
       }
     }
@@ -88,8 +96,8 @@ export const registerSideEffects = <DATA extends object, META extends GenericMet
         targetPath,
         sourcePaths,
         aggregate: (state, paths) => {
-          // Default aggregation: collect values
-          return paths.map(p => deepGet(state as DATA, p as DeepKey<DATA>))
+          // Default aggregation: collect values (paths are runtime strings)
+          return paths.map((p) => deepGetUnsafe(state, p))
         },
       })
       cleanups.push(cleanup)
@@ -97,7 +105,7 @@ export const registerSideEffects = <DATA extends object, META extends GenericMet
   }
 
   // Store cleanup reference
-  const combinedCleanup = () => cleanups.forEach(fn => fn())
+  const combinedCleanup = () => cleanups.forEach((fn) => fn())
   store._internal.registrations.sideEffectCleanups.set(id, combinedCleanup)
 
   return () => {
@@ -116,10 +124,13 @@ export const registerSideEffects = <DATA extends object, META extends GenericMet
  * Uses graphology for efficient connected component detection
  * Returns cleanup function
  */
-export const registerSyncPair = <DATA extends object, META extends GenericMeta = GenericMeta>(
+export const registerSyncPair = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
   store: StoreInstance<DATA, META>,
   path1: string,
-  path2: string
+  path2: string,
 ): (() => void) => {
   const { sync } = store._internal.graphs
 
@@ -135,12 +146,12 @@ export const registerSyncPair = <DATA extends object, META extends GenericMeta =
 
   // Find all paths in this sync group using connected components
   const components = connectedComponents(sync)
-  const component = components.find(c => c.includes(path1)) ?? [path1, path2]
+  const component = components.find((c) => c.includes(path1)) ?? [path1, path2]
 
   // Get values and count occurrences (excluding null/undefined)
   const valueCounts = new Map<unknown, number>()
   for (const path of component) {
-    const value = deepGet(store.state, path as DeepKey<DATA>)
+    const value = deepGetUnsafe(store.state, path)
     if (value !== null && value !== undefined) {
       const count = valueCounts.get(value) ?? 0
       valueCounts.set(value, count + 1)
@@ -161,9 +172,14 @@ export const registerSyncPair = <DATA extends object, META extends GenericMeta =
   if (mostCommonValue !== undefined) {
     const changes: ArrayOfChanges<DATA, META> = []
     for (const path of component) {
-      const currentValue = deepGet(store.state, path as DeepKey<DATA>)
+      const currentValue = deepGetUnsafe(store.state, path)
       if (currentValue !== mostCommonValue) {
-        changes.push([path as DeepKey<DATA>, mostCommonValue as any, { fromSync: true } as unknown as META])
+        // Type cast needed: path is validated at registration, isSyncPathChange is GenericMeta property
+        changes.push([
+          path,
+          mostCommonValue,
+          { isSyncPathChange: true },
+        ] as ArrayOfChanges<DATA, META>[number])
       }
     }
     if (changes.length > 0) {
@@ -189,10 +205,13 @@ export const registerSyncPair = <DATA extends object, META extends GenericMeta =
  * Uses graphology for graph management
  * Returns cleanup function
  */
-export const registerFlipPair = <DATA extends object, META extends GenericMeta = GenericMeta>(
+export const registerFlipPair = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
   store: StoreInstance<DATA, META>,
   path1: string,
-  path2: string
+  path2: string,
 ): (() => void) => {
   const { flip } = store._internal.graphs
 
@@ -222,9 +241,12 @@ export const registerFlipPair = <DATA extends object, META extends GenericMeta =
  * Rules stored as node attribute on target
  * Returns cleanup function
  */
-export const registerAggregation = <DATA extends object, META extends GenericMeta = GenericMeta>(
+export const registerAggregation = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
   store: StoreInstance<DATA, META>,
-  rule: AggregationRule<DATA>
+  rule: AggregationRule<DATA>,
 ): (() => void) => {
   const { aggregations } = store._internal.graphs
   const { targetPath, sourcePaths } = rule
@@ -235,7 +257,10 @@ export const registerAggregation = <DATA extends object, META extends GenericMet
   }
 
   // Add rule to target node's rules array
-  const targetRules = aggregations.getNodeAttribute(targetPath, 'rules') as AggregationRule<object>[]
+  const targetRules = aggregations.getNodeAttribute(
+    targetPath,
+    'rules',
+  ) as AggregationRule<object>[]
   targetRules.push(rule as AggregationRule<object>)
 
   // Add edges from each source → target
@@ -250,19 +275,25 @@ export const registerAggregation = <DATA extends object, META extends GenericMet
 
   return () => {
     // Remove rule from target's rules array
-    const rules = aggregations.getNodeAttribute(targetPath, 'rules') as AggregationRule<object>[]
-    const filtered = rules.filter(r => r.id !== rule.id)
+    const rules = aggregations.getNodeAttribute(
+      targetPath,
+      'rules',
+    ) as AggregationRule<object>[]
+    const filtered = rules.filter((r) => r.id !== rule.id)
     aggregations.setNodeAttribute(targetPath, 'rules', filtered)
 
     // Remove edges for this rule's source paths (only if no other rules use them)
     for (const sourcePath of sourcePaths) {
       // Check if any remaining rule uses this source
-      const stillUsed = filtered.some(r => r.sourcePaths.includes(sourcePath))
+      const stillUsed = filtered.some((r) => r.sourcePaths.includes(sourcePath))
       if (!stillUsed && aggregations.hasEdge(sourcePath, targetPath)) {
         aggregations.dropEdge(sourcePath, targetPath)
       }
       // Remove isolated source nodes
-      if (aggregations.hasNode(sourcePath) && aggregations.degree(sourcePath) === 0) {
+      if (
+        aggregations.hasNode(sourcePath) &&
+        aggregations.degree(sourcePath) === 0
+      ) {
         aggregations.dropNode(sourcePath)
       }
     }
@@ -278,20 +309,23 @@ export const registerAggregation = <DATA extends object, META extends GenericMet
  * Register a listener for a path
  * Returns cleanup function
  */
-export const registerListener = <DATA extends object, META extends GenericMeta = GenericMeta>(
+export const registerListener = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
   store: StoreInstance<DATA, META>,
   path: string,
-  listener: OnStateListener<DATA, META>
+  listener: OnStateListener<DATA, META>,
 ): (() => void) => {
   const { listeners } = store._internal.graphs
   const existing = listeners.get(path) ?? []
   // Cast to any to avoid complex generic variance issues in internal implementation
-  listeners.set(path, [...existing, listener as any])
+  listeners.set(path, [...existing, listener])
 
   return () => {
     const list = listeners.get(path)
     if (list) {
-      const filtered = list.filter(l => l !== (listener as any))
+      const filtered = list.filter((l) => l !== listener)
       if (filtered.length > 0) {
         listeners.set(path, filtered)
       } else {

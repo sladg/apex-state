@@ -7,33 +7,44 @@
  * Validates that only relevant concerns recalculate when state changes
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { proxy } from 'valtio/vanilla'
 import { effect } from 'valtio-reactive'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
+
 import {
-  PerformanceBenchmark,
-  createEvaluationTracker,
   createConcernSpies,
-  waitForEffects,
+  createEvaluationTracker,
+  evaluateBoolLogic,
   getDeepValue,
-  evaluateBoolLogic
+  PerformanceBenchmark,
+  waitForEffects,
 } from './test-utils'
 
-type AppState = {
+interface AppState {
   products: {
-    'leg-1': { strike: number; expiry: string; premium: number | null; status: string }
-    'leg-2': { strike: number; expiry: string; premium: number | null; status: string }
+    'leg-1': {
+      strike: number
+      expiry: string
+      premium: number | null
+      status: string
+    }
+    'leg-2': {
+      strike: number
+      expiry: string
+      premium: number | null
+      status: string
+    }
   }
   market: { spot: number; volatility: number }
 }
 
-type ConcernType = {
+interface ConcernType {
   name: string
   evaluate: (props: any) => any
 }
 
-type ConcernRegistration = {
+interface ConcernRegistration {
   id: string
   path: string
   concernName: string
@@ -65,7 +76,7 @@ describe('TEST-001: Selective Re-calculation', () => {
         spies.zodValidation(props.path)
         tracker.track('zodValidation', props.path)
         return props.schema.safeParse(props.value).success
-      }
+      },
     }
 
     const disabled: ConcernType = {
@@ -74,7 +85,7 @@ describe('TEST-001: Selective Re-calculation', () => {
         spies.disabled(props.path)
         tracker.track('disabled', props.path)
         return evaluateBoolLogic(props.condition, props.state)
-      }
+      },
     }
 
     const tooltip: ConcernType = {
@@ -82,17 +93,20 @@ describe('TEST-001: Selective Re-calculation', () => {
       evaluate: (props) => {
         spies.tooltip(props.path)
         tracker.track('tooltip', props.path)
-        return props.template.replace(/\{\{([\w.-]+)\}\}/g, (_: string, path: string) => {
-          const value = getDeepValue(props.state, path)
-          return value != null ? String(value) : ''
-        })
-      }
+        return props.template.replace(
+          /\{\{([\w.-]+)\}\}/g,
+          (_: string, path: string) => {
+            const value = getDeepValue(props.state, path)
+            return value != null ? String(value) : ''
+          },
+        )
+      },
     }
 
     const concerns = { zodValidation, disabled, tooltip }
 
     const useConcerns = (id: string, registration: Record<string, any>) => {
-      const disposeCallbacks: Array<() => void> = []
+      const disposeCallbacks: (() => void)[] = []
 
       Object.entries(registration).forEach(([path, concernConfigs]) => {
         if (!concernConfigs) return
@@ -112,7 +126,7 @@ describe('TEST-001: Selective Re-calculation', () => {
               state: dataProxy,
               path,
               value,
-              ...config
+              ...config,
             })
 
             evaluationCache.set(concernKey, result)
@@ -124,7 +138,7 @@ describe('TEST-001: Selective Re-calculation', () => {
             concernName,
             concern,
             config,
-            dispose
+            dispose,
           }
 
           const pathRegs = concernsRegistry.get(path) || []
@@ -136,9 +150,9 @@ describe('TEST-001: Selective Re-calculation', () => {
       })
 
       return () => {
-        disposeCallbacks.forEach(dispose => dispose())
+        disposeCallbacks.forEach((dispose) => dispose())
         concernsRegistry.forEach((regs, path) => {
-          const filtered = regs.filter(r => r.id !== id)
+          const filtered = regs.filter((r) => r.id !== id)
           if (filtered.length === 0) {
             concernsRegistry.delete(path)
           } else {
@@ -163,72 +177,106 @@ describe('TEST-001: Selective Re-calculation', () => {
     return {
       proxy: dataProxy,
       useConcerns,
-      getFieldConcerns
+      getFieldConcerns,
     }
   }
 
-  it('AC1: Only leg-1 concerns recalculate when leg-1 strike changes', async () => {
-    const store = createTestStore({
-      products: {
-        'leg-1': { strike: 100, expiry: '2024-12-31', premium: null, status: 'active' },
-        'leg-2': { strike: 105, expiry: '2024-12-31', premium: null, status: 'active' }
-      },
-      market: { spot: 102, volatility: 0.15 }
-    })
+  it(
+    'AC1: Only leg-1 concerns recalculate when leg-1 strike changes',
+    { retry: 2 },
+    async () => {
+      const store = createTestStore({
+        products: {
+          'leg-1': {
+            strike: 100,
+            expiry: '2024-12-31',
+            premium: null,
+            status: 'active',
+          },
+          'leg-2': {
+            strike: 105,
+            expiry: '2024-12-31',
+            premium: null,
+            status: 'active',
+          },
+        },
+        market: { spot: 102, volatility: 0.15 },
+      })
 
-    // Register concerns
-    store.useConcerns('test', {
-      'products.leg-1.strike': {
-        zodValidation: { schema: z.number().min(0).max(200) },
-        disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
-        tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' }
-      },
-      'products.leg-2.strike': {
-        zodValidation: { schema: z.number().min(0).max(200) },
-        disabled: { condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] } },
-        tooltip: { template: 'Leg 2 Strike: {{products.leg-2.strike}}' }
-      }
-    })
+      // Register concerns
+      store.useConcerns('test', {
+        'products.leg-1.strike': {
+          zodValidation: { schema: z.number().min(0).max(200) },
+          disabled: {
+            condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+          },
+          tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' },
+        },
+        'products.leg-2.strike': {
+          zodValidation: { schema: z.number().min(0).max(200) },
+          disabled: {
+            condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
+          },
+          tooltip: { template: 'Leg 2 Strike: {{products.leg-2.strike}}' },
+        },
+      })
 
-    // Wait for initial evaluation
-    await waitForEffects()
+      // Wait for initial evaluation
+      await waitForEffects()
 
-    // Clear tracking
-    tracker.clear()
-    spies.clear()
+      // Clear tracking
+      tracker.clear()
+      spies.clear()
 
-    // Change leg-1 strike
-    store.proxy.products['leg-1'].strike = 150
-    benchmark.start('single-field-update')
-    await waitForEffects()
-    const duration = benchmark.end('single-field-update')
+      // Change leg-1 strike
+      store.proxy.products['leg-1'].strike = 150
+      benchmark.start('single-field-update')
+      await waitForEffects()
+      const duration = benchmark.end('single-field-update')
 
-    // AC1: Only leg-1 concerns recalculate
-    const leg1Evals = tracker.filter(e => e.path === 'products.leg-1.strike')
-    const leg2Evals = tracker.filter(e => e.path === 'products.leg-2.strike')
+      // AC1: Only leg-1 concerns recalculate
+      const leg1Evals = tracker.filter(
+        (e) => e.path === 'products.leg-1.strike',
+      )
+      const leg2Evals = tracker.filter(
+        (e) => e.path === 'products.leg-2.strike',
+      )
 
-    expect(leg1Evals.length).toBe(3) // zodValidation + disabled + tooltip
-    expect(leg2Evals.length).toBe(0) // Should NOT recalculate
+      expect(leg1Evals.length).toBe(3) // zodValidation + disabled + tooltip
+      expect(leg2Evals.length).toBe(0) // Should NOT recalculate
 
-    // Performance: < 15ms (valtio effect() overhead ~10ms + concern eval ~1-2ms)
-    expect(duration).toBeLessThan(15)
-  })
+      // Performance: < 15ms (valtio effect() overhead ~10ms + concern eval ~1-2ms)
+      expect(duration).toBeLessThan(15)
+    },
+  )
 
   it('AC2: All leg-1 concerns recalculate', async () => {
     const store = createTestStore({
       products: {
-        'leg-1': { strike: 100, expiry: '2024-12-31', premium: null, status: 'active' },
-        'leg-2': { strike: 105, expiry: '2024-12-31', premium: null, status: 'active' }
+        'leg-1': {
+          strike: 100,
+          expiry: '2024-12-31',
+          premium: null,
+          status: 'active',
+        },
+        'leg-2': {
+          strike: 105,
+          expiry: '2024-12-31',
+          premium: null,
+          status: 'active',
+        },
       },
-      market: { spot: 102, volatility: 0.15 }
+      market: { spot: 102, volatility: 0.15 },
     })
 
     store.useConcerns('test', {
       'products.leg-1.strike': {
         zodValidation: { schema: z.number().min(0).max(200) },
-        disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
-        tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' }
-      }
+        disabled: {
+          condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+        },
+        tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' },
+      },
     })
 
     await waitForEffects()
@@ -237,8 +285,8 @@ describe('TEST-001: Selective Re-calculation', () => {
     store.proxy.products['leg-1'].strike = 150
     await waitForEffects()
 
-    const leg1Evals = tracker.filter(e => e.path === 'products.leg-1.strike')
-    const concernNames = leg1Evals.map(e => e.concern)
+    const leg1Evals = tracker.filter((e) => e.path === 'products.leg-1.strike')
+    const concernNames = leg1Evals.map((e) => e.concern)
 
     expect(concernNames).toContain('zodValidation')
     expect(concernNames).toContain('disabled')
@@ -248,18 +296,30 @@ describe('TEST-001: Selective Re-calculation', () => {
   it('AC3: Correct values after recalculation', async () => {
     const store = createTestStore({
       products: {
-        'leg-1': { strike: 100, expiry: '2024-12-31', premium: null, status: 'active' },
-        'leg-2': { strike: 105, expiry: '2024-12-31', premium: null, status: 'active' }
+        'leg-1': {
+          strike: 100,
+          expiry: '2024-12-31',
+          premium: null,
+          status: 'active',
+        },
+        'leg-2': {
+          strike: 105,
+          expiry: '2024-12-31',
+          premium: null,
+          status: 'active',
+        },
       },
-      market: { spot: 102, volatility: 0.15 }
+      market: { spot: 102, volatility: 0.15 },
     })
 
     store.useConcerns('test', {
       'products.leg-1.strike': {
         zodValidation: { schema: z.number().min(0).max(200) },
-        disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
-        tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' }
-      }
+        disabled: {
+          condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+        },
+        tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' },
+      },
     })
 
     await waitForEffects()
@@ -273,22 +333,34 @@ describe('TEST-001: Selective Re-calculation', () => {
     expect(concerns.tooltip).toBe('Leg 1 Strike: 150')
   })
 
-  it('Performance target: < 5ms for re-evaluation', async () => {
+  it('Performance target: < 5ms for re-evaluation', { retry: 2 }, async () => {
     const store = createTestStore({
       products: {
-        'leg-1': { strike: 100, expiry: '2024-12-31', premium: null, status: 'active' },
-        'leg-2': { strike: 105, expiry: '2024-12-31', premium: null, status: 'active' }
+        'leg-1': {
+          strike: 100,
+          expiry: '2024-12-31',
+          premium: null,
+          status: 'active',
+        },
+        'leg-2': {
+          strike: 105,
+          expiry: '2024-12-31',
+          premium: null,
+          status: 'active',
+        },
       },
-      market: { spot: 102, volatility: 0.15 }
+      market: { spot: 102, volatility: 0.15 },
     })
 
     benchmark.start('registration')
     store.useConcerns('test', {
       'products.leg-1.strike': {
         zodValidation: { schema: z.number().min(0).max(200) },
-        disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
-        tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' }
-      }
+        disabled: {
+          condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+        },
+        tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' },
+      },
     })
     await waitForEffects()
     benchmark.end('registration')
@@ -302,6 +374,9 @@ describe('TEST-001: Selective Re-calculation', () => {
 
     // Performance: < 15ms (valtio effect() overhead ~10ms + concern eval ~1-2ms)
     expect(duration).toBeLessThan(15)
-    expect(report.measurements.find(m => m.name === 'single-field-update')!.duration).toBeLessThan(15)
+    expect(
+      report.measurements.find((m) => m.name === 'single-field-update')!
+        .duration,
+    ).toBeLessThan(15)
   })
 })

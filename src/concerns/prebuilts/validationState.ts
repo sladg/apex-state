@@ -26,14 +26,15 @@
  */
 
 import { z } from 'zod'
-import type { ConcernType, BaseConcernProps } from '../types'
+
+import { deepGetUnsafe } from '../../store/utils/deepAccess'
 import type { DeepKey, DeepValue } from '../../types'
-import { deepGet } from '../../store/utils/deepAccess'
+import type { BaseConcernProps } from '../types'
 
 /**
  * Single validation error with optional field/path information
  */
-export type ValidationError = {
+export interface ValidationError {
   /** Field path where error occurred (empty string for root) */
   field?: string
   /** Error message from Zod */
@@ -44,7 +45,7 @@ export type ValidationError = {
  * Complete validation state result
  * Returned by validationState concern when evaluated
  */
-export type ValidationStateResult = {
+export interface ValidationStateResult {
   /** Whether all validations passed */
   isValid: boolean
   /** Array of validation errors (empty if isValid=true) */
@@ -88,14 +89,15 @@ export const validationState = {
   name: 'validationState' as const,
   description: 'Complete validation state with errors, isValid, and timestamp',
   evaluate: <SUB_STATE, PATH extends DeepKey<SUB_STATE>>(
-    props: BaseConcernProps<any, PATH> & ValidationStateInput<SUB_STATE, PATH>
+    props: BaseConcernProps<any, PATH> & ValidationStateInput<SUB_STATE, PATH>,
   ): ValidationStateResult => {
     const timestamp = Date.now()
 
     // If scope is provided, validate at scope path; otherwise validate at registration path
+    // Note: props.scope is a runtime string path, use deepGetUnsafe for dynamic access
     const valueToValidate =
       'scope' in props && props.scope
-        ? deepGet(props.state, props.scope as any)
+        ? deepGetUnsafe(props.state, props.scope)
         : props.value
 
     // Run Zod validation

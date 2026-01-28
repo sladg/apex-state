@@ -10,8 +10,8 @@ import { vi } from 'vitest'
  * Performance benchmarking harness
  */
 export class PerformanceBenchmark {
-  private marks: Map<string, number> = new Map()
-  private measurements: Array<{ name: string; duration: number }> = []
+  private marks = new Map<string, number>()
+  private measurements: { name: string; duration: number }[] = []
 
   start(label: string) {
     this.marks.set(label, performance.now())
@@ -32,9 +32,11 @@ export class PerformanceBenchmark {
     const summary = {
       count: this.measurements.length,
       total: this.measurements.reduce((sum, m) => sum + m.duration, 0),
-      average: this.measurements.reduce((sum, m) => sum + m.duration, 0) / this.measurements.length,
-      max: Math.max(...this.measurements.map(m => m.duration)),
-      min: Math.min(...this.measurements.map(m => m.duration))
+      average:
+        this.measurements.reduce((sum, m) => sum + m.duration, 0) /
+        this.measurements.length,
+      max: Math.max(...this.measurements.map((m) => m.duration)),
+      min: Math.min(...this.measurements.map((m) => m.duration)),
     }
 
     return { measurements: this.measurements, summary }
@@ -49,7 +51,7 @@ export class PerformanceBenchmark {
 /**
  * Evaluation tracking log entry
  */
-export type EvaluationLogEntry = {
+export interface EvaluationLogEntry {
   concern: string
   path: string
   timestamp: number
@@ -67,7 +69,7 @@ export function createEvaluationTracker() {
       evaluationLog.push({
         concern: concernName,
         path,
-        timestamp: performance.now()
+        timestamp: performance.now(),
       })
     },
     clear: () => {
@@ -75,7 +77,7 @@ export function createEvaluationTracker() {
     },
     filter: (predicate: (entry: EvaluationLogEntry) => boolean) => {
       return evaluationLog.filter(predicate)
-    }
+    },
   }
 }
 
@@ -88,20 +90,20 @@ export function createConcernSpies() {
     disabled: vi.fn(),
     tooltip: vi.fn(),
     computed: vi.fn(),
-    clear: function() {
+    clear: function () {
       this.zodValidation.mockClear()
       this.disabled.mockClear()
       this.tooltip.mockClear()
       this.computed.mockClear()
-    }
+    },
   }
 }
 
 /**
  * Wait for effects to settle
  */
-export async function waitForEffects(ms: number = 10): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, ms))
+export async function waitForEffects(ms = 10): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
@@ -141,18 +143,18 @@ export function evaluateBoolLogic(logic: BoolLogic, state: any): boolean {
  * Render tracking for React tests
  */
 export function createRenderTracker() {
-  const renderLog: Array<{ timestamp: number; [key: string]: any }> = []
+  const renderLog: { timestamp: number; [key: string]: any }[] = []
 
   return {
     log: renderLog,
     track: (data: Record<string, any>) => {
       renderLog.push({
         timestamp: performance.now(),
-        ...data
+        ...data,
       })
     },
     clear: () => {
       renderLog.length = 0
-    }
+    },
   }
 }

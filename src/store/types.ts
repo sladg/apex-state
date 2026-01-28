@@ -4,17 +4,18 @@
  * Type definitions for the store configuration, provider props,
  * and internal store instance structure.
  *
- * Architecture: Unified _internal pattern
+ * Architecture: Single unified proxy containing:
  * - state: User data (tracked by valtio)
  * - _concerns: Computed concern values (tracked by valtio)
  * - _internal: Graphs, registrations, processing queue (NOT tracked - wrapped in ref())
+ * - config: Store configuration
  */
 
+import type Graph from 'graphology'
 import type { ReactNode } from 'react'
-import type UndirectedGraph from 'graphology'
-import type DirectedGraph from 'graphology'
-import type { GenericMeta, DeepKey, ArrayOfChanges } from '../types'
+
 import type { ConcernType } from '../concerns/types'
+import type { ArrayOfChanges, GenericMeta } from '../types'
 
 /**
  * Configuration options for store creation
@@ -69,28 +70,34 @@ export interface AggregationRule<DATA extends object = object> {
  * Listener function that reacts to changes
  * Returns additional changes to apply, or undefined
  */
-export type OnStateListener<DATA extends object = object, META extends GenericMeta = GenericMeta> = (
+export type OnStateListener<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> = (
   change: ArrayOfChanges<DATA, META>[number],
-  state: DATA
+  state: DATA,
 ) => ArrayOfChanges<DATA, META> | undefined
 
 /**
  * Pre-computed graphs for side-effect processing
  * Uses graphology for efficient graph operations
  */
-export interface SideEffectGraphs<DATA extends object = object, META extends GenericMeta = GenericMeta> {
+export interface SideEffectGraphs<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> {
   /**
    * Sync paths graph (undirected)
    * Nodes are paths, edges connect synced paths
    * Use graphology-components for connected components
    */
-  sync: UndirectedGraph
+  sync: Graph
 
   /**
    * Flip paths graph (undirected)
    * Nodes are paths, edges connect flipped paths
    */
-  flip: UndirectedGraph
+  flip: Graph
 
   /**
    * Aggregations graph (directed)
@@ -98,7 +105,7 @@ export interface SideEffectGraphs<DATA extends object = object, META extends Gen
    * Target nodes have 'rules' attribute: AggregationRule[]
    * Query: outNeighbors(changedPath) to find affected targets
    */
-  aggregations: DirectedGraph
+  aggregations: Graph
 
   /**
    * Listeners: path → array of listener functions
@@ -129,7 +136,10 @@ export interface Registrations {
 /**
  * Processing state for change batching
  */
-export interface ProcessingState<DATA extends object = object, META extends GenericMeta = GenericMeta> {
+export interface ProcessingState<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> {
   /**
    * Current queue of changes to process
    */
@@ -145,7 +155,10 @@ export interface ProcessingState<DATA extends object = object, META extends Gene
  * Internal store state (NOT tracked by valtio)
  * Wrapped in ref() to prevent proxy tracking
  */
-export interface InternalState<DATA extends object = object, META extends GenericMeta = GenericMeta> {
+export interface InternalState<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> {
   /**
    * Pre-computed graphs for side-effect processing
    */
@@ -171,12 +184,16 @@ export type ConcernValues = Record<string, Record<string, unknown>>
 /**
  * Store instance structure
  *
- * Unified architecture:
+ * Single proxy containing all store state:
  * - state: User data (tracked)
  * - _concerns: Computed values (tracked)
- * - _internal: Graphs + processing (NOT tracked)
+ * - _internal: Graphs + processing (NOT tracked via ref())
+ * - config: Store configuration
  */
-export interface StoreInstance<DATA extends object, META extends GenericMeta = GenericMeta> {
+export interface StoreInstance<
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+> {
   /**
    * The valtio proxy state
    * Application state - single source of truth
@@ -202,4 +219,3 @@ export interface StoreInstance<DATA extends object, META extends GenericMeta = G
    */
   config: Required<StoreConfig>
 }
-

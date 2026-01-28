@@ -17,13 +17,14 @@
  * ```
  */
 
-import type { ConcernType, BoolLogic } from '../types'
 import { evaluateBoolLogic } from '../../utils/boolLogic'
+import type { BoolLogic, ConcernType } from '../types'
 
-export const disabledWhen: ConcernType<{ condition: BoolLogic<any> }, boolean> = {
-  name: 'disabledWhen',
-  description: 'Boolean logic for disabled state',
-  evaluate: (props) => {
-    return evaluateBoolLogic(props.condition, props.state)
+export const disabledWhen: ConcernType<{ condition: BoolLogic<any> }, boolean> =
+  {
+    name: 'disabledWhen',
+    description: 'Boolean logic for disabled state',
+    evaluate: (props) => {
+      return evaluateBoolLogic(props.condition, props.state)
+    },
   }
-}

@@ -5,18 +5,19 @@
  * that automatically track dependencies through valtio-reactive.
  */
 
-import type { DeepKey, DeepValue } from '../types'
+// Re-export BoolLogic types for backwards compatibility
+export type { BoolLogic, ComparableValue } from '../types'
 
 /**
  * Base properties passed to all concern evaluators
  */
-export type BaseConcernProps<STATE, PATH extends string> = {
+export interface BaseConcernProps<STATE, PATH extends string> {
   /** The full state proxy (for cross-field access) */
   state: STATE
   /** The path being evaluated */
   path: PATH
   /** The value at the path */
-  value: any
+  value: unknown
 }
 
 /**
@@ -25,7 +26,10 @@ export type BaseConcernProps<STATE, PATH extends string> = {
  * EXTRA_PROPS: Additional properties specific to this concern (e.g., { schema: ZodSchema })
  * RETURN_TYPE: The type returned by evaluate() (e.g., boolean, string)
  */
-export type ConcernType<EXTRA_PROPS = Record<string, any>, RETURN_TYPE = any> = {
+export interface ConcernType<
+  EXTRA_PROPS = Record<string, unknown>,
+  RETURN_TYPE = unknown,
+> {
   /** Unique name for this concern */
   name: string
   /** Human-readable description */
@@ -34,13 +38,15 @@ export type ConcernType<EXTRA_PROPS = Record<string, any>, RETURN_TYPE = any> = 
    * Evaluation function - runs inside effect() for automatic dependency tracking
    * Any state properties accessed here will be tracked automatically
    */
-  evaluate: (props: BaseConcernProps<any, string> & EXTRA_PROPS) => RETURN_TYPE
+  evaluate: (
+    props: BaseConcernProps<Record<string, unknown>, string> & EXTRA_PROPS,
+  ) => RETURN_TYPE
 }
 
 /**
  * Registration entry for a concern at a specific path
  */
-export type ConcernRegistration = {
+export interface ConcernRegistration {
   /** Unique ID for this registration group */
   id: string
   /** The path this concern is registered at */
@@ -50,23 +56,7 @@ export type ConcernRegistration = {
   /** The concern definition */
   concern: ConcernType
   /** Configuration passed to evaluate() */
-  config: any
+  config: Record<string, unknown>
   /** Cleanup function from effect() */
   dispose: () => void
 }
-
-/**
- * Boolean logic DSL for conditional concerns
- */
-export type BoolLogic<STATE> =
-  | { IS_EQUAL: [DeepKey<STATE>, any] }
-  | { EXISTS: DeepKey<STATE> }
-  | { IS_EMPTY: DeepKey<STATE> }
-  | { AND: BoolLogic<STATE>[] }
-  | { OR: BoolLogic<STATE>[] }
-  | { NOT: BoolLogic<STATE> }
-  | { GT: [DeepKey<STATE>, number] }
-  | { LT: [DeepKey<STATE>, number] }
-  | { GTE: [DeepKey<STATE>, number] }
-  | { LTE: [DeepKey<STATE>, number] }
-  | { IN: [DeepKey<STATE>, any[]] }

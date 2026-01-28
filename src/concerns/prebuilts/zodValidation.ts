@@ -28,9 +28,10 @@
  */
 
 import { z } from 'zod'
+
+import { deepGet } from '../../store/utils/deepAccess'
 import type { DeepKey, DeepValue } from '../../types'
 import type { BaseConcernProps } from '../types'
-import { deepGet } from '../../store/utils/deepAccess'
 
 /**
  * Discriminated union for zodValidation input
@@ -53,14 +54,15 @@ export const zodValidation = {
   name: 'zodValidation' as const,
   description: 'Zod schema validation with optional scope',
   evaluate: <SUB_STATE, PATH extends DeepKey<SUB_STATE>>(
-    props: BaseConcernProps<any, PATH> & ZodValidationInput<SUB_STATE, PATH>
+    props: BaseConcernProps<any, PATH> & ZodValidationInput<SUB_STATE, PATH>,
   ): boolean => {
     // If scope is provided, validate at scope, otherwise validate at path
-    const valueToValidate = 'scope' in props && props.scope
-      ? deepGet(props.state, props.scope )
-      : props.value
+    const valueToValidate =
+      'scope' in props && props.scope
+        ? deepGet(props.state, props.scope)
+        : props.value
 
     const result = props.schema.safeParse(valueToValidate)
     return result.success
-  }
+  },
 }

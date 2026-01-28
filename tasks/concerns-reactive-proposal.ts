@@ -10,14 +10,14 @@
  */
 
 import { proxy } from 'valtio/vanilla'
-import { effect, computed } from 'valtio-reactive'
+import { effect } from 'valtio-reactive'
 import { z } from 'zod'
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-type ConcernType = {
+interface ConcernType {
   name: string
   description: string
   evaluate: (props: {
@@ -28,13 +28,13 @@ type ConcernType = {
   }) => any
 }
 
-type ConcernRegistration = {
+interface ConcernRegistration {
   id: string
   path: string
   concernName: string
   concern: ConcernType
   config: any
-  dispose: () => void  // effect() returns dispose function
+  dispose: () => void // effect() returns dispose function
 }
 
 // ============================================================================
@@ -45,12 +45,11 @@ const zodValidation: ConcernType = {
   name: 'zodValidation',
   description: 'Zod schema validation',
   evaluate: (props) => {
-    const valueToValidate = 'scope' in props
-      ? getDeepValue(props.state, props.scope)
-      : props.value
+    const valueToValidate =
+      'scope' in props ? getDeepValue(props.state, props.scope) : props.value
 
     return props.schema.safeParse(valueToValidate).success
-  }
+  },
 }
 
 const disabled: ConcernType = {
@@ -58,7 +57,7 @@ const disabled: ConcernType = {
   description: 'Disabled condition',
   evaluate: (props) => {
     return evaluateBoolLogic(props.condition, props.state)
-  }
+  },
 }
 
 const tooltip: ConcernType = {
@@ -69,7 +68,7 @@ const tooltip: ConcernType = {
       const value = getDeepValue(props.state, path)
       return value != null ? String(value) : ''
     })
-  }
+  },
 }
 
 const AppConcerns = [zodValidation, disabled, tooltip] as const
@@ -89,7 +88,7 @@ const createStore = <T extends object>(initialData: T) => {
    * No tracks() needed! effect() will automatically track accessed properties.
    */
   const useConcerns = (id: string, registration: Record<string, any>) => {
-    const disposeCallbacks: Array<() => void> = []
+    const disposeCallbacks: (() => void)[] = []
 
     Object.entries(registration).forEach(([path, concerns]) => {
       if (!concerns) return
@@ -97,7 +96,7 @@ const createStore = <T extends object>(initialData: T) => {
       Object.entries(concerns).forEach(([concernName, config]) => {
         if (!config) return
 
-        const concern = AppConcerns.find(c => c.name === concernName)
+        const concern = AppConcerns.find((c) => c.name === concernName)
         if (!concern) return
 
         const concernKey = `${id}:${path}:${concernName}`
@@ -109,10 +108,10 @@ const createStore = <T extends object>(initialData: T) => {
           const value = getDeepValue(dataProxy, path)
 
           const result = concern.evaluate({
-            state: dataProxy,  // Pass proxy directly!
+            state: dataProxy, // Pass proxy directly!
             path,
             value,
-            ...config
+            ...config,
           })
 
           // Store result
@@ -126,7 +125,7 @@ const createStore = <T extends object>(initialData: T) => {
           concernName,
           concern,
           config,
-          dispose
+          dispose,
         }
 
         const pathRegs = concernsRegistry.get(path) || []
@@ -140,11 +139,11 @@ const createStore = <T extends object>(initialData: T) => {
     // Cleanup function
     return () => {
       // Dispose all effects
-      disposeCallbacks.forEach(dispose => dispose())
+      disposeCallbacks.forEach((dispose) => dispose())
 
       // Remove from registry
       concernsRegistry.forEach((regs, path) => {
-        const filtered = regs.filter(r => r.id !== id)
+        const filtered = regs.filter((r) => r.id !== id)
         if (filtered.length === 0) {
           concernsRegistry.delete(path)
         } else {
@@ -172,7 +171,7 @@ const createStore = <T extends object>(initialData: T) => {
   return {
     proxy: dataProxy,
     useConcerns,
-    getFieldConcerns
+    getFieldConcerns,
   }
 }
 
@@ -180,13 +179,14 @@ const createStore = <T extends object>(initialData: T) => {
 // EXAMPLE USAGE
 // ============================================================================
 
-type AppState = {
-  products: {
-    [key: string]: {
+interface AppState {
+  products: Record<
+    string,
+    {
       strike: number
       status: 'active' | 'locked'
     }
-  }
+  >
   market: {
     spot: number
   }
@@ -194,13 +194,13 @@ type AppState = {
 
 const store = createStore<AppState>({
   products: {
-    'leg-1': { strike: 100, status: 'active' }
+    'leg-1': { strike: 100, status: 'active' },
   },
-  market: { spot: 105 }
+  market: { spot: 105 },
 })
 
 // Register concerns
-const cleanup = store.useConcerns('demo', {
+const _cleanup = store.useConcerns('demo', {
   'products.leg-1.strike': {
     // ✅ effect() in zodValidation will track: state.products['leg-1'].strike
     zodValidation: { schema: z.number().min(0).max(200) },
@@ -209,8 +209,8 @@ const cleanup = store.useConcerns('demo', {
     disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
 
     // ✅ effect() in tooltip will track: state.market.spot
-    tooltip: { template: 'Strike at market {{market.spot}}' }
-  }
+    tooltip: { template: 'Strike at market {{market.spot}}' },
+  },
 })
 
 // Test automatic re-evaluation

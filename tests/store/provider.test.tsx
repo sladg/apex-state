@@ -4,15 +4,19 @@
  * Verifies Provider initialization, context provision, and configuration options
  */
 
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
+
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+
 import { createGenericStore } from '../../src/store/createStore'
 import { StoreContext } from '../../src/store/StoreContext'
 
 describe('Provider Component', () => {
   it('should provide store instance via context', () => {
-    type TestState = { value: string }
+    interface TestState {
+      value: string
+    }
     const store = createGenericStore<TestState>()
 
     const TestComponent = () => {
@@ -23,14 +27,17 @@ describe('Provider Component', () => {
     render(
       <store.Provider initialState={{ value: 'test' }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByText('Has Store')).toBeTruthy()
   })
 
   it('should initialize with provided initial state', () => {
-    type TestState = { count: number; name: string }
+    interface TestState {
+      count: number
+      name: string
+    }
     const store = createGenericStore<TestState>()
 
     const TestComponent = () => {
@@ -50,7 +57,7 @@ describe('Provider Component', () => {
     render(
       <store.Provider initialState={initialState}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('count').textContent).toBe('42')
@@ -58,50 +65,67 @@ describe('Provider Component', () => {
   })
 
   it('should use default errorStorePath', () => {
-    type TestState = { value: string }
+    interface TestState {
+      value: string
+    }
     const store = createGenericStore<TestState>()
 
     const TestComponent = () => {
       const storeInstance = useContext(StoreContext)
-      return <div data-testid="errorPath">{storeInstance?.config.errorStorePath}</div>
+      return (
+        <div data-testid="errorPath">
+          {storeInstance?.config.errorStorePath}
+        </div>
+      )
     }
 
     render(
       <store.Provider initialState={{ value: 'test' }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('errorPath').textContent).toBe('_errors')
   })
 
   it('should use custom errorStorePath when provided', () => {
-    type TestState = { value: string }
+    interface TestState {
+      value: string
+    }
     const store = createGenericStore<TestState>()
 
     const TestComponent = () => {
       const storeInstance = useContext(StoreContext)
-      return <div data-testid="errorPath">{storeInstance?.config.errorStorePath}</div>
+      return (
+        <div data-testid="errorPath">
+          {storeInstance?.config.errorStorePath}
+        </div>
+      )
     }
 
     render(
-      <store.Provider initialState={{ value: 'test' }} errorStorePath="customErrors">
+      <store.Provider
+        initialState={{ value: 'test' }}
+        errorStorePath="customErrors"
+      >
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('errorPath').textContent).toBe('customErrors')
   })
 
   it('should render children correctly', () => {
-    type TestState = { value: string }
+    interface TestState {
+      value: string
+    }
     const store = createGenericStore<TestState>()
 
     render(
       <store.Provider initialState={{ value: 'test' }}>
         <div>First Child</div>
         <div>Second Child</div>
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByText('First Child')).toBeTruthy()
@@ -109,8 +133,12 @@ describe('Provider Component', () => {
   })
 
   it('should support nested providers with different stores', () => {
-    type OuterState = { outer: string }
-    type InnerState = { inner: string }
+    interface OuterState {
+      outer: string
+    }
+    interface InnerState {
+      inner: string
+    }
 
     const outerStore = createGenericStore<OuterState>()
     const innerStore = createGenericStore<InnerState>()
@@ -124,14 +152,16 @@ describe('Provider Component', () => {
         <innerStore.Provider initialState={{ inner: 'inside' }}>
           <TestComponent />
         </innerStore.Provider>
-      </outerStore.Provider>
+      </outerStore.Provider>,
     )
 
     expect(screen.getByText('Nested Providers Work')).toBeTruthy()
   })
 
   it('should maintain store instance across re-renders', () => {
-    type TestState = { value: string }
+    interface TestState {
+      value: string
+    }
     const store = createGenericStore<TestState>()
 
     let instanceCount = 0
@@ -149,7 +179,7 @@ describe('Provider Component', () => {
     const { rerender } = render(
       <store.Provider initialState={{ value: 'test' }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const firstCount = instanceCount
@@ -158,7 +188,7 @@ describe('Provider Component', () => {
     rerender(
       <store.Provider initialState={{ value: 'test' }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Instance count should have increased (component re-rendered)
@@ -167,7 +197,7 @@ describe('Provider Component', () => {
   })
 
   it('should handle complex nested initial state', () => {
-    type TestState = {
+    interface TestState {
       user: {
         profile: {
           name: string
@@ -216,7 +246,7 @@ describe('Provider Component', () => {
     render(
       <store.Provider initialState={initialState}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('name').textContent).toBe('Alice')

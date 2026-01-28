@@ -4,8 +4,8 @@
  * Utilities for looking up and managing concerns.
  */
 
-import type { ConcernType } from './types'
 import { prebuilts } from './prebuilts'
+import type { ConcernType } from './types'
 
 /**
  * Concern lookup by name
@@ -16,9 +16,9 @@ import { prebuilts } from './prebuilts'
  */
 export const findConcern = (
   name: string,
-  concerns: readonly any[] = prebuilts
+  concerns: readonly any[] = prebuilts,
 ): ConcernType | undefined => {
-  return concerns.find(c => c.name === name) as ConcernType | undefined
+  return concerns.find((c) => c.name === name) as ConcernType | undefined
 }
 
 /**

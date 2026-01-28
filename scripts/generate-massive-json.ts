@@ -92,17 +92,25 @@ export function createMassiveNestedObject(maxDepth = 25): any {
 
 // Generate and save to file if run directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const fs = require('fs')
-  const path = require('path')
+  const runGenerate = async () => {
+    const fs = await import('fs')
+    const path = await import('path')
+    const { fileURLToPath } = await import('url')
 
-  const massive = createMassiveNestedObject(25)
-  const outputPath = path.join(__dirname, '../fixtures/massive-nested.json')
+    const __filename = fileURLToPath(import.meta.url)
+    const __dirname = path.dirname(__filename)
 
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-  fs.writeFileSync(outputPath, JSON.stringify(massive, null, 2))
+    const massive = createMassiveNestedObject(25)
+    const outputPath = path.join(__dirname, '../fixtures/massive-nested.json')
 
-  console.log(`Generated massive nested object: ${outputPath}`)
-  console.log(
-    `File size: ${(JSON.stringify(massive).length / 1024).toFixed(2)} KB`,
-  )
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+    fs.writeFileSync(outputPath, JSON.stringify(massive, null, 2))
+
+    console.log(`Generated massive nested object: ${outputPath}`)
+    console.log(
+      `File size: ${(JSON.stringify(massive).length / 1024).toFixed(2)} KB`,
+    )
+  }
+
+  runGenerate()
 }

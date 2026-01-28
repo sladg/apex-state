@@ -4,13 +4,44 @@
  * Verifies that getter properties are automatically detected and work reactively
  */
 
-import { describe, it, expect } from 'vitest'
-import { render, act } from '@testing-library/react'
+import { act, useContext } from 'react'
+
+import { render } from '@testing-library/react'
 import { useSnapshot } from 'valtio'
+import { describe, expect, it } from 'vitest'
+
 import { createGenericStore } from '../../src/store/createStore'
-import { extractGetters, detectGetters } from '../../src/store/utils/deriveValues'
-import { useContext } from 'react'
 import { StoreContext } from '../../src/store/StoreContext'
+import {
+  detectGetters,
+  extractGetters,
+} from '../../src/store/utils/deriveValues'
+import { typeHelpers } from '../mocks'
+
+/**
+ * Type helpers for derived state with getters.
+ * TypeScript doesn't know about runtime getters added to proxy state,
+ * so we define explicit types for test assertions.
+ */
+interface WithFullName {
+  readonly fullName: string
+}
+interface WithDoubledTripled {
+  readonly doubled: number
+  readonly tripled: number
+  readonly multiplied: number
+}
+interface WithTotals {
+  readonly total: number
+  readonly totalWithTax: number
+}
+interface WithSumProduct {
+  readonly sum: number
+  readonly product: number
+}
+interface WithComputed {
+  readonly computed: string
+}
 
 describe('Derived Values', () => {
   describe('extractGetters', () => {
@@ -88,7 +119,7 @@ describe('Derived Values', () => {
 
   describe('Store with derived values', () => {
     it('should initialize with getter properties', () => {
-      type TestState = {
+      interface TestState {
         firstName: string
         lastName: string
         get fullName(): string
@@ -101,7 +132,7 @@ describe('Derived Values', () => {
         const snap = useSnapshot(storeInstance!.state)
 
         // Type assertion needed because TypeScript doesn't know about getters in proxy
-        const fullName = (snap as any).fullName
+        const fullName = (snap as WithFullName).fullName
 
         return (
           <div>
@@ -121,14 +152,14 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       expect(getByTestId('fullName').textContent).toBe('John Doe')
     })
 
     it('should reactively update getter when dependency changes', async () => {
-      type TestState = {
+      interface TestState {
         firstName: string
         lastName: string
         get fullName(): string
@@ -139,9 +170,9 @@ describe('Derived Values', () => {
       const TestComponent = () => {
         const storeInstance = useContext(StoreContext)
         const snap = useSnapshot(storeInstance!.state)
-        const [firstName, setFirstName] = store.useStore('firstName')
+        const [_firstName, setFirstName] = store.useStore('firstName')
 
-        const fullName = (snap as any).fullName
+        const fullName = (snap as WithFullName).fullName
 
         return (
           <div>
@@ -167,7 +198,7 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       expect(getByTestId('fullName').textContent).toBe('John Doe')
@@ -176,14 +207,14 @@ describe('Derived Values', () => {
       getByTestId('change-name').click()
 
       // Wait for React to process the state change
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       // Getter should recalculate
       expect(getByTestId('fullName').textContent).toBe('Jane Doe')
     })
 
     it('should only re-render when accessed getter dependencies change', () => {
-      type TestState = {
+      interface TestState {
         firstName: string
         lastName: string
         age: number
@@ -201,16 +232,13 @@ describe('Derived Values', () => {
         const [age, setAge] = store.useStore('age')
 
         // Only access fullName getter (which depends on firstName and lastName)
-        const fullName = (snap as any).fullName
+        const fullName = (snap as WithFullName).fullName
 
         return (
           <div>
             <span data-testid="fullName">{fullName}</span>
             <span data-testid="render-count">{renderCount}</span>
-            <button
-              data-testid="change-age"
-              onClick={() => setAge(age + 1)}
-            >
+            <button data-testid="change-age" onClick={() => setAge(age + 1)}>
               Change Age
             </button>
           </div>
@@ -229,7 +257,7 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       const initialRenderCount = renderCount
@@ -244,7 +272,7 @@ describe('Derived Values', () => {
     })
 
     it('should support multiple getters with different dependencies', async () => {
-      type TestState = {
+      interface TestState {
         count: number
         multiplier: number
         get doubled(): number
@@ -262,9 +290,15 @@ describe('Derived Values', () => {
 
         return (
           <div>
-            <span data-testid="doubled">{(snap as any).doubled}</span>
-            <span data-testid="tripled">{(snap as any).tripled}</span>
-            <span data-testid="multiplied">{(snap as any).multiplied}</span>
+            <span data-testid="doubled">
+              {(snap as WithDoubledTripled).doubled}
+            </span>
+            <span data-testid="tripled">
+              {(snap as WithDoubledTripled).tripled}
+            </span>
+            <span data-testid="multiplied">
+              {(snap as WithDoubledTripled).multiplied}
+            </span>
             <button data-testid="inc-count" onClick={() => setCount(count + 1)}>
               Inc Count
             </button>
@@ -295,7 +329,7 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       // Initial values
@@ -305,7 +339,7 @@ describe('Derived Values', () => {
 
       // Increment count - all getters should update
       getByTestId('inc-count').click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       expect(getByTestId('doubled').textContent).toBe('12')
       expect(getByTestId('tripled').textContent).toBe('18')
@@ -313,7 +347,7 @@ describe('Derived Values', () => {
 
       // Increment multiplier - only multiplied getter should change
       getByTestId('inc-mult').click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       expect(getByTestId('doubled').textContent).toBe('12')
       expect(getByTestId('tripled').textContent).toBe('18')
@@ -321,7 +355,7 @@ describe('Derived Values', () => {
     })
 
     it('should handle nested object getters', async () => {
-      type TestState = {
+      interface TestState {
         user: {
           firstName: string
           lastName: string
@@ -334,11 +368,13 @@ describe('Derived Values', () => {
       const TestComponent = () => {
         const storeInstance = useContext(StoreContext)
         const snap = useSnapshot(storeInstance!.state)
-        const [firstName, setFirstName] = store.useStore('user.firstName')
+        const [_firstName, setFirstName] = store.useStore('user.firstName')
 
         return (
           <div>
-            <span data-testid="fullName">{(snap.user as any).fullName}</span>
+            <span data-testid="fullName">
+              {(snap.user as WithFullName).fullName}
+            </span>
             <button
               data-testid="change-name"
               onClick={() => setFirstName('Jane')}
@@ -362,20 +398,20 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       expect(getByTestId('fullName').textContent).toBe('John Doe')
 
       getByTestId('change-name').click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       expect(getByTestId('fullName').textContent).toBe('Jane Doe')
     })
 
     it('should handle getters with complex logic', async () => {
-      type TestState = {
-        items: Array<{ name: string; price: number }>
+      interface TestState {
+        items: { name: string; price: number }[]
         taxRate: number
         get total(): number
         get totalWithTax(): number
@@ -390,20 +426,19 @@ describe('Derived Values', () => {
 
         return (
           <div>
-            <span data-testid="total">{(snap as any).total}</span>
-            <span data-testid="totalWithTax">{(snap as any).totalWithTax}</span>
+            <span data-testid="total">{(snap as WithTotals).total}</span>
+            <span data-testid="totalWithTax">
+              {(snap as WithTotals).totalWithTax}
+            </span>
             <button
               data-testid="add-item"
               onClick={() => {
                 setChanges([
-                  [
-                    'items' as any,
-                    [
-                      ...snap.items,
-                      { name: 'New Item', price: 10 },
-                    ],
+                  typeHelpers.change<TestState>(
+                    'items',
+                    [...snap.items, { name: 'New Item', price: 10 }],
                     {},
-                  ],
+                  ),
                 ])
               }}
             >
@@ -430,7 +465,7 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       // Initial: 100 + 200 = 300, with 10% tax = 330
@@ -439,7 +474,7 @@ describe('Derived Values', () => {
 
       // Add item
       getByTestId('add-item').click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       // New total: 300 + 10 = 310, with 10% tax = 341
       expect(getByTestId('total').textContent).toBe('310')
@@ -447,7 +482,7 @@ describe('Derived Values', () => {
     })
 
     it('should handle computed values with numeric operations', () => {
-      type TestState = {
+      interface TestState {
         a: number
         b: number
         get sum(): number
@@ -460,8 +495,8 @@ describe('Derived Values', () => {
         const storeInstance = useContext(StoreContext)
         const snap = useSnapshot(storeInstance!.state)
 
-        const sum = (snap as any).sum
-        const product = (snap as any).product
+        const sum = (snap as WithSumProduct).sum
+        const product = (snap as WithSumProduct).product
 
         return (
           <div>
@@ -485,7 +520,7 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       expect(getByTestId('sum').textContent).toBe('7')
@@ -493,7 +528,7 @@ describe('Derived Values', () => {
     })
 
     it('should work without any getters', () => {
-      type TestState = {
+      interface TestState {
         value: string
       }
 
@@ -509,14 +544,14 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={{ value: 'test' }}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       expect(getByTestId('value').textContent).toBe('test')
     })
 
     it('should verify getter recalculation behavior (cache vs recompute)', async () => {
-      type TestState = {
+      interface TestState {
         value: number
         get computed(): string
       }
@@ -532,9 +567,9 @@ describe('Derived Values', () => {
         const [value, setValue] = store.useStore('value')
 
         // Access the getter multiple times
-        const computed1 = (snap as any).computed
-        const computed2 = (snap as any).computed
-        const computed3 = (snap as any).computed
+        const computed1 = (snap as WithComputed).computed
+        const computed2 = (snap as WithComputed).computed
+        const computed3 = (snap as WithComputed).computed
 
         return (
           <div>
@@ -560,7 +595,7 @@ describe('Derived Values', () => {
       const { getByTestId } = render(
         <store.Provider initialState={initialState}>
           <TestComponent />
-        </store.Provider>
+        </store.Provider>,
       )
 
       // After first render, check how many times getter was called
@@ -576,15 +611,10 @@ describe('Derived Values', () => {
       expect(c1).toBe(c2)
       expect(c2).toBe(c3)
 
-      // This tells us if Valtio caches within a single render
-      // The counter in the computed value shows if it was called once or thrice
-      console.log('Initial getter calls:', initialCallCount)
-      console.log('Computed values:', { c1, c2, c3 })
-
       // Now change the dependency
       await act(async () => {
         getByTestId('increment').click()
-        await new Promise(resolve => setTimeout(resolve, 0))
+        await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
       // After dependency change, getter should recalculate
@@ -594,8 +624,6 @@ describe('Derived Values', () => {
       // The computed value should reflect the new value
       const newComputed = getByTestId('computed1').textContent
       expect(newComputed).toContain('computed-2')
-      console.log('After dependency change - getter calls:', newCallCount)
-      console.log('New computed value:', newComputed)
     })
   })
 })

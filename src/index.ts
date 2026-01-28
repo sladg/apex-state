@@ -14,32 +14,32 @@
 
 // Store factory
 export { createGenericStore } from './store/createStore'
-export type { StoreConfig, ProviderProps, StoreInstance } from './store/types'
+export type { ProviderProps, StoreConfig, StoreInstance } from './store/types'
 
 // Graph builders for side-effect registration
 export {
+  registerAggregation,
+  registerFlipPair,
+  registerListener,
   registerSideEffects,
   registerSyncPair,
-  registerFlipPair,
-  registerAggregation,
-  registerListener,
 } from './sideEffects'
 export type { AggregationRule, OnStateListener } from './store/types'
 
 // Type utilities
 export type {
-  DeepKey,
-  DeepValue,
-  GenericMeta,
+  AggregationPair,
   ArrayOfChanges,
+  DeepKey,
   DeepKeyFiltered,
+  DeepValue,
+  EvaluatedConcerns,
+  ExtractEvaluateReturn,
+  FieldTransformConfig,
+  FlipPair,
+  GenericMeta,
   PathsWithSameValueAs,
   SyncPair,
-  FlipPair,
-  AggregationPair,
-  ExtractEvaluateReturn,
-  EvaluatedConcerns,
-  FieldTransformConfig,
 } from './types'
 
 // =============================================================================
@@ -47,12 +47,20 @@ export type {
 // =============================================================================
 
 // Pre-built concerns for common patterns
-export * as prebuilts from './concerns/prebuilts'
-export type { ConcernType, ConcernRegistration, BaseConcernProps, BoolLogic } from './concerns'
+export type {
+  BaseConcernProps,
+  BoolLogic,
+  ConcernRegistration,
+  ConcernType,
+} from './concerns'
 export { defaultConcerns, findConcern } from './concerns'
+export * as prebuilts from './concerns/prebuilts'
 
 // Validation concern types
-export type { ValidationStateResult, ValidationError } from './concerns/prebuilts/validationState'
+export type {
+  ValidationError,
+  ValidationStateResult,
+} from './concerns/prebuilts/validationState'
 
 // Utilities for custom concern builders
 /**
@@ -67,7 +75,7 @@ export { evaluateBoolLogic } from './utils/boolLogic'
  * Interpolates template strings with state values.
  * Used when building custom dynamic text concerns.
  */
-export { interpolateTemplate, extractPlaceholders } from './utils/interpolation'
+export { extractPlaceholders, interpolateTemplate } from './utils/interpolation'
 
 // =============================================================================
 // SIDE EFFECTS (Internal Configuration)
@@ -98,8 +106,7 @@ export type { SideEffects } from './types/sideEffects'
  * if (deepHas(state, 'user.address.city')) { ... }
  * ```
  */
-export { deepGet, deepSet, deepHas } from './store/utils/deepAccess'
-
+export { deepGet, deepHas, deepSet } from './store/utils/deepAccess'
 
 // =============================================================================
 // PACKAGE METADATA

@@ -5,19 +5,30 @@
  * No factory pattern - just direct function calls in sequence.
  */
 
-import { snapshot } from 'valtio'
 import _set from 'lodash/set'
-import type { GenericMeta, ArrayOfChanges } from '../types'
+import { snapshot } from 'valtio'
+
+import type { ArrayOfChanges, GenericMeta } from '../types'
 import type { StoreInstance } from './types'
 
 /**
- * Metadata added to changes during processing
+ * Queue a change for processing.
+ *
+ * TYPE BOUNDARY: Graph operations (sync, flip, aggregation) store paths as strings,
+ * losing compile-time type information. This helper centralizes the type assertion
+ * needed to push runtime paths back into the typed ArrayOfChanges queue.
+ *
+ * Type safety is ensured at registration time when paths are validated against DATA.
+ * Meta accepts GenericMeta since internal processing constructs metadata from scratch.
  */
-interface ChangeMeta {
-  fromSync?: boolean
-  fromFlip?: boolean
-  fromAggregation?: boolean
-  fromListener?: boolean
+const queueChange = <DATA extends object, META extends GenericMeta>(
+  queue: ArrayOfChanges<DATA, META>,
+  path: string,
+  value: unknown,
+  meta: GenericMeta,
+): void => {
+  // Cast is safe: paths in graphs were validated at registration
+  queue.push([path, value, meta] as ArrayOfChanges<DATA, META>[number])
 }
 
 /**
@@ -26,14 +37,14 @@ interface ChangeMeta {
  */
 const processSyncPaths = <DATA extends object, META extends GenericMeta>(
   changes: ArrayOfChanges<DATA, META>,
-  store: StoreInstance<DATA, META>
+  store: StoreInstance<DATA, META>,
 ): void => {
   const { sync } = store._internal.graphs
   const { queue } = store._internal.processing
 
   for (const change of changes) {
     const [path, value, meta] = change
-    if ((meta as ChangeMeta)?.fromSync) continue
+    if (meta?.isSyncPathChange) continue
 
     // Check if path exists in graph
     if (!sync.hasNode(path as string)) continue
@@ -42,11 +53,10 @@ const processSyncPaths = <DATA extends object, META extends GenericMeta>(
     const neighbors = sync.neighbors(path as string)
 
     for (const syncPath of neighbors) {
-      queue.push([
-        syncPath as any,
-        value,
-        { ...(meta || {}), fromSync: true } as META,
-      ])
+      queueChange(queue, syncPath, value, {
+        ...(meta || {}),
+        isSyncPathChange: true,
+      })
     }
   }
 }
@@ -57,28 +67,27 @@ const processSyncPaths = <DATA extends object, META extends GenericMeta>(
  */
 const processFlipPaths = <DATA extends object, META extends GenericMeta>(
   changes: ArrayOfChanges<DATA, META>,
-  store: StoreInstance<DATA, META>
+  store: StoreInstance<DATA, META>,
 ): void => {
   const { flip } = store._internal.graphs
   const { queue } = store._internal.processing
 
   for (const change of changes) {
-    const [path, value, meta] = change
-    if ((meta as ChangeMeta)?.fromFlip) continue
+    const [path, value, meta] = change as [string, unknown, GenericMeta]
+    if (meta?.isFlipPathChange) continue
     if (typeof value !== 'boolean') continue
 
     // Check if path exists in graph
-    if (!flip.hasNode(path as string)) continue
+    if (!flip.hasNode(path)) continue
 
     // Get all neighbors (flipped paths)
-    const neighbors = flip.neighbors(path as string)
+    const neighbors = flip.neighbors(path)
 
     for (const flipPath of neighbors) {
-      queue.push([
-        flipPath as any,
-        !value as any,
-        { ...(meta || {}), fromFlip: true } as META,
-      ])
+      queueChange(queue, flipPath, !value, {
+        ...(meta || {}),
+        isFlipPathChange: true,
+      })
     }
   }
 }
@@ -90,7 +99,7 @@ const processFlipPaths = <DATA extends object, META extends GenericMeta>(
 const processAggregations = <DATA extends object, META extends GenericMeta>(
   changes: ArrayOfChanges<DATA, META>,
   store: StoreInstance<DATA, META>,
-  currentState: DATA
+  currentState: DATA,
 ): void => {
   const { aggregations } = store._internal.graphs
   const { queue } = store._internal.processing
@@ -98,12 +107,13 @@ const processAggregations = <DATA extends object, META extends GenericMeta>(
   // Find all affected targets using graph traversal
   const affectedTargets = new Set<string>()
 
-  for (const [path] of changes) {
-    const pathStr = path as string
-    if (!aggregations.hasNode(pathStr)) continue
+  for (const change of changes) {
+    const [path] = change as [string, unknown, GenericMeta]
+
+    if (!aggregations.hasNode(path)) continue
 
     // Get all targets that depend on this source
-    const targets = aggregations.outNeighbors(pathStr)
+    const targets = aggregations.outNeighbors(path)
     for (const target of targets) {
       affectedTargets.add(target)
     }
@@ -111,11 +121,13 @@ const processAggregations = <DATA extends object, META extends GenericMeta>(
 
   // Recalculate each affected target
   for (const target of affectedTargets) {
-    const rules = aggregations.getNodeAttribute(target, 'rules') as Array<{
-      id: string
-      sourcePaths: string[]
-      aggregate: (state: DATA, paths: string[]) => unknown
-    }> | undefined
+    const rules = aggregations.getNodeAttribute(target, 'rules') as
+      | {
+          id: string
+          sourcePaths: string[]
+          aggregate: (state: DATA, paths: string[]) => unknown
+        }[]
+      | undefined
 
     if (!rules || rules.length === 0) continue
 
@@ -123,11 +135,7 @@ const processAggregations = <DATA extends object, META extends GenericMeta>(
     const rule = rules[0]
     const result = rule.aggregate(currentState, rule.sourcePaths)
 
-    queue.push([
-      target as any,
-      result as any,
-      { fromAggregation: true } as unknown as META,
-    ])
+    queueChange(queue, target, result, { isAggregationChange: true })
   }
 }
 
@@ -137,26 +145,26 @@ const processAggregations = <DATA extends object, META extends GenericMeta>(
 const processListeners = <DATA extends object, META extends GenericMeta>(
   changes: ArrayOfChanges<DATA, META>,
   store: StoreInstance<DATA, META>,
-  currentState: DATA
+  currentState: DATA,
 ): void => {
   const { listeners } = store._internal.graphs
   const { queue } = store._internal.processing
 
   for (const change of changes) {
-    const [path] = change
-    const pathListeners = listeners.get(path as string)
+    const [path] = change as [string, unknown, GenericMeta]
+
+    const pathListeners = listeners.get(path)
     if (!pathListeners) continue
 
     for (const listener of pathListeners) {
       const result = listener(change, currentState)
       if (result && result.length > 0) {
-        // Add fromListener metadata
+        // Add listener metadata
         for (const r of result) {
-          queue.push([
-            r[0],
-            r[1],
-            { ...(r[2] || {}), fromListener: true } as META,
-          ])
+          queueChange(queue, r[0], r[1], {
+            ...(r[2] || {}),
+            isListenerChange: true,
+          })
         }
       }
     }
@@ -168,7 +176,7 @@ const processListeners = <DATA extends object, META extends GenericMeta>(
  */
 const applyBatch = <DATA extends object, META extends GenericMeta>(
   changes: ArrayOfChanges<DATA, META>,
-  state: DATA
+  state: DATA,
 ): void => {
   for (const [path, value] of changes) {
     _set(state, path as string, value)
@@ -181,9 +189,12 @@ const applyBatch = <DATA extends object, META extends GenericMeta>(
  * Processes changes through side-effect graphs until stabilization.
  * Simple sequential execution - no factory pattern.
  */
-export const processChanges = <DATA extends object, META extends GenericMeta = GenericMeta>(
+export const processChanges = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
   store: StoreInstance<DATA, META>,
-  initialChanges: ArrayOfChanges<DATA, META>
+  initialChanges: ArrayOfChanges<DATA, META>,
 ): void => {
   const { processing } = store._internal
   const maxIterations = store.config.maxIterations ?? 100
@@ -222,7 +233,7 @@ export const processChanges = <DATA extends object, META extends GenericMeta = G
 
     if (iterations >= maxIterations) {
       console.warn(
-        `[apex-state] Max iterations (${maxIterations}) reached - possible infinite loop in side-effects`
+        `[apex-state] Max iterations (${maxIterations}) reached - possible infinite loop in side-effects`,
       )
     }
   } finally {

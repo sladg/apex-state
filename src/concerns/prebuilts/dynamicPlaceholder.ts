@@ -17,13 +17,13 @@
  * ```
  */
 
-import type { ConcernType } from '../types'
 import { interpolateTemplate } from '../../utils/interpolation'
+import type { ConcernType } from '../types'
 
 export const dynamicPlaceholder: ConcernType<{ template: string }, string> = {
   name: 'dynamicPlaceholder',
   description: 'Template string interpolation for placeholders',
   evaluate: (props) => {
     return interpolateTemplate(props.template, props.state)
-  }
+  },
 }

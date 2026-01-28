@@ -2,55 +2,6 @@
   "name": "@sladg/apex-state",
   "version": "0.1.0",
   "description": "Advanced state management wrapper around Valtio with sync paths, aggregations, and side effects",
-  "type": "module",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    }
-  },
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "tsup",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "type-check": "tsc --noEmit"
-  },
-  "peerDependencies": {
-    "react": "^18.0.0",
-    "zod": "^3.0.0"
-  },
-  "dependencies": {
-    "deepdash": "^5.3.9",
-    "graphology": "^0.26.0",
-    "graphology-components": "^1.5.4",
-    "graphology-shortest-path": "^2.1.0",
-    "graphology-traversal": "^0.3.1",
-    "lodash": "^4.17.21",
-    "remeda": "^2.14.0",
-    "valtio": "^2.3.0",
-    "valtio-reactive": "^0.2.0"
-  },
-  "devDependencies": {
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^14.3.1",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/lodash": "^4.17.10",
-    "@types/react": "^18.3.12",
-    "@vitejs/plugin-react": "^5.1.1",
-    "graphology-types": "^0.24.0",
-    "jsdom": "^27.4.0",
-    "react": "^18.3.1",
-    "tsup": "^8.3.5",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18",
-    "zod": "^3.24.1"
-  },
   "keywords": [
     "state-management",
     "valtio",
@@ -59,10 +10,58 @@
     "aggregation",
     "side-effects"
   ],
-  "author": "",
-  "license": "MIT",
   "repository": {
     "type": "git",
     "url": ""
+  },
+  "license": "MIT",
+  "author": "",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "code:check": "eslint .",
+    "code:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "graphology": "^0.26.0",
+    "graphology-components": "^1.5.4",
+    "lodash": "^4.17.21",
+    "valtio": "^2.3.0",
+    "valtio-reactive": "^0.2.0"
+  },
+  "devDependencies": {
+    "@sladg/eslint-config-base": "^2.4.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^14.3.1",
+    "@types/lodash": "^4.17.10",
+    "@types/react": "^18.3.12",
+    "@vitejs/plugin-react": "^5.1.1",
+    "eslint": "^9.0.0",
+    "graphology-types": "^0.24.0",
+    "jsdom": "^27.4.0",
+    "react": "^18.3.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18",
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "zod": "^3.0.0"
   }
 }

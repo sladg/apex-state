@@ -5,8 +5,9 @@
  * with type-safe paths
  */
 
-import { describe, it, expect } from 'vitest'
-import { deepGet, deepSet, deepHas } from '../../src/store/utils/deepAccess'
+import { describe, expect, it } from 'vitest'
+
+import { deepGet, deepHas, deepSet } from '../../src/store/utils/deepAccess'
 
 describe('Deep Access Utilities', () => {
   describe('deepGet', () => {
@@ -184,7 +185,7 @@ describe('Deep Access Utilities', () => {
             target[prop as keyof typeof target] = value
             return true
           },
-        }
+        },
       )
 
       expect(deepGet(obj, 'value')).toBe('original')

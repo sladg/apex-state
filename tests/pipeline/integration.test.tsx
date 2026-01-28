@@ -9,8 +9,10 @@
  */
 
 import React from 'react'
-import { describe, it, expect } from 'vitest'
+
 import { render, waitFor } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+
 import { createGenericStore } from '../../src/store/createStore'
 import type { GenericMeta } from '../../src/types'
 
@@ -51,7 +53,7 @@ describe('Pipeline integration with useJitStore', () => {
     const { getByText, getByTestId } = render(
       <store.Provider initialState={{ count: 0, user: { name: 'Initial' } }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const initialRenderCount = renderCount
@@ -96,7 +98,7 @@ describe('Pipeline integration with useJitStore', () => {
     const { getByText, getByTestId } = render(
       <store.Provider initialState={{ count: 0, user: { name: 'Test' } }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const initialRenderCount = renderCount
@@ -133,7 +135,7 @@ describe('Pipeline integration with useStore', () => {
     const { getByText, getByTestId } = render(
       <store.Provider initialState={{ count: 0, user: { name: 'Test' } }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const initialRenderCount = renderCount
@@ -171,7 +173,7 @@ describe('Pipeline integration with useStore', () => {
     const { getByText, getByTestId } = render(
       <store.Provider initialState={{ count: 0, user: { name: 'Test' } }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     getByText('Update with Meta').click()
@@ -200,7 +202,7 @@ describe('Pipeline integration with useStore', () => {
     const { getByText, getByTestId } = render(
       <store.Provider initialState={{ count: 0, user: { name: 'Initial' } }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     getByText('Update Name').click()
@@ -235,7 +237,7 @@ describe('Pipeline placeholder synchronizers', () => {
     const { getByText } = render(
       <store.Provider initialState={{ count: 0, user: { name: '' } }}>
         <TestComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Should not throw - all placeholders are no-ops

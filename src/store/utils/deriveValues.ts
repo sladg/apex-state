@@ -23,7 +23,7 @@
  */
 export const detectGetters = <T extends object>(
   obj: T,
-  prefix = ''
+  prefix = '',
 ): Record<string, (snap: any) => any> => {
   const getters: Record<string, (snap: any) => any> = {}
 
@@ -62,6 +62,8 @@ export const detectGetters = <T extends object>(
     ) {
       const nestedGetters = detectGetters(descriptor.value, fullPath)
       Object.assign(getters, nestedGetters)
+    } else {
+      // Primitive values or arrays - no action needed
     }
   }
 
@@ -85,7 +87,9 @@ export const detectGetters = <T extends object>(
  * // computed = { sum: (snap) => snap.a + snap.b }
  * ```
  */
-export const extractGetters = <T extends object>(obj: T): {
+export const extractGetters = <T extends object>(
+  obj: T,
+): {
   base: Partial<T>
   computed: Record<string, (snap: any) => any>
 } => {
@@ -105,7 +109,7 @@ export const extractGetters = <T extends object>(obj: T): {
     } else {
       // Regular property - add to base
       base[key] = descriptor.value
-    }
+    } // else: no action needed for other descriptor types
   }
 
   return { base, computed }

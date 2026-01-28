@@ -3,24 +3,33 @@
  *
  * React component that initializes and provides the store to child components.
  *
- * Architecture: Unified _internal pattern
+ * Architecture: Single unified proxy
  * - state: User data (tracked by valtio)
  * - _concerns: Computed concern values (tracked by valtio)
  * - _internal: Graphs, registrations, processing queue (NOT tracked - wrapped in ref())
+ * - config: Store configuration
+ *
+ * All nested in a single proxy for simplicity. The ref() wrapper on _internal
+ * prevents valtio from tracking that subtree regardless of nesting.
  */
 
 import { useMemo } from 'react'
-import { proxy, ref } from 'valtio'
+
 import Graph from 'graphology'
-import { StoreContext } from './StoreContext'
-import type { ProviderProps, StoreInstance, InternalState, ConcernValues } from './types'
+import { proxy, ref } from 'valtio'
+
 import type { GenericMeta } from '../types'
+import { StoreContext } from './StoreContext'
+import type { InternalState, ProviderProps, StoreInstance } from './types'
 
 /**
  * Creates the initial internal state structure
  * Wrapped in ref() to prevent valtio tracking
  */
-const createInternalState = <DATA extends object, META extends GenericMeta = GenericMeta>(): InternalState<DATA, META> => ({
+const createInternalState = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(): InternalState<DATA, META> => ({
   graphs: {
     sync: new Graph({ type: 'undirected' }),
     flip: new Graph({ type: 'undirected' }),
@@ -41,39 +50,47 @@ const createInternalState = <DATA extends object, META extends GenericMeta = Gen
 /**
  * Creates a Provider component for a specific data type
  */
-export const createProvider = <DATA extends object, META extends GenericMeta = GenericMeta>() => {
-  const Provider = ({ initialState, errorStorePath = '_errors', children }: ProviderProps<DATA>) => {
-    const store = useMemo<StoreInstance<DATA, META>>(() => {
-      // 1. state: Application data (tracked by valtio)
-      //    - User actions WRITE to this
-      //    - Effects READ from this
-      const state = proxy(initialState)
+export const createProvider = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>() => {
+  const Provider = ({
+    initialState,
+    errorStorePath = '_errors',
+    children,
+  }: ProviderProps<DATA>) => {
+    const store = useMemo<StoreInstance<DATA, META>>(
+      () =>
+        proxy({
+          // state: Application data (tracked by valtio)
+          // User actions WRITE to this, effects READ from this
+          state: initialState,
 
-      // 2. _concerns: Computed concern values (tracked by valtio)
-      //    - Effects WRITE to this
-      //    - UI components READ from this
-      //    - Separate from state to prevent infinite loops
-      const _concerns = proxy<ConcernValues>({})
+          // _concerns: Computed concern values (tracked by valtio)
+          // Effects WRITE to this, UI components READ from this
+          _concerns: {} as Record<string, Record<string, unknown>>,
 
-      // 3. _internal: Graphs, registrations, processing (NOT tracked)
-      //    - Wrapped in ref() to prevent valtio proxy tracking
-      //    - Contains side-effect graphs, concern registrations, change queue
-      const _internal = ref(createInternalState<DATA, META>())
+          // _internal: Graphs, registrations, processing (NOT tracked)
+          // Wrapped in ref() to prevent valtio proxy tracking
+          _internal: ref(createInternalState<DATA, META>()),
 
-      return {
-        state,
-        _concerns,
-        _internal,
-        config: {
-          errorStorePath,
-          maxIterations: 100,
-        },
-      }
+          // config: Store configuration
+          config: {
+            errorStorePath,
+            maxIterations: 100,
+          },
+        }),
       // Only initialize once - ignore changes to initialState after mount
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+      [],
+    )
 
-    return <StoreContext.Provider value={store as any}>{children}</StoreContext.Provider>
+    return (
+      <StoreContext.Provider
+        value={store as unknown as StoreInstance<any, GenericMeta>}
+      >
+        {children}
+      </StoreContext.Provider>
+    )
   }
 
   Provider.displayName = 'StoreProvider'

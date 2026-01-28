@@ -6,13 +6,16 @@
  */
 
 import React from 'react'
-import { describe, test, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+
+import { render, screen } from '@testing-library/react'
+import { describe, expect, test } from 'vitest'
+
 import { createGenericStore } from '../../src'
+import { typeHelpers } from '../mocks'
 
 describe('Integration: Core Features Working Together', () => {
   test('store with sync paths working', () => {
-    type State = {
+    interface State {
       a: number
       b: number
       c: number
@@ -22,24 +25,26 @@ describe('Integration: Core Features Working Together', () => {
 
     function Component() {
       store.useSideEffects('test', {
-        syncPaths: [['a', 'b'] as any],
+        syncPaths: [typeHelpers.syncPair<State>('a', 'b')],
       })
 
       const [a] = store.useStore('a')
       const [b] = store.useStore('b')
       const [c] = store.useStore('c')
 
-      return <div>
-        <span data-testid="a">{a}</span>
-        <span data-testid="b">{b}</span>
-        <span data-testid="c">{c}</span>
-      </div>
+      return (
+        <div>
+          <span data-testid="a">{a}</span>
+          <span data-testid="b">{b}</span>
+          <span data-testid="c">{c}</span>
+        </div>
+      )
     }
 
     render(
       <store.Provider initialState={{ a: 1, b: 1, c: 5 }}>
         <Component />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Sync: a and b should be synced (both 1)
@@ -51,7 +56,7 @@ describe('Integration: Core Features Working Together', () => {
   })
 
   test('multiple side effects registered simultaneously', () => {
-    type State = {
+    interface State {
       field1: string
       field2: string
       flag1: boolean
@@ -62,8 +67,8 @@ describe('Integration: Core Features Working Together', () => {
 
     function Component() {
       store.useSideEffects('multi-effects', {
-        syncPaths: [['field1', 'field2'] as any],
-        flipPaths: [['flag1', 'flag2'] as any],
+        syncPaths: [typeHelpers.syncPair<State>('field1', 'field2')],
+        flipPaths: [typeHelpers.flipPair<State>('flag1', 'flag2')],
       })
 
       const [field1] = store.useStore('field1')
@@ -71,23 +76,27 @@ describe('Integration: Core Features Working Together', () => {
       const [flag1] = store.useStore('flag1')
       const [flag2] = store.useStore('flag2')
 
-      return <div>
-        <span data-testid="field1">{field1}</span>
-        <span data-testid="field2">{field2}</span>
-        <span data-testid="flag1">{flag1.toString()}</span>
-        <span data-testid="flag2">{flag2.toString()}</span>
-      </div>
+      return (
+        <div>
+          <span data-testid="field1">{field1}</span>
+          <span data-testid="field2">{field2}</span>
+          <span data-testid="flag1">{flag1.toString()}</span>
+          <span data-testid="flag2">{flag2.toString()}</span>
+        </div>
+      )
     }
 
     render(
-      <store.Provider initialState={{
-        field1: 'test',
-        field2: 'test',
-        flag1: true,
-        flag2: false,
-      }}>
+      <store.Provider
+        initialState={{
+          field1: 'test',
+          field2: 'test',
+          flag1: true,
+          flag2: false,
+        }}
+      >
         <Component />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Sync: fields should match
@@ -100,23 +109,27 @@ describe('Integration: Core Features Working Together', () => {
   })
 
   test('hooks work correctly with Provider', () => {
-    type State = { value: string }
+    interface State {
+      value: string
+    }
     const store = createGenericStore<State>()
 
     function Component() {
       const field = store.useFieldStore('value')
       const { proxyValue } = store.useJitStore()
 
-      return <div>
-        <span data-testid="field-value">{field.value}</span>
-        <span data-testid="proxy-value">{proxyValue.value}</span>
-      </div>
+      return (
+        <div>
+          <span data-testid="field-value">{field.value}</span>
+          <span data-testid="proxy-value">{proxyValue.value}</span>
+        </div>
+      )
     }
 
     render(
       <store.Provider initialState={{ value: 'test-value' }}>
         <Component />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('field-value').textContent).toBe('test-value')

@@ -4,7 +4,8 @@
  * Common utilities and patterns used across integration tests.
  */
 
-import { ReactNode } from 'react'
+import type { ArrayOfChanges, GenericMeta } from '../../src/types'
+import type { FlipPair, SyncPair } from '../../src/types/pathsOfSameValue'
 
 /**
  * Common validators used in tests
@@ -21,9 +22,11 @@ export const validators = {
    * Simple password validator (8+ chars, 1 uppercase, 1 number)
    */
   password: (password: string): boolean => {
-    return /^.{8,}$/.test(password) && // 8+ chars
-           /[A-Z]/.test(password) &&  // 1 uppercase
-           /[0-9]/.test(password)      // 1 number
+    return (
+      /^.{8,}$/.test(password) && // 8+ chars
+      /[A-Z]/.test(password) && // 1 uppercase
+      /[0-9]/.test(password)
+    ) // 1 number
   },
 
   /**
@@ -70,7 +73,10 @@ export const assertions = {
   /**
    * Assert field value matches expected
    */
-  fieldValue: (element: HTMLInputElement | HTMLSelectElement, expected: string) => {
+  fieldValue: (
+    element: HTMLInputElement | HTMLSelectElement,
+    expected: string,
+  ) => {
     return element.value === expected
   },
 
@@ -124,7 +130,9 @@ export const testPatterns = {
   /**
    * Simulate user filling out a form
    */
-  fillForm: (fields: Record<string, { element: HTMLInputElement; value: string }>) => {
+  fillForm: (
+    fields: Record<string, { element: HTMLInputElement; value: string }>,
+  ) => {
     Object.values(fields).forEach(({ element, value }) => {
       element.value = value
       element.dispatchEvent(new Event('change', { bubbles: true }))
@@ -136,7 +144,7 @@ export const testPatterns = {
    */
   clickAndWait: async (element: HTMLElement, delay = 50) => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await new Promise(resolve => setTimeout(resolve, delay))
+    await new Promise((resolve) => setTimeout(resolve, delay))
   },
 
   /**
@@ -156,7 +164,7 @@ export const domHelpers = {
    */
   getAllErrors: (root: HTMLElement | Document = document): string[] => {
     const errorElements = root.querySelectorAll('[data-testid*="error"]')
-    return Array.from(errorElements).map(el => el.textContent || '')
+    return Array.from(errorElements).map((el) => el.textContent || '')
   },
 
   /**
@@ -177,14 +185,20 @@ export const domHelpers = {
   /**
    * Get field by testid
    */
-  getField: (testId: string, root: HTMLElement | Document = document): HTMLInputElement => {
+  getField: (
+    testId: string,
+    root: HTMLElement | Document = document,
+  ): HTMLInputElement => {
     return root.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement
   },
 
   /**
    * Get button by testid
    */
-  getButton: (testId: string, root: HTMLElement | Document = document): HTMLButtonElement => {
+  getButton: (
+    testId: string,
+    root: HTMLElement | Document = document,
+  ): HTMLButtonElement => {
     return root.querySelector(`[data-testid="${testId}"]`) as HTMLButtonElement
   },
 }
@@ -233,4 +247,82 @@ export const generators = {
   price: (min = 10, max = 999): number => {
     return Math.floor(Math.random() * (max - min + 1)) + min
   },
+}
+
+/**
+ * Type-safe test helpers for dynamic paths
+ *
+ * These helpers centralize type assertions needed when working with
+ * dynamic/runtime paths in tests. The casts are safe because tests
+ * verify runtime behavior, not compile-time type safety.
+ */
+export const typeHelpers = {
+  /**
+   * Create a change tuple with runtime path.
+   * Use when path is dynamic (e.g., template literal) or when TypeScript
+   * can't infer the tuple type correctly.
+   *
+   * @example
+   * ```typescript
+   * // Instead of: [`items.${id}.qty`, 10, {}] as any
+   * typeHelpers.change(`items.${id}.qty`, 10, {})
+   * ```
+   */
+  change: <DATA extends object, META extends GenericMeta = GenericMeta>(
+    path: string,
+    value: unknown,
+    meta: META = {} as META,
+  ): ArrayOfChanges<DATA, META>[number] =>
+    [path, value, meta] as ArrayOfChanges<DATA, META>[number],
+
+  /**
+   * Create a sync pair tuple.
+   * Use when TypeScript infers string[] instead of [string, string].
+   *
+   * @example
+   * ```typescript
+   * // Instead of: ['firstName', 'lastName'] as any
+   * typeHelpers.syncPair('firstName', 'lastName')
+   * ```
+   */
+  syncPair: <DATA extends object>(
+    path1: string,
+    path2: string,
+  ): SyncPair<DATA> => [path1, path2] as unknown as SyncPair<DATA>,
+
+  /**
+   * Create a flip pair tuple.
+   * Use when TypeScript infers string[] instead of [string, string].
+   *
+   * @example
+   * ```typescript
+   * // Instead of: ['isActive', 'isInactive'] as any
+   * typeHelpers.flipPair('isActive', 'isInactive')
+   * ```
+   */
+  flipPair: <DATA extends object>(
+    path1: string,
+    path2: string,
+  ): FlipPair<DATA> => [path1, path2] as unknown as FlipPair<DATA>,
+
+  /**
+   * Create an array of changes with runtime paths.
+   * Use when creating multiple changes with dynamic paths.
+   *
+   * @example
+   * ```typescript
+   * typeHelpers.changes([
+   *   [`items.${id}.qty`, 10],
+   *   [`items.${id}.price`, 25],
+   * ])
+   * ```
+   */
+  changes: <DATA extends object, META extends GenericMeta = GenericMeta>(
+    items: [string, unknown, META?][],
+  ): ArrayOfChanges<DATA, META> =>
+    items.map(([path, value, meta]) => [
+      path,
+      value,
+      meta ?? ({} as META),
+    ]) as ArrayOfChanges<DATA, META>,
 }

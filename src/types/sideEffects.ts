@@ -5,7 +5,7 @@
  * Simple tuple-based API: [path1, path2]
  */
 
-import type { SyncPair, FlipPair, AggregationPair } from './pathsOfSameValue'
+import type { AggregationPair, FlipPair, SyncPair } from './pathsOfSameValue'
 
 /**
  * Side effects configuration for useSideEffects hook
@@ -31,20 +31,20 @@ export interface SideEffects<DATA extends object> {
    * Sync paths - keeps specified paths synchronized
    * Format: [path1, path2] - both paths stay in sync
    */
-  syncPaths?: Array<SyncPair<DATA>>
+  syncPaths?: SyncPair<DATA>[]
 
   /**
    * Flip paths - keeps specified paths with opposite values
    * Format: [path1, path2] - paths have inverse boolean values
    */
-  flipPaths?: Array<FlipPair<DATA>>
+  flipPaths?: FlipPair<DATA>[]
 
   /**
    * Aggregations - aggregates sources into target
    * Format: [target, source] - target is ALWAYS first (left)
    * Multiple pairs can point to same target for multi-source aggregation
    */
-  aggregations?: Array<AggregationPair<DATA>>
+  aggregations?: AggregationPair<DATA>[]
 
   [key: string]: unknown
 }

@@ -17,13 +17,14 @@
  * ```
  */
 
-import type { ConcernType, BoolLogic } from '../types'
 import { evaluateBoolLogic } from '../../utils/boolLogic'
+import type { BoolLogic, ConcernType } from '../types'
 
-export const readonlyWhen: ConcernType<{ condition: BoolLogic<any> }, boolean> = {
-  name: 'readonlyWhen',
-  description: 'Boolean logic for readonly state',
-  evaluate: (props) => {
-    return evaluateBoolLogic(props.condition, props.state)
+export const readonlyWhen: ConcernType<{ condition: BoolLogic<any> }, boolean> =
+  {
+    name: 'readonlyWhen',
+    description: 'Boolean logic for readonly state',
+    evaluate: (props) => {
+      return evaluateBoolLogic(props.condition, props.state)
+    },
   }
-}

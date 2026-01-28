@@ -4,11 +4,12 @@
  * Tests that DeepKeyFiltered correctly filters paths by their value type.
  */
 
-import { describe, test, expectTypeOf } from 'vitest'
+import { describe, expectTypeOf, test } from 'vitest'
+
 import type { DeepKeyFiltered } from '../../src/types'
 
 describe('DeepKeyFiltered type utility', () => {
-  type TestData = {
+  interface TestData {
     isActive: boolean
     isVerified: boolean
     name: string
@@ -41,13 +42,11 @@ describe('DeepKeyFiltered type utility', () => {
   test('filters number paths correctly', () => {
     type NumberPaths = DeepKeyFiltered<TestData, number>
 
-    expectTypeOf<NumberPaths>().toEqualTypeOf<
-      'count' | 'age' | 'user.score'
-    >()
+    expectTypeOf<NumberPaths>().toEqualTypeOf<'count' | 'age' | 'user.score'>()
   })
 
   test('works with nested object types', () => {
-    type NestedData = {
+    interface NestedData {
       settings: {
         theme: string
         notifications: {
@@ -59,9 +58,7 @@ describe('DeepKeyFiltered type utility', () => {
 
     type NestedBooleans = DeepKeyFiltered<NestedData, boolean>
 
-    expectTypeOf<NestedBooleans>().toEqualTypeOf<
-      'settings.notifications.enabled'
-    >()
+    expectTypeOf<NestedBooleans>().toEqualTypeOf<'settings.notifications.enabled'>()
   })
 
   test('returns never for non-existent types', () => {

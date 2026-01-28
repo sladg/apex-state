@@ -38,6 +38,12 @@ export interface GenericMeta {
   isAggregationChange?: boolean
 
   /**
+   * Indicates if the change originated from a listener side-effect.
+   * Used to track changes triggered by listener callbacks.
+   */
+  isListenerChange?: boolean
+
+  /**
    * Identifies the originator of the change.
    * Can be a user ID, component name, or any identifier string.
    */

@@ -5,6 +5,7 @@
  */
 
 import React from 'react'
+
 import type { ReactNode } from 'react'
 
 /**
@@ -21,7 +22,13 @@ export function useRenderCount() {
 /**
  * Wrapper component that tracks renders
  */
-export function RenderCounter({ children, onRender }: { children: ReactNode, onRender: () => void }) {
+export function RenderCounter({
+  children,
+  onRender,
+}: {
+  children: ReactNode
+  onRender: () => void
+}) {
   React.useEffect(() => {
     onRender()
   })
@@ -34,7 +41,7 @@ export function RenderCounter({ children, onRender }: { children: ReactNode, onR
 export async function waitForCondition(
   condition: () => boolean,
   timeout = 1000,
-  interval = 50
+  interval = 50,
 ): Promise<void> {
   const start = Date.now()
 
@@ -42,6 +49,6 @@ export async function waitForCondition(
     if (Date.now() - start > timeout) {
       throw new Error('Timeout waiting for condition')
     }
-    await new Promise(resolve => setTimeout(resolve, interval))
+    await new Promise((resolve) => setTimeout(resolve, interval))
   }
 }

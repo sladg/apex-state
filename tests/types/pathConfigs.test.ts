@@ -1,5 +1,3 @@
-/// <reference types="vitest" />
-
 /**
  * Type Unit Tests for SyncPair, FlipPair, and AggregationPair
  *
@@ -9,9 +7,15 @@
  * These are compile-time tests that verify types without runtime assertions.
  */
 
-import { describe, it, expectTypeOf } from 'vitest'
+import { describe, expectTypeOf, it } from 'vitest'
+
+import type {
+  AggregationPair,
+  FlipPair,
+  PathsWithSameValueAs,
+  SyncPair,
+} from '../../src/types/pathsOfSameValue'
 import type { SideEffects } from '../../src/types/sideEffects'
-import type { SyncPair, FlipPair, AggregationPair, PathsWithSameValueAs } from '../../src/types/pathsOfSameValue'
 
 // ============================================================================
 // Test State Definitions
@@ -20,7 +24,7 @@ import type { SyncPair, FlipPair, AggregationPair, PathsWithSameValueAs } from '
 /**
  * Simple flat state for basic type tests
  */
-type SimpleFlatState = {
+interface SimpleFlatState {
   email: string
   username: string
   age: number
@@ -30,7 +34,7 @@ type SimpleFlatState = {
 /**
  * Nested state for deep path tests
  */
-type NestedState = {
+interface NestedState {
   user: {
     profile: {
       name: string
@@ -50,7 +54,7 @@ type NestedState = {
 /**
  * Mixed types state with optional fields
  */
-type MixedTypesState = {
+interface MixedTypesState {
   firstName: string
   lastName: string
   fullName: string
@@ -145,7 +149,7 @@ describe('FlipPair', () => {
 
 describe('AggregationPair', () => {
   it('accepts matching number paths as tuple [target, source]', () => {
-    type State = {
+    interface State {
       price1: number
       price2: number
       total: number
@@ -160,7 +164,7 @@ describe('AggregationPair', () => {
   })
 
   it('accepts string aggregation paths', () => {
-    type State = {
+    interface State {
       user: {
         firstName: string
         lastName: string
@@ -185,9 +189,7 @@ describe('SideEffects', () => {
     type TestConfig = SideEffects<SimpleFlatState>
 
     const config: TestConfig = {
-      syncPaths: [
-        ['email', 'username'],
-      ],
+      syncPaths: [['email', 'username']],
     }
 
     expectTypeOf(config).toMatchTypeOf<TestConfig>()
@@ -211,16 +213,14 @@ describe('SideEffects', () => {
     type TestConfig = SideEffects<SimpleFlatState>
 
     const config: TestConfig = {
-      flipPaths: [
-        ['isActive', 'isActive'],
-      ],
+      flipPaths: [['isActive', 'isActive']],
     }
 
     expectTypeOf(config).toMatchTypeOf<TestConfig>()
   })
 
   it('accepts aggregations as array of [target, source] tuples', () => {
-    type State = {
+    interface State {
       price1: number
       price2: number
       total: number
@@ -239,7 +239,7 @@ describe('SideEffects', () => {
   })
 
   it('accepts combined side effects', () => {
-    type State = {
+    interface State {
       firstName: string
       lastName: string
       isActive: boolean
@@ -252,12 +252,8 @@ describe('SideEffects', () => {
     type TestConfig = SideEffects<State>
 
     const config: TestConfig = {
-      syncPaths: [
-        ['firstName', 'lastName'],
-      ],
-      flipPaths: [
-        ['isActive', 'isInactive'],
-      ],
+      syncPaths: [['firstName', 'lastName']],
+      flipPaths: [['isActive', 'isInactive']],
       aggregations: [
         ['total', 'price1'],
         ['total', 'price2'],
@@ -285,7 +281,7 @@ describe('SideEffects', () => {
 // ============================================================================
 
 describe('Union membership - explicit checks', () => {
-  type TestState = {
+  interface TestState {
     name: string
     email: string
     title: string
@@ -372,7 +368,7 @@ describe('Union membership - explicit checks', () => {
 })
 
 describe('Union membership - nested paths', () => {
-  type NestedTestState = {
+  interface NestedTestState {
     user: {
       profile: { firstName: string; lastName: string }
       settings: { theme: string }
@@ -384,7 +380,10 @@ describe('Union membership - nested paths', () => {
     }
   }
 
-  type NestedStringPaths = PathsWithSameValueAs<NestedTestState, 'user.profile.firstName'>
+  type NestedStringPaths = PathsWithSameValueAs<
+    NestedTestState,
+    'user.profile.firstName'
+  >
   type NestedNumberPaths = PathsWithSameValueAs<NestedTestState, 'user.age'>
 
   it('nested string union includes user.profile.firstName', () => {
@@ -424,7 +423,11 @@ describe('Union membership - nested paths', () => {
   })
 
   it('nested string paths equals exact union', () => {
-    type Expected = 'user.profile.firstName' | 'user.profile.lastName' | 'user.settings.theme' | 'meta.title'
+    type Expected =
+      | 'user.profile.firstName'
+      | 'user.profile.lastName'
+      | 'user.settings.theme'
+      | 'meta.title'
     expectTypeOf<NestedStringPaths>().toEqualTypeOf<Expected>()
   })
 
@@ -440,7 +443,7 @@ describe('Union membership - nested paths', () => {
 
 describe('PathsWithSameValueAs type equality', () => {
   it('resolves string paths to union of all string paths', () => {
-    type State = {
+    interface State {
       email: string
       username: string
       age: number
@@ -453,7 +456,7 @@ describe('PathsWithSameValueAs type equality', () => {
   })
 
   it('resolves number paths to union of all number paths', () => {
-    type State = {
+    interface State {
       count: number
       age: number
       price: number
@@ -467,7 +470,7 @@ describe('PathsWithSameValueAs type equality', () => {
   })
 
   it('resolves boolean paths to union of all boolean paths', () => {
-    type State = {
+    interface State {
       isActive: boolean
       isVisible: boolean
       count: number
@@ -480,7 +483,7 @@ describe('PathsWithSameValueAs type equality', () => {
   })
 
   it('resolves nested string paths correctly', () => {
-    type State = {
+    interface State {
       user: { name: string; email: string }
       app: { title: string }
       count: number
@@ -493,7 +496,7 @@ describe('PathsWithSameValueAs type equality', () => {
   })
 
   it('resolves nested number paths correctly', () => {
-    type State = {
+    interface State {
       cart: {
         subtotal: number
         tax: number
@@ -509,7 +512,7 @@ describe('PathsWithSameValueAs type equality', () => {
   })
 
   it('handles single matching path', () => {
-    type State = {
+    interface State {
       count: number
       name: string
     }
@@ -521,7 +524,7 @@ describe('PathsWithSameValueAs type equality', () => {
   })
 
   it('handles deeply nested paths with multiple levels', () => {
-    type State = {
+    interface State {
       user: {
         profile: {
           firstName: string
@@ -534,7 +537,10 @@ describe('PathsWithSameValueAs type equality', () => {
     }
 
     type FirstNamePaths = PathsWithSameValueAs<State, 'user.profile.firstName'>
-    type ExpectedUnion = 'user.profile.firstName' | 'user.profile.lastName' | 'user.contact.email'
+    type ExpectedUnion =
+      | 'user.profile.firstName'
+      | 'user.profile.lastName'
+      | 'user.contact.email'
 
     expectTypeOf<FirstNamePaths>().toEqualTypeOf<ExpectedUnion>()
   })
@@ -546,7 +552,7 @@ describe('PathsWithSameValueAs type equality', () => {
 
 describe('Real-world scenarios', () => {
   it('form with synced email fields', () => {
-    type FormState = {
+    interface FormState {
       email: string
       emailConfirm: string
       password: string
@@ -556,16 +562,14 @@ describe('Real-world scenarios', () => {
     type TestConfig = SideEffects<FormState>
 
     const config: TestConfig = {
-      syncPaths: [
-        ['email', 'emailConfirm'],
-      ],
+      syncPaths: [['email', 'emailConfirm']],
     }
 
     expectTypeOf(config).toMatchTypeOf<TestConfig>()
   })
 
   it('toggle states with flip', () => {
-    type UIState = {
+    interface UIState {
       menuOpen: boolean
       menuClosed: boolean
       sidebarVisible: boolean
@@ -585,7 +589,7 @@ describe('Real-world scenarios', () => {
   })
 
   it('complex nested state sync', () => {
-    type ComplexState = {
+    interface ComplexState {
       user: {
         primary: {
           name: string
@@ -611,7 +615,7 @@ describe('Real-world scenarios', () => {
   })
 
   it('shopping cart with aggregations', () => {
-    type CartState = {
+    interface CartState {
       price1: number
       price2: number
       quantity1: number

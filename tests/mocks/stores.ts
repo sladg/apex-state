@@ -7,14 +7,14 @@
 
 import { createGenericStore } from '../../src'
 import type {
-  RegistrationForm,
-  ProfileForm,
-  ShoppingCart,
+  FormWithErrors,
   NestedCart,
   ProductForm,
+  ProfileForm,
+  RegistrationForm,
+  ShoppingCart,
   UserProfile,
   WizardForm,
-  FormWithErrors,
 } from './types'
 
 /**

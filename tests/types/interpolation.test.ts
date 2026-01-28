@@ -1,18 +1,23 @@
-/// <reference types="vitest" />
-
 /**
  * Tests for string interpolation utilities
  */
 
-import { describe, it, expect, expectTypeOf } from 'vitest'
-import { extractPlaceholders, interpolateTemplate } from '../../src/utils/interpolation'
-import type { ExtractPlaceholders, ValidatedTemplate } from '../../src/types/interpolation'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+
+import type {
+  ExtractPlaceholders,
+  ValidatedTemplate,
+} from '../../src/types/interpolation'
+import {
+  extractPlaceholders,
+  interpolateTemplate,
+} from '../../src/utils/interpolation'
 
 // ============================================================================
 // Test State Types
 // ============================================================================
 
-type SimpleState = {
+interface SimpleState {
   user: {
     name: string
     email: string
@@ -24,7 +29,7 @@ type SimpleState = {
   count: number
 }
 
-type ComplexState = {
+interface ComplexState {
   user: {
     profile: {
       firstName: string
@@ -75,7 +80,10 @@ describe('ValidatedTemplate type', () => {
   })
 
   it('accepts valid multiple paths', () => {
-    type Template = ValidatedTemplate<'{{user.name}} ({{user.email}})', SimpleState>
+    type Template = ValidatedTemplate<
+      '{{user.name}} ({{user.email}})',
+      SimpleState
+    >
     expectTypeOf<Template>().toEqualTypeOf<'{{user.name}} ({{user.email}})'>()
   })
 
@@ -85,7 +93,10 @@ describe('ValidatedTemplate type', () => {
   })
 
   it('accepts nested paths', () => {
-    type Template = ValidatedTemplate<'Name: {{user.profile.firstName}}', ComplexState>
+    type Template = ValidatedTemplate<
+      'Name: {{user.profile.firstName}}',
+      ComplexState
+    >
     expectTypeOf<Template>().toEqualTypeOf<'Name: {{user.profile.firstName}}'>()
   })
 
@@ -120,11 +131,17 @@ describe('extractPlaceholders', () => {
   })
 
   it('extracts multiple placeholders', () => {
-    expect(extractPlaceholders('{{a}} and {{b}} and {{c}}')).toEqual(['a', 'b', 'c'])
+    expect(extractPlaceholders('{{a}} and {{b}} and {{c}}')).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
   })
 
   it('extracts nested paths', () => {
-    expect(extractPlaceholders('{{user.profile.name}}')).toEqual(['user.profile.name'])
+    expect(extractPlaceholders('{{user.profile.name}}')).toEqual([
+      'user.profile.name',
+    ])
   })
 
   it('returns empty array for no placeholders', () => {
@@ -148,7 +165,9 @@ describe('interpolateTemplate', () => {
   }
 
   it('interpolates string values', () => {
-    expect(interpolateTemplate('Hello {{user.name}}', state)).toBe('Hello Alice')
+    expect(interpolateTemplate('Hello {{user.name}}', state)).toBe(
+      'Hello Alice',
+    )
   })
 
   it('interpolates number values', () => {
@@ -160,31 +179,36 @@ describe('interpolateTemplate', () => {
   })
 
   it('interpolates multiple placeholders', () => {
-    expect(interpolateTemplate('{{user.name}} ({{user.email}})', state))
-      .toBe('Alice (alice@test.com)')
+    expect(interpolateTemplate('{{user.name}} ({{user.email}})', state)).toBe(
+      'Alice (alice@test.com)',
+    )
   })
 
   it('leaves invalid paths unchanged for debugging', () => {
-    expect(interpolateTemplate('Hello {{invalid.path}}', state))
-      .toBe('Hello {{invalid.path}}')
+    expect(interpolateTemplate('Hello {{invalid.path}}', state)).toBe(
+      'Hello {{invalid.path}}',
+    )
   })
 
   it('leaves null/undefined values unchanged', () => {
     const stateWithNull = { value: null, empty: undefined }
-    expect(interpolateTemplate('{{value}} {{empty}}', stateWithNull))
-      .toBe('{{value}} {{empty}}')
+    expect(interpolateTemplate('{{value}} {{empty}}', stateWithNull)).toBe(
+      '{{value}} {{empty}}',
+    )
   })
 
   it('leaves object values unchanged', () => {
     const stateWithObj = { user: { nested: { deep: 'value' } } }
     // Trying to interpolate the object itself, not the deep value
-    expect(interpolateTemplate('{{user.nested}}', stateWithObj))
-      .toBe('{{user.nested}}')
+    expect(interpolateTemplate('{{user.nested}}', stateWithObj)).toBe(
+      '{{user.nested}}',
+    )
   })
 
   it('handles templates without placeholders', () => {
-    expect(interpolateTemplate('No placeholders here', state))
-      .toBe('No placeholders here')
+    expect(interpolateTemplate('No placeholders here', state)).toBe(
+      'No placeholders here',
+    )
   })
 
   it('handles empty template', () => {
@@ -196,8 +220,12 @@ describe('interpolateTemplate', () => {
       user: { profile: { firstName: 'Bob', lastName: 'Smith' } },
       order: { total: 99.99 },
     }
-    expect(interpolateTemplate('{{user.profile.firstName}} - ${{order.total}}', nested))
-      .toBe('Bob - $99.99')
+    expect(
+      interpolateTemplate(
+        '{{user.profile.firstName}} - ${{order.total}}',
+        nested,
+      ),
+    ).toBe('Bob - $99.99')
   })
 })
 
@@ -206,7 +234,7 @@ describe('interpolateTemplate', () => {
 // ============================================================================
 
 describe('Multiple placeholders (up to 5)', () => {
-  type MultiState = {
+  interface MultiState {
     a: string
     b: string
     c: string
@@ -216,7 +244,11 @@ describe('Multiple placeholders (up to 5)', () => {
   }
 
   const state: MultiState = {
-    a: 'A', b: 'B', c: 'C', d: 'D', e: 'E',
+    a: 'A',
+    b: 'B',
+    c: 'C',
+    d: 'D',
+    e: 'E',
     nested: { x: 1, y: 2 },
   }
 
@@ -242,12 +274,18 @@ describe('Multiple placeholders (up to 5)', () => {
   })
 
   it('type: validates 5 nested placeholders', () => {
-    type T = ValidatedTemplate<'{{a}}-{{nested.x}}-{{b}}-{{nested.y}}-{{c}}', MultiState>
+    type T = ValidatedTemplate<
+      '{{a}}-{{nested.x}}-{{b}}-{{nested.y}}-{{c}}',
+      MultiState
+    >
     expectTypeOf<T>().toEqualTypeOf<'{{a}}-{{nested.x}}-{{b}}-{{nested.y}}-{{c}}'>()
   })
 
   it('type: rejects if any of 5 is invalid', () => {
-    type T = ValidatedTemplate<'{{a}} {{b}} {{invalid}} {{d}} {{e}}', MultiState>
+    type T = ValidatedTemplate<
+      '{{a}} {{b}} {{invalid}} {{d}} {{e}}',
+      MultiState
+    >
     expectTypeOf<T>().toEqualTypeOf<never>()
   })
 
@@ -261,26 +299,37 @@ describe('Multiple placeholders (up to 5)', () => {
   })
 
   it('runtime: interpolates 4 placeholders', () => {
-    expect(interpolateTemplate('{{a}} {{b}} {{c}} {{d}}', state)).toBe('A B C D')
+    expect(interpolateTemplate('{{a}} {{b}} {{c}} {{d}}', state)).toBe(
+      'A B C D',
+    )
   })
 
   it('runtime: interpolates 5 placeholders', () => {
-    expect(interpolateTemplate('{{a}} {{b}} {{c}} {{d}} {{e}}', state)).toBe('A B C D E')
+    expect(interpolateTemplate('{{a}} {{b}} {{c}} {{d}} {{e}}', state)).toBe(
+      'A B C D E',
+    )
   })
 
   it('runtime: interpolates 5 with mixed types', () => {
-    expect(interpolateTemplate('{{a}}-{{nested.x}}-{{b}}-{{nested.y}}-{{c}}', state))
-      .toBe('A-1-B-2-C')
+    expect(
+      interpolateTemplate('{{a}}-{{nested.x}}-{{b}}-{{nested.y}}-{{c}}', state),
+    ).toBe('A-1-B-2-C')
   })
 
   it('runtime: extracts 5 placeholders', () => {
-    expect(extractPlaceholders('{{a}} {{b}} {{c}} {{d}} {{e}}'))
-      .toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(extractPlaceholders('{{a}} {{b}} {{c}} {{d}} {{e}}')).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+    ])
   })
 
   it('runtime: partial failure leaves invalid paths visible', () => {
-    expect(interpolateTemplate('{{a}} {{invalid}} {{c}}', state))
-      .toBe('A {{invalid}} C')
+    expect(interpolateTemplate('{{a}} {{invalid}} {{c}}', state)).toBe(
+      'A {{invalid}} C',
+    )
   })
 })
 
@@ -291,7 +340,10 @@ describe('Multiple placeholders (up to 5)', () => {
 describe('Real-world scenarios', () => {
   it('dynamic label with price', () => {
     const state = { product: { name: 'Widget', price: 29.99 } }
-    const result = interpolateTemplate('{{product.name}}: ${{product.price}}', state)
+    const result = interpolateTemplate(
+      '{{product.name}}: ${{product.price}}',
+      state,
+    )
     expect(result).toBe('Widget: $29.99')
   })
 
@@ -299,7 +351,7 @@ describe('Real-world scenarios', () => {
     const state = { field: { name: 'email', min: 5, max: 100 } }
     const result = interpolateTemplate(
       '{{field.name}} must be between {{field.min}} and {{field.max}} characters',
-      state
+      state,
     )
     expect(result).toBe('email must be between 5 and 100 characters')
   })
@@ -308,7 +360,7 @@ describe('Real-world scenarios', () => {
     const state = { user: { name: 'Alice' } }
     const result = interpolateTemplate(
       'Hello {{user.name}}, your balance is {{user.balance}}',
-      state
+      state,
     )
     // Missing path stays visible for debugging
     expect(result).toBe('Hello Alice, your balance is {{user.balance}}')

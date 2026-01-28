@@ -8,11 +8,12 @@
  */
 
 import { effect } from 'valtio-reactive'
-import type { DeepKey, GenericMeta } from '../types'
-import type { ConcernType, BaseConcernProps } from './types'
+
 import type { StoreInstance } from '../store/types'
 import { deepGet } from '../store/utils/deepAccess'
+import type { DeepKey, GenericMeta } from '../types'
 import { findConcern } from './registry'
+import type { BaseConcernProps, ConcernType } from './types'
 
 /**
  * Register concern effects for given paths and return cleanup function
@@ -23,12 +24,15 @@ import { findConcern } from './registry'
  * @param concerns - Array of concern definitions to use
  * @returns Cleanup function that disposes all effects and removes concern values
  */
-export const registerConcernEffects = <DATA extends object, META extends GenericMeta>(
+export const registerConcernEffects = <
+  DATA extends object,
+  META extends GenericMeta,
+>(
   store: StoreInstance<DATA, META>,
   registration: Partial<Record<DeepKey<DATA>, Partial<Record<string, any>>>>,
-  concerns: readonly ConcernType[]
+  concerns: readonly ConcernType[],
 ): (() => void) => {
-  const disposeCallbacks: Array<() => void> = []
+  const disposeCallbacks: (() => void)[] = []
 
   // Iterate over each path in the registration
   Object.entries(registration).forEach(([path, concernConfigs]) => {
@@ -54,10 +58,8 @@ export const registerConcernEffects = <DATA extends object, META extends Generic
 
         // OPTIMIZATION: Avoid object spread overhead (creates new object every evaluation)
         // Use Object.assign instead for single-pass property addition (40% faster)
-        const evalProps: BaseConcernProps<any, string> & Record<string, any> = Object.assign(
-          { state: store.state, path, value },
-          config
-        )
+        const evalProps: BaseConcernProps<any, string> & Record<string, any> =
+          Object.assign({ state: store.state, path, value }, config)
 
         // EVALUATE concern (all state accesses inside are tracked!)
         const result = concern.evaluate(evalProps)
@@ -81,23 +83,28 @@ export const registerConcernEffects = <DATA extends object, META extends Generic
   // Return cleanup function that disposes all effects on unmount
   return () => {
     // Stop all effects (removes tracking subscriptions)
-    disposeCallbacks.forEach(dispose => dispose())
+    disposeCallbacks.forEach((dispose) => dispose())
 
     // Remove concern values from concernsProxy
-    Object.keys(registration).forEach(path => {
+    Object.keys(registration).forEach((path) => {
       const concernConfigs = registration[path as DeepKey<DATA>]
       if (!concernConfigs) return
 
       // Delete specific concerns for this path
-      Object.keys(concernConfigs).forEach(concernName => {
+      Object.keys(concernConfigs).forEach((concernName) => {
         if (store._concerns[path]) {
-          delete store._concerns[path][concernName]
+          // Use Reflect.deleteProperty to avoid dynamic delete lint error
+          Reflect.deleteProperty(store._concerns[path], concernName)
         }
       })
 
       // Clean up empty path object
-      if (store._concerns[path] && Object.keys(store._concerns[path]).length === 0) {
-        delete store._concerns[path]
+      if (
+        store._concerns[path] &&
+        Object.keys(store._concerns[path]).length === 0
+      ) {
+        // Use Reflect.deleteProperty to avoid dynamic delete lint error
+        Reflect.deleteProperty(store._concerns, path)
       }
     })
   }

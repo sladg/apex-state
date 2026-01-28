@@ -10,6 +10,7 @@
  */
 
 import { useContext } from 'react'
+
 import { StoreContext } from '../store/StoreContext'
 import type { StoreInstance } from '../store/types'
 import type { GenericMeta } from '../types'
@@ -22,14 +23,14 @@ import type { GenericMeta } from '../types'
  */
 export const useStoreContext = <
   DATA extends object,
-  META extends GenericMeta = GenericMeta
+  META extends GenericMeta = GenericMeta,
 >(): StoreInstance<DATA, META> => {
   const store = useContext(StoreContext) as StoreInstance<DATA, META> | null
 
   if (!store) {
     throw new Error(
       'useStoreContext must be used within a Store Provider. ' +
-        'Make sure your component is wrapped in <store.Provider>.'
+        'Make sure your component is wrapped in <store.Provider>.',
     )
   }
 

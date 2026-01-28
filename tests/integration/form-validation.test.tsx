@@ -6,15 +6,12 @@
  */
 
 import React from 'react'
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import {
-  createRegistrationFormStore,
-  registrationFormFixtures,
-  errorMessages,
-  validators,
-} from '../mocks'
+
+import { createRegistrationFormStore, registrationFormFixtures } from '../mocks'
 
 describe('Integration: Form Validation with Concerns', () => {
   let store: ReturnType<typeof createRegistrationFormStore>
@@ -46,7 +43,7 @@ describe('Integration: Form Validation with Concerns', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => emailField.setValue(e.target.value)}
+            onChange={(e) => emailField.setValue(e.target.value)}
             placeholder="Enter email"
           />
           {emailConcerns.zodValidation === false && (
@@ -62,7 +59,7 @@ describe('Integration: Form Validation with Concerns', () => {
     render(
       <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
@@ -104,7 +101,7 @@ describe('Integration: Form Validation with Concerns', () => {
             data-testid="password-input"
             type="password"
             value={passwordField.value}
-            onChange={e => passwordField.setValue(e.target.value)}
+            onChange={(e) => passwordField.setValue(e.target.value)}
           />
           {passwordConcerns.zodValidation === false && (
             <span data-testid="password-error">Invalid password</span>
@@ -116,7 +113,7 @@ describe('Integration: Form Validation with Concerns', () => {
     render(
       <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('password-input') as HTMLInputElement
@@ -124,22 +121,19 @@ describe('Integration: Form Validation with Concerns', () => {
     // Weak password
     fireEvent.change(input, { target: { value: 'weak' } })
     await flushEffects()
-    
-      expect(screen.queryByTestId('password-error')).toBeInTheDocument()
-    
+
+    expect(screen.queryByTestId('password-error')).toBeInTheDocument()
 
     // Strong password
     fireEvent.change(input, { target: { value: '' } })
     fireEvent.change(input, { target: { value: 'StrongPass123' } })
     await flushEffects()
-    
-      expect(screen.queryByTestId('password-error')).not.toBeInTheDocument()
-    
+
+    expect(screen.queryByTestId('password-error')).not.toBeInTheDocument()
   })
 
   // TC1.3: Confirm password matches (cross-field validation)
   it('TC1.3: validates confirm password matches password', async () => {
-
     function FormComponent() {
       const passwordField = store.useFieldStore('password')
       const confirmField = store.useFieldStore('confirmPassword')
@@ -153,13 +147,13 @@ describe('Integration: Form Validation with Concerns', () => {
             data-testid="password-input"
             type="password"
             value={passwordField.value}
-            onChange={e => passwordField.setValue(e.target.value)}
+            onChange={(e) => passwordField.setValue(e.target.value)}
           />
           <input
             data-testid="confirm-input"
             type="password"
             value={confirmField.value}
-            onChange={e => confirmField.setValue(e.target.value)}
+            onChange={(e) => confirmField.setValue(e.target.value)}
           />
         </div>
       )
@@ -168,10 +162,12 @@ describe('Integration: Form Validation with Concerns', () => {
     render(
       <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
-    const passwordInput = screen.getByTestId('password-input') as HTMLInputElement
+    const passwordInput = screen.getByTestId(
+      'password-input',
+    ) as HTMLInputElement
     const confirmInput = screen.getByTestId('confirm-input') as HTMLInputElement
 
     // Set passwords
@@ -179,23 +175,20 @@ describe('Integration: Form Validation with Concerns', () => {
     fireEvent.change(confirmInput, { target: { value: 'Test123' } })
 
     await flushEffects()
-    
-      expect(passwordInput.value).toBe('Test123')
-      expect(confirmInput.value).toBe('Test123')
-    
+
+    expect(passwordInput.value).toBe('Test123')
+    expect(confirmInput.value).toBe('Test123')
 
     // Change confirm to not match
     fireEvent.change(confirmInput, { target: { value: '' } })
     fireEvent.change(confirmInput, { target: { value: 'Different' } })
     await flushEffects()
-    
-      expect(confirmInput.value).toBe('Different')
-    
+
+    expect(confirmInput.value).toBe('Different')
   })
 
   // TC1.4: Terms must be agreed (conditional validation)
   it('TC1.4: validates terms agreement is required', async () => {
-
     function FormComponent() {
       const termsField = store.useFieldStore('agreeToTerms')
 
@@ -206,7 +199,7 @@ describe('Integration: Form Validation with Concerns', () => {
               data-testid="terms-input"
               type="checkbox"
               checked={termsField.value}
-              onChange={e => termsField.setValue(e.target.checked)}
+              onChange={(e) => termsField.setValue(e.target.checked)}
             />
             I agree to the terms
           </label>
@@ -220,7 +213,7 @@ describe('Integration: Form Validation with Concerns', () => {
     render(
       <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('terms-input') as HTMLInputElement
@@ -229,10 +222,9 @@ describe('Integration: Form Validation with Concerns', () => {
 
     fireEvent.click(input)
     await flushEffects()
-    
-      expect(input.checked).toBe(true)
-      expect(screen.queryByTestId('terms-error')).not.toBeInTheDocument()
-    
+
+    expect(input.checked).toBe(true)
+    expect(screen.queryByTestId('terms-error')).not.toBeInTheDocument()
   })
 
   // TC1.5: Error messages display via concerns
@@ -254,7 +246,7 @@ describe('Integration: Form Validation with Concerns', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => emailField.setValue(e.target.value)}
+            onChange={(e) => emailField.setValue(e.target.value)}
           />
           {emailConcerns.zodValidation === false && (
             <span data-testid="error-message">Please enter a valid email</span>
@@ -266,16 +258,15 @@ describe('Integration: Form Validation with Concerns', () => {
     render(
       <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'invalid' } })
 
     await flushEffects()
-    
-      expect(screen.getByTestId('error-message')).toBeInTheDocument()
-    
+
+    expect(screen.getByTestId('error-message')).toBeInTheDocument()
   })
 
   // TC1.6: Errors clear when fixed
@@ -297,7 +288,7 @@ describe('Integration: Form Validation with Concerns', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => emailField.setValue(e.target.value)}
+            onChange={(e) => emailField.setValue(e.target.value)}
           />
           {emailConcerns.zodValidation === false && (
             <span data-testid="error">Invalid</span>
@@ -309,7 +300,7 @@ describe('Integration: Form Validation with Concerns', () => {
     render(
       <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
@@ -317,17 +308,15 @@ describe('Integration: Form Validation with Concerns', () => {
     // Create error
     fireEvent.change(input, { target: { value: 'invalid' } })
     await flushEffects()
-    
-      expect(screen.getByTestId('error')).toBeInTheDocument()
-    
+
+    expect(screen.getByTestId('error')).toBeInTheDocument()
 
     // Fix error - select all and type new value
     fireEvent.change(input, { target: { value: '' } })
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
     await flushEffects()
-    
-      expect(screen.queryByTestId('error')).not.toBeInTheDocument()
-    
+
+    expect(screen.queryByTestId('error')).not.toBeInTheDocument()
   })
 
   // TC1.7: Submit enabled when all valid (visibleWhen concern)
@@ -354,13 +343,13 @@ describe('Integration: Form Validation with Concerns', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => emailField.setValue(e.target.value)}
+            onChange={(e) => emailField.setValue(e.target.value)}
           />
           <input
             data-testid="password-input"
             type="password"
             value={passwordField.value}
-            onChange={e => passwordField.setValue(e.target.value)}
+            onChange={(e) => passwordField.setValue(e.target.value)}
           />
           {isEmailValid && isPasswordValid && (
             <button data-testid="submit-btn">Submit</button>
@@ -372,14 +361,14 @@ describe('Integration: Form Validation with Concerns', () => {
     render(
       <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Submit should not be visible initially - wait for fields to be in document first
     await flushEffects()
-    
-      expect(screen.getByTestId('email-input')).toBeInTheDocument()
-    
+
+    expect(screen.getByTestId('email-input')).toBeInTheDocument()
+
     expect(screen.queryByTestId('submit-btn')).not.toBeInTheDocument()
 
     // Fill email
@@ -388,9 +377,8 @@ describe('Integration: Form Validation with Concerns', () => {
 
     // Still no submit (password invalid)
     await flushEffects()
-    
-      expect(screen.queryByTestId('submit-btn')).not.toBeInTheDocument()
-    
+
+    expect(screen.queryByTestId('submit-btn')).not.toBeInTheDocument()
 
     // Fill password
     const passwordInput = screen.getByTestId('password-input')
@@ -398,8 +386,7 @@ describe('Integration: Form Validation with Concerns', () => {
 
     // Now submit should be visible
     await flushEffects()
-    
-      expect(screen.getByTestId('submit-btn')).toBeInTheDocument()
-    
+
+    expect(screen.getByTestId('submit-btn')).toBeInTheDocument()
   })
 })

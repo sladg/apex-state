@@ -8,7 +8,7 @@
 /**
  * Form Validation Scenario
  */
-export type RegistrationForm = {
+export interface RegistrationForm {
   email: string
   password: string
   confirmPassword: string
@@ -19,7 +19,7 @@ export type RegistrationForm = {
 /**
  * Sync Paths Scenario
  */
-export type ProfileForm = {
+export interface ProfileForm {
   firstName: string
   lastName: string
   fullName: string
@@ -29,14 +29,14 @@ export type ProfileForm = {
 /**
  * Aggregations Scenario
  */
-export type CartItem = {
+export interface CartItem {
   name: string
   price: number
   quantity: number
   subtotal: number
 }
 
-export type ShoppingCart = {
+export interface ShoppingCart {
   items: Record<string, CartItem>
   subtotal: number
   tax: number
@@ -44,19 +44,22 @@ export type ShoppingCart = {
   itemCount: number
 }
 
-export type NestedCart = {
-  categories: Record<string, {
-    name: string
-    items: Record<string, { price: number; qty: number }>
-    categorySubtotal: number
-  }>
+export interface NestedCart {
+  categories: Record<
+    string,
+    {
+      name: string
+      items: Record<string, { price: number; qty: number }>
+      categorySubtotal: number
+    }
+  >
   total: number
 }
 
 /**
  * Concerns UI Scenario
  */
-export type ProductForm = {
+export interface ProductForm {
   type: 'digital' | 'physical'
   name: string
   price: number
@@ -71,7 +74,7 @@ export type ProductForm = {
 /**
  * Side Effects Scenario
  */
-export type UserProfile = {
+export interface UserProfile {
   username: string
   email: string
   age: number
@@ -84,18 +87,18 @@ export type UserProfile = {
 /**
  * Complex Workflows Scenario
  */
-export type PersonalInfo = {
+export interface PersonalInfo {
   firstName: string
   lastName: string
 }
 
-export type AddressInfo = {
+export interface AddressInfo {
   street: string
   city: string
   zipCode: string
 }
 
-export type WizardForm = {
+export interface WizardForm {
   currentStep: 1 | 2 | 3
   personalInfo: PersonalInfo
   addressInfo: AddressInfo
@@ -110,7 +113,7 @@ export type WizardForm = {
 /**
  * Error Handling Scenario
  */
-export type FormWithErrors = {
+export interface FormWithErrors {
   email: string
   password: string
   confirmPassword: string

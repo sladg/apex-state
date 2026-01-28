@@ -6,13 +6,11 @@
  */
 
 import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
 
-import {
-  createUserProfileStore,
-  userProfileFixtures,
-} from '../mocks'
+import { render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import { createUserProfileStore, userProfileFixtures } from '../mocks'
 
 describe('Integration: Side Effects - Listeners & Validators', () => {
   let store: ReturnType<typeof createUserProfileStore>
@@ -23,7 +21,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
 
   // TC5.1: Listener updates lastUpdated timestamp on any change
   it('TC5.1: listener updates lastUpdated on field change', async () => {
-    let lastUpdatedTime = 0
+    const lastUpdatedTime = 0
 
     function ProfileComponent() {
       const usernameField = store.useFieldStore('username')
@@ -43,7 +41,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
           <input
             data-testid="username-input"
             value={usernameField.value}
-            onChange={e => handleChange(e.target.value)}
+            onChange={(e) => handleChange(e.target.value)}
             placeholder="Username"
           />
           <span data-testid="last-updated">{lastUpdatedField.value}</span>
@@ -54,19 +52,22 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     render(
       <store.Provider initialState={userProfileFixtures.empty}>
         <ProfileComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
-    const initialTime = parseInt(screen.getByTestId('last-updated').textContent || '0')
+    const initialTime = parseInt(
+      screen.getByTestId('last-updated').textContent || '0',
+    )
 
     fireEvent.change(input, { target: { value: 'john_doe' } })
 
     await flushEffects()
-    
-      const newTime = parseInt(screen.getByTestId('last-updated').textContent || '0')
-      expect(newTime).toBeGreaterThan(initialTime)
-    
+
+    const newTime = parseInt(
+      screen.getByTestId('last-updated').textContent || '0',
+    )
+    expect(newTime).toBeGreaterThan(initialTime)
   })
 
   // TC5.2: Validator checks email format, stores errors
@@ -94,7 +95,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => validateEmail(e.target.value)}
+            onChange={(e) => validateEmail(e.target.value)}
             placeholder="Email"
           />
           {errorsField.value.email && (
@@ -107,7 +108,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     render(
       <store.Provider initialState={userProfileFixtures.empty}>
         <ProfileComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
@@ -116,18 +117,18 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     fireEvent.change(input, { target: { value: 'invalid-email' } })
 
     await flushEffects()
-    
-      expect(screen.getByTestId('email-error')).toBeInTheDocument()
-      expect(screen.getByTestId('email-error')).toHaveTextContent('Invalid email format')
-    
+
+    expect(screen.getByTestId('email-error')).toBeInTheDocument()
+    expect(screen.getByTestId('email-error')).toHaveTextContent(
+      'Invalid email format',
+    )
 
     // Valid email
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
 
     await flushEffects()
-    
-      expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
-    
+
+    expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
   })
 
   // TC5.3: Validator checks username uniqueness (async simulation)
@@ -142,7 +143,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
         usernameField.setValue(username)
 
         // Simulate async check
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
 
         const newErrors = { ...errorsField.value }
         if (takenUsernames.includes(username.toLowerCase())) {
@@ -158,11 +159,13 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
           <input
             data-testid="username-input"
             value={usernameField.value}
-            onChange={e => validateUsername(e.target.value)}
+            onChange={(e) => validateUsername(e.target.value)}
             placeholder="Username"
           />
           {errorsField.value.username && (
-            <span data-testid="username-error">{errorsField.value.username[0]}</span>
+            <span data-testid="username-error">
+              {errorsField.value.username[0]}
+            </span>
           )}
         </div>
       )
@@ -171,7 +174,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     render(
       <store.Provider initialState={userProfileFixtures.empty}>
         <ProfileComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
@@ -180,31 +183,26 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     fireEvent.change(input, { target: { value: 'admin' } })
 
     await flushEffects()
-    
-      expect(screen.getByTestId('username-error')).toBeInTheDocument()
-    
+
+    expect(screen.getByTestId('username-error')).toBeInTheDocument()
 
     // Try available username
     fireEvent.change(input, { target: { value: 'newuser' } })
 
     await flushEffects()
-    
-      expect(screen.queryByTestId('username-error')).not.toBeInTheDocument()
-    
+
+    expect(screen.queryByTestId('username-error')).not.toBeInTheDocument()
   })
 
   // TC5.4: ClearPaths removes field from object when not needed
   it('TC5.4: clears unnecessary fields from state', async () => {
-
     function ProfileComponent() {
       const { getState, setChanges } = store.useJitStore()
 
       const handleClearBio = () => {
         const state = getState()
         // Clear bio field
-        setChanges([
-          ['bio', '', {}],
-        ])
+        setChanges([['bio', '', {}]])
       }
 
       const bioField = store.useFieldStore('bio')
@@ -214,13 +212,10 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
           <input
             data-testid="bio-input"
             value={bioField.value}
-            onChange={e => bioField.setValue(e.target.value)}
+            onChange={(e) => bioField.setValue(e.target.value)}
             placeholder="Bio"
           />
-          <button
-            data-testid="clear-bio-btn"
-            onClick={handleClearBio}
-          >
+          <button data-testid="clear-bio-btn" onClick={handleClearBio}>
             Clear Bio
           </button>
           <span data-testid="bio-value">{bioField.value}</span>
@@ -229,33 +224,35 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     }
 
     render(
-      <store.Provider initialState={{
-        username: 'john',
-        email: 'john@example.com',
-        age: 30,
-        bio: 'Software developer',
-        isActive: true,
-        lastUpdated: Date.now(),
-        _errors: {},
-      }}>
+      <store.Provider
+        initialState={{
+          username: 'john',
+          email: 'john@example.com',
+          age: 30,
+          bio: 'Software developer',
+          isActive: true,
+          lastUpdated: Date.now(),
+          _errors: {},
+        }}
+      >
         <ProfileComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
-    expect(screen.getByTestId('bio-value')).toHaveTextContent('Software developer')
+    expect(screen.getByTestId('bio-value')).toHaveTextContent(
+      'Software developer',
+    )
 
     const clearBtn = screen.getByTestId('clear-bio-btn')
     fireEvent.click(clearBtn)
 
     await flushEffects()
-    
-      expect(screen.getByTestId('bio-value')).toHaveTextContent('')
-    
+
+    expect(screen.getByTestId('bio-value')).toHaveTextContent('')
   })
 
   // TC5.5: FlipPaths syncs bidirectional relationships
   it('TC5.5: flipPaths inverts boolean relationships', async () => {
-
     function ProfileComponent() {
       store.useSideEffects('flip-active', {
         flipPaths: [],
@@ -271,7 +268,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
               data-testid="active-checkbox"
               type="checkbox"
               checked={isActiveField.value}
-              onChange={e => isActiveField.setValue(e.target.checked)}
+              onChange={(e) => isActiveField.setValue(e.target.checked)}
             />
             Active
           </label>
@@ -283,17 +280,19 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     }
 
     render(
-      <store.Provider initialState={{
-        username: 'john',
-        email: 'john@example.com',
-        age: 30,
-        bio: '',
-        isActive: false,
-        lastUpdated: Date.now(),
-        _errors: {},
-      }}>
+      <store.Provider
+        initialState={{
+          username: 'john',
+          email: 'john@example.com',
+          age: 30,
+          bio: '',
+          isActive: false,
+          lastUpdated: Date.now(),
+          _errors: {},
+        }}
+      >
         <ProfileComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('active-status')).toHaveTextContent('Inactive')
@@ -302,9 +301,8 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     fireEvent.click(checkbox)
 
     await flushEffects()
-    
-      expect(screen.getByTestId('active-status')).toHaveTextContent('Active')
-    
+
+    expect(screen.getByTestId('active-status')).toHaveTextContent('Active')
   })
 
   // TC5.6: Multiple side effects work together
@@ -336,12 +334,12 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
           <input
             data-testid="username-input"
             value={usernameField.value}
-            onChange={e => handleUsernameChange(e.target.value)}
+            onChange={(e) => handleUsernameChange(e.target.value)}
           />
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => emailField.setValue(e.target.value)}
+            onChange={(e) => emailField.setValue(e.target.value)}
           />
           <span data-testid="error-count">
             {Object.keys(errorsField.value).length}
@@ -353,10 +351,12 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     render(
       <store.Provider initialState={userProfileFixtures.empty}>
         <ProfileComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
-    const usernameInput = screen.getByTestId('username-input') as HTMLInputElement
+    const usernameInput = screen.getByTestId(
+      'username-input',
+    ) as HTMLInputElement
     const emailInput = screen.getByTestId('email-input') as HTMLInputElement
 
     // Trigger multiple effects
@@ -364,9 +364,8 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     fireEvent.change(emailInput, { target: { value: 'test@example.com' } })
 
     await flushEffects()
-    
-      expect(screen.getByTestId('error-count')).toHaveTextContent('1')
-    
+
+    expect(screen.getByTestId('error-count')).toHaveTextContent('1')
   })
 
   // TC5.7: Side effects don't interfere with concerns
@@ -398,13 +397,13 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
           <input
             data-testid="username-input"
             value={usernameField.value}
-            onChange={e => usernameField.setValue(e.target.value)}
+            onChange={(e) => usernameField.setValue(e.target.value)}
             placeholder="Username"
           />
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => handleEmailChange(e.target.value)}
+            onChange={(e) => handleEmailChange(e.target.value)}
             placeholder="Email"
           />
           {errorsField.value.email && (
@@ -417,7 +416,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     render(
       <store.Provider initialState={userProfileFixtures.empty}>
         <ProfileComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const emailInput = screen.getByTestId('email-input') as HTMLInputElement
@@ -425,8 +424,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     fireEvent.change(emailInput, { target: { value: 'invalid' } })
 
     await flushEffects()
-    
-      expect(screen.getByTestId('email-error')).toBeInTheDocument()
-    
+
+    expect(screen.getByTestId('email-error')).toBeInTheDocument()
   })
 })

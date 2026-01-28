@@ -6,13 +6,15 @@
  */
 
 import React, { useState } from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
 
-import {
-  createWizardFormStore,
-  wizardFormFixtures,
-} from '../mocks'
+import { render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import type { WizardForm } from '../mocks'
+import { createWizardFormStore, wizardFormFixtures } from '../mocks'
+
+/** Wizard step type - used for type-safe step navigation */
+type WizardStep = WizardForm['currentStep']
 
 describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   let store: ReturnType<typeof createWizardFormStore>
@@ -54,7 +56,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
 
       const handleNext = () => {
         if (validateStep(currentStepField.value)) {
-          currentStepField.setValue((currentStepField.value + 1) as any)
+          currentStepField.setValue((currentStepField.value + 1) as WizardStep)
         }
       }
 
@@ -66,7 +68,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <input
                 data-testid="firstName-input"
                 value={personalInfoField.value.firstName}
-                onChange={e => {
+                onChange={(e) => {
                   personalInfoField.setValue({
                     ...personalInfoField.value,
                     firstName: e.target.value,
@@ -89,21 +91,26 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step1Empty }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step1Empty)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const nextBtn = screen.getByTestId('next-btn')
 
     // Click next without filling - should show error
     fireEvent.click(nextBtn)
+    await flushEffects()
+
     expect(screen.getByTestId('firstName-error')).toBeInTheDocument()
     expect(screen.getByTestId('current-step')).toHaveTextContent('1')
 
     // Fill field and try again
     const input = screen.getByTestId('firstName-input')
     fireEvent.change(input, { target: { value: 'John' } })
+    await flushEffects()
 
     // Still on step 1 because lastName is not filled
     expect(screen.getByTestId('current-step')).toHaveTextContent('1')
@@ -130,7 +137,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
           <input
             data-testid="firstName-input"
             value={personalInfoField.value.firstName}
-            onChange={e => {
+            onChange={(e) => {
               personalInfoField.setValue({
                 ...personalInfoField.value,
                 firstName: e.target.value,
@@ -139,26 +146,31 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
             }}
           />
           {errorsField.value.email && (
-            <span data-testid="error-message">{errorsField.value.email[0]}</span>
+            <span data-testid="error-message">
+              {errorsField.value.email[0]}
+            </span>
           )}
-          <span data-testid="error-count">{Object.keys(errorsField.value).length}</span>
+          <span data-testid="error-count">
+            {Object.keys(errorsField.value).length}
+          </span>
         </div>
       )
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step1Empty }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step1Empty)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('firstName-input')
     fireEvent.change(input, { target: { value: 'invalid' } })
 
     await flushEffects()
-    
-      expect(screen.getByTestId('error-message')).toBeInTheDocument()
-    
+
+    expect(screen.getByTestId('error-message')).toBeInTheDocument()
   })
 
   // TC6.3: Show/hide fields based on current step
@@ -177,7 +189,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <input
                 data-testid="firstName-input"
                 value={personalInfoField.value.firstName}
-                onChange={e =>
+                onChange={(e) =>
                   personalInfoField.setValue({
                     ...personalInfoField.value,
                     firstName: e.target.value,
@@ -188,7 +200,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <input
                 data-testid="lastName-input"
                 value={personalInfoField.value.lastName}
-                onChange={e =>
+                onChange={(e) =>
                   personalInfoField.setValue({
                     ...personalInfoField.value,
                     lastName: e.target.value,
@@ -204,7 +216,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <input
                 data-testid="street-input"
                 value={addressInfoField.value.street}
-                onChange={e =>
+                onChange={(e) =>
                   addressInfoField.setValue({
                     ...addressInfoField.value,
                     street: e.target.value,
@@ -215,7 +227,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <input
                 data-testid="city-input"
                 value={addressInfoField.value.city}
-                onChange={e =>
+                onChange={(e) =>
                   addressInfoField.setValue({
                     ...addressInfoField.value,
                     city: e.target.value,
@@ -230,7 +242,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
             data-testid="next-btn"
             onClick={() => {
               if (currentStepField.value < 3) {
-                currentStepField.setValue((currentStepField.value + 1) as any)
+                currentStepField.setValue(
+                  (currentStepField.value + 1) as WizardStep,
+                )
               }
             }}
           >
@@ -241,9 +255,11 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step1Empty }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step1Empty)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Step 1 should be visible
@@ -255,10 +271,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     fireEvent.click(nextBtn)
 
     await flushEffects()
-    
-      expect(screen.queryByTestId('step1-form')).not.toBeInTheDocument()
-      expect(screen.getByTestId('step2-form')).toBeInTheDocument()
-    
+
+    expect(screen.queryByTestId('step1-form')).not.toBeInTheDocument()
+    expect(screen.getByTestId('step2-form')).toBeInTheDocument()
   })
 
   // TC6.4: Disable next button while validating
@@ -270,8 +285,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       const handleNext = async () => {
         setIsValidating(true)
         // Simulate validation delay
-        await new Promise(resolve => setTimeout(resolve, 50))
-        currentStepField.setValue((currentStepField.value + 1) as any)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        currentStepField.setValue((currentStepField.value + 1) as WizardStep)
         setIsValidating(false)
       }
 
@@ -289,9 +304,11 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step1Empty }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step1Empty)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const nextBtn = screen.getByTestId('next-btn') as HTMLButtonElement
@@ -300,10 +317,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     fireEvent.click(nextBtn)
 
     await flushEffects()
-    
-      expect(nextBtn.disabled).toBe(true)
-      expect(nextBtn).toHaveTextContent('Validating...')
-    
+
+    expect(nextBtn.disabled).toBe(true)
+    expect(nextBtn).toHaveTextContent('Validating...')
   })
 
   // TC6.5: Show progress indicator
@@ -333,9 +349,11 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step1Empty }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step1Empty)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Step 1 of 3')
@@ -363,7 +381,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <h3>Review Your Information</h3>
               <p data-testid="aggregated-data">{aggregateData()}</p>
               <p data-testid="personal-summary">
-                {personalInfoField.value.firstName} {personalInfoField.value.lastName}
+                {personalInfoField.value.firstName}{' '}
+                {personalInfoField.value.lastName}
               </p>
               <p data-testid="address-summary">
                 {addressInfoField.value.street}, {addressInfoField.value.city}{' '}
@@ -376,15 +395,17 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step3Review }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step3Review)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('review-section')).toBeInTheDocument()
     expect(screen.getByTestId('personal-summary')).toHaveTextContent('John Doe')
     expect(screen.getByTestId('address-summary')).toHaveTextContent(
-      '123 Main St, Springfield 12345'
+      '123 Main St, Springfield 12345',
     )
   })
 
@@ -400,7 +421,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
             data-testid="prev-btn"
             onClick={() => {
               if (currentStepField.value > 1) {
-                currentStepField.setValue((currentStepField.value - 1) as any)
+                currentStepField.setValue(
+                  (currentStepField.value - 1) as WizardStep,
+                )
               }
             }}
             disabled={currentStepField.value === 1}
@@ -411,7 +434,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
             data-testid="next-btn"
             onClick={() => {
               if (currentStepField.value < 3) {
-                currentStepField.setValue((currentStepField.value + 1) as any)
+                currentStepField.setValue(
+                  (currentStepField.value + 1) as WizardStep,
+                )
               }
             }}
             disabled={currentStepField.value === 3}
@@ -423,9 +448,11 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step1Empty }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step1Empty)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const prevBtn = screen.getByTestId('prev-btn') as HTMLButtonElement
@@ -439,18 +466,16 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     fireEvent.click(nextBtn)
 
     await flushEffects()
-    
-      expect(screen.getByTestId('current-step')).toHaveTextContent('2')
-      expect(prevBtn.disabled).toBe(false)
-    
+
+    expect(screen.getByTestId('current-step')).toHaveTextContent('2')
+    expect(prevBtn.disabled).toBe(false)
 
     // Go back
     fireEvent.click(prevBtn)
 
     await flushEffects()
-    
-      expect(screen.getByTestId('current-step')).toHaveTextContent('1')
-    
+
+    expect(screen.getByTestId('current-step')).toHaveTextContent('1')
   })
 
   // TC6.8: Concerns & side effects work in complex workflow
@@ -471,7 +496,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       const handleNext = () => {
         const { firstName, lastName } = personalInfoField.value
         if (firstName && lastName) {
-          currentStepField.setValue((currentStepField.value + 1) as any)
+          currentStepField.setValue((currentStepField.value + 1) as WizardStep)
         }
       }
 
@@ -483,7 +508,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <input
                 data-testid="firstName-input"
                 value={personalInfoField.value.firstName}
-                onChange={e =>
+                onChange={(e) =>
                   personalInfoField.setValue({
                     ...personalInfoField.value,
                     firstName: e.target.value,
@@ -493,7 +518,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               <input
                 data-testid="lastName-input"
                 value={personalInfoField.value.lastName}
-                onChange={e =>
+                onChange={(e) =>
                   personalInfoField.setValue({
                     ...personalInfoField.value,
                     lastName: e.target.value,
@@ -510,9 +535,11 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     render(
-      <store.Provider initialState={{ ...wizardFormFixtures.step1Empty }}>
+      <store.Provider
+        initialState={structuredClone(wizardFormFixtures.step1Empty)}
+      >
         <WizardComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const firstNameInput = screen.getByTestId('firstName-input')
@@ -521,14 +548,16 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
 
     // Fill both fields
     fireEvent.change(firstNameInput, { target: { value: 'John' } })
+    await flushEffects()
+
     fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
+    await flushEffects()
 
     // Click next
     fireEvent.click(nextBtn)
 
     await flushEffects()
-    
-      expect(screen.getByTestId('current-step')).toHaveTextContent('2')
-    
+
+    expect(screen.getByTestId('current-step')).toHaveTextContent('2')
   })
 })

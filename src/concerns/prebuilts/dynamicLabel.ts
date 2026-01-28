@@ -17,13 +17,13 @@
  * ```
  */
 
-import type { ConcernType } from '../types'
 import { interpolateTemplate } from '../../utils/interpolation'
+import type { ConcernType } from '../types'
 
 export const dynamicLabel: ConcernType<{ template: string }, string> = {
   name: 'dynamicLabel',
   description: 'Template string interpolation for labels',
   evaluate: (props) => {
     return interpolateTemplate(props.template, props.state)
-  }
+  },
 }

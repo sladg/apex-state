@@ -6,14 +6,14 @@
  */
 
 import type {
-  RegistrationForm,
-  ProfileForm,
-  ShoppingCart,
+  FormWithErrors,
   NestedCart,
   ProductForm,
+  ProfileForm,
+  RegistrationForm,
+  ShoppingCart,
   UserProfile,
   WizardForm,
-  FormWithErrors,
 } from './types'
 
 /**
@@ -259,7 +259,11 @@ export const wizardFormFixtures = {
   step2Filled: {
     currentStep: 2,
     personalInfo: { firstName: 'John', lastName: 'Doe' },
-    addressInfo: { street: '123 Main St', city: 'Springfield', zipCode: '12345' },
+    addressInfo: {
+      street: '123 Main St',
+      city: 'Springfield',
+      zipCode: '12345',
+    },
     reviewData: { allFilled: false, isValid: false },
     _errors: {},
   } satisfies WizardForm,
@@ -267,7 +271,11 @@ export const wizardFormFixtures = {
   step3Review: {
     currentStep: 3,
     personalInfo: { firstName: 'John', lastName: 'Doe' },
-    addressInfo: { street: '123 Main St', city: 'Springfield', zipCode: '12345' },
+    addressInfo: {
+      street: '123 Main St',
+      city: 'Springfield',
+      zipCode: '12345',
+    },
     reviewData: { allFilled: true, isValid: true },
     _errors: {},
   } satisfies WizardForm,

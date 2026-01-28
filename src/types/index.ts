@@ -8,12 +8,18 @@
  * - Advanced type filters and mappings
  */
 
-export type { DeepKey } from './deepKey'
-export type { DeepValue } from './deepValue'
-export type { GenericMeta } from './meta'
+export type { BoolLogic, ComparableValue } from './boolLogic'
 export type { ArrayOfChanges } from './changes'
+export type { EvaluatedConcerns, ExtractEvaluateReturn } from './concerns'
+export type { DeepKey } from './deepKey'
 export type { DeepKeyFiltered } from './deepKeyFiltered'
-export type { PathsWithSameValueAs, SyncPair, FlipPair, AggregationPair } from './pathsOfSameValue'
-export type { ExtractEvaluateReturn, EvaluatedConcerns } from './concerns'
+export type { DeepValue } from './deepValue'
 export type { FieldTransformConfig } from './fieldTransform'
 export type { ExtractPlaceholders, ValidatedTemplate } from './interpolation'
+export type { GenericMeta } from './meta'
+export type {
+  AggregationPair,
+  FlipPair,
+  PathsWithSameValueAs,
+  SyncPair,
+} from './pathsOfSameValue'

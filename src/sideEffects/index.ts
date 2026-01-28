@@ -9,9 +9,9 @@
  */
 
 export {
+  registerAggregation,
+  registerFlipPair,
+  registerListener,
   registerSideEffects,
   registerSyncPair,
-  registerFlipPair,
-  registerAggregation,
-  registerListener,
 } from './registration'

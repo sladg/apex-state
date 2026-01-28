@@ -16,8 +16,21 @@
  */
 
 // Validation
+import { disabledWhen } from './disabledWhen'
+import { dynamicLabel } from './dynamicLabel'
+import { dynamicPlaceholder } from './dynamicPlaceholder'
+import { dynamicTooltip } from './dynamicTooltip'
+import { readonlyWhen } from './readonlyWhen'
+import { validationState } from './validationState'
+import { visibleWhen } from './visibleWhen'
+import { zodValidation } from './zodValidation'
+
+export {
+  type ValidationError,
+  validationState,
+  type ValidationStateResult,
+} from './validationState'
 export { zodValidation } from './zodValidation'
-export { validationState, type ValidationStateResult, type ValidationError } from './validationState'
 
 // Conditional state
 export { disabledWhen } from './disabledWhen'
@@ -25,18 +38,9 @@ export { readonlyWhen } from './readonlyWhen'
 export { visibleWhen } from './visibleWhen'
 
 // Dynamic text
-export { dynamicTooltip } from './dynamicTooltip'
 export { dynamicLabel } from './dynamicLabel'
 export { dynamicPlaceholder } from './dynamicPlaceholder'
-
-import { zodValidation } from './zodValidation'
-import { validationState } from './validationState'
-import { disabledWhen } from './disabledWhen'
-import { readonlyWhen } from './readonlyWhen'
-import { visibleWhen } from './visibleWhen'
-import { dynamicTooltip } from './dynamicTooltip'
-import { dynamicLabel } from './dynamicLabel'
-import { dynamicPlaceholder } from './dynamicPlaceholder'
+export { dynamicTooltip } from './dynamicTooltip'
 
 /**
  * All pre-built concerns as a tuple (for use with findConcern)
@@ -49,7 +53,7 @@ export const prebuilts = [
   visibleWhen,
   dynamicTooltip,
   dynamicLabel,
-  dynamicPlaceholder
+  dynamicPlaceholder,
 ] as const
 
 /**
@@ -63,5 +67,5 @@ export const prebuiltsNamespace = {
   visibleWhen,
   dynamicTooltip,
   dynamicLabel,
-  dynamicPlaceholder
+  dynamicPlaceholder,
 }

@@ -50,7 +50,7 @@ export const extractPlaceholders = (template: string): string[] => {
  */
 export const interpolateTemplate = <STATE extends object>(
   template: string,
-  state: STATE
+  state: STATE,
 ): string => {
   return template.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
     const value = deepGet(state, path as never)

@@ -28,77 +28,77 @@ type Primitive = string | number | boolean | bigint | symbol | null | undefined
 
 type IsAny<T> = 0 extends 1 & T ? true : false
 
-// Helper to check if type is never
-type IsNever<T> = [T] extends [never] ? true : false
+// Helper to check if type is never (exported for potential future use)
+type _IsNever<T> = [T] extends [never] ? true : false
 
-// Helper to get array element type
-type ArrayElement<T> = T extends readonly (infer E)[] ? E : never
+// Helper to get array element type (exported for potential future use)
+type _ArrayElement<T> = T extends readonly (infer E)[] ? E : never
 
-// Exclude array methods and numeric keys
-type ExcludeArrayKeys<T> = T extends readonly any[] ? never : T
+// Exclude array methods and numeric keys (exported for potential future use)
+type _ExcludeArrayKeys<T> = T extends readonly any[] ? never : T
 
 // Main DeepKey implementation with depth limit to prevent infinite recursion
 export type DeepKey<T, Depth extends number = 20> = Depth extends 0
   ? never
   : IsAny<T> extends true
-  ? string
-  : T extends Primitive
-  ? never
-  : T extends readonly any[]
-  ? never
-  : {
-      [K in keyof T & (string | number)]:
-        | `${K & string}`
-        | (T[K] extends Primitive
-            ? never
-            : T[K] extends readonly any[]
-            ? never
-            : DeepKey<T[K], Prev<Depth>> extends infer DK
-            ? DK extends string
-              ? `${K & string}.${DK}`
-              : never
-            : never)
-    }[keyof T & (string | number)]
+    ? string
+    : T extends Primitive
+      ? never
+      : T extends readonly any[]
+        ? never
+        : {
+            [K in keyof T & (string | number)]:
+              | `${K & string}`
+              | (T[K] extends Primitive
+                  ? never
+                  : T[K] extends readonly any[]
+                    ? never
+                    : DeepKey<T[K], Prev<Depth>> extends infer DK
+                      ? DK extends string
+                        ? `${K & string}.${DK}`
+                        : never
+                      : never)
+          }[keyof T & (string | number)]
 
 // Depth counter helper types (supports up to depth 20)
 type Prev<N extends number> = N extends 20
   ? 19
   : N extends 19
-  ? 18
-  : N extends 18
-  ? 17
-  : N extends 17
-  ? 16
-  : N extends 16
-  ? 15
-  : N extends 15
-  ? 14
-  : N extends 14
-  ? 13
-  : N extends 13
-  ? 12
-  : N extends 12
-  ? 11
-  : N extends 11
-  ? 10
-  : N extends 10
-  ? 9
-  : N extends 9
-  ? 8
-  : N extends 8
-  ? 7
-  : N extends 7
-  ? 6
-  : N extends 6
-  ? 5
-  : N extends 5
-  ? 4
-  : N extends 4
-  ? 3
-  : N extends 3
-  ? 2
-  : N extends 2
-  ? 1
-  : N extends 1
-  ? 0
-  : never
+    ? 18
+    : N extends 18
+      ? 17
+      : N extends 17
+        ? 16
+        : N extends 16
+          ? 15
+          : N extends 15
+            ? 14
+            : N extends 14
+              ? 13
+              : N extends 13
+                ? 12
+                : N extends 12
+                  ? 11
+                  : N extends 11
+                    ? 10
+                    : N extends 10
+                      ? 9
+                      : N extends 9
+                        ? 8
+                        : N extends 8
+                          ? 7
+                          : N extends 7
+                            ? 6
+                            : N extends 6
+                              ? 5
+                              : N extends 5
+                                ? 4
+                                : N extends 4
+                                  ? 3
+                                  : N extends 3
+                                    ? 2
+                                    : N extends 2
+                                      ? 1
+                                      : N extends 1
+                                        ? 0
+                                        : never

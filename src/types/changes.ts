@@ -29,9 +29,6 @@ import type { GenericMeta } from './meta'
  * - value: The value at that path (properly typed based on the path)
  * - meta: Metadata about the change
  */
-export type ArrayOfChanges<
-  DATA,
-  META extends GenericMeta = GenericMeta
-> = Array<{
+export type ArrayOfChanges<DATA, META extends GenericMeta = GenericMeta> = {
   [K in DeepKey<DATA>]: [K, DeepValue<DATA, K>, META]
-}[DeepKey<DATA>]>
+}[DeepKey<DATA>][]

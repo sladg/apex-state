@@ -6,13 +6,15 @@
  */
 
 import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
-import { z } from 'zod'
-import {
-  createProductFormStore,
-  productFormFixtures,
-} from '../mocks'
+
+import { render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import type { ProductForm } from '../mocks'
+import { createProductFormStore, productFormFixtures } from '../mocks'
+
+/** Product type union - used for type-safe event handler casts */
+type ProductType = ProductForm['type']
 
 describe('Integration: Dynamic UI State from Concerns', () => {
   let store: ReturnType<typeof createProductFormStore>
@@ -44,7 +46,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
           <select
             data-testid="type-select"
             value={typeField.value}
-            onChange={e => typeField.setValue(e.target.value as any)}
+            onChange={(e) => typeField.setValue(e.target.value as ProductType)}
           >
             <option value="physical">Physical</option>
             <option value="digital">Digital</option>
@@ -55,7 +57,11 @@ describe('Integration: Dynamic UI State from Concerns', () => {
               data-testid="weight-input"
               type="number"
               value={weightField.value || ''}
-              onChange={e => weightField.setValue(e.target.value ? parseFloat(e.target.value) : undefined)}
+              onChange={(e) =>
+                weightField.setValue(
+                  e.target.value ? parseFloat(e.target.value) : undefined,
+                )
+              }
               placeholder="Weight (kg)"
             />
           )}
@@ -66,7 +72,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     render(
       <store.Provider initialState={{ ...productFormFixtures.empty }}>
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Physical product - weight field should be visible
@@ -102,7 +108,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
           <select
             data-testid="type-select"
             value={typeField.value}
-            onChange={e => typeField.setValue(e.target.value as any)}
+            onChange={(e) => typeField.setValue(e.target.value as ProductType)}
           >
             <option value="physical">Physical</option>
             <option value="digital">Digital</option>
@@ -112,7 +118,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
             <input
               data-testid="download-url-input"
               value={downloadUrlField.value || ''}
-              onChange={e => downloadUrlField.setValue(e.target.value)}
+              onChange={(e) => downloadUrlField.setValue(e.target.value)}
               placeholder="Download URL"
             />
           )}
@@ -123,7 +129,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     render(
       <store.Provider initialState={{ ...productFormFixtures.empty }}>
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Switch to digital
@@ -138,7 +144,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
 
   // TC4.3: Price field disabledWhen editing locked
   it('TC4.3: disables price field when product is published', async () => {
-
     function ProductComponent() {
       const isPublished = store.useFieldStore('isPublished')
       const priceField = store.useFieldStore('price')
@@ -161,7 +166,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
               data-testid="published-checkbox"
               type="checkbox"
               checked={isPublished.value}
-              onChange={e => isPublished.setValue(e.target.checked)}
+              onChange={(e) => isPublished.setValue(e.target.checked)}
             />
             Published
           </label>
@@ -170,7 +175,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
             data-testid="price-input"
             type="number"
             value={priceField.value}
-            onChange={e => priceField.setValue(parseFloat(e.target.value))}
+            onChange={(e) => priceField.setValue(parseFloat(e.target.value))}
             disabled={priceDisabled}
             placeholder="Price"
           />
@@ -179,19 +184,21 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     }
 
     render(
-      <store.Provider initialState={{
-        type: 'physical',
-        name: '',
-        price: 10,
-        weight: undefined,
-        downloadUrl: undefined,
-        requiresShipping: true,
-        taxable: true,
-        isPublished: false,
-        _errors: {},
-      }}>
+      <store.Provider
+        initialState={{
+          type: 'physical',
+          name: '',
+          price: 10,
+          weight: undefined,
+          downloadUrl: undefined,
+          requiresShipping: true,
+          taxable: true,
+          isPublished: false,
+          _errors: {},
+        }}
+      >
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const priceInput = screen.getByTestId('price-input') as HTMLInputElement
@@ -213,16 +220,15 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       const nameField = store.useFieldStore('name')
 
       // Dynamic label based on type
-      const labelText = typeField.value === 'digital'
-        ? 'Software Name'
-        : 'Product Name'
+      const labelText =
+        typeField.value === 'digital' ? 'Software Name' : 'Product Name'
 
       return (
         <div>
           <select
             data-testid="type-select"
             value={typeField.value}
-            onChange={e => typeField.setValue(e.target.value as any)}
+            onChange={(e) => typeField.setValue(e.target.value as ProductType)}
           >
             <option value="physical">Physical</option>
             <option value="digital">Digital</option>
@@ -232,7 +238,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
           <input
             data-testid="name-input"
             value={nameField.value}
-            onChange={e => nameField.setValue(e.target.value)}
+            onChange={(e) => nameField.setValue(e.target.value)}
           />
         </div>
       )
@@ -241,7 +247,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     render(
       <store.Provider initialState={{ ...productFormFixtures.empty }}>
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     expect(screen.getByTestId('name-label')).toHaveTextContent('Product Name')
@@ -259,16 +265,17 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       const typeField = store.useFieldStore('type')
       const downloadUrlField = store.useFieldStore('downloadUrl')
 
-      const placeholderText = typeField.value === 'digital'
-        ? 'https://download.example.com/software.zip'
-        : 'Not applicable for physical products'
+      const placeholderText =
+        typeField.value === 'digital'
+          ? 'https://download.example.com/software.zip'
+          : 'Not applicable for physical products'
 
       return (
         <div>
           <select
             data-testid="type-select"
             value={typeField.value}
-            onChange={e => typeField.setValue(e.target.value as any)}
+            onChange={(e) => typeField.setValue(e.target.value as ProductType)}
           >
             <option value="physical">Physical</option>
             <option value="digital">Digital</option>
@@ -277,7 +284,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
           <input
             data-testid="download-url-input"
             value={downloadUrlField.value || ''}
-            onChange={e => downloadUrlField.setValue(e.target.value)}
+            onChange={(e) => downloadUrlField.setValue(e.target.value)}
             placeholder={placeholderText}
           />
         </div>
@@ -287,7 +294,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     render(
       <store.Provider initialState={{ ...productFormFixtures.empty }}>
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const typeSelect = screen.getByTestId('type-select')
@@ -305,16 +312,17 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       const typeField = store.useFieldStore('type')
       const priceField = store.useFieldStore('price')
 
-      const tooltipText = typeField.value === 'digital'
-        ? 'Software products have flat pricing'
-        : 'Physical products include shipping costs'
+      const tooltipText =
+        typeField.value === 'digital'
+          ? 'Software products have flat pricing'
+          : 'Physical products include shipping costs'
 
       return (
         <div>
           <select
             data-testid="type-select"
             value={typeField.value}
-            onChange={e => typeField.setValue(e.target.value as any)}
+            onChange={(e) => typeField.setValue(e.target.value as ProductType)}
           >
             <option value="physical">Physical</option>
             <option value="digital">Digital</option>
@@ -325,7 +333,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
               data-testid="price-input"
               type="number"
               value={priceField.value}
-              onChange={e => priceField.setValue(parseFloat(e.target.value))}
+              onChange={(e) => priceField.setValue(parseFloat(e.target.value))}
             />
           </div>
         </div>
@@ -335,7 +343,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     render(
       <store.Provider initialState={{ ...productFormFixtures.empty }}>
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const typeSelect = screen.getByTestId('type-select')
@@ -344,7 +352,10 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     await flushEffects()
 
     const tooltip = screen.getByTestId('price-tooltip')
-    expect(tooltip).toHaveAttribute('title', 'Software products have flat pricing')
+    expect(tooltip).toHaveAttribute(
+      'title',
+      'Software products have flat pricing',
+    )
   })
 
   // TC4.7: ReadOnly when published
@@ -371,7 +382,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
               data-testid="published-checkbox"
               type="checkbox"
               checked={isPublished.value}
-              onChange={e => isPublished.setValue(e.target.checked)}
+              onChange={(e) => isPublished.setValue(e.target.checked)}
             />
             Published
           </label>
@@ -379,7 +390,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
           <input
             data-testid="name-input"
             value={nameField.value}
-            onChange={e => nameField.setValue(e.target.value)}
+            onChange={(e) => nameField.setValue(e.target.value)}
             readOnly={nameReadOnly}
             placeholder="Product Name"
           />
@@ -388,19 +399,21 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     }
 
     render(
-      <store.Provider initialState={{
-        type: 'physical',
-        name: 'Test Product',
-        price: 0,
-        weight: undefined,
-        downloadUrl: undefined,
-        requiresShipping: true,
-        taxable: true,
-        isPublished: false,
-        _errors: {},
-      }}>
+      <store.Provider
+        initialState={{
+          type: 'physical',
+          name: 'Test Product',
+          price: 0,
+          weight: undefined,
+          downloadUrl: undefined,
+          requiresShipping: true,
+          taxable: true,
+          isPublished: false,
+          _errors: {},
+        }}
+      >
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const nameInput = screen.getByTestId('name-input') as HTMLInputElement
@@ -436,7 +449,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
           <select
             data-testid="type-select"
             value={typeField.value}
-            onChange={e => typeField.setValue(e.target.value as any)}
+            onChange={(e) => typeField.setValue(e.target.value as ProductType)}
           >
             <option value="physical">Physical</option>
             <option value="digital">Digital</option>
@@ -446,28 +459,32 @@ describe('Integration: Dynamic UI State from Concerns', () => {
             data-testid="price-input"
             type="number"
             value={priceField.value}
-            onChange={e => priceField.setValue(parseFloat(e.target.value))}
+            onChange={(e) => priceField.setValue(parseFloat(e.target.value))}
             disabled={priceDisabled}
           />
-          {priceDisabled && <span data-testid="price-disabled-msg">Price is locked</span>}
+          {priceDisabled && (
+            <span data-testid="price-disabled-msg">Price is locked</span>
+          )}
         </div>
       )
     }
 
     render(
-      <store.Provider initialState={{
-        type: 'physical',
-        name: '',
-        price: 10,
-        weight: undefined,
-        downloadUrl: undefined,
-        requiresShipping: true,
-        taxable: true,
-        isPublished: false,
-        _errors: {},
-      }}>
+      <store.Provider
+        initialState={{
+          type: 'physical',
+          name: '',
+          price: 10,
+          weight: undefined,
+          downloadUrl: undefined,
+          requiresShipping: true,
+          taxable: true,
+          isPublished: false,
+          _errors: {},
+        }}
+      >
         <ProductComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const priceInput = screen.getByTestId('price-input') as HTMLInputElement
@@ -483,4 +500,3 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     expect(screen.getByTestId('price-disabled-msg')).toBeInTheDocument()
   })
 })
-

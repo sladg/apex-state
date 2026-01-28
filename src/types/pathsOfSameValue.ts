@@ -25,7 +25,10 @@ import type { DeepValue } from './deepValue'
 /**
  * Get all paths in DATA that have the same value type as the value at PATH
  */
-export type PathsWithSameValueAs<DATA extends object, PATH extends DeepKey<DATA>> = {
+export type PathsWithSameValueAs<
+  DATA extends object,
+  PATH extends DeepKey<DATA>,
+> = {
   [K in DeepKey<DATA>]: DeepValue<DATA, K> extends DeepValue<DATA, PATH>
     ? DeepValue<DATA, PATH> extends DeepValue<DATA, K>
       ? K

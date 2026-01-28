@@ -17,50 +17,51 @@
 
 // Types
 export type {
-  RegistrationForm,
-  ProfileForm,
-  CartItem,
-  ShoppingCart,
-  NestedCart,
-  ProductForm,
-  UserProfile,
-  PersonalInfo,
   AddressInfo,
-  WizardForm,
+  CartItem,
   FormWithErrors,
+  NestedCart,
+  PersonalInfo,
+  ProductForm,
+  ProfileForm,
+  RegistrationForm,
+  ShoppingCart,
+  UserProfile,
+  WizardForm,
 } from './types'
 
 // Store factories
 export {
-  createRegistrationFormStore,
-  createProfileFormStore,
-  createShoppingCartStore,
+  createFormWithErrorsStore,
   createNestedCartStore,
   createProductFormStore,
+  createProfileFormStore,
+  createRegistrationFormStore,
+  createShoppingCartStore,
   createUserProfileStore,
   createWizardFormStore,
-  createFormWithErrorsStore,
   storeFactories,
 } from './stores'
 
 // Fixtures
 export {
-  registrationFormFixtures,
-  profileFormFixtures,
-  shoppingCartFixtures,
+  formWithErrorsFixtures,
   nestedCartFixtures,
   productFormFixtures,
+  profileFormFixtures,
+  registrationFormFixtures,
+  shoppingCartFixtures,
   userProfileFixtures,
   wizardFormFixtures,
-  formWithErrorsFixtures,
 } from './fixtures'
 
 // Helpers
 export {
-  validators,
-  errorMessages,
   assertions,
-  testPatterns,
   domHelpers,
+  errorMessages,
   generators,
+  testPatterns,
+  typeHelpers,
+  validators,
 } from './helpers'

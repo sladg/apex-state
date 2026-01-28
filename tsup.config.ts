@@ -12,11 +12,7 @@ export default defineConfig({
     'zod',
     'valtio',
     'lodash',
-    'deepdash',
     'graphology',
-    'graphology-shortest-path',
     'graphology-components',
-    'graphology-traversal',
-    'remeda'
-  ]
+  ],
 })

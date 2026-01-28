@@ -6,14 +6,11 @@
  */
 
 import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
 
-import {
-  createFormWithErrorsStore,
-  formWithErrorsFixtures,
-  errorMessages,
-} from '../mocks'
+import { render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import { createFormWithErrorsStore, formWithErrorsFixtures } from '../mocks'
 
 describe('Integration: Error Handling & Recovery', () => {
   let store: ReturnType<typeof createFormWithErrorsStore>
@@ -47,7 +44,7 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => validateEmail(e.target.value)}
+            onChange={(e) => validateEmail(e.target.value)}
             placeholder="Email"
           />
           <span data-testid="error-count">
@@ -61,9 +58,11 @@ describe('Integration: Error Handling & Recovery', () => {
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input')
@@ -71,9 +70,8 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(screen.getByTestId('error-count')).toHaveTextContent('1')
-      expect(screen.getByTestId('email-error')).toBeInTheDocument()
-
+    expect(screen.getByTestId('error-count')).toHaveTextContent('1')
+    expect(screen.getByTestId('email-error')).toBeInTheDocument()
   })
 
   // TC7.2: Errors show for invalid fields (via concerns)
@@ -104,7 +102,7 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => validateAndShowError(e.target.value)}
+            onChange={(e) => validateAndShowError(e.target.value)}
           />
           {errorsField.value.email && (
             <div data-testid="error-display">
@@ -116,9 +114,11 @@ describe('Integration: Error Handling & Recovery', () => {
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input')
@@ -126,9 +126,10 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(screen.getByTestId('error-display')).toBeInTheDocument()
-      expect(screen.getByTestId('error-display')).toHaveTextContent('Invalid email format')
-
+    expect(screen.getByTestId('error-display')).toBeInTheDocument()
+    expect(screen.getByTestId('error-display')).toHaveTextContent(
+      'Invalid email format',
+    )
   })
 
   // TC7.3: Errors clear when field fixed
@@ -156,7 +157,7 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => validateEmail(e.target.value)}
+            onChange={(e) => validateEmail(e.target.value)}
           />
           {errorsField.value.email && (
             <span data-testid="email-error">{errorsField.value.email[0]}</span>
@@ -166,9 +167,11 @@ describe('Integration: Error Handling & Recovery', () => {
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input')
@@ -178,16 +181,14 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(screen.getByTestId('email-error')).toBeInTheDocument()
-
+    expect(screen.getByTestId('email-error')).toBeInTheDocument()
 
     // Fix error
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
 
     await flushEffects()
 
-      expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
-
+    expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
   })
 
   // TC7.4: Errors clear all when form reset
@@ -226,14 +227,14 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => emailField.setValue(e.target.value)}
+            onChange={(e) => emailField.setValue(e.target.value)}
             onBlur={handleValidate}
           />
           <input
             data-testid="password-input"
             type="password"
             value={passwordField.value}
-            onChange={e => passwordField.setValue(e.target.value)}
+            onChange={(e) => passwordField.setValue(e.target.value)}
             onBlur={handleValidate}
           />
           <button data-testid="reset-btn" onClick={handleReset}>
@@ -247,9 +248,11 @@ describe('Integration: Error Handling & Recovery', () => {
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Create errors
@@ -258,14 +261,13 @@ describe('Integration: Error Handling & Recovery', () => {
 
     fireEvent.change(emailInput, { target: { value: 'bad' } })
     fireEvent.blur(emailInput)
+    await flushEffects()
 
     fireEvent.change(passwordInput, { target: { value: 'short' } })
     fireEvent.blur(passwordInput)
-
     await flushEffects()
 
-      expect(screen.getByTestId('error-count')).toHaveTextContent('2')
-
+    expect(screen.getByTestId('error-count')).toHaveTextContent('2')
 
     // Reset
     const resetBtn = screen.getByTestId('reset-btn')
@@ -273,8 +275,7 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(screen.getByTestId('error-count')).toHaveTextContent('0')
-
+    expect(screen.getByTestId('error-count')).toHaveTextContent('0')
   })
 
   // TC7.5: Submit disabled while errors exist
@@ -304,12 +305,9 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => validateEmail(e.target.value)}
+            onChange={(e) => validateEmail(e.target.value)}
           />
-          <button
-            data-testid="submit-btn"
-            disabled={hasErrors}
-          >
+          <button data-testid="submit-btn" disabled={hasErrors}>
             Submit
           </button>
         </div>
@@ -317,10 +315,14 @@ describe('Integration: Error Handling & Recovery', () => {
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
+
+    await flushEffects()
 
     const submitBtn = screen.getByTestId('submit-btn') as HTMLButtonElement
     expect(submitBtn.disabled).toBe(false)
@@ -331,16 +333,14 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(submitBtn.disabled).toBe(true)
-
+    expect(submitBtn.disabled).toBe(true)
 
     // Fix error
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
 
     await flushEffects()
 
-      expect(submitBtn.disabled).toBe(false)
-
+    expect(submitBtn.disabled).toBe(false)
   })
 
   // TC7.6: Error messages interpolated
@@ -370,19 +370,23 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => validateEmail(e.target.value)}
+            onChange={(e) => validateEmail(e.target.value)}
           />
           {errorsField.value.email && (
-            <span data-testid="error-message">{errorsField.value.email[0]}</span>
+            <span data-testid="error-message">
+              {errorsField.value.email[0]}
+            </span>
           )}
         </div>
       )
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const input = screen.getByTestId('email-input')
@@ -390,10 +394,9 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(screen.getByTestId('error-message')).toHaveTextContent(
-        '"invalid-email" is not a valid email address'
-      )
-
+    expect(screen.getByTestId('error-message')).toHaveTextContent(
+      '"invalid-email" is not a valid email address',
+    )
   })
 
   // TC7.7: Field-level vs form-level errors
@@ -427,23 +430,27 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => emailField.setValue(e.target.value)}
+            onChange={(e) => emailField.setValue(e.target.value)}
           />
           <input
             data-testid="password-input"
             type="password"
             value={passwordField.value}
-            onChange={e => passwordField.setValue(e.target.value)}
+            onChange={(e) => passwordField.setValue(e.target.value)}
           />
           <button data-testid="validate-btn" onClick={validateForm}>
             Validate
           </button>
 
           {errorsField.value.email && (
-            <span data-testid="field-error-email">{errorsField.value.email[0]}</span>
+            <span data-testid="field-error-email">
+              {errorsField.value.email[0]}
+            </span>
           )}
           {errorsField.value.password && (
-            <span data-testid="field-error-password">{errorsField.value.password[0]}</span>
+            <span data-testid="field-error-password">
+              {errorsField.value.password[0]}
+            </span>
           )}
           {errorsField.value._form && (
             <span data-testid="form-error">{errorsField.value._form[0]}</span>
@@ -453,9 +460,11 @@ describe('Integration: Error Handling & Recovery', () => {
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     const validateBtn = screen.getByTestId('validate-btn')
@@ -463,25 +472,26 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(screen.getByTestId('field-error-email')).toBeInTheDocument()
-      expect(screen.getByTestId('field-error-password')).toBeInTheDocument()
-
+    expect(screen.getByTestId('field-error-email')).toBeInTheDocument()
+    expect(screen.getByTestId('field-error-password')).toBeInTheDocument()
 
     // Fill fields
     const emailInput = screen.getByTestId('email-input')
     const passwordInput = screen.getByTestId('password-input')
 
     fireEvent.change(emailInput, { target: { value: 'test@example.com' } })
+    await flushEffects()
+
     fireEvent.change(passwordInput, { target: { value: 'admin' } })
+    await flushEffects()
 
     fireEvent.click(validateBtn)
 
     await flushEffects()
 
-      expect(screen.queryByTestId('field-error-email')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('field-error-password')).not.toBeInTheDocument()
-      expect(screen.getByTestId('form-error')).toBeInTheDocument()
-
+    expect(screen.queryByTestId('field-error-email')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('field-error-password')).not.toBeInTheDocument()
+    expect(screen.getByTestId('form-error')).toBeInTheDocument()
   })
 
   // TC7.8: Errors survive other updates
@@ -513,13 +523,13 @@ describe('Integration: Error Handling & Recovery', () => {
           <input
             data-testid="email-input"
             value={emailField.value}
-            onChange={e => validateEmail(e.target.value)}
+            onChange={(e) => validateEmail(e.target.value)}
           />
           <input
             data-testid="password-input"
             type="password"
             value={passwordField.value}
-            onChange={e => updatePassword(e.target.value)}
+            onChange={(e) => updatePassword(e.target.value)}
           />
           {errorsField.value.email && (
             <span data-testid="email-error">{errorsField.value.email[0]}</span>
@@ -532,9 +542,11 @@ describe('Integration: Error Handling & Recovery', () => {
     }
 
     render(
-      <store.Provider initialState={formWithErrorsFixtures.empty}>
+      <store.Provider
+        initialState={structuredClone(formWithErrorsFixtures.empty)}
+      >
         <FormComponent />
-      </store.Provider>
+      </store.Provider>,
     )
 
     // Create email error
@@ -543,9 +555,8 @@ describe('Integration: Error Handling & Recovery', () => {
 
     await flushEffects()
 
-      expect(screen.getByTestId('email-error')).toBeInTheDocument()
-      expect(screen.getByTestId('error-count')).toHaveTextContent('1')
-
+    expect(screen.getByTestId('email-error')).toBeInTheDocument()
+    expect(screen.getByTestId('error-count')).toHaveTextContent('1')
 
     // Update password (should not clear email error)
     const passwordInput = screen.getByTestId('password-input')
@@ -554,8 +565,7 @@ describe('Integration: Error Handling & Recovery', () => {
     // Email error should still exist
     await flushEffects()
 
-      expect(screen.getByTestId('email-error')).toBeInTheDocument()
-      expect(screen.getByTestId('error-count')).toHaveTextContent('1')
-
+    expect(screen.getByTestId('email-error')).toBeInTheDocument()
+    expect(screen.getByTestId('error-count')).toHaveTextContent('1')
   })
 })

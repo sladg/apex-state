@@ -6,16 +6,17 @@
  */
 
 import { expectTypeOf, test } from 'vitest'
+
 import type { DeepKey } from '../../src/types/deepKey'
 
 // Simple object type
-type SimpleUser = {
+interface SimpleUser {
   name: string
   age: number
 }
 
 // Nested object type
-type NestedUser = {
+interface NestedUser {
   name: string
   address: {
     street: string
@@ -24,7 +25,7 @@ type NestedUser = {
 }
 
 // Deep nested object type (5 levels)
-type DeepNested = {
+interface DeepNested {
   level1: {
     level2: {
       level3: {
@@ -37,16 +38,16 @@ type DeepNested = {
 }
 
 // Type with arrays
-type WithArray = {
-  users: Array<{
+interface WithArray {
+  users: {
     name: string
     age: number
-  }>
+  }[]
   count: number
 }
 
 // Type with optional properties
-type WithOptional = {
+interface WithOptional {
   name: string
   email?: string
   profile?: {
@@ -94,14 +95,19 @@ test('DeepKey - with arrays', () => {
 
 test('DeepKey - with optional properties', () => {
   type Keys = DeepKey<WithOptional>
-  type Expected = 'name' | 'email' | 'profile' | 'profile.bio' | 'profile.avatar'
+  type Expected =
+    | 'name'
+    | 'email'
+    | 'profile'
+    | 'profile.bio'
+    | 'profile.avatar'
 
   expectTypeOf<Keys>().toMatchTypeOf<Expected>()
   expectTypeOf<Expected>().toMatchTypeOf<Keys>()
 })
 
 test('DeepKey - complex nested structure', () => {
-  type ComplexType = {
+  interface ComplexType {
     id: string
     user: {
       profile: {
@@ -118,10 +124,10 @@ test('DeepKey - complex nested structure', () => {
         theme: string
       }
     }
-    items: Array<{
+    items: {
       title: string
       value: number
-    }>
+    }[]
   }
 
   type Keys = DeepKey<ComplexType>

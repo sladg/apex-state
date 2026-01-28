@@ -9,17 +9,26 @@
  * - _internal: Graphs, registrations, processing queue (NOT tracked - wrapped in ref())
  */
 
-import { useCallback, useLayoutEffect, useEffect, useState } from 'react'
-import { useSnapshot, snapshot } from 'valtio'
-import type { GenericMeta, DeepKey, DeepValue, ArrayOfChanges, EvaluatedConcerns, FieldTransformConfig } from '../types'
-import type { StoreConfig } from './types'
-import type { SideEffects } from '../types/sideEffects'
-import { createProvider } from './Provider'
-import { deepGet } from './utils/deepAccess'
-import { processChanges } from './executor'
-import { useStoreContext } from '../hooks/useStoreContext'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
+
+import { snapshot, useSnapshot } from 'valtio'
+
 import { defaultConcerns, registerConcernEffects } from '../concerns'
+import { useStoreContext } from '../hooks/useStoreContext'
 import { registerSideEffects } from '../sideEffects/registration'
+import type {
+  ArrayOfChanges,
+  DeepKey,
+  DeepValue,
+  EvaluatedConcerns,
+  FieldTransformConfig,
+  GenericMeta,
+} from '../types'
+import type { SideEffects } from '../types/sideEffects'
+import { processChanges } from './executor'
+import { createProvider } from './Provider'
+import type { StoreConfig } from './types'
+import { deepGet } from './utils/deepAccess'
 
 /**
  * Creates a generic store with valtio proxy and React context
@@ -54,10 +63,12 @@ import { registerSideEffects } from '../sideEffects/registration'
 export const createGenericStore = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
-  CONCERNS extends readonly any[] = typeof defaultConcerns
->(config?: StoreConfig) => {
-  // Merge config with defaults
-  const resolvedConfig = {
+  CONCERNS extends readonly any[] = typeof defaultConcerns,
+>(
+  config?: StoreConfig,
+) => {
+  // Merge config with defaults (used in Provider creation)
+  const _resolvedConfig = {
     errorStorePath: config?.errorStorePath ?? '_errors',
     maxIterations: config?.maxIterations ?? 100,
   }
@@ -72,10 +83,10 @@ export const createGenericStore = <
      * useState-like hook for accessing and updating specific paths
      */
     useStore: <P extends DeepKey<DATA>>(
-      path: P
+      path: P,
     ): [
       DeepValue<DATA, P>,
-      (value: DeepValue<DATA, P>, meta?: META) => void
+      (value: DeepValue<DATA, P>, meta?: META) => void,
     ] => {
       const store = useStoreContext<DATA, META>()
       const snap = useSnapshot(store.state) as DATA
@@ -84,11 +95,11 @@ export const createGenericStore = <
       const setValue = useCallback(
         (newValue: DeepValue<DATA, P>, meta?: META) => {
           const changes: ArrayOfChanges<DATA, META> = [
-            [path, newValue, (meta || {}) as META]
+            [path, newValue, (meta || {}) as META],
           ]
           processChanges(store, changes)
         },
-        [store, path]
+        [store, path],
       )
 
       return [value, setValue]
@@ -109,7 +120,7 @@ export const createGenericStore = <
         (changes: ArrayOfChanges<DATA, META>) => {
           processChanges(store, changes)
         },
-        [store]
+        [store],
       )
 
       const getState = useCallback(() => {
@@ -139,7 +150,7 @@ export const createGenericStore = <
      * Form field hook with convenient object API {value, setValue}
      */
     useFieldStore: <P extends DeepKey<DATA>>(
-      path: P
+      path: P,
     ): {
       value: DeepValue<DATA, P>
       setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
@@ -151,11 +162,11 @@ export const createGenericStore = <
       const setValue = useCallback(
         (newValue: DeepValue<DATA, P>, meta?: META) => {
           const changes: ArrayOfChanges<DATA, META> = [
-            [path, newValue, (meta || {}) as META]
+            [path, newValue, (meta || {}) as META],
           ]
           processChanges(store, changes)
         },
-        [store, path]
+        [store, path],
       )
 
       return {
@@ -170,10 +181,10 @@ export const createGenericStore = <
     useFieldTransformedStore: <
       P extends DeepKey<DATA>,
       VAL extends DeepValue<DATA, P>,
-      CTX
+      CTX,
     >(
       path: P,
-      config: FieldTransformConfig<VAL, CTX>
+      config: FieldTransformConfig<VAL, CTX>,
     ): {
       value: CTX
       setValue: (newContext: CTX) => void
@@ -196,11 +207,11 @@ export const createGenericStore = <
           setLocalValue(newContext)
           const newStoredValue = fromTemporary(newContext, context)
           const changes: ArrayOfChanges<DATA, META> = [
-            [path, newStoredValue as DeepValue<DATA, P>, {} as META]
+            [path, newStoredValue as DeepValue<DATA, P>, {} as META],
           ]
           processChanges(store, changes)
         },
-        [store, path, fromTemporary, context]
+        [store, path, fromTemporary, context],
       )
 
       return {
@@ -216,8 +227,10 @@ export const createGenericStore = <
      */
     useConcerns: (
       id: string,
-      registration: Partial<Record<DeepKey<DATA>, Partial<Record<string, any>>>>,
-      customConcerns?: readonly any[]
+      registration: Partial<
+        Record<DeepKey<DATA>, Partial<Record<string, any>>>
+      >,
+      customConcerns?: readonly any[],
     ): void => {
       const store = useStoreContext<DATA, META>()
       const concerns = customConcerns || defaultConcerns
@@ -225,7 +238,7 @@ export const createGenericStore = <
       useLayoutEffect(() => {
         // Cast store to base type for internal concern registration
         // Use unknown intermediate to satisfy TypeScript variance constraints
-        return registerConcernEffects(store , registration, concerns)
+        return registerConcernEffects(store, registration, concerns)
         // Re-register if id, registration, or custom concerns change
       }, [store, id, registration, customConcerns])
     },
@@ -235,7 +248,7 @@ export const createGenericStore = <
      * Returns properly typed concerns based on the CONCERNS array
      */
     useFieldConcerns: <P extends DeepKey<DATA>>(
-      path: P
+      path: P,
     ): EvaluatedConcerns<CONCERNS> => {
       const store = useStoreContext<DATA, META>()
       const snap = useSnapshot(store._concerns) as Record<string, unknown>
@@ -243,6 +256,5 @@ export const createGenericStore = <
       // Return concerns at path, or empty object if none exist
       return (snap[path] || {}) as EvaluatedConcerns<CONCERNS>
     },
-
   }
 }

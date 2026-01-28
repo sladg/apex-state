@@ -55,11 +55,9 @@ export type ExtractPlaceholders<S extends string> =
  * // Returns never (invalid path)
  * type Invalid = ValidatedTemplate<"Hello {{invalid.path}}", State>
  */
-export type ValidatedTemplate<
-  T extends string,
-  DATA extends object
-> = ExtractPlaceholders<T> extends never
-  ? T // No placeholders, always valid
-  : ExtractPlaceholders<T> extends DeepKey<DATA>
-    ? T
-    : never
+export type ValidatedTemplate<T extends string, DATA extends object> =
+  ExtractPlaceholders<T> extends never
+    ? T // No placeholders, always valid
+    : ExtractPlaceholders<T> extends DeepKey<DATA>
+      ? T
+      : never

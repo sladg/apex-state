@@ -6,16 +6,17 @@
  */
 
 import { expectTypeOf, test } from 'vitest'
+
 import type { ArrayOfChanges, GenericMeta } from '../../src/types'
 
 // Test data types
-type User = {
+interface User {
   name: string
   age: number
   email: string
 }
 
-type NestedData = {
+interface NestedData {
   user: {
     profile: {
       name: string
@@ -85,7 +86,11 @@ test('ArrayOfChanges - nested object', () => {
   type Changes = ArrayOfChanges<NestedData, GenericMeta>
 
   const changes: Changes = [
-    ['user', { profile: { name: 'John', bio: 'Bio' }, settings: { theme: 'dark' } }, {}],
+    [
+      'user',
+      { profile: { name: 'John', bio: 'Bio' }, settings: { theme: 'dark' } },
+      {},
+    ],
     ['user.profile', { name: 'John', bio: 'Bio' }, { sender: 'user' }],
     ['user.profile.name', 'John', { isSyncPathChange: true }],
     ['user.profile.bio', 'Bio text', {}],
@@ -141,7 +146,7 @@ test('ArrayOfChanges - with custom metadata', () => {
 })
 
 test('ArrayOfChanges - real world scenario', () => {
-  type FormState = {
+  interface FormState {
     fields: {
       username: string
       email: string
