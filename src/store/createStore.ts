@@ -15,6 +15,7 @@ import { useJitStore, type JitStoreReturn } from '../hooks/useJitStore'
 import { useSideEffects } from '../hooks/useSideEffects'
 import { useFieldStore } from '../hooks/useFieldStore'
 import { useFieldTransformedStore, type FieldTransformConfig } from '../hooks/useFieldTransformedStore'
+import { useErrors } from '../hooks/useErrors'
 
 /**
  * Return type of createGenericStore
@@ -67,6 +68,11 @@ export interface StoreReturn<DATA extends object, META extends GenericMeta> {
     value: CTX
     setValue: (newContext: CTX) => void
   }
+
+  /**
+   * Hook for accessing validation errors at a specific path
+   */
+  useErrors: (errorPath: string) => string[]
 }
 
 /**
@@ -131,5 +137,6 @@ export function createGenericStore<
       value: CTX
       setValue: (newContext: CTX) => void
     },
+    useErrors: useErrors as (errorPath: string) => string[],
   }
 }
