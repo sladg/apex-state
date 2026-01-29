@@ -86,12 +86,12 @@ export function createEvaluationTracker() {
  */
 export function createConcernSpies() {
   return {
-    zodValidation: vi.fn(),
+    validationState: vi.fn(),
     disabled: vi.fn(),
     tooltip: vi.fn(),
     computed: vi.fn(),
     clear: function () {
-      this.zodValidation.mockClear()
+      this.validationState.mockClear()
       this.disabled.mockClear()
       this.tooltip.mockClear()
       this.computed.mockClear()

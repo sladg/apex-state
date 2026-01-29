@@ -11,15 +11,15 @@ Concerns use `valtio-reactive`'s `effect()` for automatic dependency tracking. W
 
 ```typescript
 // 1. Define concerns (no tracks() needed!)
-const zodValidation = {
-  name: 'zodValidation',
+const validationState = {
+  name: 'validationState',
   evaluate: (props) => props.schema.safeParse(props.value).success
 }
 
 // 2. Register concerns
 store.useConcerns('my-id', {
   'products.leg-1.strike': {
-    zodValidation: { schema: z.number().min(0) },
+    validationState: { schema: z.number().min(0) },
     disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
     tooltip: { template: 'Strike: {{market.spot}}' }
   }
@@ -52,7 +52,7 @@ effect(() => {
   const value = state.products['leg-1'].strike
 
   // EVALUATE concern (all accessed paths tracked)
-  const result = zodValidation.evaluate({ state, path, value, schema })
+  const result = validationState.evaluate({ state, path, value, schema })
 
   // WRITE to _concerns proxy (separate proxy, prevents loops)
   store._concerns[path][concernName] = result
@@ -67,16 +67,16 @@ effect(() => {
 
 ## Built-in Concerns
 
-### zodValidation
+### validationState
 Validates values using Zod schemas.
 
 ```typescript
-zodValidation: {
+validationState: {
   schema: z.number().min(0).max(200)
 }
 
 // Or with scope for different path:
-zodValidation: {
+validationState: {
   scope: 'data.optionsCommon',
   schema: z.object({ strike: z.number() })
 }
@@ -164,7 +164,7 @@ const myConcern = {
 }
 
 // Add to concerns array
-const concerns = [zodValidation, disabledWhen, dynamicTooltip, myConcern] as const
+const concerns = [validationState, disabledWhen, dynamicTooltip, myConcern] as const
 ```
 
 ---
@@ -439,7 +439,7 @@ Note: `tests/concerns-dependency-tracking.test.ts` contains old manual tracking 
 - `src/concerns/types.ts` - Type definitions for concerns system
 - `src/concerns/registry.ts` - Concern lookup utilities
 - `src/concerns/registration.ts` - Effect setup and lifecycle
-- `src/concerns/prebuilts/*.ts` - Pre-built concerns (zodValidation, disabledWhen, etc.)
+- `src/concerns/prebuilts/*.ts` - Pre-built concerns (validationState, disabledWhen, etc.)
 - `tests/integration/*.test.tsx` - Integration test suite
 - `src/types/*.ts` - DeepKey, DeepValue utility types
 

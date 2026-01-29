@@ -31,7 +31,7 @@ describe('Integration: Form Validation with Concerns', () => {
     function FormComponent() {
       store.useConcerns('form', {
         email: {
-          zodValidation: { schema: emailSchema },
+          validationState: { schema: emailSchema },
         },
       })
 
@@ -46,12 +46,13 @@ describe('Integration: Form Validation with Concerns', () => {
             onChange={(e) => emailField.setValue(e.target.value)}
             placeholder="Enter email"
           />
-          {emailConcerns.zodValidation === false && (
+          {emailConcerns.validationState?.isError && (
             <span data-testid="email-error">Invalid email format</span>
           )}
-          {emailConcerns.zodValidation === true && (
-            <span data-testid="email-valid">✓</span>
-          )}
+          {emailConcerns.validationState &&
+            !emailConcerns.validationState.isError && (
+              <span data-testid="email-valid">✓</span>
+            )}
         </div>
       )
     }
@@ -88,7 +89,7 @@ describe('Integration: Form Validation with Concerns', () => {
     function FormComponent() {
       store.useConcerns('form', {
         password: {
-          zodValidation: { schema: passwordSchema },
+          validationState: { schema: passwordSchema },
         },
       })
 
@@ -103,7 +104,7 @@ describe('Integration: Form Validation with Concerns', () => {
             value={passwordField.value}
             onChange={(e) => passwordField.setValue(e.target.value)}
           />
-          {passwordConcerns.zodValidation === false && (
+          {passwordConcerns.validationState?.isError && (
             <span data-testid="password-error">Invalid password</span>
           )}
         </div>
@@ -234,7 +235,7 @@ describe('Integration: Form Validation with Concerns', () => {
     function FormComponent() {
       store.useConcerns('form', {
         email: {
-          zodValidation: { schema: emailSchema },
+          validationState: { schema: emailSchema },
         },
       })
 
@@ -248,7 +249,7 @@ describe('Integration: Form Validation with Concerns', () => {
             value={emailField.value}
             onChange={(e) => emailField.setValue(e.target.value)}
           />
-          {emailConcerns.zodValidation === false && (
+          {emailConcerns.validationState?.isError && (
             <span data-testid="error-message">Please enter a valid email</span>
           )}
         </div>
@@ -276,7 +277,7 @@ describe('Integration: Form Validation with Concerns', () => {
     function FormComponent() {
       store.useConcerns('form', {
         email: {
-          zodValidation: { schema: emailSchema },
+          validationState: { schema: emailSchema },
         },
       })
 
@@ -290,7 +291,7 @@ describe('Integration: Form Validation with Concerns', () => {
             value={emailField.value}
             onChange={(e) => emailField.setValue(e.target.value)}
           />
-          {emailConcerns.zodValidation === false && (
+          {emailConcerns.validationState?.isError && (
             <span data-testid="error">Invalid</span>
           )}
         </div>
@@ -326,8 +327,8 @@ describe('Integration: Form Validation with Concerns', () => {
 
     function FormComponent() {
       store.useConcerns('form', {
-        email: { zodValidation: { schema: emailSchema } },
-        password: { zodValidation: { schema: passwordSchema } },
+        email: { validationState: { schema: emailSchema } },
+        password: { validationState: { schema: passwordSchema } },
       })
 
       const emailField = store.useFieldStore('email')
@@ -335,8 +336,11 @@ describe('Integration: Form Validation with Concerns', () => {
       const passwordField = store.useFieldStore('password')
       const passwordConcerns = store.useFieldConcerns('password')
 
-      const isEmailValid = emailConcerns.zodValidation === true
-      const isPasswordValid = passwordConcerns.zodValidation === true
+      const isEmailValid =
+        emailConcerns.validationState && !emailConcerns.validationState.isError
+      const isPasswordValid =
+        passwordConcerns.validationState &&
+        !passwordConcerns.validationState.isError
 
       return (
         <div>

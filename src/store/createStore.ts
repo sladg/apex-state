@@ -3,10 +3,10 @@
  *
  * Creates a store instance with valtio proxy and React Provider component.
  *
- * Architecture: Unified _internal pattern
- * - state: User data (tracked by valtio)
- * - _concerns: Computed concern values (tracked by valtio)
- * - _internal: Graphs, registrations, processing queue (NOT tracked - wrapped in ref())
+ * Architecture: Two-Proxy Pattern
+ * - state: User data proxy (tracked by valtio)
+ * - _concerns: Computed concern values proxy (tracked by valtio)
+ * - _internal: Graphs, registrations, processing queue (NOT tracked)
  */
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
@@ -255,6 +255,82 @@ export const createGenericStore = <
 
       // Return concerns at path, or empty object if none exist
       return (snap[path] || {}) as EvaluatedConcerns<CONCERNS>
+    },
+
+    /**
+     * Create a specialized store instance with selected concerns mixed into useFieldStore
+     *
+     * @example
+     * ```typescript
+     * const specialized = store.withConcerns({ disabledWhen: true, zodValidation: true })
+     * const field = specialized.useFieldStore('path.to.field')
+     * // field has: value, setValue, disabledWhen?, zodValidation?
+     * ```
+     */
+    withConcerns: <SELECTION extends Partial<Record<string, boolean>>>(
+      selection: SELECTION,
+    ) => {
+      // Helper type for the concern properties part
+      type SelectedConcerns = {
+        [K in keyof SELECTION as SELECTION[K] extends true
+          ? K
+          : never]?: K extends keyof EvaluatedConcerns<CONCERNS>
+          ? EvaluatedConcerns<CONCERNS>[K]
+          : never
+      }
+
+      // Combined return type
+      type WithConcernsFieldStore<P extends DeepKey<DATA>> = {
+        value: DeepValue<DATA, P>
+        setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+      } & SelectedConcerns
+
+      return {
+        useFieldStore: <P extends DeepKey<DATA>>(
+          path: P,
+        ): WithConcernsFieldStore<P> => {
+          const store = useStoreContext<DATA, META>()
+
+          // 1. Base State (same as useFieldStore)
+          const snap = useSnapshot(store.state) as DATA
+          const value = deepGet(snap, path) as DeepValue<DATA, P>
+
+          const setValue = useCallback(
+            (newValue: DeepValue<DATA, P>, meta?: META) => {
+              const changes: ArrayOfChanges<DATA, META> = [
+                [path, newValue, (meta || {}) as META],
+              ]
+              processChanges(store, changes)
+            },
+            [store, path],
+          )
+
+          // 2. Concerns (filtered by selection)
+          // store._concerns is already typed as ConcernValues
+          const concernsSnap = useSnapshot(store._concerns)
+          const allConcerns = concernsSnap[path] || {}
+
+          const selectedConcerns = Object.keys(selection).reduce(
+            (acc, key) => {
+              if (
+                selection[key] &&
+                Object.prototype.hasOwnProperty.call(allConcerns, key)
+              ) {
+                acc[key] = allConcerns[key]
+              }
+              return acc
+            },
+            {} as Record<string, unknown>,
+          ) as SelectedConcerns
+
+          // 3. Merge
+          return {
+            value,
+            setValue,
+            ...selectedConcerns,
+          }
+        },
+      }
     },
   }
 }

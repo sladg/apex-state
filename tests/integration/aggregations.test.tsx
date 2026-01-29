@@ -7,7 +7,7 @@
 
 import React from 'react'
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -20,6 +20,7 @@ import {
   shoppingCartFixtures,
   typeHelpers,
 } from '../mocks'
+import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 describe('Integration: Computed Values & Aggregations', () => {
   let store: ReturnType<typeof createShoppingCartStore>
@@ -66,11 +67,7 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={shoppingCartFixtures.empty}>
-        <CartComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<CartComponent />, store, shoppingCartFixtures.empty)
 
     const addBtn = screen.getByTestId('add-item-btn')
     fireEvent.click(addBtn)
@@ -115,11 +112,7 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={shoppingCartFixtures.singleItem}>
-        <CartComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<CartComponent />, store, shoppingCartFixtures.singleItem)
 
     const btn = screen.getByTestId('change-qty-btn')
     fireEvent.click(btn)
@@ -163,26 +156,20 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          items: {
-            'item-1': {
-              name: 'Product A',
-              price: 20,
-              quantity: 2,
-              subtotal: 40,
-            },
-          },
+    renderWithStore(<CartComponent />, store, {
+      items: {
+        'item-1': {
+          name: 'Product A',
+          price: 20,
+          quantity: 2,
           subtotal: 40,
-          tax: 4,
-          total: 44,
-          itemCount: 1,
-        }}
-      >
-        <CartComponent />
-      </store.Provider>,
-    )
+        },
+      },
+      subtotal: 40,
+      tax: 4,
+      total: 44,
+      itemCount: 1,
+    })
 
     const btn = screen.getByTestId('change-price-btn')
     fireEvent.click(btn)
@@ -240,11 +227,7 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={shoppingCartFixtures.singleItem}>
-        <CartComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<CartComponent />, store, shoppingCartFixtures.singleItem)
 
     const addBtn = screen.getByTestId('add-btn')
     expect(addBtn).toBeInTheDocument()
@@ -280,19 +263,13 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          items: {},
-          subtotal: 50,
-          tax: 5,
-          total: 55,
-          itemCount: 0,
-        }}
-      >
-        <CartComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<CartComponent />, store, {
+      items: {},
+      subtotal: 50,
+      tax: 5,
+      total: 55,
+      itemCount: 0,
+    })
 
     const btn = screen.getByTestId('update-subtotal-btn')
     fireEvent.click(btn)
@@ -332,19 +309,13 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          items: {},
-          subtotal: 100,
-          tax: 10,
-          total: 110,
-          itemCount: 0,
-        }}
-      >
-        <CartComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<CartComponent />, store, {
+      items: {},
+      subtotal: 100,
+      tax: 10,
+      total: 110,
+      itemCount: 0,
+    })
 
     const btn = screen.getByTestId('update-btn')
     fireEvent.click(btn)
@@ -390,26 +361,20 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          items: {
-            'item-1': {
-              name: 'Product A',
-              price: 10,
-              quantity: 1,
-              subtotal: 10,
-            },
-          },
+    renderWithStore(<CartComponent />, store, {
+      items: {
+        'item-1': {
+          name: 'Product A',
+          price: 10,
+          quantity: 1,
           subtotal: 10,
-          tax: 1,
-          total: 11,
-          itemCount: 1,
-        }}
-      >
-        <CartComponent />
-      </store.Provider>,
-    )
+        },
+      },
+      subtotal: 10,
+      tax: 1,
+      total: 11,
+      itemCount: 1,
+    })
 
     const addBtn = screen.getByTestId('add-btn')
     fireEvent.click(addBtn)
@@ -463,10 +428,10 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    render(
-      <nestedStore.Provider initialState={nestedCartFixtures.withElectronics}>
-        <NestedComponent />
-      </nestedStore.Provider>,
+    renderWithStore(
+      <NestedComponent />,
+      nestedStore,
+      nestedCartFixtures.withElectronics,
     )
 
     const btn = screen.getByTestId('add-nested-btn')

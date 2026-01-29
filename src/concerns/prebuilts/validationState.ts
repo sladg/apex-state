@@ -21,7 +21,7 @@
  *
  * // Read validation results
  * const emailValidation = store.useFieldConcerns('user.email').validationState
- * // { isValid: false, errors: [{field: '', message: 'Invalid email'}], message: '...', timestamp: ... }
+ * // { isError: true, errors: [{field: '', message: 'Invalid email'}] }
  * ```
  */
 
@@ -46,14 +46,10 @@ export interface ValidationError {
  * Returned by validationState concern when evaluated
  */
 export interface ValidationStateResult {
-  /** Whether all validations passed */
-  isValid: boolean
-  /** Array of validation errors (empty if isValid=true) */
+  /** Whether validation failed */
+  isError: boolean
+  /** Array of validation errors (empty if no errors) */
   errors: ValidationError[]
-  /** Concatenated error messages for simple display (empty if isValid=true) */
-  message: string
-  /** Timestamp when validation was last evaluated (for detecting updates) */
-  timestamp: number
 }
 
 /**
@@ -77,22 +73,18 @@ type ValidationStateInput<SUB_STATE, PATH extends DeepKey<SUB_STATE>> =
  * ValidationState concern - full validation state with errors
  *
  * Evaluates a Zod schema and returns complete validation state including:
- * - isValid: boolean flag
+ * - isError: boolean flag indicating validation failure
  * - errors: array of {field, message} objects
- * - message: concatenated error messages
- * - timestamp: when validation was evaluated
  *
  * Supports optional scope parameter to validate a different path than the registration path.
  * Dependencies are automatically tracked by valtio-reactive's effect() system.
  */
 export const validationState = {
   name: 'validationState' as const,
-  description: 'Complete validation state with errors, isValid, and timestamp',
+  description: 'Zod schema validation with isError flag and detailed errors',
   evaluate: <SUB_STATE, PATH extends DeepKey<SUB_STATE>>(
     props: BaseConcernProps<any, PATH> & ValidationStateInput<SUB_STATE, PATH>,
   ): ValidationStateResult => {
-    const timestamp = Date.now()
-
     // If scope is provided, validate at scope path; otherwise validate at registration path
     // Note: props.scope is a runtime string path, use deepGetUnsafe for dynamic access
     const valueToValidate =
@@ -106,10 +98,8 @@ export const validationState = {
     // Success: return valid state
     if (result.success) {
       return {
-        isValid: true,
+        isError: false,
         errors: [],
-        message: '',
-        timestamp,
       }
     }
 
@@ -119,13 +109,9 @@ export const validationState = {
       message: zodError.message,
     }))
 
-    const message = errors.map((e) => e.message).join('; ')
-
     return {
-      isValid: false,
+      isError: true,
       errors,
-      message,
-      timestamp,
     }
   },
 }

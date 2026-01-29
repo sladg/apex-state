@@ -14,7 +14,7 @@ Complex form state typically means scattered validation logic, conditional rende
 
 Apex-state inverts this: **define behavior as static configuration, not imperative code**.
 
-The core functions (`evaluateBoolLogic`, `zodValidation`, etc.) are tested once. Your application config is just constants - Lego bricks snapped together. You test the bricks, not every possible tower.
+The core functions (`evaluateBoolLogic`, `validationState`, etc.) are tested once. Your application config is just constants - Lego bricks snapped together. You test the bricks, not every possible tower.
 
 ## How
 
@@ -51,16 +51,16 @@ const OrderForm = () => {
   // This is just data - a constant. No logic to test here.
   store.useConcerns('order-form', {
     'product.quantity': {
-      zodValidation: { schema: z.number().min(1).max(100) },
+      validationState: { schema: z.number().min(1).max(100) },
       disabledWhen: { condition: { IS_EQUAL: ['status', 'submitted'] } },
     },
     'shipping.address': {
-      zodValidation: { schema: z.string().min(10) },
+      validationState: { schema: z.string().min(10) },
       visibleWhen: { condition: { EXISTS: 'shipping.express' } },
       dynamicLabel: { template: 'Address ({{shipping.express}} ? Express : Standard)' },
     },
     'payment.cardNumber': {
-      zodValidation: { schema: z.string().regex(/^\d{16}$/) },
+      validationState: { schema: z.string().regex(/^\d{16}$/) },
       visibleWhen: { condition: { IS_EQUAL: ['payment.method', 'card'] } },
       disabledWhen: {
         condition: {
@@ -91,7 +91,7 @@ const OrderForm = () => {
         value={quantity}
         onChange={(e) => setQuantity(Number(e.target.value))}
         disabled={quantityConcerns.disabledWhen}
-        className={quantityConcerns.zodValidation ? 'valid' : 'invalid'}
+        className={quantityConcerns.validationState?.isError ? 'invalid' : 'valid'}
       />
 
       {addressConcerns.visibleWhen && (
@@ -134,10 +134,9 @@ const App = () => {
 
 Reactive computations that automatically track dependencies and re-evaluate when state changes.
 
-| Concern              | Props                      | Returns             | Description              |
-| -------------------- | -------------------------- | ------------------- | ------------------------ |
-| `zodValidation`      | `{ schema: ZodSchema }`    | `boolean`           | Schema validation        |
-| `validationState`    | `{ schema: ZodSchema }`    | `{ valid, errors }` | Full validation state    |
+| Concern              | Props                      | Returns                         | Description              |
+| -------------------- | -------------------------- | ------------------------------- | ------------------------ |
+| `validationState`    | `{ schema: ZodSchema }`    | `{ isError, errors }`           | Full validation state    |
 | `disabledWhen`       | `{ condition: BoolLogic }` | `boolean`           | Conditional disable      |
 | `readonlyWhen`       | `{ condition: BoolLogic }` | `boolean`           | Conditional readonly     |
 | `visibleWhen`        | `{ condition: BoolLogic }` | `boolean`           | Conditional visibility   |
@@ -198,7 +197,7 @@ field.setValue(v) // update value
 
 // Evaluated concerns for a path
 const concerns = store.useFieldConcerns("path.to.field")
-concerns.zodValidation // boolean
+concerns.validationState // { isError: boolean, errors: ValidationError[] }
 concerns.disabledWhen // boolean
 concerns.dynamicTooltip // string
 

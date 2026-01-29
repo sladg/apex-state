@@ -7,7 +7,7 @@
 
 import React from 'react'
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { ProfileForm } from '../mocks'
@@ -16,6 +16,7 @@ import {
   profileFormFixtures,
   typeHelpers,
 } from '../mocks'
+import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 describe('Integration: Bidirectional Field Sync', () => {
   let store: ReturnType<typeof createProfileFormStore>
@@ -47,11 +48,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...profileFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.empty })
 
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'John' } })
@@ -83,18 +80,12 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          firstName: 'John',
-          lastName: '',
-          fullName: 'John',
-          displayName: 'John',
-        }}
-      >
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      firstName: 'John',
+      lastName: '',
+      fullName: 'John',
+      displayName: 'John',
+    })
 
     const input = screen.getByTestId('lastName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'Doe' } })
@@ -129,11 +120,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...profileFormFixtures.filled }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.filled })
 
     const input = screen.getByTestId('displayName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'Jane' } })
@@ -177,11 +164,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...profileFormFixtures.filled }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.filled })
 
     const firstInput = screen.getByTestId('firstName-input') as HTMLInputElement
     const initialRenderCount = renderCount
@@ -220,11 +203,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...profileFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.empty })
 
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
 
@@ -269,11 +248,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...profileFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.empty })
 
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'John' } })

@@ -24,7 +24,6 @@ dist-ssr
 *.sw?
 
 .claude
-Claude.md
 
 out-of-git
 .grepai/

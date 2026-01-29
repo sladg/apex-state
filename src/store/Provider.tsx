@@ -3,14 +3,14 @@
  *
  * React component that initializes and provides the store to child components.
  *
- * Architecture: Single unified proxy
- * - state: User data (tracked by valtio)
- * - _concerns: Computed concern values (tracked by valtio)
- * - _internal: Graphs, registrations, processing queue (NOT tracked - wrapped in ref())
+ * Architecture: Two-Proxy Pattern
+ * - state: User data proxy (tracked by valtio)
+ * - _concerns: Computed concern values proxy (tracked by valtio)
+ * - _internal: Graphs, registrations, processing queue (NOT tracked)
  * - config: Store configuration
  *
- * All nested in a single proxy for simplicity. The ref() wrapper on _internal
- * prevents valtio from tracking that subtree regardless of nesting.
+ * state and _concerns are independent proxies to prevent infinite loops
+ * during concern evaluation (Two-Proxy Pattern).
  */
 
 import { useMemo } from 'react'
@@ -60,26 +60,25 @@ export const createProvider = <
     children,
   }: ProviderProps<DATA>) => {
     const store = useMemo<StoreInstance<DATA, META>>(
-      () =>
-        proxy({
-          // state: Application data (tracked by valtio)
-          // User actions WRITE to this, effects READ from this
-          state: initialState,
+      () => ({
+        // state: Application data (tracked by valtio)
+        // User actions WRITE to this, effects READ from this
+        state: proxy(initialState),
 
-          // _concerns: Computed concern values (tracked by valtio)
-          // Effects WRITE to this, UI components READ from this
-          _concerns: {} as Record<string, Record<string, unknown>>,
+        // _concerns: Computed concern values (tracked by valtio)
+        // Effects WRITE to this, UI components READ from this
+        _concerns: proxy({} as Record<string, Record<string, unknown>>),
 
-          // _internal: Graphs, registrations, processing (NOT tracked)
-          // Wrapped in ref() to prevent valtio proxy tracking
-          _internal: ref(createInternalState<DATA, META>()),
+        // _internal: Graphs, registrations, processing (NOT tracked)
+        // Wrapped in ref() to prevent tracking even if store is later wrapped in a proxy
+        _internal: ref(createInternalState<DATA, META>()),
 
-          // config: Store configuration
-          config: {
-            errorStorePath,
-            maxIterations: 100,
-          },
-        }),
+        // config: Store configuration
+        config: {
+          errorStorePath,
+          maxIterations: 100,
+        },
+      }),
       // Only initialize once - ignore changes to initialState after mount
       [],
     )

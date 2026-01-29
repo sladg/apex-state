@@ -2,7 +2,7 @@
  * Pre-built concerns provided by apex-state
  *
  * Validation & Schema:
- * - zodValidation: Schema validation with Zod
+ * - validationState: Complete validation with Zod (isError, errors, message, timestamp)
  *
  * Conditional UI State (uses BoolLogic):
  * - disabledWhen: Disable field when condition is true
@@ -23,14 +23,12 @@ import { dynamicTooltip } from './dynamicTooltip'
 import { readonlyWhen } from './readonlyWhen'
 import { validationState } from './validationState'
 import { visibleWhen } from './visibleWhen'
-import { zodValidation } from './zodValidation'
 
 export {
   type ValidationError,
   validationState,
   type ValidationStateResult,
 } from './validationState'
-export { zodValidation } from './zodValidation'
 
 // Conditional state
 export { disabledWhen } from './disabledWhen'
@@ -46,7 +44,6 @@ export { dynamicTooltip } from './dynamicTooltip'
  * All pre-built concerns as a tuple (for use with findConcern)
  */
 export const prebuilts = [
-  zodValidation,
   validationState,
   disabledWhen,
   readonlyWhen,
@@ -60,7 +57,6 @@ export const prebuilts = [
  * Namespace style access for pre-builts
  */
 export const prebuiltsNamespace = {
-  zodValidation,
   validationState,
   disabledWhen,
   readonlyWhen,

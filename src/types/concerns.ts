@@ -32,12 +32,12 @@ export type ExtractEvaluateReturn<T> = T extends {
  * @example
  * ```typescript
  * const concerns = [
- *   { name: 'zodValidation', evaluate: () => boolean },
+ *   { name: 'validationState', evaluate: () => ({ isError: boolean, errors: [] }) },
  *   { name: 'tooltip', evaluate: () => string }
  * ] as const
  *
  * type Evaluated = EvaluatedConcerns<typeof concerns>
- * // { zodValidation?: boolean, tooltip?: string }
+ * // { validationState?: { isError: boolean, errors: [] }, tooltip?: string }
  * ```
  */
 export type EvaluatedConcerns<CONCERNS extends readonly any[]> = {

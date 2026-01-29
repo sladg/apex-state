@@ -49,6 +49,13 @@ export const registerConcernEffects = <
         return
       }
 
+      // Pre-initialize path object outside effect to avoid tracking the read
+      // of store._concerns[path] inside the effect, which causes infinite loops
+      if (!store._concerns[path]) {
+        store._concerns[path] = {}
+      }
+      const pathConcerns = store._concerns[path]
+
       // Wrap evaluation in effect() for automatic dependency tracking
       // effect() will automatically track ONLY the properties accessed during evaluate()
       const dispose = effect(() => {
@@ -67,11 +74,6 @@ export const registerConcernEffects = <
         // WRITE to _concerns proxy (triggers React, not this effect)
         // Writing to a different proxy prevents infinite loops
         // Store under path -> concernName structure
-        // OPTIMIZATION: Cache concerns object reference to avoid double lookup
-        let pathConcerns = store._concerns[path]
-        if (!pathConcerns) {
-          pathConcerns = store._concerns[path] = {}
-        }
         pathConcerns[concernName] = result
       })
 

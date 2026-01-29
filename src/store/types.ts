@@ -184,11 +184,14 @@ export type ConcernValues = Record<string, Record<string, unknown>>
 /**
  * Store instance structure
  *
- * Single proxy containing all store state:
- * - state: User data (tracked)
- * - _concerns: Computed values (tracked)
+ * Container for independent proxies:
+ * - state: User data proxy (tracked)
+ * - _concerns: Computed values proxy (tracked)
  * - _internal: Graphs + processing (NOT tracked via ref())
  * - config: Store configuration
+ *
+ * The StoreInstance itself is a plain object, NOT a proxy, to ensure
+ * that state and _concerns remain independent for dependency tracking.
  */
 export interface StoreInstance<
   DATA extends object,

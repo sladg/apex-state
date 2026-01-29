@@ -7,10 +7,11 @@
 
 import React from 'react'
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createUserProfileStore, userProfileFixtures } from '../mocks'
+import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 describe('Integration: Side Effects - Listeners & Validators', () => {
   let store: ReturnType<typeof createUserProfileStore>
@@ -49,11 +50,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={userProfileFixtures.empty}>
-        <ProfileComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
     const initialTime = parseInt(
@@ -105,11 +102,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={userProfileFixtures.empty}>
-        <ProfileComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
 
@@ -171,11 +164,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={userProfileFixtures.empty}>
-        <ProfileComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
 
@@ -223,21 +212,15 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          username: 'john',
-          email: 'john@example.com',
-          age: 30,
-          bio: 'Software developer',
-          isActive: true,
-          lastUpdated: Date.now(),
-          _errors: {},
-        }}
-      >
-        <ProfileComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProfileComponent />, store, {
+      username: 'john',
+      email: 'john@example.com',
+      age: 30,
+      bio: 'Software developer',
+      isActive: true,
+      lastUpdated: Date.now(),
+      _errors: {},
+    })
 
     expect(screen.getByTestId('bio-value')).toHaveTextContent(
       'Software developer',
@@ -279,21 +262,15 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          username: 'john',
-          email: 'john@example.com',
-          age: 30,
-          bio: '',
-          isActive: false,
-          lastUpdated: Date.now(),
-          _errors: {},
-        }}
-      >
-        <ProfileComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProfileComponent />, store, {
+      username: 'john',
+      email: 'john@example.com',
+      age: 30,
+      bio: '',
+      isActive: false,
+      lastUpdated: Date.now(),
+      _errors: {},
+    })
 
     expect(screen.getByTestId('active-status')).toHaveTextContent('Inactive')
 
@@ -348,11 +325,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={userProfileFixtures.empty}>
-        <ProfileComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const usernameInput = screen.getByTestId(
       'username-input',
@@ -413,11 +386,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={userProfileFixtures.empty}>
-        <ProfileComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const emailInput = screen.getByTestId('email-input') as HTMLInputElement
 
