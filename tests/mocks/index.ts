@@ -1,63 +1,66 @@
-/**
- * Test mocks and utilities - central export
- *
- * Re-exports test utilities, fixtures, types, and store factories
- * for convenient importing in test files.
- *
- * ## Usage
- *
- * ### Store Setup
- * ```typescript
- * import { createRegistrationFormStore, registrationFormFixtures } from '../mocks'
- *
- * const store = createRegistrationFormStore()
- * render(
- *   <store.Provider initialState={registrationFormFixtures.empty}>
- *     <MyForm />
- *   </store.Provider>
- * )
- * ```
- *
- * ### Type-Safe Dynamic Paths
- * ```typescript
- * import { typeHelpers } from '../mocks'
- *
- * // For runtime/template literal paths
- * store.applyChanges([
- *   typeHelpers.change(`items.${itemId}.qty`, 10, {})
- * ])
- * ```
- *
- * ## File Organization
- *
- * - `types.ts` - TypeScript types for all test scenarios
- * - `stores.ts` - Store factory functions (createXStore)
- * - `fixtures.ts` - Initial state data for each scenario
- * - `helpers.ts` - Type-safe helpers for dynamic paths
- */
+import { createGenericStore } from '../../src'
+import type {
+  FormWithErrors,
+  NestedCart,
+  OptimizationState,
+  ProductForm,
+  ProfileForm,
+  RegistrationForm,
+  ShoppingCart,
+  UserProfile,
+  WizardForm,
+} from './types'
 
 // Types
 export type {
   CartItem,
+  FormWithErrors,
   NestedCart,
+  OptimizationState,
   ProductForm,
   ProfileForm,
+  RegistrationForm,
   ShoppingCart,
+  UserProfile,
   WizardForm,
 } from './types'
 
 // Store factories
-export {
-  createFormWithErrorsStore,
-  createNestedCartStore,
-  createOptimizationStore,
-  createProductFormStore,
-  createProfileFormStore,
-  createRegistrationFormStore,
-  createShoppingCartStore,
-  createUserProfileStore,
-  createWizardFormStore,
-} from './stores'
+export const createRegistrationFormStore = () => {
+  return createGenericStore<RegistrationForm>()
+}
+
+export const createProfileFormStore = () => {
+  return createGenericStore<ProfileForm>()
+}
+
+export const createShoppingCartStore = () => {
+  return createGenericStore<ShoppingCart>()
+}
+
+export const createNestedCartStore = () => {
+  return createGenericStore<NestedCart>()
+}
+
+export const createProductFormStore = () => {
+  return createGenericStore<ProductForm>()
+}
+
+export const createUserProfileStore = () => {
+  return createGenericStore<UserProfile>()
+}
+
+export const createWizardFormStore = () => {
+  return createGenericStore<WizardForm>()
+}
+
+export const createFormWithErrorsStore = () => {
+  return createGenericStore<FormWithErrors>()
+}
+
+export const createOptimizationStore = () => {
+  return createGenericStore<OptimizationState>()
+}
 
 // Fixtures
 export {
