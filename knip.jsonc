@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "src/index.ts",
+    "tests/**/*.test.ts",
+    "tests/**/*.test.tsx",
+    "tests/**/*.test-d.ts"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx"
+  ],
+  "ignore": ["dist/**"],
+  "ignoreIssues": {
+    "src/concerns/prebuilts/index.ts": ["nsExports"]
+  },
+  "typescript": {
+    "config": ["tsconfig.json"]
+  },
+  "tsup": {
+    "config": ["tsup.config.ts"]
+  },
+  "vitest": {
+    "config": ["vitest.config.ts"]
+  }
+}

@@ -5,7 +5,7 @@
  * Used by concerns and side effects for dynamic text generation.
  */
 
-import { deepGet } from '../store/utils/deepAccess'
+import { deepGet } from './deepAccess'
 
 /**
  * Extract all {{path}} placeholders from a template string
@@ -23,7 +23,9 @@ export const extractPlaceholders = (template: string): string[] => {
   let match: RegExpExecArray | null
 
   while ((match = regex.exec(template)) !== null) {
-    matches.push(match[1])
+    if (match[1]) {
+      matches.push(match[1])
+    }
   }
 
   return matches

@@ -41,8 +41,8 @@ state.market.spot = 120  // ❌ Doesn't re-run (not accessed)
 
 ```typescript
 // ❌ Must manually declare dependencies
-const zodValidation = {
-  name: 'zodValidation',
+const validationState = {
+  name: 'validationState',
 
   tracks: (path, input) => {
     // 10+ lines to extract all dependencies
@@ -76,8 +76,8 @@ subscribe(dataProxy, (ops) => {
 
 ```typescript
 // ✅ No tracks() needed!
-const zodValidation = {
-  name: 'zodValidation',
+const validationState = {
+  name: 'validationState',
   evaluate: (props) => {
     // Automatically tracks accessed properties
     return props.schema.safeParse(props.value).success
@@ -288,15 +288,15 @@ Our test suite would become SIMPLER:
 ### ❌ Before (Current)
 
 ```typescript
-test('should only recalculate zodValidation when strike changes', () => {
+test('should only recalculate validationState when strike changes', () => {
   let evalCount = 0
 
   // Override tracks() for testing
   const testConcern = {
-    ...zodValidation,
+    ...validationState,
     evaluate: (props) => {
       evalCount++
-      return zodValidation.evaluate(props)
+      return validationState.evaluate(props)
     }
   }
 
@@ -312,20 +312,20 @@ test('should only recalculate zodValidation when strike changes', () => {
 ### ✅ After (valtio-reactive)
 
 ```typescript
-test('should only recalculate zodValidation when strike changes', () => {
+test('should only recalculate validationState when strike changes', () => {
   let evalCount = 0
 
   const testConcern = {
-    ...zodValidation,
+    ...validationState,
     evaluate: (props) => {
       evalCount++
-      return zodValidation.evaluate(props)
+      return validationState.evaluate(props)
     }
   }
 
   store.useConcerns('test', {
     'products.leg-1.strike': {
-      zodValidation: { schema: z.number().min(0) }
+      validationState: { schema: z.number().min(0) }
     }
   })
 

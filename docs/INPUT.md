@@ -1,3 +1,12 @@
+---
+title: Initial Requirements (Legacy)
+updated: 2026-01-29
+audience: historical reference
+status: legacy
+---
+
+> **Legacy specification** – preserved for context only. The architecture described below predates the current two-proxy concern system. For current guidance see `docs/agents/ARCHITECTURE.md` and `docs/agents/CONCERNS_GUIDE.md`.
+
 Goal: NPM package as valtio wrapper with side-effect extensions and simplicity improvements.
 
 ## Overview
@@ -9,7 +18,7 @@ Goal: NPM package as valtio wrapper with side-effect extensions and simplicity i
 - lodash for \_get and \_set operations
 - deepDash for deep operations if needed
 
-## Necessary hooks
+## Necessary hooks _(legacy proposal)_
 
 `createGenericStore<DATA,META>()` function which takes type and initializes react context.
 
@@ -27,7 +36,7 @@ Additionally, we want react-specific quality of life improvements:
 
 Additionally, we want to store and provide defaultValue for components sometimes. First time the path is accessed, we should save it's value as defaultValue to separate Map or similar and provide in hook.
 
-## Types
+## Types _(legacy proposal)_
 
 We will need following types:
 
@@ -39,7 +48,7 @@ We will need following types:
 - PathsOfSameValue<DATA> --> which is Record<DeepKey<DATA>, Array<DeepKey<DATA>>> mapping each path to other paths which have same value (for sync changes)
 - OnStateChangesListenerFunction<DATA, META> --> it is specified as {key: null|DeepKey<DATA>, fn: (changes: key===null? ArrayOfChanges<DATA,META> : ArrayOfChanges<DeepValue<key>, META>, currentState: key===null? DATA : DeepValue<DATA>) => void} which is called on state changes.
 
-## Side-effects
+## Side-effects _(legacy proposal)_
 
 As part of side-effects, we want to register couple of things (can be called multiple times at different parts of application).
 
@@ -50,16 +59,16 @@ As part of side-effects, we want to register couple of things (can be called mul
 - aggregation
 - clearPaths
 
-### Sync paths
+### Sync paths \*(legacy)
 
 they work by taking pairs of paths which should always have same value. When one changes, the other is updated to same value automatically.
 they should contruct a graph of dependencies on register/unregister for quick access. when one things change, all direct and indirect nodes should change.
 
-### Flip paths
+### Flip paths \*(legacy)
 
 they work by taking pairs of paths which should always have opposite boolean value. When one changes, the other is updated to previous value of the other one. we can assume only two options (enum/boolean).
 
-### On state changes listeners
+### On state changes listeners \*(legacy)
 
 they work by taking listener functions which are called on state changes. they can be scoped to specific path or global (null key).
 these can listen on a nested paths, same as sync and flip paths. In case we listen on `some.value.path` and change `some.value` to `{path: {nested: 5}}`, the listener should be called with `some.value.path` change.
@@ -67,14 +76,14 @@ however! this break down of change should happen only in case necessary and shou
 
 (we want to avoid the need for setting all nested properties to undefined when we want to clear them).
 
-### Validators
+### Validators \*(legacy)
 
 we use zod schemas to validate data on specific scope. when data in scope changes, we run validation and store possible error message to specified path.
 keep in mind that given path can have multiple errors stored. we should register the errors with relevant unique ID as provided in registration and unregister them when validator is unregistered.
 
 our hooks should return errors as array of strings for given path when requested. we should store these errors in specified path (ideally, createGenericStore should accept argument path of where errors should be stored).
 
-### Aggregations
+### Aggregations \*(legacy)
 
 Similarly to sync-paths, however, this works only one-way.
 If all paths in sourcePaths have same value, we set targetPath to that value. If they differ, we set targetPath to undefined.
@@ -83,16 +92,18 @@ When any of sourcePaths change, we re-evaluate the aggregation.
 
 Keep in mind that we might have multiple registrations for same targetPath with different sourcePaths. We should contruct a graph and validate that no cyclic dependencies are created.
 
-### Clear paths
+### Clear paths \*(legacy)
 
 this is a simple configuration on which paths should be cleared (set to undefined) when specific path changes.
 When the specified path changes, all clearPaths are set to undefined. Also, when something changes INSIDE (should be configurable) changes, we also clear the specified paths.
 
-## Synchronizers
+## Synchronizers _(legacy)_
 
 We need a way to pipe-like process the ArrayOfChanges before they are applied to the state.
 We want everything to be applied at once together to avoid intermediate states and excessive re-renders.
 
-## Derived
+## Derived _(legacy idea)_
+
+> **Use today**: The concern + side-effect systems in `src/concerns` and `src/sideEffects` replace most of these bullet points. Treat this document as historical reasoning, not an implementation plan.
 
 When passing initialObject OR setting objects to paths which include `get myValue(){ this.some.path + this.other.path }` we want these to be derived automatically. These have to be optimized! we should automatically wrap `this.some.path` and `this.other.path` accesses to track dependencies and re-evaluate only when necessary with valtio.

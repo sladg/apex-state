@@ -1,31 +1,12 @@
-/**
- * Store Provider Component
- *
- * React component that initializes and provides the store to child components.
- *
- * Architecture: Two-Proxy Pattern
- * - state: User data proxy (tracked by valtio)
- * - _concerns: Computed concern values proxy (tracked by valtio)
- * - _internal: Graphs, registrations, processing queue (NOT tracked)
- * - config: Store configuration
- *
- * state and _concerns are independent proxies to prevent infinite loops
- * during concern evaluation (Two-Proxy Pattern).
- */
-
 import { useMemo } from 'react'
 
 import Graph from 'graphology'
 import { proxy, ref } from 'valtio'
 
+import { StoreContext } from '../core/context'
+import type { InternalState, ProviderProps, StoreInstance } from '../core/types'
 import type { GenericMeta } from '../types'
-import { StoreContext } from './StoreContext'
-import type { InternalState, ProviderProps, StoreInstance } from './types'
 
-/**
- * Creates the initial internal state structure
- * Wrapped in ref() to prevent valtio tracking
- */
 const createInternalState = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
@@ -33,23 +14,20 @@ const createInternalState = <
   graphs: {
     sync: new Graph({ type: 'undirected' }),
     flip: new Graph({ type: 'undirected' }),
-    aggregations: new Graph({ type: 'directed', allowSelfLoops: false }),
     listeners: new Map(),
+    sortedListenerPaths: [],
   },
   registrations: {
     concerns: new Map(),
     effectCleanups: new Set(),
     sideEffectCleanups: new Map(),
+    aggregations: new Map(),
   },
   processing: {
     queue: [],
-    isProcessing: false,
   },
 })
 
-/**
- * Creates a Provider component for a specific data type
- */
 export const createProvider = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,

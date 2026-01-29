@@ -29,13 +29,13 @@ type Primitive = string | number | boolean | bigint | symbol | null | undefined
 type IsAny<T> = 0 extends 1 & T ? true : false
 
 // Helper to check if type is never (exported for potential future use)
-type _IsNever<T> = [T] extends [never] ? true : false
+export type _IsNever<T> = [T] extends [never] ? true : false
 
 // Helper to get array element type (exported for potential future use)
-type _ArrayElement<T> = T extends readonly (infer E)[] ? E : never
+export type _ArrayElement<T> = T extends readonly (infer E)[] ? E : never
 
 // Exclude array methods and numeric keys (exported for potential future use)
-type _ExcludeArrayKeys<T> = T extends readonly any[] ? never : T
+export type _ExcludeArrayKeys<T> = T extends readonly any[] ? never : T
 
 // Main DeepKey implementation with depth limit to prevent infinite recursion
 export type DeepKey<T, Depth extends number = 20> = Depth extends 0

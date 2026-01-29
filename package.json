@@ -36,6 +36,7 @@
     "build": "tsup",
     "code:check": "eslint .",
     "code:fix": "eslint . --fix",
+    "code:unused": "knip",
     "test": "vitest run",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit"
@@ -57,6 +58,7 @@
     "eslint": "^9.0.0",
     "graphology-types": "^0.24.0",
     "jsdom": "^27.4.0",
+    "knip": "^5.82.1",
     "react": "^18.3.1",
     "tsup": "^8.3.5",
     "typescript": "^5.9.3",

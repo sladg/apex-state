@@ -7,11 +7,12 @@
 
 import React from 'react'
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createRegistrationFormStore, registrationFormFixtures } from '../mocks'
+import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 describe('Integration: Form Validation with Concerns', () => {
   let store: ReturnType<typeof createRegistrationFormStore>
@@ -57,11 +58,9 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      ...registrationFormFixtures.empty,
+    })
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
     expect(input.value).toBe('')
@@ -111,11 +110,9 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      ...registrationFormFixtures.empty,
+    })
 
     const input = screen.getByTestId('password-input') as HTMLInputElement
 
@@ -160,11 +157,9 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      ...registrationFormFixtures.empty,
+    })
 
     const passwordInput = screen.getByTestId(
       'password-input',
@@ -211,11 +206,9 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      ...registrationFormFixtures.empty,
+    })
 
     const input = screen.getByTestId('terms-input') as HTMLInputElement
     expect(input.checked).toBe(false)
@@ -256,11 +249,9 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      ...registrationFormFixtures.empty,
+    })
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'invalid' } })
@@ -298,11 +289,9 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      ...registrationFormFixtures.empty,
+    })
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
 
@@ -362,11 +351,9 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...registrationFormFixtures.empty }}>
-        <FormComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<FormComponent />, store, {
+      ...registrationFormFixtures.empty,
+    })
 
     // Submit should not be visible initially - wait for fields to be in document first
     await flushEffects()

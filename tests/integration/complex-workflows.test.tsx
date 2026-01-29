@@ -7,11 +7,12 @@
 
 import React, { useState } from 'react'
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { WizardForm } from '../mocks'
 import { createWizardFormStore, wizardFormFixtures } from '../mocks'
+import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 /** Wizard step type - used for type-safe step navigation */
 type WizardStep = WizardForm['currentStep']
@@ -90,12 +91,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step1Empty)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step1Empty),
     )
 
     const nextBtn = screen.getByTestId('next-btn')
@@ -157,12 +156,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step1Empty)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step1Empty),
     )
 
     const input = screen.getByTestId('firstName-input')
@@ -254,12 +251,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step1Empty)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step1Empty),
     )
 
     // Step 1 should be visible
@@ -303,12 +298,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step1Empty)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step1Empty),
     )
 
     const nextBtn = screen.getByTestId('next-btn') as HTMLButtonElement
@@ -348,12 +341,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step1Empty)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step1Empty),
     )
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Step 1 of 3')
@@ -394,12 +385,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step3Review)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step3Review),
     )
 
     expect(screen.getByTestId('review-section')).toBeInTheDocument()
@@ -447,12 +436,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step1Empty)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step1Empty),
     )
 
     const prevBtn = screen.getByTestId('prev-btn') as HTMLButtonElement
@@ -534,12 +521,10 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(wizardFormFixtures.step1Empty)}
-      >
-        <WizardComponent />
-      </store.Provider>,
+    renderWithStore(
+      <WizardComponent />,
+      store,
+      structuredClone(wizardFormFixtures.step1Empty),
     )
 
     const firstNameInput = screen.getByTestId('firstName-input')

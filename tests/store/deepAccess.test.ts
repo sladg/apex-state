@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { deepGet, deepHas, deepSet } from '../../src/store/utils/deepAccess'
+import { deepGet, deepHas, deepSet } from '../../src/utils/deepAccess'
 
 describe('Deep Access Utilities', () => {
   describe('deepGet', () => {

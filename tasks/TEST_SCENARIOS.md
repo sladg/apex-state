@@ -39,12 +39,12 @@ state = {
 
 concerns = {
   'products.leg-1.strike': {
-    zodValidation: { schema: z.number().min(0).max(200) },
+    validationState: { schema: z.number().min(0).max(200) },
     disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
     tooltip: { template: 'Leg 1 Strike: {{products.leg-1.strike}}' }
   },
   'products.leg-2.strike': {
-    zodValidation: { schema: z.number().min(0).max(200) },
+    validationState: { schema: z.number().min(0).max(200) },
     disabled: { condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] } },
     tooltip: { template: 'Leg 2 Strike: {{products.leg-2.strike}}' }
   }
@@ -97,14 +97,14 @@ concerns = {
 const leg1Evals = evaluationLog.filter(e => e.path === 'products.leg-1.strike')
 const leg2Evals = evaluationLog.filter(e => e.path === 'products.leg-2.strike')
 
-expect(leg1Evals.length).toBe(3)  // zodValidation + disabled + tooltip
+expect(leg1Evals.length).toBe(3)  // validationState + disabled + tooltip
 expect(leg2Evals.length).toBe(0)  // Should NOT recalculate
 ```
 
 #### AC2: All leg-1 concerns recalculate
 ```typescript
 const concernNames = leg1Evals.map(e => e.concern)
-expect(concernNames).toContain('zodValidation')
+expect(concernNames).toContain('validationState')
 expect(concernNames).toContain('disabled')
 expect(concernNames).toContain('tooltip')
 ```
@@ -112,7 +112,7 @@ expect(concernNames).toContain('tooltip')
 #### AC3: Correct values after recalculation
 ```typescript
 const concerns = store.getFieldConcerns('products.leg-1.strike')
-expect(concerns.zodValidation).toBe(true)  // Valid
+expect(concerns.validationState?.isError).toBe(false)  // Valid (no error)
 expect(concerns.tooltip).toBe('Leg 1 Strike: 150')
 ```
 
@@ -143,11 +143,11 @@ state = {
 
 concerns = {
   'products.leg-1.strike': {
-    zodValidation: { schema: z.number().min(0) },
+    validationState: { schema: z.number().min(0) },
     disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } }
   },
   'products.leg-2.strike': {
-    zodValidation: { schema: z.number().min(0) },
+    validationState: { schema: z.number().min(0) },
     disabled: { condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] } }
   }
 }
@@ -172,9 +172,9 @@ expect(evaluationLog).toEqual([
 ])
 ```
 
-#### AC2: Leg-1 zodValidation does NOT recalculate
+#### AC2: Leg-1 validationState does NOT recalculate
 ```typescript
-const validationEvals = evaluationLog.filter(e => e.concern === 'zodValidation')
+const validationEvals = evaluationLog.filter(e => e.concern === 'validationState')
 expect(validationEvals.length).toBe(0)  // Doesn't depend on status
 ```
 
@@ -220,11 +220,11 @@ state = {
 
 concerns = {
   'products.leg-1.strike': {
-    zodValidation: { schema: z.number().min(0) },
+    validationState: { schema: z.number().min(0) },
     tooltip: { template: 'Strike: {{products.leg-1.strike}} @ {{market.spot}}' }
   },
   'products.leg-2.strike': {
-    zodValidation: { schema: z.number().min(0) },
+    validationState: { schema: z.number().min(0) },
     tooltip: { template: 'Strike: {{products.leg-2.strike}} @ {{market.spot}}' }
   }
 }
@@ -268,7 +268,7 @@ expect(evaluationLog.length).toBe(4)  // 2 concerns × 2 paths
 #### AC2: Each concern evaluates only once
 ```typescript
 const leg1ValidationEvals = evaluationLog.filter(
-  e => e.concern === 'zodValidation' && e.path === 'products.leg-1.strike'
+  e => e.concern === 'validationState' && e.path === 'products.leg-1.strike'
 )
 expect(leg1ValidationEvals.length).toBe(1)  // NOT 2 or 3!
 ```
@@ -315,7 +315,7 @@ state = {
 
 concerns = {
   'products.leg-1.strike': {
-    zodValidation: { schema: z.number().min(0).max(200) },
+    validationState: { schema: z.number().min(0).max(200) },
     tooltip: { template: 'Strike: {{products.leg-1.strike}}' }
   }
 }
@@ -351,7 +351,7 @@ expect(concerns.tooltip).toBe('Strike: 199')
 
 #### AC3: Validation reflects final state
 ```typescript
-expect(concerns.zodValidation).toBe(true)  // 199 is valid
+expect(concerns.validationState?.isError).toBe(false)  // 199 is valid (no error)
 ```
 
 ### ⚡ Performance Target
@@ -383,7 +383,7 @@ state = {
 
 concerns = {
   'products.leg-1.strike': {
-    zodValidation: { schema: z.number().min(0) }
+    validationState: { schema: z.number().min(0) }
   },
   'products.leg-1.premium': {
     computed: {
@@ -427,7 +427,7 @@ expect(premiumEvals.length).toBe(2)  // leg-1 and leg-2 premiums
 
 #### AC2: Strike validation does NOT recalculate
 ```typescript
-const validationEvals = evaluationLog.filter(e => e.concern === 'zodValidation')
+const validationEvals = evaluationLog.filter(e => e.concern === 'validationState')
 expect(validationEvals.length).toBe(0)  // Doesn't depend on market
 ```
 
@@ -572,14 +572,14 @@ const TradeForm = () => {
   renderLog.push({
     timestamp: performance.now(),
     strike: strikeValue,
-    valid: strikeConcerns.zodValidation
+    valid: strikeConcerns.validationState
   })
 
   return (
     <input
       value={strikeValue}
       disabled={strikeConcerns.disabled}
-      className={strikeConcerns.zodValidation ? '' : 'error'}
+      className={strikeConcerns.validationState ? '' : 'error'}
     />
   )
 }

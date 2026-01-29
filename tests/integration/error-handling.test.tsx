@@ -7,10 +7,11 @@
 
 import React from 'react'
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createFormWithErrorsStore, formWithErrorsFixtures } from '../mocks'
+import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 describe('Integration: Error Handling & Recovery', () => {
   let store: ReturnType<typeof createFormWithErrorsStore>
@@ -57,12 +58,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     const input = screen.getByTestId('email-input')
@@ -113,12 +112,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     const input = screen.getByTestId('email-input')
@@ -166,12 +163,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     const input = screen.getByTestId('email-input')
@@ -247,12 +242,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     // Create errors
@@ -314,12 +307,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     await flushEffects()
@@ -381,12 +372,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     const input = screen.getByTestId('email-input')
@@ -459,12 +448,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     const validateBtn = screen.getByTestId('validate-btn')
@@ -541,12 +528,10 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={structuredClone(formWithErrorsFixtures.empty)}
-      >
-        <FormComponent />
-      </store.Provider>,
+    renderWithStore(
+      <FormComponent />,
+      store,
+      structuredClone(formWithErrorsFixtures.empty),
     )
 
     // Create email error

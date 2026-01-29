@@ -1,10 +1,3 @@
-/**
- * Boolean logic evaluation utilities
- *
- * Core utilities for evaluating conditional expressions against state.
- * Used by concerns and side effects for reactive condition checking.
- */
-
 import _get from 'lodash/get'
 import _gt from 'lodash/gt'
 import _gte from 'lodash/gte'
@@ -17,48 +10,18 @@ import _lte from 'lodash/lte'
 
 import type { BoolLogic, ComparableValue } from '../types'
 
-/**
- * Check if a value is considered empty
- * - null/undefined: empty
- * - string: empty if length === 0
- * - array: empty if length === 0
- * - object: empty if no own enumerable keys
- * - other primitives (number, boolean): not empty
- */
 const isValueEmpty = (value: unknown): boolean => {
   if (_isNil(value)) return true
   if (_isNumber(value) || typeof value === 'boolean') return false
   return _isEmpty(value)
 }
 
-/**
- * Evaluate a numeric comparison safely
- * Returns false if the value is not a number
- */
 const evaluateNumericComparison = (
   value: unknown,
   threshold: number,
   comparator: (a: number, b: number) => boolean,
 ): boolean => _isNumber(value) && comparator(value, threshold)
 
-/**
- * Evaluate a BoolLogic expression against state
- *
- * Supports:
- * - IS_EQUAL: value === expected
- * - EXISTS: value is not null/undefined
- * - IS_EMPTY: string/array/object is empty
- * - AND/OR/NOT: boolean combinators
- * - GT/LT/GTE/LTE: numeric comparisons
- * - IN: value in allowed list
- *
- * Automatically tracks any state properties accessed during evaluation
- * when wrapped in effect().
- *
- * @example
- * const logic = { IS_EQUAL: ['user.role', 'admin'] }
- * evaluateBoolLogic(logic, state) // true if state.user.role === 'admin'
- */
 export const evaluateBoolLogic = <STATE extends object>(
   logic: BoolLogic<STATE>,
   state: STATE,

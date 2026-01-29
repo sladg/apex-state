@@ -5,7 +5,7 @@
  * for any valid dot-notation path.
  */
 
-import { expectTypeOf, test } from 'vitest'
+import { describe, expectTypeOf, it } from 'vitest'
 
 import type { DeepValue } from '../../src/types/deepValue'
 
@@ -32,142 +32,146 @@ interface User {
   }
 }
 
-test('DeepValue - top level properties', () => {
-  expectTypeOf<DeepValue<User, 'name'>>().toEqualTypeOf<string>()
-  expectTypeOf<DeepValue<User, 'age'>>().toEqualTypeOf<number>()
-  expectTypeOf<DeepValue<User, 'tags'>>().toEqualTypeOf<string[]>()
-})
+describe('DeepValue', () => {
+  it('handles top level properties', () => {
+    expectTypeOf<DeepValue<User, 'name'>>().toEqualTypeOf<string>()
+    expectTypeOf<DeepValue<User, 'age'>>().toEqualTypeOf<number>()
+    expectTypeOf<DeepValue<User, 'tags'>>().toEqualTypeOf<string[]>()
+  })
 
-test('DeepValue - nested object properties', () => {
-  expectTypeOf<DeepValue<User, 'address'>>().toEqualTypeOf<{
-    street: string
-    city: string
-    coordinates: {
+  it('handles nested object properties', () => {
+    expectTypeOf<DeepValue<User, 'address'>>().toEqualTypeOf<{
+      street: string
+      city: string
+      coordinates: {
+        lat: number
+        lng: number
+      }
+    }>()
+
+    expectTypeOf<DeepValue<User, 'address.street'>>().toEqualTypeOf<string>()
+    expectTypeOf<DeepValue<User, 'address.city'>>().toEqualTypeOf<string>()
+  })
+
+  it('handles deep nested properties', () => {
+    expectTypeOf<DeepValue<User, 'address.coordinates'>>().toEqualTypeOf<{
       lat: number
       lng: number
-    }
-  }>()
+    }>()
 
-  expectTypeOf<DeepValue<User, 'address.street'>>().toEqualTypeOf<string>()
-  expectTypeOf<DeepValue<User, 'address.city'>>().toEqualTypeOf<string>()
-})
+    expectTypeOf<
+      DeepValue<User, 'address.coordinates.lat'>
+    >().toEqualTypeOf<number>()
+    expectTypeOf<
+      DeepValue<User, 'address.coordinates.lng'>
+    >().toEqualTypeOf<number>()
+  })
 
-test('DeepValue - deep nested properties', () => {
-  expectTypeOf<DeepValue<User, 'address.coordinates'>>().toEqualTypeOf<{
-    lat: number
-    lng: number
-  }>()
+  it('handles array types', () => {
+    expectTypeOf<DeepValue<User, 'friends'>>().toEqualTypeOf<
+      {
+        name: string
+        email: string
+      }[]
+    >()
 
-  expectTypeOf<
-    DeepValue<User, 'address.coordinates.lat'>
-  >().toEqualTypeOf<number>()
-  expectTypeOf<
-    DeepValue<User, 'address.coordinates.lng'>
-  >().toEqualTypeOf<number>()
-})
+    expectTypeOf<DeepValue<User, `${number}`>>().toEqualTypeOf<unknown>()
+  })
 
-test('DeepValue - array types', () => {
-  expectTypeOf<DeepValue<User, 'friends'>>().toEqualTypeOf<
-    {
-      name: string
-      email: string
-    }[]
-  >()
+  it('handles array element properties', () => {
+    // Arrays are treated as a whole, not indexed
+    expectTypeOf<DeepValue<User, 'friends'>>().toEqualTypeOf<
+      {
+        name: string
+        email: string
+      }[]
+    >()
+  })
 
-  expectTypeOf<DeepValue<User, `${number}`>>().toEqualTypeOf<unknown>()
-})
+  it('handles optional properties', () => {
+    type MetadataValue = DeepValue<User, 'metadata'>
 
-test('DeepValue - array element properties', () => {
-  // Arrays are treated as a whole, not indexed
-  expectTypeOf<DeepValue<User, 'friends'>>().toEqualTypeOf<
-    {
-      name: string
-      email: string
-    }[]
-  >()
-})
+    expectTypeOf<MetadataValue>().toMatchTypeOf<
+      | {
+          createdAt: Date
+          updatedAt?: Date
+        }
+      | undefined
+    >()
+  })
 
-test('DeepValue - optional properties', () => {
-  type MetadataValue = DeepValue<User, 'metadata'>
-
-  expectTypeOf<MetadataValue>().toMatchTypeOf<
-    | {
-        createdAt: Date
-        updatedAt?: Date
-      }
-    | undefined
-  >()
-})
-
-test('DeepValue - complex nested structure', () => {
-  interface ComplexType {
-    level1: {
-      level2: {
-        level3: {
-          value: string
-          nested: {
-            deep: number
+  it('handles complex nested structure', () => {
+    interface ComplexType {
+      level1: {
+        level2: {
+          level3: {
+            value: string
+            nested: {
+              deep: number
+            }
           }
         }
       }
     }
-  }
 
-  expectTypeOf<
-    DeepValue<ComplexType, 'level1.level2.level3.value'>
-  >().toEqualTypeOf<string>()
+    expectTypeOf<
+      DeepValue<ComplexType, 'level1.level2.level3.value'>
+    >().toEqualTypeOf<string>()
 
-  expectTypeOf<
-    DeepValue<ComplexType, 'level1.level2.level3.nested.deep'>
-  >().toEqualTypeOf<number>()
+    expectTypeOf<
+      DeepValue<ComplexType, 'level1.level2.level3.nested.deep'>
+    >().toEqualTypeOf<number>()
 
-  expectTypeOf<DeepValue<ComplexType, 'level1.level2.level3'>>().toEqualTypeOf<{
-    value: string
-    nested: {
-      deep: number
-    }
-  }>()
-})
-
-test('DeepValue - should return unknown for invalid paths', () => {
-  expectTypeOf<DeepValue<User, 'invalid'>>().toEqualTypeOf<unknown>()
-  expectTypeOf<DeepValue<User, 'address.invalid'>>().toEqualTypeOf<unknown>()
-})
-
-test('DeepValue - real world example', () => {
-  interface AppState {
-    user: {
-      profile: {
-        name: string
-        email: string
+    expectTypeOf<
+      DeepValue<ComplexType, 'level1.level2.level3'>
+    >().toEqualTypeOf<{
+      value: string
+      nested: {
+        deep: number
       }
-      settings: {
-        theme: 'light' | 'dark'
-        notifications: boolean
+    }>()
+  })
+
+  it('should return unknown for invalid paths', () => {
+    expectTypeOf<DeepValue<User, 'invalid'>>().toEqualTypeOf<unknown>()
+    expectTypeOf<DeepValue<User, 'address.invalid'>>().toEqualTypeOf<unknown>()
+  })
+
+  it('handles real world example', () => {
+    interface AppState {
+      user: {
+        profile: {
+          name: string
+          email: string
+        }
+        settings: {
+          theme: 'light' | 'dark'
+          notifications: boolean
+        }
       }
+      items: {
+        id: string
+        title: string
+      }[]
     }
-    items: {
-      id: string
-      title: string
-    }[]
-  }
 
-  expectTypeOf<
-    DeepValue<AppState, 'user.profile.name'>
-  >().toEqualTypeOf<string>()
+    expectTypeOf<
+      DeepValue<AppState, 'user.profile.name'>
+    >().toEqualTypeOf<string>()
 
-  expectTypeOf<DeepValue<AppState, 'user.settings.theme'>>().toEqualTypeOf<
-    'light' | 'dark'
-  >()
+    expectTypeOf<DeepValue<AppState, 'user.settings.theme'>>().toEqualTypeOf<
+      'light' | 'dark'
+    >()
 
-  expectTypeOf<
-    DeepValue<AppState, 'user.settings.notifications'>
-  >().toEqualTypeOf<boolean>()
+    expectTypeOf<
+      DeepValue<AppState, 'user.settings.notifications'>
+    >().toEqualTypeOf<boolean>()
 
-  expectTypeOf<DeepValue<AppState, 'items'>>().toEqualTypeOf<
-    {
-      id: string
-      title: string
-    }[]
-  >()
+    expectTypeOf<DeepValue<AppState, 'items'>>().toEqualTypeOf<
+      {
+        id: string
+        title: string
+      }[]
+    >()
+  })
 })

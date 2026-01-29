@@ -7,11 +7,12 @@
 
 import React from 'react'
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { ProductForm } from '../mocks'
 import { createProductFormStore, productFormFixtures } from '../mocks'
+import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 /** Product type union - used for type-safe event handler casts */
 type ProductType = ProductForm['type']
@@ -69,11 +70,9 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...productFormFixtures.empty }}>
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      ...productFormFixtures.empty,
+    })
 
     // Physical product - weight field should be visible
     expect(screen.getByTestId('weight-input')).toBeInTheDocument()
@@ -126,11 +125,9 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...productFormFixtures.empty }}>
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      ...productFormFixtures.empty,
+    })
 
     // Switch to digital
     const typeSelect = screen.getByTestId('type-select')
@@ -183,23 +180,17 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          type: 'physical',
-          name: '',
-          price: 10,
-          weight: undefined,
-          downloadUrl: undefined,
-          requiresShipping: true,
-          taxable: true,
-          isPublished: false,
-          _errors: {},
-        }}
-      >
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      type: 'physical',
+      name: '',
+      price: 10,
+      weight: undefined,
+      downloadUrl: undefined,
+      requiresShipping: true,
+      taxable: true,
+      isPublished: false,
+      _errors: {},
+    })
 
     const priceInput = screen.getByTestId('price-input') as HTMLInputElement
     expect(priceInput.disabled).toBe(false)
@@ -244,11 +235,9 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...productFormFixtures.empty }}>
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      ...productFormFixtures.empty,
+    })
 
     expect(screen.getByTestId('name-label')).toHaveTextContent('Product Name')
 
@@ -291,11 +280,9 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...productFormFixtures.empty }}>
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      ...productFormFixtures.empty,
+    })
 
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
@@ -340,11 +327,9 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ ...productFormFixtures.empty }}>
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      ...productFormFixtures.empty,
+    })
 
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
@@ -398,23 +383,17 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          type: 'physical',
-          name: 'Test Product',
-          price: 0,
-          weight: undefined,
-          downloadUrl: undefined,
-          requiresShipping: true,
-          taxable: true,
-          isPublished: false,
-          _errors: {},
-        }}
-      >
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      type: 'physical',
+      name: 'Test Product',
+      price: 0,
+      weight: undefined,
+      downloadUrl: undefined,
+      requiresShipping: true,
+      taxable: true,
+      isPublished: false,
+      _errors: {},
+    })
 
     const nameInput = screen.getByTestId('name-input') as HTMLInputElement
     expect(nameInput.readOnly).toBe(false)
@@ -469,23 +448,17 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          type: 'physical',
-          name: '',
-          price: 10,
-          weight: undefined,
-          downloadUrl: undefined,
-          requiresShipping: true,
-          taxable: true,
-          isPublished: false,
-          _errors: {},
-        }}
-      >
-        <ProductComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<ProductComponent />, store, {
+      type: 'physical',
+      name: '',
+      price: 10,
+      weight: undefined,
+      downloadUrl: undefined,
+      requiresShipping: true,
+      taxable: true,
+      isPublished: false,
+      _errors: {},
+    })
 
     const priceInput = screen.getByTestId('price-input') as HTMLInputElement
     expect(priceInput.disabled).toBe(false)

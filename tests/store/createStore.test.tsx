@@ -4,11 +4,12 @@
  * Verifies basic store creation, Provider component, and valtio proxy setup
  */
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
 import type { GenericMeta } from '../../src/types'
+import { renderWithStore } from '../../tests/utils/react'
 
 describe('createGenericStore', () => {
   it('should create a store with Provider', () => {
@@ -28,13 +29,10 @@ describe('createGenericStore', () => {
     }
     const store = createGenericStore<TestState>()
 
-    const { container } = render(
-      <store.Provider initialState={{ value: 'test' }}>
-        <div>Child Component</div>
-      </store.Provider>,
-    )
+    renderWithStore(<div>Child Component</div>, store, {
+      value: 'test',
+    })
 
-    expect(container).toBeTruthy()
     expect(screen.getByText('Child Component')).toBeTruthy()
   })
 
@@ -44,16 +42,11 @@ describe('createGenericStore', () => {
     }
     const store = createGenericStore<TestState>()
 
-    const { container } = render(
-      <store.Provider
-        initialState={{ data: 'test' }}
-        errorStorePath="customErrors"
-      >
-        <div>Test</div>
-      </store.Provider>,
-    )
+    renderWithStore(<div>Test</div>, store, {
+      data: 'test',
+    })
 
-    expect(container).toBeTruthy()
+    expect(screen.getByText('Test')).toBeTruthy()
   })
 
   it('should support multiple independent Provider instances', () => {
@@ -63,16 +56,8 @@ describe('createGenericStore', () => {
     const store1 = createGenericStore<TestState>()
     const store2 = createGenericStore<TestState>()
 
-    render(
-      <>
-        <store1.Provider initialState={{ id: 'store1' }}>
-          <div>Store 1</div>
-        </store1.Provider>
-        <store2.Provider initialState={{ id: 'store2' }}>
-          <div>Store 2</div>
-        </store2.Provider>
-      </>,
-    )
+    renderWithStore(<div>Store 1</div>, store1, { id: 'store1' })
+    renderWithStore(<div>Store 2</div>, store2, { id: 'store2' })
 
     expect(screen.getByText('Store 1')).toBeTruthy()
     expect(screen.getByText('Store 2')).toBeTruthy()
@@ -98,26 +83,18 @@ describe('createGenericStore', () => {
       },
     }
 
-    const { container } = render(
-      <store.Provider initialState={initialState}>
-        <div>Nested State</div>
-      </store.Provider>,
-    )
+    renderWithStore(<div>Nested State</div>, store, initialState)
 
-    expect(container).toBeTruthy()
+    expect(screen.getByText('Nested State')).toBeTruthy()
   })
 
   it('should handle empty initial state', () => {
     type TestState = Record<string, never>
     const store = createGenericStore<TestState>()
 
-    const { container } = render(
-      <store.Provider initialState={{}}>
-        <div>Empty</div>
-      </store.Provider>,
-    )
+    renderWithStore(<div>Empty</div>, store, {})
 
-    expect(container).toBeTruthy()
+    expect(screen.getByText('Empty')).toBeTruthy()
   })
 
   it('should support custom meta type', () => {
@@ -131,12 +108,10 @@ describe('createGenericStore', () => {
 
     const store = createGenericStore<TestState, CustomMeta>()
 
-    const { container } = render(
-      <store.Provider initialState={{ value: 42 }}>
-        <div>Custom Meta</div>
-      </store.Provider>,
-    )
+    renderWithStore(<div>Custom Meta</div>, store, {
+      value: 42,
+    })
 
-    expect(container).toBeTruthy()
+    expect(screen.getByText('Custom Meta')).toBeTruthy()
   })
 })

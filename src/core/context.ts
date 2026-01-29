@@ -1,19 +1,25 @@
 /**
- * useStoreContext Hook
+ * Store React Context and Hook
  *
- * @internal Package-internal hook for accessing the store from context.
- * This is used internally by other hooks in the store instance.
- * End users should not call this directly - use the hooks returned by createGenericStore instead
- * (e.g., store.useStore, store.useFieldStore, store.useConcerns, etc.).
- *
- * Throws an error if used outside of a Provider.
+ * Core primitives for providing and accessing the store instance.
+ * This module has minimal dependencies to avoid circular imports.
  */
 
-import { useContext } from 'react'
+import { createContext, useContext } from 'react'
 
-import { StoreContext } from '../store/StoreContext'
-import type { StoreInstance } from '../store/types'
 import type { GenericMeta } from '../types'
+import type { StoreInstance } from './types'
+
+/**
+ * React Context for the store instance
+ * Null by default - will be populated by Provider
+ */
+export const StoreContext = createContext<StoreInstance<
+  any,
+  GenericMeta
+> | null>(null)
+
+StoreContext.displayName = 'StoreContext'
 
 /**
  * Access the store instance from context.

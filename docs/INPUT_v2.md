@@ -1,3 +1,12 @@
+---
+title: Requirements Addendum (Legacy)
+updated: 2026-01-29
+audience: historical reference
+status: legacy
+---
+
+> **Legacy addendum** – kept for traceability. Current implementations have dedicated documentation in `docs/agents/ARCHITECTURE.md`, `docs/agents/CONCERNS_GUIDE.md`, and `docs/INTERPOLATION.md`.
+
 Extensions and additions:
 
 Ability to specify `options` for DeepKey<DATA> paths, which lead to strings/enums.
@@ -29,16 +38,22 @@ Interpolation, where strings can contain placeholders that reference other data 
 
 Again, i would like components to focus on rendering logic while hooks handle interpolation.
 
-
 ---
 
+**Modern mapping:**
 
+- BoolLogic support now lives in `src/utils/boolLogic.ts` and the prebuilt concerns referenced in `docs/agents/CONCERNS_GUIDE.md`.
+- Interpolation requirements are satisfied by `src/utils/interpolation.ts`; see `docs/INTERPOLATION.md`.
+- `$LEG_ONE`-style dynamic segments inspired the current scoped registration system (`store.useConcerns`).
+- Undo/history ideas remain out of scope; track future decisions separately.
 
+Treat the remaining bullet points as historical context for why the current system exists, not as open tasks.
+
+---
 
 3 - this is valid, we should prefer a specific paths tho, i don't like the asterix paths as it won't be type-safe. We can assume that strategies will have paths such as p.$LEG_ONE.data.optionsCommon.strike. It will be hard-typed and replaced on fly so that $LEG_ONE matches the uuid used in store's data.
 
 4- let's ignore virtualization and keyboard shortcuts, let's keep them outside of scope for now for simplicity as it's deep on rendering teritory
-
 
 5- i extremely like the idea with dolar sign and refering itself when concerns are doing something
 
@@ -51,4 +66,3 @@ Again, i would like components to focus on rendering logic while hooks handle in
 9- this is nice to have, we can considering using valtio's proxyWithHistory. we are expecting to use Redux's devtools with valtio. on this note, it would be nice to have second view with debugging information to see flow of data (sync paths, listeners, why listener was called, what were the arguments passed to that function, etc.)
 
 10- the schema is dynamic, HOWEVER, we can assume that we will always register with sub-type. aka. we will register product-specific side-effects and concerns on top of Schema valid for that given product. Deal as whole will have union of all products, but we will sub-type where possible to avoid developer errors and typos.
-

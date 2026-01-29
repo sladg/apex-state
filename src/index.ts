@@ -13,18 +13,21 @@
 // =============================================================================
 
 // Store factory
+export type { ProviderProps, StoreConfig, StoreInstance } from './core/types'
 export { createGenericStore } from './store/createStore'
-export type { ProviderProps, StoreConfig, StoreInstance } from './store/types'
 
 // Graph builders for side-effect registration
+export type {
+  Aggregation,
+  ListenerRegistration,
+  OnStateListener,
+} from './core/types'
 export {
-  registerAggregation,
   registerFlipPair,
   registerListener,
   registerSideEffects,
   registerSyncPair,
 } from './sideEffects'
-export type { AggregationRule, OnStateListener } from './store/types'
 
 // Type utilities
 export type {
@@ -106,7 +109,7 @@ export type { SideEffects } from './types/sideEffects'
  * if (deepHas(state, 'user.address.city')) { ... }
  * ```
  */
-export { deepGet, deepHas, deepSet } from './store/utils/deepAccess'
+export { deepGet, deepHas, deepSet } from './utils/deepAccess'
 
 // =============================================================================
 // PACKAGE METADATA

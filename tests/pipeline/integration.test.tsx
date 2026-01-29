@@ -10,18 +10,25 @@
 
 import React from 'react'
 
-import { render, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
 import type { GenericMeta } from '../../src/types'
+import {
+  fireEvent,
+  flushEffects,
+  renderWithStore,
+} from '../../tests/utils/react'
 
-interface TestState {
-  count: number
+const initialTestState = {
+  count: 0,
   user: {
-    name: string
-  }
+    name: 'Initial',
+  },
 }
+
+type TestState = typeof initialTestState
 
 describe('Pipeline integration with useJitStore', () => {
   it('applies changes through pipeline', async () => {
@@ -50,21 +57,17 @@ describe('Pipeline integration with useJitStore', () => {
       )
     }
 
-    const { getByText, getByTestId } = render(
-      <store.Provider initialState={{ count: 0, user: { name: 'Initial' } }}>
-        <TestComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<TestComponent />, store, initialTestState)
 
     const initialRenderCount = renderCount
 
     // Click update button
-    getByText('Update').click()
+    fireEvent.click(screen.getByText('Update'))
 
-    await waitFor(() => {
-      expect(getByTestId('count').textContent).toBe('42')
-      expect(getByTestId('name').textContent).toBe('Alice')
-    })
+    await flushEffects()
+
+    expect(screen.getByTestId('count').textContent).toBe('42')
+    expect(screen.getByTestId('name').textContent).toBe('Alice')
 
     // Should only re-render once for both changes (atomic update)
     expect(renderCount).toBe(initialRenderCount + 1)
@@ -95,20 +98,19 @@ describe('Pipeline integration with useJitStore', () => {
       )
     }
 
-    const { getByText, getByTestId } = render(
-      <store.Provider initialState={{ count: 0, user: { name: 'Test' } }}>
-        <TestComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<TestComponent />, store, {
+      count: 0,
+      user: { name: 'Test' },
+    })
 
     const initialRenderCount = renderCount
 
     // Click increment
-    getByText('Increment').click()
+    fireEvent.click(screen.getByText('Increment'))
 
-    await waitFor(() => {
-      expect(getByTestId('count').textContent).toBe('1')
-    })
+    await flushEffects()
+
+    expect(screen.getByTestId('count').textContent).toBe('1')
 
     // Should re-render once for the state change
     expect(renderCount).toBe(initialRenderCount + 1)
@@ -132,19 +134,18 @@ describe('Pipeline integration with useStore', () => {
       )
     }
 
-    const { getByText, getByTestId } = render(
-      <store.Provider initialState={{ count: 0, user: { name: 'Test' } }}>
-        <TestComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<TestComponent />, store, {
+      count: 0,
+      user: { name: 'Test' },
+    })
 
     const initialRenderCount = renderCount
 
-    getByText('Update Count').click()
+    fireEvent.click(screen.getByText('Update Count'))
 
-    await waitFor(() => {
-      expect(getByTestId('count').textContent).toBe('100')
-    })
+    await flushEffects()
+
+    expect(screen.getByTestId('count').textContent).toBe('100')
 
     // Should re-render once for the change
     expect(renderCount).toBe(initialRenderCount + 1)
@@ -170,17 +171,16 @@ describe('Pipeline integration with useStore', () => {
       )
     }
 
-    const { getByText, getByTestId } = render(
-      <store.Provider initialState={{ count: 0, user: { name: 'Test' } }}>
-        <TestComponent />
-      </store.Provider>,
-    )
-
-    getByText('Update with Meta').click()
-
-    await waitFor(() => {
-      expect(getByTestId('count').textContent).toBe('50')
+    renderWithStore(<TestComponent />, store, {
+      count: 0,
+      user: { name: 'Test' },
     })
+
+    fireEvent.click(screen.getByText('Update with Meta'))
+
+    await flushEffects()
+
+    expect(screen.getByTestId('count').textContent).toBe('50')
 
     // Meta is passed through pipeline (will be used by side-effects in future tasks)
   })
@@ -199,17 +199,13 @@ describe('Pipeline integration with useStore', () => {
       )
     }
 
-    const { getByText, getByTestId } = render(
-      <store.Provider initialState={{ count: 0, user: { name: 'Initial' } }}>
-        <TestComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<TestComponent />, store, initialTestState)
 
-    getByText('Update Name').click()
+    fireEvent.click(screen.getByText('Update Name'))
 
-    await waitFor(() => {
-      expect(getByTestId('name').textContent).toBe('Bob')
-    })
+    await flushEffects()
+
+    expect(screen.getByTestId('name').textContent).toBe('Bob')
   })
 })
 
@@ -234,15 +230,14 @@ describe('Pipeline placeholder synchronizers', () => {
       )
     }
 
-    const { getByText } = render(
-      <store.Provider initialState={{ count: 0, user: { name: '' } }}>
-        <TestComponent />
-      </store.Provider>,
-    )
+    renderWithStore(<TestComponent />, store, {
+      count: 0,
+      user: { name: '' },
+    })
 
     // Should not throw - all placeholders are no-ops
     expect(() => {
-      getByText('Update').click()
+      fireEvent.click(screen.getByText('Update'))
     }).not.toThrow()
   })
 })

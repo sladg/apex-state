@@ -3,11 +3,49 @@
  *
  * Pre-built initial state configurations for each test scenario,
  * reducing duplication across test files.
+ *
+ * ## Purpose
+ * Provides consistent, type-safe initial state data for stores in
+ * integration tests. Each fixture represents a specific test scenario
+ * state (empty form, partially filled, complete, with errors, etc.).
+ *
+ * ## Usage Pattern
+ * ```typescript
+ * import { createRegistrationFormStore, registrationFormFixtures } from '../mocks'
+ *
+ * const store = createRegistrationFormStore()
+ *
+ * // Start with empty form
+ * render(<store.Provider initialState={registrationFormFixtures.empty}>...)
+ *
+ * // Or start with partial data
+ * render(<store.Provider initialState={registrationFormFixtures.partial}>...)
+ * ```
+ *
+ * ## Fixture Naming Convention
+ * Each fixture set follows a consistent naming pattern:
+ * - **empty** - All fields empty/default
+ * - **partial** - Some fields filled
+ * - **complete/filled** - All required fields valid
+ * - **withErrors** - Pre-populated with validation errors
+ * - **updated** - Modified state for testing updates
+ * - **step[N]** - Multi-step workflow states (wizard forms)
+ *
+ * ## Benefits
+ * - Type-safe: Uses `satisfies` to catch schema mismatches
+ * - Consistent: Same structure across all tests
+ * - DRY: No repeated initial state objects
+ * - Discoverable: IDE autocomplete shows all fixtures
+ *
+ * ## Companion Files
+ * - Use with `stores.ts` factory functions
+ * - Combine with `helpers.ts` for validation and test patterns
  */
 
 import type {
   FormWithErrors,
   NestedCart,
+  OptimizationState,
   ProductForm,
   ProfileForm,
   RegistrationForm,
@@ -319,4 +357,14 @@ export const formWithErrorsFixtures = {
     submitted: true,
     _errors: {},
   } satisfies FormWithErrors,
+}
+
+/**
+ * Optimization Scenario fixtures
+ */
+export const optimizationFixtures = {
+  initial: {
+    val: 'A',
+    isInternal: false,
+  } satisfies OptimizationState,
 }

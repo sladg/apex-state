@@ -1,21 +1,12 @@
-/**
- * Core store factory
- *
- * Creates a store instance with valtio proxy and React Provider component.
- *
- * Architecture: Two-Proxy Pattern
- * - state: User data proxy (tracked by valtio)
- * - _concerns: Computed concern values proxy (tracked by valtio)
- * - _internal: Graphs, registrations, processing queue (NOT tracked)
- */
-
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 
 import { snapshot, useSnapshot } from 'valtio'
 
 import { defaultConcerns, registerConcernEffects } from '../concerns'
-import { useStoreContext } from '../hooks/useStoreContext'
-import { registerSideEffects } from '../sideEffects/registration'
+import { useStoreContext } from '../core/context'
+import type { StoreConfig } from '../core/types'
+import { processChanges } from '../pipeline/processChanges'
+import { registerSideEffects } from '../sideEffects'
 import type {
   ArrayOfChanges,
   DeepKey,
@@ -25,63 +16,22 @@ import type {
   GenericMeta,
 } from '../types'
 import type { SideEffects } from '../types/sideEffects'
-import { processChanges } from './executor'
+import { deepGet } from '../utils/deepAccess'
 import { createProvider } from './Provider'
-import type { StoreConfig } from './types'
-import { deepGet } from './utils/deepAccess'
 
-/**
- * Creates a generic store with valtio proxy and React context
- *
- * This is a factory function that returns a configured store with:
- * - Valtio proxy for reactive state
- * - _concerns proxy for computed values
- * - _internal (non-tracked) for graphs and processing
- * - React Provider component for context
- *
- * @example
- * ```typescript
- * type AppState = {
- *   user: { name: string }
- *   count: number
- * }
- *
- * const store = createGenericStore<AppState>()
- *
- * function App() {
- *   return (
- *     <store.Provider initialState={{ user: { name: 'Alice' }, count: 0 }}>
- *       <YourApp />
- *     </store.Provider>
- *   )
- * }
- * ```
- *
- * @param config - Optional configuration (errorStorePath, maxIterations, etc.)
- * @returns Store object with Provider component and hooks
- */
 export const createGenericStore = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
   CONCERNS extends readonly any[] = typeof defaultConcerns,
 >(
-  config?: StoreConfig,
+  _config?: StoreConfig,
 ) => {
-  // Merge config with defaults (used in Provider creation)
-  const _resolvedConfig = {
-    errorStorePath: config?.errorStorePath ?? '_errors',
-    maxIterations: config?.maxIterations ?? 100,
-  }
-
   // Create the Provider component for this store
   const Provider = createProvider<DATA, META>()
 
   return {
     Provider,
 
-    /**
-     * useState-like hook for accessing and updating specific paths
-     */
     useStore: <P extends DeepKey<DATA>>(
       path: P,
     ): [
@@ -105,9 +55,6 @@ export const createGenericStore = <
       return [value, setValue]
     },
 
-    /**
-     * Just-In-Time hook for bulk operations and non-reactive reads
-     */
     useJitStore: (): {
       proxyValue: DATA
       setChanges: (changes: ArrayOfChanges<DATA, META>) => void
@@ -134,11 +81,7 @@ export const createGenericStore = <
       }
     },
 
-    /**
-     * Hook for registering side effects
-     * Registers directly into _internal.graphs
-     */
-    useSideEffects: (id: string, effects: SideEffects<DATA>): void => {
+    useSideEffects: (id: string, effects: SideEffects<DATA, META>): void => {
       const store = useStoreContext<DATA, META>()
 
       useLayoutEffect(() => {
@@ -146,9 +89,6 @@ export const createGenericStore = <
       }, [store, id, effects])
     },
 
-    /**
-     * Form field hook with convenient object API {value, setValue}
-     */
     useFieldStore: <P extends DeepKey<DATA>>(
       path: P,
     ): {
@@ -175,9 +115,6 @@ export const createGenericStore = <
       }
     },
 
-    /**
-     * Form field hook with bidirectional transformations
-     */
     useFieldTransformedStore: <
       P extends DeepKey<DATA>,
       VAL extends DeepValue<DATA, P>,
@@ -220,11 +157,6 @@ export const createGenericStore = <
       }
     },
 
-    /**
-     * Hook for registering concerns with automatic dependency tracking
-     * Registers on mount, unregisters on unmount
-     * Uses the store's CONCERNS array by default
-     */
     useConcerns: (
       id: string,
       registration: Partial<
@@ -243,10 +175,6 @@ export const createGenericStore = <
       }, [store, id, registration, customConcerns])
     },
 
-    /**
-     * Hook for reading concern results for a specific path
-     * Returns properly typed concerns based on the CONCERNS array
-     */
     useFieldConcerns: <P extends DeepKey<DATA>>(
       path: P,
     ): EvaluatedConcerns<CONCERNS> => {
@@ -257,16 +185,6 @@ export const createGenericStore = <
       return (snap[path] || {}) as EvaluatedConcerns<CONCERNS>
     },
 
-    /**
-     * Create a specialized store instance with selected concerns mixed into useFieldStore
-     *
-     * @example
-     * ```typescript
-     * const specialized = store.withConcerns({ disabledWhen: true, zodValidation: true })
-     * const field = specialized.useFieldStore('path.to.field')
-     * // field has: value, setValue, disabledWhen?, zodValidation?
-     * ```
-     */
     withConcerns: <SELECTION extends Partial<Record<string, boolean>>>(
       selection: SELECTION,
     ) => {

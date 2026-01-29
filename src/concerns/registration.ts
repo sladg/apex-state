@@ -1,29 +1,11 @@
-/**
- * Concern registration and effect setup
- *
- * Handles the internal logic for registering concerns with automatic
- * dependency tracking using valtio-reactive's effect().
- *
- * @internal Used internally by useConcerns hook
- */
-
 import { effect } from 'valtio-reactive'
 
-import type { StoreInstance } from '../store/types'
-import { deepGet } from '../store/utils/deepAccess'
+import type { StoreInstance } from '../core/types'
 import type { DeepKey, GenericMeta } from '../types'
+import { deepGet } from '../utils/deepAccess'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
-/**
- * Register concern effects for given paths and return cleanup function
- *
- * @internal
- * @param store - Store instance containing state and concerns proxies
- * @param registration - Mapping of paths to concern configurations
- * @param concerns - Array of concern definitions to use
- * @returns Cleanup function that disposes all effects and removes concern values
- */
 export const registerConcernEffects = <
   DATA extends object,
   META extends GenericMeta,
@@ -33,10 +15,25 @@ export const registerConcernEffects = <
   concerns: readonly ConcernType[],
 ): (() => void) => {
   const disposeCallbacks: (() => void)[] = []
+  // Non-reactive cache for previous results (prevents tracked reads)
+  const resultCache = new Map<string, unknown>()
+  // Pre-allocate concern path objects and capture references
+  const concernRefs = new Map<string, Record<string, unknown>>()
+
+  // Pre-initialize all path objects BEFORE creating effects
+  Object.keys(registration).forEach((path) => {
+    if (!store._concerns[path]) {
+      store._concerns[path] = {}
+    }
+    concernRefs.set(path, store._concerns[path])
+  })
 
   // Iterate over each path in the registration
   Object.entries(registration).forEach(([path, concernConfigs]) => {
     if (!concernConfigs) return
+
+    // Get pre-initialized concern object for this path
+    const concernsAtPath = concernRefs.get(path)!
 
     // Iterate over each concern at this path
     Object.entries(concernConfigs).forEach(([concernName, config]) => {
@@ -49,12 +46,7 @@ export const registerConcernEffects = <
         return
       }
 
-      // Pre-initialize path object outside effect to avoid tracking the read
-      // of store._concerns[path] inside the effect, which causes infinite loops
-      if (!store._concerns[path]) {
-        store._concerns[path] = {}
-      }
-      const pathConcerns = store._concerns[path]
+      const cacheKey = `${path}.${concernName}`
 
       // Wrap evaluation in effect() for automatic dependency tracking
       // effect() will automatically track ONLY the properties accessed during evaluate()
@@ -71,10 +63,15 @@ export const registerConcernEffects = <
         // EVALUATE concern (all state accesses inside are tracked!)
         const result = concern.evaluate(evalProps)
 
-        // WRITE to _concerns proxy (triggers React, not this effect)
-        // Writing to a different proxy prevents infinite loops
-        // Store under path -> concernName structure
-        pathConcerns[concernName] = result
+        // Check cache (non-reactive!) to see if value changed
+        const prev = resultCache.get(cacheKey)
+        if (prev !== result) {
+          // Update cache
+          resultCache.set(cacheKey, result)
+
+          // WRITE to pre-captured reference (NO tracked reads!)
+          concernsAtPath[concernName] = result
+        }
       })
 
       // Track dispose callback for cleanup
@@ -86,6 +83,10 @@ export const registerConcernEffects = <
   return () => {
     // Stop all effects (removes tracking subscriptions)
     disposeCallbacks.forEach((dispose) => dispose())
+
+    // Clear caches
+    resultCache.clear()
+    concernRefs.clear()
 
     // Remove concern values from concernsProxy
     Object.keys(registration).forEach((path) => {

@@ -6,6 +6,14 @@
  */
 
 /**
+ * Optimization Scenario (for render optimization test)
+ */
+export interface OptimizationState {
+  val: string
+  isInternal: boolean
+}
+
+/**
  * Form Validation Scenario
  */
 export interface RegistrationForm {

@@ -1,0 +1,146 @@
+/**
+ * Core Store Types
+ *
+ * Foundational type definitions for the store instance.
+ * These types are used throughout the library.
+ */
+
+import type { ReactNode } from 'react'
+
+import type { ConcernType } from '../concerns/types'
+import type { ArrayOfChanges, DeepKey, GenericMeta } from '../types'
+import type { FlipGraph, SyncGraph } from './graphTypes'
+
+export interface StoreConfig {
+  /** Error storage path (default: "_errors") */
+  errorStorePath?: string
+  /** Max iterations for change processing (default: 100) */
+  maxIterations?: number
+}
+
+export interface ProviderProps<DATA extends object> {
+  initialState: DATA
+  errorStorePath?: string
+  children: ReactNode
+}
+
+export interface Aggregation {
+  id?: string // Optional: for debugging only
+  targetPath: string
+  sourcePaths: string[]
+}
+
+/** Reacts to scoped changes - receives relative paths and scoped state. Only fires for NESTED paths, not the path itself. */
+export type OnStateListener<
+  DATA extends object = object,
+  SUB_STATE = DATA,
+  META extends GenericMeta = GenericMeta,
+> = (
+  changes: ArrayOfChanges<SUB_STATE, META>,
+  state: SUB_STATE,
+) => ArrayOfChanges<DATA, META> | undefined
+
+/**
+ * Listener registration with path (what to watch) and scope (how to present data)
+ *
+ * @example
+ * ```typescript
+ * // Watch user.profile.name, get full state
+ * {
+ *   path: 'user.profile.name',
+ *   scope: null,
+ *   fn: (changes, state) => {
+ *     // changes: [['user.profile.name', 'Alice', {}]] - FULL path
+ *     // state: full DATA object
+ *   }
+ * }
+ *
+ * // Watch user.profile.*, get scoped state
+ * {
+ *   path: 'user.profile',
+ *   scope: 'user.profile',
+ *   fn: (changes, state) => {
+ *     // changes: [['name', 'Alice', {}]] - RELATIVE to scope
+ *     // state: user.profile object
+ *   }
+ * }
+ *
+ * // Watch deep path, get parent scope
+ * {
+ *   path: 'p.123.g.abc.data.strike',
+ *   scope: 'p.123.g.abc',
+ *   fn: (changes, state) => {
+ *     // changes: [['data.strike', value, {}]] - relative to scope
+ *     // state: p.123.g.abc object
+ *   }
+ * }
+ * ```
+ */
+export interface ListenerRegistration<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> {
+  /**
+   * Path to watch - only changes under this path will trigger the listener
+   * null = watch all top-level paths
+   */
+  path: DeepKey<DATA> | null
+
+  /**
+   * Scope for state and changes presentation
+   * - If null: state is full DATA, changes use FULL paths
+   * - If set: state is value at scope, changes use paths RELATIVE to scope
+   *
+   * Note: Changes are filtered based on `path`, even when scope is null
+   */
+  scope: DeepKey<DATA> | null
+
+  fn: OnStateListener<DATA, any, META>
+}
+
+export interface SideEffectGraphs<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> {
+  sync: SyncGraph
+  flip: FlipGraph
+  listeners: Map<string, ListenerRegistration<DATA, META>[]>
+  sortedListenerPaths: string[]
+}
+
+export interface Registrations {
+  concerns: Map<string, ConcernType[]>
+  effectCleanups: Set<() => void>
+  sideEffectCleanups: Map<string, () => void>
+  aggregations: Map<string, Aggregation[]>
+}
+
+export interface ProcessingState<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> {
+  queue: ArrayOfChanges<DATA, META>
+}
+
+/** Internal store state (NOT tracked - wrapped in ref()) */
+export interface InternalState<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> {
+  graphs: SideEffectGraphs<DATA, META>
+  registrations: Registrations
+  processing: ProcessingState<DATA, META>
+}
+
+export type ConcernValues = Record<string, Record<string, unknown>>
+
+/** Two-proxy pattern: state and _concerns are independent to prevent infinite loops */
+export interface StoreInstance<
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+> {
+  state: DATA
+  _concerns: ConcernValues
+  _internal: InternalState<DATA, META>
+  config: Required<StoreConfig>
+}

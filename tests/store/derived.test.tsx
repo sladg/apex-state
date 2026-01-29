@@ -4,18 +4,20 @@
  * Verifies that getter properties are automatically detected and work reactively
  */
 
-import { act, useContext } from 'react'
+import { useContext } from 'react'
 
-import { render } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { useSnapshot } from 'valtio'
 import { describe, expect, it } from 'vitest'
 
+import { StoreContext } from '../../src/core/context'
 import { createGenericStore } from '../../src/store/createStore'
-import { StoreContext } from '../../src/store/StoreContext'
+import { detectGetters, extractGetters } from '../../src/utils/deriveValues'
 import {
-  detectGetters,
-  extractGetters,
-} from '../../src/store/utils/deriveValues'
+  fireEvent,
+  flushEffects,
+  renderWithStore,
+} from '../../tests/utils/react'
 import { typeHelpers } from '../mocks'
 
 /**
@@ -149,13 +151,9 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
-      expect(getByTestId('fullName').textContent).toBe('John Doe')
+      expect(screen.getByTestId('fullName').textContent).toBe('John Doe')
     })
 
     it('should reactively update getter when dependency changes', async () => {
@@ -195,22 +193,18 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
-      expect(getByTestId('fullName').textContent).toBe('John Doe')
+      expect(screen.getByTestId('fullName').textContent).toBe('John Doe')
 
       // Click button to change firstName
-      getByTestId('change-name').click()
+      fireEvent.click(screen.getByTestId('change-name'))
 
-      // Wait for React to process the state change
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      // Wait for effects to flush
+      await flushEffects()
 
       // Getter should recalculate
-      expect(getByTestId('fullName').textContent).toBe('Jane Doe')
+      expect(screen.getByTestId('fullName').textContent).toBe('Jane Doe')
     })
 
     it('should only re-render when accessed getter dependencies change', () => {
@@ -254,17 +248,13 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
       const initialRenderCount = renderCount
 
       // Change age - should NOT trigger re-render because
       // component doesn't access age in snapshot
-      getByTestId('change-age').click()
+      fireEvent.click(screen.getByTestId('change-age'))
 
       // Since age is not accessed via snap, changing it shouldn't re-render
       // (Note: This test verifies Valtio's selective re-rendering)
@@ -326,32 +316,28 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
       // Initial values
-      expect(getByTestId('doubled').textContent).toBe('10')
-      expect(getByTestId('tripled').textContent).toBe('15')
-      expect(getByTestId('multiplied').textContent).toBe('10')
+      expect(screen.getByTestId('doubled').textContent).toBe('10')
+      expect(screen.getByTestId('tripled').textContent).toBe('15')
+      expect(screen.getByTestId('multiplied').textContent).toBe('10')
 
       // Increment count - all getters should update
-      getByTestId('inc-count').click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      fireEvent.click(screen.getByTestId('inc-count'))
+      await flushEffects()
 
-      expect(getByTestId('doubled').textContent).toBe('12')
-      expect(getByTestId('tripled').textContent).toBe('18')
-      expect(getByTestId('multiplied').textContent).toBe('12')
+      expect(screen.getByTestId('doubled').textContent).toBe('12')
+      expect(screen.getByTestId('tripled').textContent).toBe('18')
+      expect(screen.getByTestId('multiplied').textContent).toBe('12')
 
       // Increment multiplier - only multiplied getter should change
-      getByTestId('inc-mult').click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      fireEvent.click(screen.getByTestId('inc-mult'))
+      await flushEffects()
 
-      expect(getByTestId('doubled').textContent).toBe('12')
-      expect(getByTestId('tripled').textContent).toBe('18')
-      expect(getByTestId('multiplied').textContent).toBe('18')
+      expect(screen.getByTestId('doubled').textContent).toBe('12')
+      expect(screen.getByTestId('tripled').textContent).toBe('18')
+      expect(screen.getByTestId('multiplied').textContent).toBe('18')
     })
 
     it('should handle nested object getters', async () => {
@@ -395,18 +381,14 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
-      expect(getByTestId('fullName').textContent).toBe('John Doe')
+      expect(screen.getByTestId('fullName').textContent).toBe('John Doe')
 
-      getByTestId('change-name').click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      fireEvent.click(screen.getByTestId('change-name'))
+      await flushEffects()
 
-      expect(getByTestId('fullName').textContent).toBe('Jane Doe')
+      expect(screen.getByTestId('fullName').textContent).toBe('Jane Doe')
     })
 
     it('should handle getters with complex logic', async () => {
@@ -462,23 +444,19 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
       // Initial: 100 + 200 = 300, with 10% tax = 330
-      expect(getByTestId('total').textContent).toBe('300')
-      expect(getByTestId('totalWithTax').textContent).toBe('330')
+      expect(screen.getByTestId('total').textContent).toBe('300')
+      expect(screen.getByTestId('totalWithTax').textContent).toBe('330')
 
       // Add item
-      getByTestId('add-item').click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      fireEvent.click(screen.getByTestId('add-item'))
+      await flushEffects()
 
       // New total: 300 + 10 = 310, with 10% tax = 341
-      expect(getByTestId('total').textContent).toBe('310')
-      expect(getByTestId('totalWithTax').textContent).toBe('341')
+      expect(screen.getByTestId('total').textContent).toBe('310')
+      expect(screen.getByTestId('totalWithTax').textContent).toBe('341')
     })
 
     it('should handle computed values with numeric operations', () => {
@@ -517,14 +495,10 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
-      expect(getByTestId('sum').textContent).toBe('7')
-      expect(getByTestId('product').textContent).toBe('12')
+      expect(screen.getByTestId('sum').textContent).toBe('7')
+      expect(screen.getByTestId('product').textContent).toBe('12')
     })
 
     it('should work without any getters', () => {
@@ -541,13 +515,11 @@ describe('Derived Values', () => {
         return <div data-testid="value">{snap.value}</div>
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={{ value: 'test' }}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, {
+        value: 'test',
+      })
 
-      expect(getByTestId('value').textContent).toBe('test')
+      expect(screen.getByTestId('value').textContent).toBe('test')
     })
 
     it('should verify getter recalculation behavior (cache vs recompute)', async () => {
@@ -592,19 +564,15 @@ describe('Derived Values', () => {
         },
       }
 
-      const { getByTestId } = render(
-        <store.Provider initialState={initialState}>
-          <TestComponent />
-        </store.Provider>,
-      )
+      renderWithStore(<TestComponent />, store, initialState)
 
       // After first render, check how many times getter was called
       const initialCallCount = getterCallCount
 
       // All three accesses should return the same value
-      const c1 = getByTestId('computed1').textContent
-      const c2 = getByTestId('computed2').textContent
-      const c3 = getByTestId('computed3').textContent
+      const c1 = screen.getByTestId('computed1').textContent
+      const c2 = screen.getByTestId('computed2').textContent
+      const c3 = screen.getByTestId('computed3').textContent
 
       // If cached: all three should be identical (same counter value)
       // If recalculated: each would have different counter
@@ -612,17 +580,15 @@ describe('Derived Values', () => {
       expect(c2).toBe(c3)
 
       // Now change the dependency
-      await act(async () => {
-        getByTestId('increment').click()
-        await new Promise((resolve) => setTimeout(resolve, 0))
-      })
+      fireEvent.click(screen.getByTestId('increment'))
+      await flushEffects()
 
       // After dependency change, getter should recalculate
       const newCallCount = getterCallCount
       expect(newCallCount).toBeGreaterThan(initialCallCount)
 
       // The computed value should reflect the new value
-      const newComputed = getByTestId('computed1').textContent
+      const newComputed = screen.getByTestId('computed1').textContent
       expect(newComputed).toContain('computed-2')
     })
   })

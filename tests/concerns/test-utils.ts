@@ -4,10 +4,12 @@
  * Provides performance measurement and evaluation tracking for P0 test suite
  */
 
+import { proxy } from 'valtio/vanilla'
+import { effect } from 'valtio-reactive'
 import { vi } from 'vitest'
 
 /**
- * Performance benchmarking harness
+ * Performance benchmarking harness with round-trip tracking
  */
 export class PerformanceBenchmark {
   private marks = new Map<string, number>()
@@ -46,6 +48,46 @@ export class PerformanceBenchmark {
     this.marks.clear()
     this.measurements = []
   }
+}
+
+/**
+ * Wait for a concern value to change and return time elapsed
+ * Measures: state change → effects execute → value available in store
+ */
+export async function waitForConcernValue<T>(
+  getConcernValue: () => T,
+  expectedValue?: T,
+  timeout = 1000,
+): Promise<number> {
+  const startTime = performance.now()
+  const initialValue = getConcernValue()
+
+  return new Promise((resolve, reject) => {
+    const pollInterval = setInterval(() => {
+      const currentValue = getConcernValue()
+      const elapsed = performance.now() - startTime
+
+      // Check if value changed (or matches expected value)
+      const valueMatches =
+        expectedValue !== undefined
+          ? currentValue === expectedValue
+          : currentValue !== initialValue
+
+      if (valueMatches) {
+        clearInterval(pollInterval)
+        resolve(elapsed)
+      }
+
+      if (elapsed > timeout) {
+        clearInterval(pollInterval)
+        reject(
+          new Error(
+            `Timeout waiting for concern value after ${timeout}ms. Got: ${JSON.stringify(currentValue)}`,
+          ),
+        )
+      }
+    }, 0) // Poll as fast as possible
+  })
 }
 
 /**
@@ -156,5 +198,119 @@ export function createRenderTracker() {
     clear: () => {
       renderLog.length = 0
     },
+  }
+}
+
+/**
+ * Core concern type interface
+ */
+export interface ConcernType {
+  name: string
+  evaluate: (props: any) => any
+}
+
+/**
+ * Concern registration entry
+ */
+export interface ConcernRegistration {
+  id: string
+  path: string
+  concernName: string
+  concern: ConcernType
+  config: any
+  dispose: () => void
+}
+
+/**
+ * Test store factory using real store implementation pattern
+ *
+ * Creates a store instance directly without React Provider,
+ * following the same pattern as src/concerns/registration.ts
+ *
+ * This ensures performance tests validate the real implementation
+ */
+export const createTestStore = <T extends Record<string, any>>(
+  initialData: T,
+  concerns: Record<string, ConcernType>,
+) => {
+  const dataProxy = proxy<T>(initialData)
+  const concernsProxy = proxy<Record<string, Record<string, any>>>({})
+
+  const useConcerns = (id: string, registration: Record<string, any>) => {
+    const disposeCallbacks: (() => void)[] = []
+    const resultCache = new Map<string, unknown>()
+    const concernRefs = new Map<string, Record<string, unknown>>()
+
+    // Pre-initialize all path objects BEFORE creating effects (matching real implementation)
+    Object.keys(registration).forEach((path) => {
+      if (!concernsProxy[path]) {
+        concernsProxy[path] = {}
+      }
+      concernRefs.set(path, concernsProxy[path])
+    })
+
+    // Register each concern with effect tracking
+    Object.entries(registration).forEach(([path, concernConfigs]) => {
+      if (!concernConfigs) return
+
+      const concernsAtPath = concernRefs.get(path)!
+
+      Object.entries(concernConfigs).forEach(([concernName, config]) => {
+        if (!config) return
+
+        const concern = concerns[concernName as keyof typeof concerns]
+        if (!concern) return
+
+        const cacheKey = `${path}.${concernName}`
+
+        // Wrap evaluation in effect for automatic dependency tracking
+        const dispose = effect(() => {
+          const value = getDeepValue(dataProxy, path)
+
+          // Evaluate concern with provided config
+          const result = concern.evaluate({
+            state: dataProxy,
+            path,
+            value,
+            ...config,
+          })
+
+          // Check cache to avoid unnecessary updates
+          const prev = resultCache.get(cacheKey)
+          if (prev !== result) {
+            resultCache.set(cacheKey, result)
+            // Write to pre-captured reference (prevents tracked reads)
+            concernsAtPath[concernName] = result
+          }
+        })
+
+        disposeCallbacks.push(dispose)
+      })
+    })
+
+    // Return cleanup function
+    return () => {
+      disposeCallbacks.forEach((dispose) => dispose())
+      resultCache.clear()
+      concernRefs.clear()
+      // Clear concern values
+      Object.keys(registration).forEach((path) => {
+        Object.keys(registration[path] || {}).forEach((concernName) => {
+          if (concernsProxy[path]) {
+            Reflect.deleteProperty(concernsProxy[path], concernName)
+          }
+        })
+      })
+    }
+  }
+
+  const getFieldConcerns = (path: string) => {
+    return concernsProxy[path] || {}
+  }
+
+  return {
+    proxy: dataProxy,
+    useConcerns,
+    getFieldConcerns,
   }
 }

@@ -1,14 +1,15 @@
 /**
  * Deep access utilities for safe nested object access
  *
- * Wraps lodash get/set with type-safe path access using DeepKey/DeepValue.
+ * Wraps lodash get/set/isEqual with type-safe path access using DeepKey/DeepValue.
  * Maintains valtio reactivity when setting values.
  */
 
 import _get from 'lodash/get'
+import isEqual from 'lodash/isEqual'
 import _set from 'lodash/set'
 
-import type { DeepKey, DeepValue } from '../../types'
+import type { DeepKey, DeepValue } from '../types'
 
 /**
  * Safely gets a value from a nested object using dot notation (type-safe)
@@ -70,6 +71,25 @@ export const deepSet = <T extends object, P extends DeepKey<T>>(
 }
 
 /**
+ * Unsafely sets a value in a nested object using a runtime path string
+ * Use when paths are determined at runtime and cannot be statically typed
+ *
+ * @example
+ * ```typescript
+ * const user = { address: { city: 'NYC' } }
+ * const dynamicPath = 'address.city'
+ * deepSetUnsafe(user, dynamicPath, 'LA')
+ * ```
+ */
+export const deepSetUnsafe = <T extends object>(
+  obj: T,
+  path: string,
+  value: unknown,
+): void => {
+  _set(obj, path, value)
+}
+
+/**
  * Checks if a deep path exists in an object
  *
  * @example
@@ -84,4 +104,24 @@ export const deepHas = <T extends object, P extends DeepKey<T>>(
   path: P,
 ): boolean => {
   return _get(obj, path as string) !== undefined
+}
+
+/**
+ * Performs a deep equality comparison between two values
+ *
+ * Uses lodash isEqual for comprehensive deep comparison including:
+ * - Nested objects and arrays
+ * - Dates, RegExps, and other complex types
+ * - Circular references
+ *
+ * @example
+ * ```typescript
+ * deepEqual({ a: 1 }, { a: 1 }) // true
+ * deepEqual({ a: { b: 2 } }, { a: { b: 2 } }) // true
+ * deepEqual([1, 2, 3], [1, 2, 3]) // true
+ * deepEqual({ a: 1 }, { a: 2 }) // false
+ * ```
+ */
+export const deepEqual = (a: unknown, b: unknown): boolean => {
+  return isEqual(a, b)
 }

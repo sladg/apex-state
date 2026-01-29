@@ -74,7 +74,7 @@ state = proxy({
   },
   concerns: {
     'products.leg-1.strike': {
-      zodValidation: null,  // ❌ Stored in proxy
+      validationState: null,  // ❌ Stored in proxy
       disabled: null
     }
   }
@@ -85,7 +85,7 @@ effect(() => {
   const isValid = validateStrike(strike)
 
   // ❌ Writing back to proxy triggers this effect again!
-  state.concerns['products.leg-1.strike'].zodValidation = isValid
+  state.concerns['products.leg-1.strike'].validationState = isValid
   // → Infinite loop! 💥
 })
 ```
@@ -115,13 +115,13 @@ effect(() => {
   const isValid = validateStrike(strike)
 
   // ✅ Writing to cache doesn't trigger effects
-  concernCache.set('products.leg-1.strike:zodValidation', isValid)
+  concernCache.set('products.leg-1.strike:validationState', isValid)
 })
 
 // Read concerns from cache
 const getFieldConcerns = (path: string) => {
   return {
-    zodValidation: concernCache.get(`${path}:zodValidation`),
+    validationState: concernCache.get(`${path}:validationState`),
     disabled: concernCache.get(`${path}:disabled`)
   }
 }
@@ -221,7 +221,7 @@ effect(() => {
 // ✅ Separate action to fix invalid state
 const fixInvalidStrike = (path: string) => {
   const concerns = getFieldConcerns(path)
-  if (!concerns.zodValidation) {
+  if (concerns.validationState?.isError) {
     store.proxy.products['leg-1'].strike = 0  // Explicit action
   }
 }
@@ -395,7 +395,7 @@ import { derive } from 'valtio/utils'
 
 // ✅ Concerns proxy derived from data proxy
 const concernsProxy = derive({
-  'products.leg-1.strike:zodValidation': (get) => {
+  'products.leg-1.strike:validationState': (get) => {
     const strike = get(dataProxy).products['leg-1'].strike
     return schema.safeParse(strike).success
   },
@@ -437,7 +437,7 @@ effect(() => {
   const isValid = schema.safeParse(strike).success
 
   // Write to concernsProxy (triggers React, not this effect)
-  concernsProxy['products.leg-1.strike:zodValidation'] = isValid
+  concernsProxy['products.leg-1.strike:validationState'] = isValid
 })
 
 // React
@@ -507,7 +507,7 @@ const MyComponent = () => {
 │  (Derived/computed values - read-only for UI)               │
 │                                                             │
 │  const concernsProxy = proxy({                              │
-│    'products.leg-1.strike:zodValidation': true,             │
+│    'products.leg-1.strike:validationState': true,             │
 │    'products.leg-1.strike:disabled': false,                 │
 │    ...                                                      │
 │  })                                                         │

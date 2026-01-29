@@ -9,17 +9,21 @@
 
 import React from 'react'
 
-import { render, waitFor } from '@testing-library/react'
-import { proxy, useSnapshot } from 'valtio'
-import { effect } from 'valtio-reactive'
+import { render } from '@testing-library/react'
+import { useSnapshot } from 'valtio'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
+import type { ConcernType } from '../utils/concerns'
+import {
+  createTestStore as createTestStoreReact,
+  flushEffects,
+  flushSync,
+} from '../utils/react'
 import {
   createConcernSpies,
   createRenderTracker,
   evaluateBoolLogic,
-  getDeepValue,
   PerformanceBenchmark,
 } from './test-utils'
 
@@ -28,20 +32,6 @@ interface AppState {
     'leg-1': { strike: number; notional: number; status: string }
   }
   market: { spot: number }
-}
-
-interface ConcernType {
-  name: string
-  evaluate: (props: any) => any
-}
-
-interface ConcernRegistration {
-  id: string
-  path: string
-  concernName: string
-  concern: ConcernType
-  config: any
-  dispose: () => void
 }
 
 describe('TEST-007: React Integration', () => {
@@ -54,15 +44,20 @@ describe('TEST-007: React Integration', () => {
   })
 
   const createTestStore = (initialData: AppState) => {
-    const dataProxy = proxy<AppState>(initialData)
-    const concernsRegistry = new Map<string, ConcernRegistration[]>()
-    const evaluationCache = new Map<string, any>()
-
-    const zodValidation: ConcernType = {
-      name: 'zodValidation',
+    const validationState: ConcernType = {
+      name: 'validationState',
       evaluate: (props) => {
-        spies.zodValidation(props.path)
-        return props.schema.safeParse(props.value).success
+        spies.validationState(props.path)
+        const result = props.schema.safeParse(props.value)
+        return {
+          isError: !result.success,
+          errors: result.success
+            ? []
+            : result.error.errors.map((e: any) => ({
+                field: e.path.length > 0 ? e.path.join('.') : undefined,
+                message: e.message,
+              })),
+        }
       },
     }
 
@@ -74,95 +69,25 @@ describe('TEST-007: React Integration', () => {
       },
     }
 
-    const concerns = { zodValidation, disabled }
+    const concerns = { validationState, disabled }
+
+    const store = createTestStoreReact(initialData)
+    const originalUseConcerns = store.useConcerns
 
     const useConcerns = (id: string, registration: Record<string, any>) => {
-      const disposeCallbacks: (() => void)[] = []
-
-      Object.entries(registration).forEach(([path, concernConfigs]) => {
-        if (!concernConfigs) return
-
-        Object.entries(concernConfigs).forEach(([concernName, config]) => {
-          if (!config) return
-
-          const concern = concerns[concernName as keyof typeof concerns]
-          if (!concern) return
-
-          const concernKey = `${id}:${path}:${concernName}`
-
-          const dispose = effect(() => {
-            const value = getDeepValue(dataProxy, path)
-
-            const result = concern.evaluate({
-              state: dataProxy,
-              path,
-              value,
-              ...config,
-            })
-
-            evaluationCache.set(concernKey, result)
-          })
-
-          const reg: ConcernRegistration = {
-            id,
-            path,
-            concernName,
-            concern,
-            config,
-            dispose,
-          }
-
-          const pathRegs = concernsRegistry.get(path) || []
-          pathRegs.push(reg)
-          concernsRegistry.set(path, pathRegs)
-
-          disposeCallbacks.push(dispose)
-        })
-      })
-
-      return () => {
-        disposeCallbacks.forEach((dispose) => dispose())
-        concernsRegistry.forEach((regs, path) => {
-          const filtered = regs.filter((r) => r.id !== id)
-          if (filtered.length === 0) {
-            concernsRegistry.delete(path)
-          } else {
-            concernsRegistry.set(path, filtered)
-          }
-        })
-      }
+      return originalUseConcerns(id, registration, concerns)
     }
 
     const useFieldConcerns = (path: string) => {
-      const _snap = useSnapshot(dataProxy)
-      const result: Record<string, any> = {}
-      const registrations = concernsRegistry.get(path) || []
-
-      registrations.forEach(({ id, path: regPath, concernName }) => {
-        const key = `${id}:${regPath}:${concernName}`
-        result[concernName] = evaluationCache.get(key)
-      })
-
-      return result
-    }
-
-    const getFieldConcerns = (path: string) => {
-      const result: Record<string, any> = {}
-      const registrations = concernsRegistry.get(path) || []
-
-      registrations.forEach(({ id, path: regPath, concernName }) => {
-        const key = `${id}:${regPath}:${concernName}`
-        result[concernName] = evaluationCache.get(key)
-      })
-
-      return result
+      const _snap = useSnapshot(store.proxy)
+      return store.getFieldConcerns(path)
     }
 
     return {
-      proxy: dataProxy,
+      proxy: store.proxy,
       useConcerns,
       useFieldConcerns,
-      getFieldConcerns,
+      getFieldConcerns: store.getFieldConcerns,
     }
   }
 
@@ -178,7 +103,7 @@ describe('TEST-007: React Integration', () => {
 
     store.useConcerns('test', {
       'products.leg-1.strike': {
-        zodValidation: { schema: z.number().min(0).max(200) },
+        validationState: { schema: z.number().min(0).max(200) },
         disabled: {
           condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
         },
@@ -192,14 +117,14 @@ describe('TEST-007: React Integration', () => {
 
       renderTracker.track({
         strike: strikeValue,
-        valid: strikeConcerns.zodValidation,
+        valid: !strikeConcerns.validationState?.isError,
       })
 
       return (
         <input
           value={strikeValue}
           disabled={strikeConcerns.disabled}
-          className={strikeConcerns.zodValidation ? '' : 'error'}
+          className={!strikeConcerns.validationState?.isError ? '' : 'error'}
           readOnly
         />
       )
@@ -208,7 +133,7 @@ describe('TEST-007: React Integration', () => {
     render(<TradeForm />)
 
     // Wait for initial render
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     // Clear after initial render
     renderTracker.clear()
@@ -219,7 +144,7 @@ describe('TEST-007: React Integration', () => {
     store.proxy.products['leg-1'].status = 'locked'
 
     // Wait for re-renders to settle
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     // React 18 automatic batching should result in a single render
     expect(renderTracker.log.length).toBe(1)
@@ -237,7 +162,7 @@ describe('TEST-007: React Integration', () => {
 
     store.useConcerns('test', {
       'products.leg-1.strike': {
-        zodValidation: { schema: z.number().min(0).max(200) },
+        validationState: { schema: z.number().min(0).max(200) },
       },
     })
 
@@ -254,13 +179,13 @@ describe('TEST-007: React Integration', () => {
 
     render(<TradeForm />)
 
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     renderTracker.clear()
 
     store.proxy.products['leg-1'].strike = 150
 
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     // Should only see final state
     expect(renderTracker.log[0].strike).toBe(150)
@@ -278,7 +203,7 @@ describe('TEST-007: React Integration', () => {
 
     store.useConcerns('test', {
       'products.leg-1.strike': {
-        zodValidation: { schema: z.number().min(0).max(200) },
+        validationState: { schema: z.number().min(0).max(200) },
       },
     })
 
@@ -287,7 +212,7 @@ describe('TEST-007: React Integration', () => {
       const strikeConcerns = store.useFieldConcerns('products.leg-1.strike')
 
       renderTracker.track({
-        valid: strikeConcerns.zodValidation,
+        valid: !strikeConcerns.validationState?.isError,
       })
 
       return <div>{snap.products['leg-1'].strike}</div>
@@ -295,85 +220,81 @@ describe('TEST-007: React Integration', () => {
 
     render(<TradeForm />)
 
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     renderTracker.clear()
 
     store.proxy.products['leg-1'].strike = 150
 
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     // Validation should pass for 150
     expect(renderTracker.log[0].valid).toBe(true)
   })
 
-  it(
-    'Performance target: < 16ms render time (60fps)',
-    { retry: 2 },
-    async () => {
-      const renderTracker = createRenderTracker()
+  it('Performance target: < 16ms render time (60fps)', async () => {
+    const renderTracker = createRenderTracker()
 
-      const store = createTestStore({
-        products: {
-          'leg-1': { strike: 100, notional: 1000000, status: 'active' },
+    const store = createTestStore({
+      products: {
+        'leg-1': { strike: 100, notional: 1000000, status: 'active' },
+      },
+      market: { spot: 102 },
+    })
+
+    store.useConcerns('test', {
+      'products.leg-1.strike': {
+        validationState: { schema: z.number().min(0).max(200) },
+        disabled: {
+          condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
         },
-        market: { spot: 102 },
+      },
+    })
+
+    const TradeForm = () => {
+      const renderStart = performance.now()
+
+      const snap = useSnapshot(store.proxy)
+      const strikeValue = snap.products['leg-1'].strike
+      const strikeConcerns = store.useFieldConcerns('products.leg-1.strike')
+
+      const renderEnd = performance.now()
+      const renderDuration = renderEnd - renderStart
+
+      renderTracker.track({
+        strike: strikeValue,
+        valid: !strikeConcerns.validationState?.isError,
+        renderDuration,
       })
 
-      store.useConcerns('test', {
-        'products.leg-1.strike': {
-          zodValidation: { schema: z.number().min(0).max(200) },
-          disabled: {
-            condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-          },
-        },
-      })
+      return (
+        <input
+          value={strikeValue}
+          disabled={strikeConcerns.disabled}
+          readOnly
+        />
+      )
+    }
 
-      const TradeForm = () => {
-        const renderStart = performance.now()
+    render(<TradeForm />)
 
-        const snap = useSnapshot(store.proxy)
-        const strikeValue = snap.products['leg-1'].strike
-        const strikeConcerns = store.useFieldConcerns('products.leg-1.strike')
+    // Effects run synchronously, no wait needed
+    renderTracker.clear()
 
-        const renderEnd = performance.now()
-        const renderDuration = renderEnd - renderStart
+    benchmark.start('react-render')
+    store.proxy.products['leg-1'].strike = 150
+    await flushSync() // Use flushSync for performance tests (no 20ms setTimeout)
+    const totalDuration = benchmark.end('react-render')
 
-        renderTracker.track({
-          strike: strikeValue,
-          valid: strikeConcerns.zodValidation,
-          renderDuration,
-        })
+    // Total time should be < 5ms for React render + synchronous effects
+    // This test uses Zod validation which is synchronous, no async validators
+    expect(totalDuration).toBeLessThan(5)
 
-        return (
-          <input
-            value={strikeValue}
-            disabled={strikeConcerns.disabled}
-            readOnly
-          />
-        )
-      }
-
-      render(<TradeForm />)
-
-      await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
-
-      renderTracker.clear()
-
-      benchmark.start('react-render')
-      store.proxy.products['leg-1'].strike = 150
-      await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
-      const totalDuration = benchmark.end('react-render')
-
-      // Total time should be < 16ms for 60fps
-      expect(totalDuration).toBeLessThan(16)
-
-      // Individual render should also be fast
-      if (renderTracker.log.length > 0) {
-        expect(renderTracker.log[0].renderDuration).toBeLessThan(16)
-      }
-    },
-  )
+    // Individual render should be under 16ms (60fps target)
+    if (renderTracker.log.length > 0) {
+      expect(renderTracker.log[0].renderDuration).toBeLessThan(16)
+    }
+  })
 
   it('No flashing or visual glitches during updates', async () => {
     const renderTracker = createRenderTracker()
@@ -387,7 +308,7 @@ describe('TEST-007: React Integration', () => {
 
     store.useConcerns('test', {
       'products.leg-1.strike': {
-        zodValidation: { schema: z.number().min(0).max(200) },
+        validationState: { schema: z.number().min(0).max(200) },
       },
     })
 
@@ -398,13 +319,15 @@ describe('TEST-007: React Integration', () => {
 
       renderTracker.track({
         strike: strikeValue,
-        className: strikeConcerns.zodValidation ? 'valid' : 'error',
+        className: !strikeConcerns.validationState?.isError ? 'valid' : 'error',
       })
 
       return (
         <input
           value={strikeValue}
-          className={strikeConcerns.zodValidation ? 'valid' : 'error'}
+          className={
+            !strikeConcerns.validationState?.isError ? 'valid' : 'error'
+          }
           readOnly
         />
       )
@@ -412,7 +335,7 @@ describe('TEST-007: React Integration', () => {
 
     render(<TradeForm />)
 
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     renderTracker.clear()
 
@@ -420,7 +343,7 @@ describe('TEST-007: React Integration', () => {
     store.proxy.products['leg-1'].strike = 150
     store.proxy.products['leg-1'].notional = 2000000
 
-    await waitFor(() => expect(renderTracker.log.length).toBeGreaterThan(0))
+    await flushEffects()
 
     // Should render with consistent valid state (no flashing between error/valid)
     renderTracker.log.forEach((entry) => {

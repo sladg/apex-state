@@ -41,8 +41,8 @@ interface ConcernRegistration {
 // BUILT-IN CONCERNS (same as before)
 // ============================================================================
 
-const zodValidation: ConcernType = {
-  name: 'zodValidation',
+const validationState: ConcernType = {
+  name: 'validationState',
   description: 'Zod schema validation',
   evaluate: (props) => {
     const valueToValidate =
@@ -71,7 +71,7 @@ const tooltip: ConcernType = {
   },
 }
 
-const AppConcerns = [zodValidation, disabled, tooltip] as const
+const AppConcerns = [validationState, disabled, tooltip] as const
 
 // ============================================================================
 // SIMPLIFIED STORE IMPLEMENTATION
@@ -202,8 +202,8 @@ const store = createStore<AppState>({
 // Register concerns
 const _cleanup = store.useConcerns('demo', {
   'products.leg-1.strike': {
-    // ✅ effect() in zodValidation will track: state.products['leg-1'].strike
-    zodValidation: { schema: z.number().min(0).max(200) },
+    // ✅ effect() in validationState will track: state.products['leg-1'].strike
+    validationState: { schema: z.number().min(0).max(200) },
 
     // ✅ effect() in disabled will track: state.products['leg-1'].status
     disabled: { condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] } },
@@ -217,7 +217,7 @@ const _cleanup = store.useConcerns('demo', {
 console.log('Initial:', store.getFieldConcerns('products.leg-1.strike'))
 
 store.proxy.products['leg-1'].strike = 150
-// ✅ Only zodValidation re-evaluates (it accessed strike)
+// ✅ Only validationState re-evaluates (it accessed strike)
 
 store.proxy.products['leg-1'].status = 'locked'
 // ✅ Only disabled re-evaluates (it accessed status)

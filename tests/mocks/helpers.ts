@@ -2,6 +2,24 @@
  * Test helper utilities
  *
  * Common utilities and patterns used across integration tests.
+ *
+ * ## Purpose
+ * Provides reusable validation functions, error messages, DOM helpers,
+ * and test patterns that eliminate duplication across integration tests.
+ *
+ * ## Categories
+ *
+ * - **validators** - Business logic validation functions (email, password, url)
+ * - **errorMessages** - Standardized error strings matching validation rules
+ * - **assertions** - DOM state checks (disabled, visible, readonly)
+ * - **testPatterns** - Common user interaction patterns (fillForm, submitForm)
+ * - **domHelpers** - Query utilities for finding elements and errors
+ * - **generators** - Random data generators for test cases
+ * - **typeHelpers** - Type-safe wrappers for runtime/dynamic paths
+ *
+ * ## Complementary Tools
+ * For concern-specific testing (performance, evaluation tracking), see
+ * `tests/concerns/test-utils.ts` instead.
  */
 
 import type { ArrayOfChanges, GenericMeta } from '../../src/types'

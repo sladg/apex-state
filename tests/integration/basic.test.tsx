@@ -7,11 +7,12 @@
 
 import React from 'react'
 
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import { typeHelpers } from '../mocks'
+import { renderWithStore } from '../utils/react'
 
 describe('Integration: Core Features Working Together', () => {
   test('store with sync paths working', () => {
@@ -41,11 +42,7 @@ describe('Integration: Core Features Working Together', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ a: 1, b: 1, c: 5 }}>
-        <Component />
-      </store.Provider>,
-    )
+    renderWithStore(<Component />, store, { a: 1, b: 1, c: 5 })
 
     // Sync: a and b should be synced (both 1)
     expect(screen.getByTestId('a').textContent).toBe('1')
@@ -86,18 +83,12 @@ describe('Integration: Core Features Working Together', () => {
       )
     }
 
-    render(
-      <store.Provider
-        initialState={{
-          field1: 'test',
-          field2: 'test',
-          flag1: true,
-          flag2: false,
-        }}
-      >
-        <Component />
-      </store.Provider>,
-    )
+    renderWithStore(<Component />, store, {
+      field1: 'test',
+      field2: 'test',
+      flag1: true,
+      flag2: false,
+    })
 
     // Sync: fields should match
     expect(screen.getByTestId('field1').textContent).toBe('test')
@@ -126,11 +117,7 @@ describe('Integration: Core Features Working Together', () => {
       )
     }
 
-    render(
-      <store.Provider initialState={{ value: 'test-value' }}>
-        <Component />
-      </store.Provider>,
-    )
+    renderWithStore(<Component />, store, { value: 'test-value' })
 
     expect(screen.getByTestId('field-value').textContent).toBe('test-value')
     expect(screen.getByTestId('proxy-value').textContent).toBe('test-value')
