@@ -5,8 +5,6 @@
  * Tests error storage, clearing, field-level vs form-level errors
  */
 
-import React from 'react'
-
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -31,9 +29,9 @@ describe('Integration: Error Handling & Recovery', () => {
         const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
         if (!isValid && email) {
-          errors.email = ['Please enter a valid email address']
+          errors['email'] = ['Please enter a valid email address']
         } else {
-          delete errors.email
+          delete errors['email']
         }
 
         emailField.setValue(email)
@@ -51,8 +49,10 @@ describe('Integration: Error Handling & Recovery', () => {
           <span data-testid="error-count">
             {Object.keys(errorsField.value).length}
           </span>
-          {errorsField.value.email && (
-            <span data-testid="email-error">{errorsField.value.email[0]}</span>
+          {errorsField.value['email'] && (
+            <span data-testid="email-error">
+              {errorsField.value['email'][0]}
+            </span>
           )}
         </div>
       )
@@ -87,9 +87,9 @@ describe('Integration: Error Handling & Recovery', () => {
         const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
         if (!isValid && email) {
-          errors.email = ['Invalid email format']
+          errors['email'] = ['Invalid email format']
         } else {
-          delete errors.email
+          delete errors['email']
         }
 
         emailField.setValue(email)
@@ -103,9 +103,9 @@ describe('Integration: Error Handling & Recovery', () => {
             value={emailField.value}
             onChange={(e) => validateAndShowError(e.target.value)}
           />
-          {errorsField.value.email && (
+          {errorsField.value['email'] && (
             <div data-testid="error-display">
-              <strong>Error:</strong> {errorsField.value.email[0]}
+              <strong>Error:</strong> {errorsField.value['email'][0]}
             </div>
           )}
         </div>
@@ -140,9 +140,9 @@ describe('Integration: Error Handling & Recovery', () => {
         const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
         if (!isValid && email) {
-          errors.email = ['Invalid email']
+          errors['email'] = ['Invalid email']
         } else {
-          delete errors.email
+          delete errors['email']
         }
 
         emailField.setValue(email)
@@ -156,8 +156,10 @@ describe('Integration: Error Handling & Recovery', () => {
             value={emailField.value}
             onChange={(e) => validateEmail(e.target.value)}
           />
-          {errorsField.value.email && (
-            <span data-testid="email-error">{errorsField.value.email[0]}</span>
+          {errorsField.value['email'] && (
+            <span data-testid="email-error">
+              {errorsField.value['email'][0]}
+            </span>
           )}
         </div>
       )
@@ -197,10 +199,10 @@ describe('Integration: Error Handling & Recovery', () => {
         const errors: Record<string, any[]> = {}
 
         if (!email || !/^[^\s@]+@[^\s@]+$/.test(email)) {
-          errors.email = ['Invalid email']
+          errors['email'] = ['Invalid email']
         }
         if (!password || password.length < 8) {
-          errors.password = ['Password too short']
+          errors['password'] = ['Password too short']
         }
 
         return errors
@@ -282,9 +284,9 @@ describe('Integration: Error Handling & Recovery', () => {
         const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
         if (!isValid) {
-          errors.email = ['Invalid email']
+          errors['email'] = ['Invalid email']
         } else {
-          delete errors.email
+          delete errors['email']
         }
 
         emailField.setValue(email)
@@ -344,12 +346,12 @@ describe('Integration: Error Handling & Recovery', () => {
         const errors = { ...errorsField.value }
 
         if (!email) {
-          errors.email = ['Email is required']
+          errors['email'] = ['Email is required']
         } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           // Template: use actual email value in error message
-          errors.email = [`"${email}" is not a valid email address`]
+          errors['email'] = [`"${email}" is not a valid email address`]
         } else {
-          delete errors.email
+          delete errors['email']
         }
 
         emailField.setValue(email)
@@ -363,9 +365,9 @@ describe('Integration: Error Handling & Recovery', () => {
             value={emailField.value}
             onChange={(e) => validateEmail(e.target.value)}
           />
-          {errorsField.value.email && (
+          {errorsField.value['email'] && (
             <span data-testid="error-message">
-              {errorsField.value.email[0]}
+              {errorsField.value['email'][0]}
             </span>
           )}
         </div>
@@ -431,18 +433,20 @@ describe('Integration: Error Handling & Recovery', () => {
             Validate
           </button>
 
-          {errorsField.value.email && (
+          {errorsField.value['email'] && (
             <span data-testid="field-error-email">
-              {errorsField.value.email[0]}
+              {errorsField.value['email'][0]}
             </span>
           )}
-          {errorsField.value.password && (
+          {errorsField.value['password'] && (
             <span data-testid="field-error-password">
-              {errorsField.value.password[0]}
+              {errorsField.value['password'][0]}
             </span>
           )}
-          {errorsField.value._form && (
-            <span data-testid="form-error">{errorsField.value._form[0]}</span>
+          {errorsField.value['_form'] && (
+            <span data-testid="form-error">
+              {errorsField.value['_form'][0]}
+            </span>
           )}
         </div>
       )
@@ -493,9 +497,9 @@ describe('Integration: Error Handling & Recovery', () => {
         const errors = { ...errorsField.value }
 
         if (!email || !/^[^\s@]+@[^\s@]+$/.test(email)) {
-          errors.email = ['Invalid email']
+          errors['email'] = ['Invalid email']
         } else {
-          delete errors.email
+          delete errors['email']
         }
         errorsField.setValue(errors)
       }
@@ -518,8 +522,10 @@ describe('Integration: Error Handling & Recovery', () => {
             value={passwordField.value}
             onChange={(e) => updatePassword(e.target.value)}
           />
-          {errorsField.value.email && (
-            <span data-testid="email-error">{errorsField.value.email[0]}</span>
+          {errorsField.value['email'] && (
+            <span data-testid="email-error">
+              {errorsField.value['email'][0]}
+            </span>
           )}
           <span data-testid="error-count">
             {Object.keys(errorsField.value).length}

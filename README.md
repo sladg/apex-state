@@ -134,15 +134,15 @@ const App = () => {
 
 Reactive computations that automatically track dependencies and re-evaluate when state changes.
 
-| Concern              | Props                      | Returns                         | Description              |
-| -------------------- | -------------------------- | ------------------------------- | ------------------------ |
-| `validationState`    | `{ schema: ZodSchema }`    | `{ isError, errors }`           | Full validation state    |
-| `disabledWhen`       | `{ condition: BoolLogic }` | `boolean`           | Conditional disable      |
-| `readonlyWhen`       | `{ condition: BoolLogic }` | `boolean`           | Conditional readonly     |
-| `visibleWhen`        | `{ condition: BoolLogic }` | `boolean`           | Conditional visibility   |
-| `dynamicLabel`       | `{ template: string }`     | `string`            | Interpolated label       |
-| `dynamicTooltip`     | `{ template: string }`     | `string`            | Interpolated tooltip     |
-| `dynamicPlaceholder` | `{ template: string }`     | `string`            | Interpolated placeholder |
+| Concern              | Props                      | Returns               | Description              |
+| -------------------- | -------------------------- | --------------------- | ------------------------ |
+| `validationState`    | `{ schema: ZodSchema }`    | `{ isError, errors }` | Full validation state    |
+| `disabledWhen`       | `{ condition: BoolLogic }` | `boolean`             | Conditional disable      |
+| `readonlyWhen`       | `{ condition: BoolLogic }` | `boolean`             | Conditional readonly     |
+| `visibleWhen`        | `{ condition: BoolLogic }` | `boolean`             | Conditional visibility   |
+| `dynamicLabel`       | `{ template: string }`     | `string`              | Interpolated label       |
+| `dynamicTooltip`     | `{ template: string }`     | `string`              | Interpolated tooltip     |
+| `dynamicPlaceholder` | `{ template: string }`     | `string`              | Interpolated placeholder |
 
 ## BoolLogic
 
@@ -209,3 +209,9 @@ jit.setChanges([
 ])
 jit.getState() // snapshot
 ```
+
+---
+
+https://github.com/0xfurai/claude-code-subagents/blob/main/agents/vitest-expert.md
+https://github.com/0xfurai/claude-code-subagents/blob/main/agents/typescript-expert.md
+https://github.com/0xfurai/claude-code-subagents/blob/main/agents/react-expert.md

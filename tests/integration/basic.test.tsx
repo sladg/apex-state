@@ -5,8 +5,6 @@
  * No complex async patterns - just verify the basics work.
  */
 
-import React from 'react'
-
 import { screen } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 

@@ -5,8 +5,6 @@
  * Tests conditional visibility, labels, disabled state, and dynamic text
  */
 
-import React from 'react'
-
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -40,7 +38,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       })
 
       const weightConcerns = store.useFieldConcerns('weight')
-      const showWeight = weightConcerns.visibleWhen !== false
+      const showWeight = weightConcerns['visibleWhen'] !== false
 
       return (
         <div>
@@ -100,7 +98,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       })
 
       const concerns = store.useFieldConcerns('downloadUrl')
-      const showDownloadUrl = concerns.visibleWhen !== false
+      const showDownloadUrl = concerns['visibleWhen'] !== false
 
       return (
         <div>
@@ -154,7 +152,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       })
 
       const priceConcerns = store.useFieldConcerns('price')
-      const priceDisabled = priceConcerns.disabledWhen === true
+      const priceDisabled = priceConcerns['disabledWhen'] === true
 
       return (
         <div>
@@ -358,7 +356,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       })
 
       const concerns = store.useFieldConcerns('name')
-      const nameReadOnly = concerns.readonlyWhen === true
+      const nameReadOnly = concerns['readonlyWhen'] === true
 
       return (
         <div>
@@ -421,7 +419,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       })
 
       const priceConcerns = store.useFieldConcerns('price')
-      const priceDisabled = priceConcerns.disabledWhen === true
+      const priceDisabled = priceConcerns['disabledWhen'] === true
 
       return (
         <div>

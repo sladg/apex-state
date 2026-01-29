@@ -19,9 +19,9 @@ export interface ConcernType {
 }
 
 /**
- * Concern registration entry
+ * Concern registration entry (internal)
  */
-export interface ConcernRegistration {
+interface ConcernRegistration {
   id: string
   path: string
   concernName: string
@@ -33,10 +33,12 @@ export interface ConcernRegistration {
 /**
  * Test store structure returned by createTestStore
  */
-export interface TestStore<T> {
+interface TestStore<T> {
   proxy: T
   useConcerns: (id: string, registration: Record<string, any>) => () => void
-  getFieldConcerns: (path: string) => Record<string, any>
+  getFieldConcerns: <K extends string = string>(
+    path: string,
+  ) => Record<K, unknown>
 }
 
 /**
@@ -140,13 +142,13 @@ export const createTestStore = <T extends object>(
     }
   }
 
-  const getFieldConcerns = (path: string) => {
-    const result: Record<string, any> = {}
+  const getFieldConcerns = <K extends string = string>(path: string) => {
+    const result: Record<K, unknown> = {} as Record<K, unknown>
     const registrations = concernsRegistry.get(path) || []
 
     registrations.forEach(({ id, path: regPath, concernName }) => {
       const key = `${id}:${regPath}:${concernName}`
-      result[concernName] = evaluationCache.get(key)
+      result[concernName as K] = evaluationCache.get(key)
     })
 
     return result

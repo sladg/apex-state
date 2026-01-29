@@ -4,8 +4,6 @@
  * Verifies that the extracted utilities work correctly.
  */
 
-import React from 'react'
-
 import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'

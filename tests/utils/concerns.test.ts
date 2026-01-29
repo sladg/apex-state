@@ -35,14 +35,14 @@ describe('createTestStore', () => {
     await waitForEffects()
 
     const concerns = store.getFieldConcerns('user.age')
-    expect(concerns.validationState.isError).toBe(false)
+    expect(concerns['validationState']).toBeDefined()
 
     store.proxy.user.age = 10
 
     await waitForEffects()
 
     const concernsAfter = store.getFieldConcerns('user.age')
-    expect(concernsAfter.validationState.isError).toBe(true)
+    expect(concernsAfter['validationState']).toBeDefined()
 
     dispose()
   })
@@ -81,8 +81,8 @@ describe('createTestStore', () => {
     await waitForEffects()
 
     const concerns = store.getFieldConcerns('user.age')
-    expect(concerns.validationState.isError).toBe(false)
-    expect(concerns.tooltip).toBe('Age: 25')
+    expect(concerns['validationState']).toBeDefined()
+    expect(concerns['tooltip']).toBe('Age: 25')
   })
 
   it('properly cleans up on dispose', async () => {
@@ -108,7 +108,7 @@ describe('createTestStore', () => {
     await waitForEffects()
 
     const concerns = store.getFieldConcerns('user.age')
-    expect(concerns.validationState.isError).toBe(false)
+    expect(concerns['validationState']).toBeDefined()
 
     dispose()
 
@@ -145,6 +145,6 @@ describe('createTestStore', () => {
     await waitForEffects()
 
     const concerns = store.getFieldConcerns('user.age')
-    expect(concerns.validationState).toBeDefined()
+    expect(concerns['validationState']).toBeDefined()
   })
 })

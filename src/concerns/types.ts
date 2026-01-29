@@ -1,4 +1,4 @@
-export type { BoolLogic, ComparableValue } from '../types'
+export type { BoolLogic } from '../types'
 
 export interface BaseConcernProps<STATE, PATH extends string> {
   state: STATE

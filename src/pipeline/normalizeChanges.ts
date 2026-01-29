@@ -11,11 +11,9 @@ import _get from 'lodash/get'
 
 import type {
   NormalizeChangeArgs,
-  NormalizeChangesArgs,
   NormalizeChangesGroupedArgs,
   NormalizedChange,
   NormalizedChangesGrouped,
-  NormalizedChangesMap,
 } from './normalizeChanges.types'
 
 export type {
@@ -84,76 +82,6 @@ const normalizeChange = (
 // =============================================================================
 // Public API
 // =============================================================================
-
-/**
- * Normalize changes for a set of registered paths
- *
- * Returns normalized changes with relative paths that can be applied to neighbor paths.
- *
- * @example
- * // matchMode: 'all' (default) - exact, parent, and child matches
- * changes: [['user.name', 'Alice', {}]]
- * registeredPaths: ['user.name']
- * result: Map {
- *   'user.name' => [{ relativePath: null, value: 'Alice', meta: {} }]
- * }
- *
- * @example
- * // matchMode: 'children-only' - only child changes (for listeners)
- * changes: [
- *   ['user.profile', 'ignored', {}],           // exact match - SKIPPED
- *   ['user.profile.name', 'Alice', {}],        // child match - INCLUDED
- *   ['user.profile.settings.theme', 'dark', {}] // child match - INCLUDED
- * ]
- * registeredPaths: ['user.profile']
- * matchMode: 'children-only'
- * result: Map {
- *   'user.profile' => [
- *     { relativePath: 'name', value: 'Alice', meta: {} },
- *     { relativePath: 'settings.theme', value: 'dark', meta: {} }
- *   ]
- * }
- *
- * @example
- * // Parent change with matchMode: 'all'
- * changes: [['user', { name: 'Alice', profile: { age: 30 } }, {}]]
- * registeredPaths: ['user.name', 'user.profile.age']
- * result: Map {
- *   'user.name' => [{ relativePath: null, value: 'Alice', meta: {} }],
- *   'user.profile.age' => [{ relativePath: null, value: 30, meta: {} }]
- * }
- */
-export const normalizeChangesForPaths = (
-  props: NormalizeChangesArgs,
-): NormalizedChangesMap => {
-  const result: NormalizedChangesMap = new Map()
-  const matchMode = props.matchMode ?? 'all'
-
-  // Initialize empty arrays for all registered paths
-  for (const registeredPath of props.registeredPaths) {
-    result.set(registeredPath, [])
-  }
-
-  for (const change of props.changes) {
-    const [changePath, changeValue, changeMeta] = change
-
-    for (const registeredPath of props.registeredPaths) {
-      const normalized = normalizeChange({
-        changePath,
-        changeValue,
-        changeMeta,
-        registeredPath,
-        matchMode,
-      })
-
-      if (normalized) {
-        result.get(registeredPath)!.push(normalized)
-      }
-    }
-  }
-
-  return result
-}
 
 /**
  * Normalize changes for grouped/connected paths (e.g., sync path components)

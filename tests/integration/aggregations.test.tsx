@@ -5,8 +5,6 @@
  * Tests aggregation rules, computed values, and cascading updates
  */
 
-import React from 'react'
-
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -32,10 +30,9 @@ describe('Integration: Computed Values & Aggregations', () => {
   // TC3.1: Add item → subtotal updates
   it('TC3.1: recalculates cart subtotal when item added', async () => {
     function CartComponent() {
-      const { getState, setChanges } = store.useJitStore()
+      const { setChanges } = store.useJitStore()
 
       const handleAddItem = () => {
-        const state = getState()
         const newId = `item-${Date.now()}`
         setChanges([
           [
@@ -84,7 +81,7 @@ describe('Integration: Computed Values & Aggregations', () => {
 
       const handleChangeQuantity = (itemId: string, newQuantity: number) => {
         const state = getState()
-        const item = state.items[itemId]
+        const item = state.items[itemId]!
         const newSubtotal = item.price * newQuantity
         setChanges([
           typeHelpers.change<ShoppingCart>(
@@ -128,7 +125,7 @@ describe('Integration: Computed Values & Aggregations', () => {
 
       const handleChangePrice = (itemId: string, newPrice: number) => {
         const state = getState()
-        const item = state.items[itemId]
+        const item = state.items[itemId]!
         const newSubtotal = newPrice * item.quantity
         setChanges([
           typeHelpers.change<ShoppingCart>(
@@ -199,7 +196,7 @@ describe('Integration: Computed Values & Aggregations', () => {
 
       const handleRemoveItem = (itemId: string) => {
         const state = getState()
-        const item = state.items[itemId]
+        const item = state.items[itemId]!
         const newSubtotal = state.subtotal - item.subtotal
         setChanges([
           typeHelpers.change<ShoppingCart>(`items.${itemId}`, undefined, {}),
@@ -236,7 +233,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   // TC3.5: Tax calculated from subtotal
   it('TC3.5: automatically calculates tax from subtotal', async () => {
     function CartComponent() {
-      const { getState, setChanges } = store.useJitStore()
+      const { setChanges } = store.useJitStore()
 
       const handleUpdateSubtotal = (newSubtotal: number) => {
         const newTax = newSubtotal * 0.1 // 10% tax
@@ -282,7 +279,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   // TC3.6: Total calculated from subtotal + tax
   it('TC3.6: automatically calculates total from subtotal + tax', async () => {
     function CartComponent() {
-      const { getState, setChanges } = store.useJitStore()
+      const { setChanges } = store.useJitStore()
 
       const handleUpdateValues = (subtotal: number) => {
         const tax = subtotal * 0.1
@@ -393,7 +390,7 @@ describe('Integration: Computed Values & Aggregations', () => {
 
       const handleAddItem = (categoryId: string) => {
         const state = getState()
-        const cat = state.categories[categoryId]
+        const cat = state.categories[categoryId]!
         const newItemId = `item-${Date.now()}`
         const newCategorySubtotal = cat.categorySubtotal + 25
         const newTotal = state.total + 25

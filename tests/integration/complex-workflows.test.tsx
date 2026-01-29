@@ -5,7 +5,7 @@
  * Tests form navigation, conditional validation, and progress tracking
  */
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -124,9 +124,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       const validateEmail = (value: string) => {
         const errors = { ...errorsField.value }
         if (value && !/^[^\s@]+@[^\s@]+$/.test(value)) {
-          errors.email = ['Invalid email format']
+          errors['email'] = ['Invalid email format']
         } else {
-          delete errors.email
+          delete errors['email']
         }
         errorsField.setValue(errors)
       }
@@ -144,9 +144,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
               validateEmail(e.target.value)
             }}
           />
-          {errorsField.value.email && (
+          {errorsField.value['email'] && (
             <span data-testid="error-message">
-              {errorsField.value.email[0]}
+              {errorsField.value['email'][0]}
             </span>
           )}
           <span data-testid="error-count">

@@ -60,7 +60,7 @@ describe('Derived Values', () => {
 
       expect(base).toEqual({ firstName: 'John', lastName: 'Doe' })
       expect(Object.keys(computed)).toContain('fullName')
-      expect(typeof computed.fullName).toBe('function')
+      expect(typeof computed['fullName']).toBe('function')
     })
 
     it('should handle objects without getters', () => {

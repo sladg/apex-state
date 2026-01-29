@@ -5,8 +5,6 @@
  * Tests listeners, validators, clearPaths, flipPaths, and error storage
  */
 
-import React from 'react'
-
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -22,8 +20,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
 
   // TC5.1: Listener updates lastUpdated timestamp on any change
   it('TC5.1: listener updates lastUpdated on field change', async () => {
-    const lastUpdatedTime = 0
-
     function ProfileComponent() {
       const usernameField = store.useFieldStore('username')
       const lastUpdatedField = store.useFieldStore('lastUpdated')
@@ -78,9 +74,9 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
         const newErrors = { ...errorsField.value }
 
         if (!isValid && email) {
-          newErrors.email = ['Invalid email format']
+          newErrors['email'] = ['Invalid email format']
         } else {
-          delete newErrors.email
+          delete newErrors['email']
         }
 
         emailField.setValue(email)
@@ -95,8 +91,10 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
             onChange={(e) => validateEmail(e.target.value)}
             placeholder="Email"
           />
-          {errorsField.value.email && (
-            <span data-testid="email-error">{errorsField.value.email[0]}</span>
+          {errorsField.value['email'] && (
+            <span data-testid="email-error">
+              {errorsField.value['email'][0]}
+            </span>
           )}
         </div>
       )
@@ -140,9 +138,9 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
 
         const newErrors = { ...errorsField.value }
         if (takenUsernames.includes(username.toLowerCase())) {
-          newErrors.username = ['Username is already taken']
+          newErrors['username'] = ['Username is already taken']
         } else {
-          delete newErrors.username
+          delete newErrors['username']
         }
         errorsField.setValue(newErrors)
       }
@@ -155,9 +153,9 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
             onChange={(e) => validateUsername(e.target.value)}
             placeholder="Username"
           />
-          {errorsField.value.username && (
+          {errorsField.value['username'] && (
             <span data-testid="username-error">
-              {errorsField.value.username[0]}
+              {errorsField.value['username'][0]}
             </span>
           )}
         </div>
@@ -186,10 +184,9 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
   // TC5.4: ClearPaths removes field from object when not needed
   it('TC5.4: clears unnecessary fields from state', async () => {
     function ProfileComponent() {
-      const { getState, setChanges } = store.useJitStore()
+      const { setChanges } = store.useJitStore()
 
       const handleClearBio = () => {
-        const state = getState()
         // Clear bio field
         setChanges([['bio', '', {}]])
       }
@@ -289,7 +286,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
 
       const usernameField = store.useFieldStore('username')
       const emailField = store.useFieldStore('email')
-      const ageField = store.useFieldStore('age')
       const lastUpdatedField = store.useFieldStore('lastUpdated')
       const errorsField = store.useFieldStore('_errors')
 
@@ -299,9 +295,9 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
 
         const errors = { ...errorsField.value }
         if (value.length < 3) {
-          errors.username = ['Username too short']
+          errors['username'] = ['Username too short']
         } else {
-          delete errors.username
+          delete errors['username']
         }
         errorsField.setValue(errors)
       }
@@ -358,9 +354,9 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
         const errors = { ...errorsField.value }
         const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
         if (!isValid && email) {
-          errors.email = ['Invalid email']
+          errors['email'] = ['Invalid email']
         } else {
-          delete errors.email
+          delete errors['email']
         }
         errorsField.setValue(errors)
       }
@@ -379,8 +375,10 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
             onChange={(e) => handleEmailChange(e.target.value)}
             placeholder="Email"
           />
-          {errorsField.value.email && (
-            <span data-testid="email-error">{errorsField.value.email[0]}</span>
+          {errorsField.value['email'] && (
+            <span data-testid="email-error">
+              {errorsField.value['email'][0]}
+            </span>
           )}
         </div>
       )

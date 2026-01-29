@@ -5,8 +5,6 @@
  * Tests sync paths, circular sync prevention, and batch operations
  */
 
-import React from 'react'
-
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 

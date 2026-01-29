@@ -14,4 +14,10 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
     },
   },
+  benchmark: {
+    include: ['tests/benchmarking/**/*.bench.spec.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/out-of-git/**'],
+    // Compare against baseline file to detect performance regressions
+    compare: './tests/benchmarking/baseline.json',
+  },
 })

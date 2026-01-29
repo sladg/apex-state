@@ -15,4 +15,3 @@ export type {
 
 // Pre-built concerns
 export * as prebuilts from './prebuilts'
-export { prebuilts as defaultPrebuilts } from './prebuilts'

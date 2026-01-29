@@ -5,7 +5,7 @@
  * Eliminates duplication of Provider wrapping, render helpers, and test store creation.
  */
 
-import React from 'react'
+import React, { ReactElement } from 'react'
 
 import {
   act,
@@ -13,16 +13,32 @@ import {
   render,
   type RenderResult,
 } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { useSnapshot } from 'valtio'
 import { proxy } from 'valtio/vanilla'
 import { effect } from 'valtio-reactive'
 
-export interface ConcernType {
+import { useStoreContext } from '../../src/core/context'
+import type { StoreInstance } from '../../src/core/types'
+import { createGenericStore } from '../../src/store/createStore'
+import type { DeepKey, GenericMeta } from '../../src/types'
+
+// Type helpers for store
+type GenericStore<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+> = ReturnType<typeof createGenericStore<T, META>>
+
+// Type for concerns registration - inferred from store
+type ConcernsRegistration<T extends object> = Partial<
+  Record<DeepKey<T>, Record<string, any>>
+>
+
+interface ConcernType {
   name: string
   evaluate: (props: any) => any
 }
 
-export interface ConcernRegistration {
+interface ConcernRegistration {
   id: string
   path: string
   concernName: string
@@ -115,13 +131,13 @@ export const createTestStore = <T extends object>(initialData: T) => {
     }
   }
 
-  const getFieldConcerns = (path: string) => {
-    const result: Record<string, any> = {}
+  const getFieldConcerns = <K extends string = string>(path: string) => {
+    const result: Record<K, unknown> = {} as Record<K, unknown>
     const registrations = concernsRegistry.get(path) || []
 
     registrations.forEach(({ id, path: regPath, concernName }) => {
       const key = `${id}:${regPath}:${concernName}`
-      result[concernName] = evaluationCache.get(key)
+      result[concernName as K] = evaluationCache.get(key)
     })
 
     return result
@@ -134,52 +150,149 @@ export const createTestStore = <T extends object>(initialData: T) => {
   }
 }
 
-/**
- * Render a component with a store Provider
- *
- * Wraps component in store.Provider with initialState.
- * Common pattern across all integration tests.
- *
- * @example
- * ```typescript
- * import { screen } from '@testing-library/react'
- *
- * const store = createRegistrationFormStore()
- * renderWithStore(<FormComponent />, store, { email: '', password: '' })
- *
- * // Use screen.* instead of destructuring from render() return value
- * expect(screen.getByTestId('email').value).toBe('')
- * fireEvent.click(screen.getByText('Submit'))
- * ```
- */
-export const renderWithStore = <T extends object>(
+// Overload: Old API with component (backward compatible)
+export function renderWithStore<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+>(
   component: ReactElement,
-  store: {
-    Provider: React.ComponentType<{
-      initialState: T
-      children: React.ReactNode
-      errorStorePath?: string
-    }>
-  },
+  store: GenericStore<T, META>,
   initialState: T,
   options?: {
     errorStorePath?: string
+    concerns?: ConcernsRegistration<T>
+    concernsId?: string
   },
-): RenderResult => {
+): RenderResult & { storeInstance: StoreInstance<T, META> }
+
+// Overload: New API without component (simpler)
+export function renderWithStore<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  store: GenericStore<T, META>,
+  initialState: T,
+  options?: {
+    errorStorePath?: string
+    concerns?: ConcernsRegistration<T>
+    concernsId?: string
+    testId?: string
+    customRender?: (state: T) => React.ReactNode
+  },
+): RenderResult & { storeInstance: StoreInstance<T, META> }
+
+/**
+ * Render store with Provider
+ *
+ * Supports two signatures:
+ * 1. Old API: renderWithStore(<Component />, store, initialState, options)
+ * 2. New API: renderWithStore(store, initialState, options)
+ *
+ * @example
+ * ```typescript
+ * // New API - no component needed!
+ * const { storeInstance } = renderWithStore(
+ *   store,
+ *   { email: '' },
+ *   { concerns: { email: { validationState: { schema: z.string().email() } } } }
+ * )
+ *
+ * // Old API - still supported
+ * const { storeInstance } = renderWithStore(
+ *   <MyComponent />,
+ *   store,
+ *   { email: '' },
+ *   { concerns: { email: { validationState: { schema: z.string().email() } } } }
+ * )
+ * ```
+ */
+export function renderWithStore<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  componentOrStore: ReactElement | GenericStore<T, META>,
+  storeOrInitialState: GenericStore<T, META> | T,
+  initialStateOrOptions: T | any,
+  optionsOrUndefined?: any,
+): RenderResult & { storeInstance: StoreInstance<T, META> } {
+  // Detect which API is being used
+  const isOldAPI = React.isValidElement(componentOrStore)
+
+  let component: ReactElement | null
+  let store: GenericStore<T, META>
+  let initialState: T
+  let options: any
+
+  if (isOldAPI) {
+    // Old API: (component, store, initialState, options)
+    component = componentOrStore as ReactElement
+    store = storeOrInitialState as GenericStore<T, META>
+    initialState = initialStateOrOptions as T
+    options = optionsOrUndefined
+  } else {
+    // New API: (store, initialState, options)
+    component = null
+    store = componentOrStore as GenericStore<T, META>
+    initialState = storeOrInitialState as T
+    options = initialStateOrOptions
+  }
+  let storeInstance: StoreInstance<T, META> | null = null
+
+  // Wrapper to capture store instance and register concerns
+  function WrapperComponent({ children }: { children: React.ReactNode }) {
+    storeInstance = useStoreContext<T, META>()
+
+    // Register concerns if provided
+    if (options?.concerns) {
+      store.useConcerns(options.concernsId || 'test', options.concerns)
+    }
+
+    return <>{children}</>
+  }
+
+  // Choose content based on API
+  let content: React.ReactNode
+
+  if (component) {
+    // Old API: use provided component
+    content = component
+  } else if (options?.customRender) {
+    // New API with custom render
+    function CustomRenderComponent() {
+      const snap = useSnapshot(storeInstance!.state) as T
+      return (
+        <div data-testid={options.testId || 'test-root'}>
+          {options.customRender!(snap)}
+        </div>
+      )
+    }
+    content = <CustomRenderComponent />
+  } else {
+    // New API: default simple container
+    content = <div data-testid={options?.testId || 'test-root'}>Test</div>
+  }
+
   const providerProps: {
     initialState: T
     children: React.ReactNode
     errorStorePath?: string
   } = {
     initialState,
-    children: component,
+    children: <WrapperComponent>{content}</WrapperComponent>,
   }
 
   if (options?.errorStorePath) {
     providerProps.errorStorePath = options.errorStorePath
   }
 
-  return render(React.createElement(store.Provider, providerProps))
+  const renderResult = render(
+    React.createElement(store.Provider, providerProps),
+  )
+
+  return {
+    ...renderResult,
+    storeInstance: storeInstance!,
+  }
 }
 
 /**

@@ -33,8 +33,10 @@
   "types": "./dist/index.d.ts",
   "module": "./dist/index.js",
   "scripts": {
+    "bench": "vitest bench --run",
+    "bench:watch": "vitest bench",
     "build": "tsup",
-    "code:check": "eslint .",
+    "code:check": "eslint . && npm run type-check",
     "code:fix": "eslint . --fix",
     "code:unused": "knip",
     "test": "vitest run",

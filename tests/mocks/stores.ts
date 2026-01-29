@@ -112,18 +112,3 @@ export const createFormWithErrorsStore = () => {
 export const createOptimizationStore = () => {
   return createGenericStore<OptimizationState>()
 }
-
-/**
- * Convenience export for all store creators
- */
-export const storeFactories = {
-  registrationForm: createRegistrationFormStore,
-  profileForm: createProfileFormStore,
-  shoppingCart: createShoppingCartStore,
-  nestedCart: createNestedCartStore,
-  productForm: createProductFormStore,
-  userProfile: createUserProfileStore,
-  wizardForm: createWizardFormStore,
-  formWithErrors: createFormWithErrorsStore,
-  optimization: createOptimizationStore,
-}
