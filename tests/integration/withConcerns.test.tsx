@@ -77,7 +77,8 @@ describe('Integration: withConcerns', () => {
       val: string
     }
     const store = createGenericStore<State>()
-    const _specialized = store.withConcerns({
+    // Intentionally unused variable - used for compile-time type checking only
+    void store.withConcerns({
       validationState: true,
       // dynamicTooltip NOT selected - this ensures filtering works at compile time
     })
