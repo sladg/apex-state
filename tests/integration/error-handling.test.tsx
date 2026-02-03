@@ -8,8 +8,12 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createFormWithErrorsStore, formWithErrorsFixtures } from '../mocks'
+import { createGenericStore } from '../../src'
+import type { FormWithErrors } from '../mocks'
+import { formWithErrorsFixtures } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+
+const createFormWithErrorsStore = () => createGenericStore<FormWithErrors>()
 
 describe('Integration: Error Handling & Recovery', () => {
   let store: ReturnType<typeof createFormWithErrorsStore>
@@ -18,7 +22,6 @@ describe('Integration: Error Handling & Recovery', () => {
     store = createFormWithErrorsStore()
   })
 
-  // TC7.1: Validation errors stored in _errors
   it('TC7.1: stores validation errors in _errors field', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')
@@ -73,7 +76,6 @@ describe('Integration: Error Handling & Recovery', () => {
     expect(screen.getByTestId('email-error')).toBeInTheDocument()
   })
 
-  // TC7.2: Errors show for invalid fields (via concerns)
   it('TC7.2: displays errors from concerns', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')
@@ -129,7 +131,6 @@ describe('Integration: Error Handling & Recovery', () => {
     )
   })
 
-  // TC7.3: Errors clear when field fixed
   it('TC7.3: clears errors when field becomes valid', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')
@@ -188,7 +189,6 @@ describe('Integration: Error Handling & Recovery', () => {
     expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
   })
 
-  // TC7.4: Errors clear all when form reset
   it('TC7.4: clears all errors on form reset', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')
@@ -273,7 +273,6 @@ describe('Integration: Error Handling & Recovery', () => {
     expect(screen.getByTestId('error-count')).toHaveTextContent('0')
   })
 
-  // TC7.5: Submit disabled while errors exist
   it('TC7.5: disables submit button when errors exist', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')
@@ -336,7 +335,6 @@ describe('Integration: Error Handling & Recovery', () => {
     expect(submitBtn.disabled).toBe(false)
   })
 
-  // TC7.6: Error messages interpolated
   it('TC7.6: supports error message templates', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')
@@ -390,7 +388,6 @@ describe('Integration: Error Handling & Recovery', () => {
     )
   })
 
-  // TC7.7: Field-level vs form-level errors
   it('TC7.7: distinguishes field-level and form-level errors', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')
@@ -485,7 +482,6 @@ describe('Integration: Error Handling & Recovery', () => {
     expect(screen.getByTestId('form-error')).toBeInTheDocument()
   })
 
-  // TC7.8: Errors survive other updates
   it('TC7.8: preserves errors when other fields are updated', async () => {
     function FormComponent() {
       const emailField = store.useFieldStore('email')

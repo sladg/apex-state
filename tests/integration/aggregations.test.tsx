@@ -8,10 +8,9 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { createGenericStore } from '../../src'
 import {
   CartItem,
-  createNestedCartStore,
-  createShoppingCartStore,
   NestedCart,
   nestedCartFixtures,
   ShoppingCart,
@@ -20,6 +19,9 @@ import {
 } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
+const createShoppingCartStore = () => createGenericStore<ShoppingCart>()
+const createNestedCartStore = () => createGenericStore<NestedCart>()
+
 describe('Integration: Computed Values & Aggregations', () => {
   let store: ReturnType<typeof createShoppingCartStore>
 
@@ -27,7 +29,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     store = createShoppingCartStore()
   })
 
-  // TC3.1: Add item → subtotal updates
   it('TC3.1: recalculates cart subtotal when item added', async () => {
     function CartComponent() {
       const { setChanges } = store.useJitStore()
@@ -74,7 +75,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     expect(screen.getByTestId('item-count').textContent).toBe('1')
   })
 
-  // TC3.2: Change quantity → item subtotal updates
   it('TC3.2: updates item subtotal when quantity changes', async () => {
     function CartComponent() {
       const { getState, setChanges } = store.useJitStore()
@@ -118,7 +118,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     expect(btn).toBeInTheDocument()
   })
 
-  // TC3.3: Change price → item subtotal updates
   it('TC3.3: updates item subtotal when price changes', async () => {
     function CartComponent() {
       const { getState, setChanges } = store.useJitStore()
@@ -173,7 +172,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     expect(btn).toBeInTheDocument()
   })
 
-  // TC3.4: Add/remove item → cart subtotal updates
   it('TC3.4: updates cart subtotal when items are added/removed', async () => {
     function CartComponent() {
       const { getState, setChanges } = store.useJitStore()
@@ -230,7 +228,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     expect(addBtn).toBeInTheDocument()
   })
 
-  // TC3.5: Tax calculated from subtotal
   it('TC3.5: automatically calculates tax from subtotal', async () => {
     function CartComponent() {
       const { setChanges } = store.useJitStore()
@@ -276,7 +273,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     expect(screen.getByTestId('subtotal').textContent).toBe('100')
   })
 
-  // TC3.6: Total calculated from subtotal + tax
   it('TC3.6: automatically calculates total from subtotal + tax', async () => {
     function CartComponent() {
       const { setChanges } = store.useJitStore()
@@ -322,7 +318,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     expect(screen.getByTestId('total').textContent).toBe('220')
   })
 
-  // TC3.7: Item count updates as items added/removed
   it('TC3.7: tracks item count accurately', async () => {
     function CartComponent() {
       const { getState, setChanges } = store.useJitStore()
@@ -381,7 +376,6 @@ describe('Integration: Computed Values & Aggregations', () => {
     expect(screen.getByTestId('count').textContent).toBe('2')
   })
 
-  // TC3.8: Nested aggregations work correctly
   it('TC3.8: handles nested object aggregations', async () => {
     const nestedStore = createNestedCartStore()
 

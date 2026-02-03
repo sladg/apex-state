@@ -8,8 +8,9 @@ import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createRegistrationFormStore } from '../mocks'
-import { registrationFormFixtures } from '../mocks/fixtures'
+import { createGenericStore } from '../../src'
+import type { RegistrationForm } from '../mocks'
+import { registrationFormFixtures } from '../mocks'
 import {
   assertions,
   createTestStore,
@@ -18,6 +19,8 @@ import {
   flushEffects,
   renderWithStore,
 } from './react'
+
+const createRegistrationFormStore = () => createGenericStore<RegistrationForm>()
 
 describe('React Test Utilities', () => {
   describe('createTestStore', () => {

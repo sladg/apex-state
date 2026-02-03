@@ -8,9 +8,12 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { createGenericStore } from '../../src'
 import type { ProductForm } from '../mocks'
-import { createProductFormStore, productFormFixtures } from '../mocks'
+import { productFormFixtures } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+
+const createProductFormStore = () => createGenericStore<ProductForm>()
 
 /** Product type union - used for type-safe event handler casts */
 type ProductType = ProductForm['type']
@@ -22,7 +25,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     store = createProductFormStore()
   })
 
-  // TC4.1: Weight field visibleWhen type === 'physical'
   it('TC4.1: shows weight field only for physical products', () => {
     function ProductComponent() {
       const typeField = store.useFieldStore('type')
@@ -83,7 +85,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     // This test structure demonstrates the UI pattern
   })
 
-  // TC4.2: Download URL field visibleWhen type === 'digital'
   it('TC4.2: shows download URL field only for digital products', async () => {
     function ProductComponent() {
       const typeField = store.useFieldStore('type')
@@ -137,7 +138,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     expect(screen.getByTestId('download-url-input')).toBeInTheDocument()
   })
 
-  // TC4.3: Price field disabledWhen editing locked
   it('TC4.3: disables price field when product is published', async () => {
     function ProductComponent() {
       const isPublished = store.useFieldStore('isPublished')
@@ -200,7 +200,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     expect(priceInput.disabled).toBe(true)
   })
 
-  // TC4.4: Dynamic label based on type
   it('TC4.4: updates field label based on product type', async () => {
     function ProductComponent() {
       const typeField = store.useFieldStore('type')
@@ -244,7 +243,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     expect(screen.getByTestId('name-label')).toHaveTextContent('Software Name')
   })
 
-  // TC4.5: Dynamic placeholder for download URL
   it('TC4.5: updates field placeholder dynamically', async () => {
     function ProductComponent() {
       const typeField = store.useFieldStore('type')
@@ -289,7 +287,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     expect(input.placeholder).toContain('https://download.example.com')
   })
 
-  // TC4.6: Tooltip shows restrictions
   it('TC4.6: displays dynamic tooltip with field restrictions', async () => {
     function ProductComponent() {
       const typeField = store.useFieldStore('type')
@@ -339,7 +336,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     )
   })
 
-  // TC4.7: ReadOnly when published
   it('TC4.7: makes fields read-only when product is published', async () => {
     function ProductComponent() {
       const isPublished = store.useFieldStore('isPublished')
@@ -399,7 +395,6 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     expect(nameInput.readOnly).toBe(true)
   })
 
-  // TC4.8: Concerns update when dependencies change
   it('TC4.8: re-evaluates concerns when state dependencies change', async () => {
     function ProductComponent() {
       const typeField = store.useFieldStore('type')

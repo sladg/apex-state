@@ -15,7 +15,7 @@ export default defineConfig({
     },
   },
   benchmark: {
-    include: ['tests/benchmarking/**/*.bench.ts'],
+    include: ['tests/**/*.bench.spec.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/out-of-git/**'],
     // Compare against baseline file to detect performance regressions
     compare: './tests/benchmarking/baseline.json',

@@ -129,7 +129,7 @@ describe('Change Processing Pipeline Benchmarks', () => {
     ]
 
     categories.forEach((cat, catIdx) => {
-      subcategories[catIdx].forEach((subcat) => {
+      subcategories[catIdx]?.forEach((subcat) => {
         // SKU-level inventory → subcategory stock
         for (let sku = 0; sku < 3; sku++) {
           paths.push([

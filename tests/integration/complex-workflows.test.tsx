@@ -10,9 +10,12 @@ import { useState } from 'react'
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { createGenericStore } from '../../src'
 import type { WizardForm } from '../mocks'
-import { createWizardFormStore, wizardFormFixtures } from '../mocks'
+import { wizardFormFixtures } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+
+const createWizardFormStore = () => createGenericStore<WizardForm>()
 
 /** Wizard step type - used for type-safe step navigation */
 type WizardStep = WizardForm['currentStep']
@@ -24,7 +27,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     store = createWizardFormStore()
   })
 
-  // TC6.1: Validate current step before allowing next
   it('TC6.1: validates step fields before navigation', async () => {
     function WizardComponent() {
       const currentStepField = store.useFieldStore('currentStep')
@@ -115,7 +117,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     expect(screen.getByTestId('current-step')).toHaveTextContent('1')
   })
 
-  // TC6.2: Store errors for invalid fields
   it('TC6.2: stores and displays validation errors', async () => {
     function WizardComponent() {
       const personalInfoField = store.useFieldStore('personalInfo')
@@ -170,7 +171,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     expect(screen.getByTestId('error-message')).toBeInTheDocument()
   })
 
-  // TC6.3: Show/hide fields based on current step
   it('TC6.3: conditionally displays fields based on step', async () => {
     function WizardComponent() {
       const currentStepField = store.useFieldStore('currentStep')
@@ -271,7 +271,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     expect(screen.getByTestId('step2-form')).toBeInTheDocument()
   })
 
-  // TC6.4: Disable next button while validating
   it('TC6.4: disables navigation while validation in progress', async () => {
     function WizardComponent() {
       const currentStepField = store.useFieldStore('currentStep')
@@ -315,7 +314,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     expect(nextBtn).toHaveTextContent('Validating...')
   })
 
-  // TC6.5: Show progress indicator
   it('TC6.5: displays progress through steps', () => {
     function WizardComponent() {
       const currentStepField = store.useFieldStore('currentStep')
@@ -350,7 +348,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Step 1 of 3')
   })
 
-  // TC6.6: Review page aggregates & displays all data
   it('TC6.6: review step shows aggregated form data', () => {
     function WizardComponent() {
       const currentStepField = store.useFieldStore('currentStep')
@@ -398,7 +395,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     )
   })
 
-  // TC6.7: Back/next navigation works with validation
   it('TC6.7: back button works and validation applies on forward', async () => {
     function WizardComponent() {
       const currentStepField = store.useFieldStore('currentStep')
@@ -465,7 +461,6 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     expect(screen.getByTestId('current-step')).toHaveTextContent('1')
   })
 
-  // TC6.8: Concerns & side effects work in complex workflow
   it('TC6.8: concerns and side effects work together in workflow', async () => {
     function WizardComponent() {
       const currentStepField = store.useFieldStore('currentStep')

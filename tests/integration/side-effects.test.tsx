@@ -8,8 +8,12 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createUserProfileStore, userProfileFixtures } from '../mocks'
+import { createGenericStore } from '../../src'
+import type { UserProfile } from '../mocks'
+import { userProfileFixtures } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+
+const createUserProfileStore = () => createGenericStore<UserProfile>()
 
 describe('Integration: Side Effects - Listeners & Validators', () => {
   let store: ReturnType<typeof createUserProfileStore>
@@ -18,7 +22,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     store = createUserProfileStore()
   })
 
-  // TC5.1: Listener updates lastUpdated timestamp on any change
   it('TC5.1: listener updates lastUpdated on field change', async () => {
     function ProfileComponent() {
       const usernameField = store.useFieldStore('username')
@@ -63,7 +66,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     expect(newTime).toBeGreaterThan(initialTime)
   })
 
-  // TC5.2: Validator checks email format, stores errors
   it('TC5.2: validates email format and stores errors', async () => {
     function ProfileComponent() {
       const emailField = store.useFieldStore('email')
@@ -122,7 +124,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
   })
 
-  // TC5.3: Validator checks username uniqueness (async simulation)
   it('TC5.3: validates username uniqueness asynchronously', async () => {
     const takenUsernames = ['admin', 'user', 'test']
 
@@ -181,7 +182,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     expect(screen.queryByTestId('username-error')).not.toBeInTheDocument()
   })
 
-  // TC5.4: ClearPaths removes field from object when not needed
   it('TC5.4: clears unnecessary fields from state', async () => {
     function ProfileComponent() {
       const { setChanges } = store.useJitStore()
@@ -231,7 +231,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     expect(screen.getByTestId('bio-value')).toHaveTextContent('')
   })
 
-  // TC5.5: FlipPaths syncs bidirectional relationships
   it('TC5.5: flipPaths inverts boolean relationships', async () => {
     function ProfileComponent() {
       store.useSideEffects('flip-active', {
@@ -279,7 +278,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     expect(screen.getByTestId('active-status')).toHaveTextContent('Active')
   })
 
-  // TC5.6: Multiple side effects work together
   it('TC5.6: multiple side effects execute without interference', async () => {
     function ProfileComponent() {
       store.useSideEffects('multi-effects', {})
@@ -337,7 +335,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     expect(screen.getByTestId('error-count')).toHaveTextContent('1')
   })
 
-  // TC5.7: Side effects don't interfere with concerns
   it('TC5.7: side effects and concerns work together', async () => {
     function ProfileComponent() {
       store.useSideEffects('validators', {})

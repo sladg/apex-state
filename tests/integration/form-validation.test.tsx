@@ -9,8 +9,12 @@ import { cleanup, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createRegistrationFormStore, registrationFormFixtures } from '../mocks'
+import { createGenericStore } from '../../src'
+import type { RegistrationForm } from '../mocks'
+import { registrationFormFixtures } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+
+const createRegistrationFormStore = () => createGenericStore<RegistrationForm>()
 
 describe('Integration: Form Validation with Concerns', () => {
   let store: ReturnType<typeof createRegistrationFormStore>
@@ -23,7 +27,6 @@ describe('Integration: Form Validation with Concerns', () => {
     cleanup()
   })
 
-  // TC1.1: Email validation with Zod schema
   it('TC1.1: validates email format with Zod schema', async () => {
     const emailSchema = z.string().email('Invalid email format')
 
@@ -75,7 +78,11 @@ describe('Integration: Form Validation with Concerns', () => {
     expect(input.value).toBe('test@example.com')
   })
 
-  // TC1.2: Password complexity validation
+  /**
+   * User Story: As a form user, when I enter a password, the system should validate
+   * it meets complexity requirements (min 8 chars, uppercase, number).
+   * Acceptance: Weak passwords show error concern, strong passwords pass validation.
+   */
   it('TC1.2: validates password complexity', async () => {
     const passwordSchema = z
       .string()
@@ -128,7 +135,11 @@ describe('Integration: Form Validation with Concerns', () => {
     expect(screen.queryByTestId('password-error')).not.toBeInTheDocument()
   })
 
-  // TC1.3: Confirm password matches (cross-field validation)
+  /**
+   * User Story: As a form user, when I enter password confirmation, the system should
+   * validate it matches the original password field using cross-field validation.
+   * Acceptance: Matching passwords pass, non-matching passwords show validation error.
+   */
   it('TC1.3: validates confirm password matches password', async () => {
     function FormComponent() {
       const passwordField = store.useFieldStore('password')
@@ -181,7 +192,11 @@ describe('Integration: Form Validation with Concerns', () => {
     expect(confirmInput.value).toBe('Different')
   })
 
-  // TC1.4: Terms must be agreed (conditional validation)
+  /**
+   * User Story: As a form user, when I submit a registration form, I must agree to
+   * the terms and conditions before proceeding.
+   * Acceptance: Unchecked terms show error, checked terms clear the error.
+   */
   it('TC1.4: validates terms agreement is required', async () => {
     function FormComponent() {
       const termsField = store.useFieldStore('agreeToTerms')
@@ -219,7 +234,11 @@ describe('Integration: Form Validation with Concerns', () => {
     expect(screen.queryByTestId('terms-error')).not.toBeInTheDocument()
   })
 
-  // TC1.5: Error messages display via concerns
+  /**
+   * User Story: As a form user, when validation fails, I should see descriptive
+   * error messages provided by the concern system.
+   * Acceptance: Invalid field values trigger concerns that display specific error messages.
+   */
   it('TC1.5: displays error messages from concerns', async () => {
     const emailSchema = z.string().email('Please enter a valid email')
 
@@ -259,7 +278,11 @@ describe('Integration: Form Validation with Concerns', () => {
     expect(screen.getByTestId('error-message')).toBeInTheDocument()
   })
 
-  // TC1.6: Errors clear when fixed
+  /**
+   * User Story: As a form user, when I correct an invalid field, the error message
+   * should automatically disappear once the field becomes valid.
+   * Acceptance: Error concerns clear reactively when field value becomes valid.
+   */
   it('TC1.6: clears errors when field becomes valid', async () => {
     const emailSchema = z.string().email()
 
@@ -307,7 +330,11 @@ describe('Integration: Form Validation with Concerns', () => {
     expect(screen.queryByTestId('error')).not.toBeInTheDocument()
   })
 
-  // TC1.7: Submit enabled when all valid (visibleWhen concern)
+  /**
+   * User Story: As a form user, the submit button should only appear when all
+   * required fields are valid, preventing invalid form submissions.
+   * Acceptance: Submit button hidden when fields invalid, visible when all fields valid.
+   */
   it('TC1.7: submit button visibility depends on form validity', async () => {
     const emailSchema = z.string().email()
     const passwordSchema = z.string().min(8)

@@ -8,13 +8,12 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { createGenericStore } from '../../src'
 import type { ProfileForm } from '../mocks'
-import {
-  createProfileFormStore,
-  profileFormFixtures,
-  typeHelpers,
-} from '../mocks'
+import { profileFormFixtures, typeHelpers } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+
+const createProfileFormStore = () => createGenericStore<ProfileForm>()
 
 describe('Integration: Bidirectional Field Sync', () => {
   let store: ReturnType<typeof createProfileFormStore>
@@ -23,7 +22,6 @@ describe('Integration: Bidirectional Field Sync', () => {
     store = createProfileFormStore()
   })
 
-  // TC2.1: Update firstName → fullName updates
   it('TC2.1: updates fullName when firstName changes', async () => {
     function FormComponent() {
       store.useSideEffects('profile-sync', {
@@ -56,7 +54,6 @@ describe('Integration: Bidirectional Field Sync', () => {
     expect(input.value).toBe('John')
   })
 
-  // TC2.2: Update lastName → fullName updates
   it('TC2.2: updates fullName when lastName changes', async () => {
     function FormComponent() {
       const lastNameField = store.useFieldStore('lastName')
@@ -93,7 +90,6 @@ describe('Integration: Bidirectional Field Sync', () => {
     expect(input.value).toBe('Doe')
   })
 
-  // TC2.3: Update displayName → firstName updates
   it('TC2.3: updates firstName when displayName changes (sync pair)', async () => {
     function FormComponent() {
       store.useSideEffects('display-sync', {
@@ -128,7 +124,6 @@ describe('Integration: Bidirectional Field Sync', () => {
     expect(input.value).toBe('Jane')
   })
 
-  // TC2.4: Circular sync doesn't infinite loop
   it('TC2.4: handles circular sync pairs without infinite loops', async () => {
     let renderCount = 0
 
@@ -177,7 +172,6 @@ describe('Integration: Bidirectional Field Sync', () => {
     expect(renderCount).toBeLessThan(initialRenderCount + 10)
   })
 
-  // TC2.5: Multiple syncs in one setValue batch correctly
   it('TC2.5: handles multiple path updates in single batch', async () => {
     function FormComponent() {
       store.useSideEffects('multi-sync', {
@@ -214,7 +208,6 @@ describe('Integration: Bidirectional Field Sync', () => {
     expect(input.value).toBe('Johnny')
   })
 
-  // TC2.6: Sync paths respect order (no race conditions)
   it('TC2.6: processes sync pairs in correct order', async () => {
     const executionLog: string[] = []
 
