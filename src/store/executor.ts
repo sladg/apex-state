@@ -9,7 +9,13 @@ import _set from 'lodash/set'
 import { snapshot } from 'valtio'
 
 import type { ArrayOfChanges, GenericMeta } from '../types'
-import type { StoreInstance } from './types'
+import type { FlushQueue, StoreInstance } from './types'
+
+/**
+ * Symbol used to identify queue flush exceptions
+ * @internal
+ */
+const FLUSH_QUEUE = Symbol('FLUSH_QUEUE')
 
 /**
  * Queue a change for processing.
@@ -141,6 +147,7 @@ const processAggregations = <DATA extends object, META extends GenericMeta>(
 
 /**
  * Process listeners - call registered listeners for changed paths
+ * Supports flushQueue to stop processing and clear the queue
  */
 const processListeners = <DATA extends object, META extends GenericMeta>(
   changes: ArrayOfChanges<DATA, META>,
@@ -150,24 +157,37 @@ const processListeners = <DATA extends object, META extends GenericMeta>(
   const { listeners } = store._internal.graphs
   const { queue } = store._internal.processing
 
-  for (const change of changes) {
-    const [path] = change as [string, unknown, GenericMeta]
+  const flushQueue: FlushQueue = () => {
+    store._internal.processing.queue = []
+    throw FLUSH_QUEUE
+  }
 
-    const pathListeners = listeners.get(path)
-    if (!pathListeners) continue
+  try {
+    for (const change of changes) {
+      const [path] = change as [string, unknown, GenericMeta]
 
-    for (const listener of pathListeners) {
-      const result = listener(change, currentState)
-      if (result && result.length > 0) {
-        // Add listener metadata
-        for (const r of result) {
-          queueChange(queue, r[0], r[1], {
-            ...(r[2] || {}),
-            isListenerChange: true,
-          })
+      const pathListeners = listeners.get(path)
+      if (!pathListeners) continue
+
+      for (const listener of pathListeners) {
+        const result = listener(change, currentState, flushQueue)
+        if (result && result.length > 0) {
+          // Add listener metadata
+          for (const r of result) {
+            queueChange(queue, r[0], r[1], {
+              ...(r[2] || {}),
+              isListenerChange: true,
+            })
+          }
         }
       }
     }
+  } catch (e) {
+    if (e === FLUSH_QUEUE) {
+      // queue is cleared by flushQueue function
+      return
+    }
+    throw e
   }
 }
 

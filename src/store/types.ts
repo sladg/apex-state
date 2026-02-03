@@ -67,8 +67,18 @@ export interface AggregationRule<DATA extends object = object> {
 }
 
 /**
+ * Function to flush the listener queue and stop processing remaining listeners
+ * Throws internally to break out of the listener loop
+ */
+export type FlushQueue = () => never
+
+/**
  * Listener function that reacts to changes
  * Returns additional changes to apply, or undefined
+ *
+ * @param change - The change tuple [path, value, meta]
+ * @param state - Current state snapshot
+ * @param flushQueue - Call to stop processing remaining listeners and clear the queue
  */
 export type OnStateListener<
   DATA extends object = object,
@@ -76,6 +86,7 @@ export type OnStateListener<
 > = (
   change: ArrayOfChanges<DATA, META>[number],
   state: DATA,
+  flushQueue: FlushQueue,
 ) => ArrayOfChanges<DATA, META> | undefined
 
 /**
