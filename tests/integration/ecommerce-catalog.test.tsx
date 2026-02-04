@@ -1,16 +1,16 @@
 /**
- * Integration Tests: FX Options Pricing Form
+ * Integration Tests: E-commerce Product Catalog Form
  *
- * Scenario: Deeply nested (15 levels) FX Options trade entry form
+ * Scenario: Deeply nested (15 levels) e-commerce catalog management form
  * with custom concerns, all built-in concerns, side effects (sync, flip,
  * listeners, aggregations), and complex BoolLogic conditions.
  *
- * Models a realistic FX derivatives pricing desk where:
- * - Multiple product legs each contain greeks, market data, and barrier config
- * - Validation depends on product type, market regime, and cross-leg relationships
+ * Models a realistic e-commerce operations center where:
+ * - Multiple product variants each contain analytics, pricing data, and promotion config
+ * - Validation depends on product type, market conditions, and cross-variant relationships
  * - Fields are conditionally visible/disabled/readonly based on deep state
- * - Listeners compute derived values (PnL, delta hedges) from leg changes
- * - Custom concerns handle domain-specific logic (margin check, risk limits)
+ * - Listeners compute derived values (revenue, inventory adjustments) from variant changes
+ * - Custom concerns handle domain-specific logic (budget check, spending limits)
  */
 
 import { useLayoutEffect } from 'react'
@@ -115,7 +115,7 @@ interface Product {
 // Plus: ...legs.{id}.marketData(10).volSurface(11).smile(12).{id}(13).vol(14) → deeper still
 // And: ...greeks(10).delta(11), etc.
 // Total reachable depth: 15 via portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.volSurface.smile.s25.source
-interface FXOptionsBook {
+interface EcommerceCatalog {
   portfolio: {
     books: Record<
       string,
@@ -198,12 +198,12 @@ const makeLeg = (overrides: Partial<LegData> = {}): LegData => ({
   ...overrides,
 })
 
-const fxOptionsFixtures = {
+const ecommerceFixtures = {
   empty: {
     portfolio: {
       books: {
         b1: {
-          name: 'G10 FX Options',
+          name: 'Premium Electronics',
           desk: 'NYC',
           riskLimit: 50_000_000,
           products: {
@@ -300,7 +300,7 @@ const fxOptionsFixtures = {
     isHedged: true,
     needsRebalance: false,
     _errors: {},
-  } satisfies FXOptionsBook,
+  } satisfies EcommerceCatalog,
 }
 
 // ---------------------------------------------------------------------------
@@ -368,14 +368,14 @@ const barrierProximity: ConcernType<
 // ---------------------------------------------------------------------------
 
 /** Deep clone fixture to prevent valtio proxy from mutating the original */
-const freshFixture = (): FXOptionsBook =>
-  JSON.parse(JSON.stringify(fxOptionsFixtures.empty))
+const freshFixture = (): EcommerceCatalog =>
+  JSON.parse(JSON.stringify(ecommerceFixtures.empty))
 
 // ---------------------------------------------------------------------------
 // Store factory
 // ---------------------------------------------------------------------------
 
-const createFXStore = () => createGenericStore<FXOptionsBook>()
+const createCatalogStore = () => createGenericStore<EcommerceCatalog>()
 
 // ---------------------------------------------------------------------------
 // Test component
@@ -391,11 +391,11 @@ const _P2_LEG1 = 'portfolio.books.b1.products.p2.legGroups.g1.legs.l1'
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('Integration: FX Options – Deep Nesting & Full Feature Coverage', () => {
-  let store: ReturnType<typeof createFXStore>
+describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Coverage', () => {
+  let store: ReturnType<typeof createCatalogStore>
 
   beforeEach(() => {
-    store = createFXStore()
+    store = createCatalogStore()
   })
 
   // =========================================================================
@@ -1167,7 +1167,7 @@ describe('Integration: FX Options – Deep Nesting & Full Feature Coverage', () 
 
         store.useSideEffects('straddle-sync', {
           syncPaths: [
-            typeHelpers.syncPair<FXOptionsBook>(
+            typeHelpers.syncPair<EcommerceCatalog>(
               `${LEG1}.strike`,
               `${LEG2}.strike`,
             ),
@@ -1211,7 +1211,10 @@ describe('Integration: FX Options – Deep Nesting & Full Feature Coverage', () 
 
         store.useSideEffects('hedge-flip', {
           flipPaths: [
-            typeHelpers.flipPair<FXOptionsBook>('isHedged', 'needsRebalance'),
+            typeHelpers.flipPair<EcommerceCatalog>(
+              'isHedged',
+              'needsRebalance',
+            ),
           ],
         })
 
@@ -1242,7 +1245,7 @@ describe('Integration: FX Options – Deep Nesting & Full Feature Coverage', () 
 
     it('listener computes aggregated delta from leg changes', async () => {
       function DeltaListener() {
-        const storeInstance = useStoreContext<FXOptionsBook>()
+        const storeInstance = useStoreContext<EcommerceCatalog>()
         const [leg1Delta, setLeg1Delta] = store.useStore(`${LEG1}.greeks.delta`)
         const [leg2Delta] = store.useStore(`${LEG2}.greeks.delta`)
         const [aggDelta] = store.useStore('aggregatedDelta')
@@ -1261,7 +1264,7 @@ describe('Integration: FX Options – Deep Nesting & Full Feature Coverage', () 
               for (const change of changes) {
                 if (change[0] === 'delta') l1d = Number(change[1])
               }
-              return typeHelpers.changes<FXOptionsBook>([
+              return typeHelpers.changes<EcommerceCatalog>([
                 ['aggregatedDelta', l1d + l2d],
               ])
             },
@@ -1315,7 +1318,7 @@ describe('Integration: FX Options – Deep Nesting & Full Feature Coverage', () 
 
         const handleBatchUpdate = () => {
           setChanges(
-            typeHelpers.changes<FXOptionsBook>([
+            typeHelpers.changes<EcommerceCatalog>([
               [`${LEG1}.strike`, 1.35],
               [`${LEG1}.notional`, 5_000_000],
               [`${PRODUCT_P1}.status`, 'pending'],
@@ -1360,7 +1363,7 @@ describe('Integration: FX Options – Deep Nesting & Full Feature Coverage', () 
         // Sync strikes
         store.useSideEffects('straddle-effects', {
           syncPaths: [
-            typeHelpers.syncPair<FXOptionsBook>(
+            typeHelpers.syncPair<EcommerceCatalog>(
               `${LEG1}.strike`,
               `${LEG2}.strike`,
             ),
