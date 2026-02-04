@@ -54,13 +54,6 @@ export async function waitForEffects(ms = 10): Promise<void> {
 }
 
 /**
- * Helper to get deep value from object
- */
-export function getDeepValue(obj: any, path: string): any {
-  return path.split('.').reduce((acc, part) => acc?.[part], obj)
-}
-
-/**
  * Render tracking for React tests
  */
 export function createRenderTracker() {

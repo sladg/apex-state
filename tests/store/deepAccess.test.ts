@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { dot } from '../../src/utils/dot'
+import { _, hashKey } from '../../src/utils/hashKey'
 
 describe('Deep Access Utilities', () => {
   describe('dot.get', () => {
@@ -192,6 +193,57 @@ describe('Deep Access Utilities', () => {
       dot.set(obj, 'value', 'updated')
       expect(obj.value).toBe('updated')
       expect(dot.has(obj, 'value')).toBe(true)
+    })
+  })
+
+  describe('hashKey.rejectDynamic (dynamic key validation)', () => {
+    it('throws error when [*] is passed to hashKey.rejectDynamic', () => {
+      expect(() => hashKey.rejectDynamic('nested.[*].value')).toThrow(
+        /contains \[\*\] hash key/,
+      )
+    })
+
+    it('allows normal paths without hash keys', () => {
+      expect(() => hashKey.rejectDynamic('nested.value')).not.toThrow()
+      expect(() => hashKey.rejectDynamic('user.profile.name')).not.toThrow()
+    })
+
+    it('works with dot.get/set/has when paths are valid', () => {
+      const obj = { nested: { value: 'test' } }
+      expect(dot.get(obj, 'nested.value')).toBe('test')
+      expect(() => dot.set(obj, 'nested.value', 'updated')).not.toThrow()
+      expect(dot.has(obj, 'nested.value')).toBe(true)
+    })
+  })
+
+  describe('_ (hash key function)', () => {
+    it('returns the concrete ID typed as HASH_KEY', () => {
+      const result = _('l1')
+      expect(result).toBe('l1')
+    })
+
+    it('returns the input parameter unchanged', () => {
+      expect(_('l1')).toBe('l1')
+      expect(_('any-string')).toBe('any-string')
+      expect(_('123')).toBe('123')
+      expect(_('')).toBe('')
+    })
+
+    it('works in template strings with concrete IDs', () => {
+      const path = `portfolio.books.b1.legs.${_('l1')}.notional`
+      expect(path).toBe('portfolio.books.b1.legs.l1.notional')
+    })
+
+    it('works with multiple hash keys in template', () => {
+      const path = `users.${_('u1')}.posts.${_('p1')}.comments.${_('c1')}.text`
+      expect(path).toBe('users.u1.posts.p1.comments.c1.text')
+    })
+
+    it('works with complex nested paths', () => {
+      const path = `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.notional`
+      expect(path).toBe(
+        'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional',
+      )
     })
   })
 })

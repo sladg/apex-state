@@ -24,6 +24,8 @@
  * ```
  */
 
+import type { HASH_KEY } from './hashKey'
+
 type Primitive = string | number | boolean | bigint | symbol | null | undefined
 
 type IsAny<T> = 0 extends 1 & T ? true : false
@@ -32,24 +34,37 @@ type IsAny<T> = 0 extends 1 & T ? true : false
 export type DeepKey<T, Depth extends number = 20> = Depth extends 0
   ? never
   : IsAny<T> extends true
-    ? string
+    ? never
     : T extends Primitive
       ? never
       : T extends readonly any[]
         ? never
-        : {
-            [K in keyof T & (string | number)]:
-              | `${K & string}`
-              | (T[K] extends Primitive
+        : string extends keyof T
+          ? // T is a Record<string, V> — emit HASH_KEY and recurse into T[string]
+              | HASH_KEY
+              | (T[string] extends Primitive
                   ? never
-                  : T[K] extends readonly any[]
+                  : T[string] extends readonly any[]
                     ? never
-                    : DeepKey<T[K], Prev<Depth>> extends infer DK
+                    : DeepKey<T[string], Prev<Depth>> extends infer DK
                       ? DK extends string
-                        ? `${K & string}.${DK}`
+                        ? `${HASH_KEY}.${DK}`
                         : never
                       : never)
-          }[keyof T & (string | number)]
+          : // T has concrete keys only
+            {
+              [K in keyof T & (string | number)]:
+                | `${K & string}`
+                | (T[K] extends Primitive
+                    ? never
+                    : T[K] extends readonly any[]
+                      ? never
+                      : DeepKey<T[K], Prev<Depth>> extends infer DK
+                        ? DK extends string
+                          ? `${K & string}.${DK}`
+                          : never
+                        : never)
+            }[keyof T & (string | number)]
 
 // Depth counter helper types (supports up to depth 20)
 type Prev<N extends number> = N extends 20

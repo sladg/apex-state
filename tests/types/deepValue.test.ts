@@ -174,4 +174,117 @@ describe('DeepValue', () => {
       }[]
     >()
   })
+
+  describe('Record support with [*] wildcard', () => {
+    it('handles Record<string, T> at leaf', () => {
+      type Users = Record<string, { name: string; age: number }>
+
+      expectTypeOf<DeepValue<Users, '[*]'>>().toEqualTypeOf<{
+        name: string
+        age: number
+      }>()
+    })
+
+    it('handles nested Record with sub-paths', () => {
+      interface State {
+        users: Record<string, { name: string; age: number }>
+        title: string
+      }
+
+      expectTypeOf<DeepValue<State, 'users'>>().toEqualTypeOf<
+        Record<string, { name: string; age: number }>
+      >()
+
+      expectTypeOf<DeepValue<State, 'users.[*]'>>().toEqualTypeOf<{
+        name: string
+        age: number
+      }>()
+
+      expectTypeOf<DeepValue<State, 'users.[*].name'>>().toEqualTypeOf<string>()
+
+      expectTypeOf<DeepValue<State, 'users.[*].age'>>().toEqualTypeOf<number>()
+
+      expectTypeOf<DeepValue<State, 'title'>>().toEqualTypeOf<string>()
+    })
+
+    it('handles nested Records (two levels)', () => {
+      interface State {
+        books: Record<
+          string,
+          {
+            title: string
+            products: Record<string, { price: number; sku: string }>
+          }
+        >
+      }
+
+      expectTypeOf<DeepValue<State, 'books.[*]'>>().toEqualTypeOf<{
+        title: string
+        products: Record<string, { price: number; sku: string }>
+      }>()
+
+      expectTypeOf<
+        DeepValue<State, 'books.[*].title'>
+      >().toEqualTypeOf<string>()
+
+      expectTypeOf<DeepValue<State, 'books.[*].products'>>().toEqualTypeOf<
+        Record<string, { price: number; sku: string }>
+      >()
+
+      expectTypeOf<DeepValue<State, 'books.[*].products.[*]'>>().toEqualTypeOf<{
+        price: number
+        sku: string
+      }>()
+
+      expectTypeOf<
+        DeepValue<State, 'books.[*].products.[*].price'>
+      >().toEqualTypeOf<number>()
+
+      expectTypeOf<
+        DeepValue<State, 'books.[*].products.[*].sku'>
+      >().toEqualTypeOf<string>()
+    })
+
+    it('handles Record<string, T> with primitive value', () => {
+      type StringMap = Record<string, string>
+
+      expectTypeOf<DeepValue<StringMap, '[*]'>>().toEqualTypeOf<string>()
+    })
+
+    it('handles Record<string, number>', () => {
+      type NumberMap = Record<string, number>
+
+      expectTypeOf<DeepValue<NumberMap, '[*]'>>().toEqualTypeOf<number>()
+    })
+
+    it('handles Record with complex nested structure', () => {
+      interface Product {
+        id: string
+        variants: Record<
+          string,
+          {
+            color: string
+            sizes: Record<string, { inStock: boolean; quantity: number }>
+          }
+        >
+      }
+
+      expectTypeOf<DeepValue<Product, 'variants.[*]'>>().toEqualTypeOf<{
+        color: string
+        sizes: Record<string, { inStock: boolean; quantity: number }>
+      }>()
+
+      expectTypeOf<
+        DeepValue<Product, 'variants.[*].sizes.[*]'>
+      >().toEqualTypeOf<{ inStock: boolean; quantity: number }>()
+
+      expectTypeOf<
+        DeepValue<Product, 'variants.[*].sizes.[*].inStock'>
+      >().toEqualTypeOf<boolean>()
+
+      expectTypeOf<
+        DeepValue<Product, 'variants.[*].sizes.[*].quantity'>
+      >().toEqualTypeOf<number>()
+    })
+  })
 })

@@ -34,7 +34,7 @@ export const detectGetters = <T extends object>(
 
   for (const [key, descriptor] of Object.entries(descriptors)) {
     // Skip non-enumerable properties and symbols
-    if (!descriptor.enumerable || is.not.symbol(key)) {
+    if (!descriptor.enumerable || is.symbol(key)) {
       continue
     }
 
@@ -98,7 +98,7 @@ export const extractGetters = <T extends object>(
   const descriptors = Object.getOwnPropertyDescriptors(obj)
 
   for (const [key, descriptor] of Object.entries(descriptors)) {
-    if (!descriptor.enumerable || is.not.symbol(key)) {
+    if (!descriptor.enumerable || is.symbol(key)) {
       continue
     }
 

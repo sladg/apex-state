@@ -16,6 +16,9 @@
 export type { ProviderProps, StoreConfig, StoreInstance } from './core/types'
 export { createGenericStore } from './store/createStore'
 
+// Standalone hooks
+export { useFieldTransformedStore } from './hooks/useFieldTransformedStore'
+
 // Graph builders for side-effect registration
 export type {
   Aggregation,
@@ -109,6 +112,7 @@ export type { SideEffects } from './types/sideEffects'
  * ```
  */
 export { dot } from './utils/dot'
+export { _, hashKey } from './utils/hashKey'
 
 /**
  * @advanced

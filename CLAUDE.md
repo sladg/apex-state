@@ -153,6 +153,7 @@ src/
 ❌ **Never skip type-safe paths (DeepKey/DeepValue)**
 ❌ **Never forget to return cleanup functions**
 ❌ **Never move files around without explicit permission, if you must, use git mv to preserve history**
+❌ **Never pick shortcuts in typescript types. Do NOT use `as any` pattern**
 
 ---
 

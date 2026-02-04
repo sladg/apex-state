@@ -19,6 +19,7 @@ import { createGenericStore } from '../../src'
 import type { BoolLogic } from '../../src/types/boolLogic'
 import { evaluateBoolLogic } from '../../src/utils/boolLogic'
 import { dot } from '../../src/utils/dot'
+import { _ } from '../../src/utils/hashKey'
 import { interpolateTemplate } from '../../src/utils/interpolation'
 import { typeHelpers } from '../mocks'
 import { flushSync, renderWithStore } from '../utils/react'
@@ -117,9 +118,9 @@ const makeBenchState = (): BenchState => ({
 })
 
 const DEEP_PATH =
-  'portfolio.books.b1.products.p1.legs.l1.marketData.volSurface.smile.s25p.vol'
-const MEDIUM_PATH = 'portfolio.books.b1.products.p1.legs.l1.strike'
-const SHALLOW_PATH = 'isHedged'
+  'portfolio.books.b1.products.p1.legs.l1.marketData.volSurface.smile.s25p.vol' as const
+const MEDIUM_PATH = 'portfolio.books.b1.products.p1.legs.l1.strike' as const
+const SHALLOW_PATH = 'isHedged' as const
 
 // ---------------------------------------------------------------------------
 // 1. deepGet / lodash _get — the most-called function in the library
@@ -404,16 +405,31 @@ describe('Benchmark: evaluateBoolLogic throughput', () => {
     const condition: BoolLogic<BenchState> = {
       AND: [
         {
-          NOT: { IS_EQUAL: ['portfolio.books.b1.products.p1.status', 'draft'] },
+          NOT: {
+            IS_EQUAL: [
+              `portfolio.books.${_('b1')}.products.${_('p1')}.status`,
+              'draft',
+            ],
+          },
         },
         {
           OR: [
-            { GT: ['portfolio.books.b1.products.p1.legs.l1.strike', 2] },
+            {
+              GT: [
+                `portfolio.books.${_('b1')}.products.${_('p1')}.legs.${_('l1')}.strike`,
+                2,
+              ],
+            },
             { IS_EQUAL: ['isHedged', false] },
             { EXISTS: 'aggregatedDelta' },
           ],
         },
-        { LTE: ['portfolio.books.b1.products.p1.legs.l1.notional', 5_000_000] },
+        {
+          LTE: [
+            `portfolio.books.${_('b1')}.products.${_('p1')}.legs.${_('l1')}.notional`,
+            5_000_000,
+          ],
+        },
       ],
     }
 
@@ -436,6 +452,7 @@ describe('Benchmark: evaluateBoolLogic throughput', () => {
     // Lodash path (via evaluateBoolLogic)
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
+      // @ts-expect-error - concrete Record keys don't match type system's [*] pattern
       evaluateBoolLogic({ GT: [MEDIUM_PATH, 0.5] }, state)
     }
     const lodashElapsed = performance.now() - startLodash
@@ -837,10 +854,15 @@ describe('Benchmark: processChanges pipeline', () => {
   it('single change with 10 concerns registered', async () => {
     const store = createGenericStore<BenchState>()
 
-    const L1 = 'portfolio.books.b1.products.p1.legs.l1'
-    const L2 = 'portfolio.books.b1.products.p1.legs.l2'
+    const L1 =
+      `portfolio.books.${_('b1')}.products.${_('p1')}.legs.${_('l1')}` as const
+    const L2 =
+      `portfolio.books.${_('b1')}.products.${_('p1')}.legs.${_('l2')}` as const
     const disabledCondition: BoolLogic<BenchState> = {
-      IS_EQUAL: ['portfolio.books.b1.products.p1.status', 'approved'],
+      IS_EQUAL: [
+        `portfolio.books.${_('b1')}.products.${_('p1')}.status`,
+        'approved',
+      ],
     }
 
     // eslint-disable-next-line no-restricted-syntax
@@ -984,7 +1006,8 @@ describe('Benchmark: concern evaluation round-trip', () => {
   it('change → concern re-evaluated — measures full reactive chain', async () => {
     const store = createGenericStore<BenchState>()
 
-    const STRIKE_PATH = 'portfolio.books.b1.products.p1.legs.l1.strike'
+    const STRIKE_PATH =
+      `portfolio.books.${_('b1')}.products.${_('p1')}.legs.${_('l1')}.strike` as const
 
     // eslint-disable-next-line no-restricted-syntax
     const { storeInstance } = renderWithStore(store, makeBenchState(), {
@@ -996,7 +1019,7 @@ describe('Benchmark: concern evaluation round-trip', () => {
               AND: [
                 {
                   IS_EQUAL: [
-                    'portfolio.books.b1.products.p1.status',
+                    `portfolio.books.${_('b1')}.products.${_('p1')}.status`,
                     'approved',
                   ],
                 },
@@ -1005,7 +1028,7 @@ describe('Benchmark: concern evaluation round-trip', () => {
             },
           },
           dynamicTooltip: {
-            template: `Strike {{${STRIKE_PATH}}} vs spot {{portfolio.books.b1.products.p1.legs.l1.marketData.spot}}`,
+            template: `Strike {{${STRIKE_PATH}}} vs spot {{portfolio.books.${_('b1')}.products.${_('p1')}.legs.${_('l1')}.marketData.spot}}`,
           },
         },
       },

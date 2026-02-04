@@ -37,8 +37,9 @@ describe('Integration: Form Validation with Concerns', () => {
         },
       })
 
-      const emailField = store.useFieldStore('email')
-      const emailConcerns = store.useFieldConcerns('email')
+      const emailField = store
+        .withConcerns({ validationState: true })
+        .useFieldStore('email')
 
       return (
         <div>
@@ -48,11 +49,11 @@ describe('Integration: Form Validation with Concerns', () => {
             onChange={(e) => emailField.setValue(e.target.value)}
             placeholder="Enter email"
           />
-          {emailConcerns.validationState?.isError && (
+          {emailField.validationState?.isError && (
             <span data-testid="email-error">Invalid email format</span>
           )}
-          {emailConcerns.validationState &&
-            !emailConcerns.validationState.isError && (
+          {emailField.validationState &&
+            !emailField.validationState.isError && (
               <span data-testid="email-valid">✓</span>
             )}
         </div>
@@ -97,8 +98,9 @@ describe('Integration: Form Validation with Concerns', () => {
         },
       })
 
-      const passwordField = store.useFieldStore('password')
-      const passwordConcerns = store.useFieldConcerns('password')
+      const passwordField = store
+        .withConcerns({ validationState: true })
+        .useFieldStore('password')
 
       return (
         <div>
@@ -108,7 +110,7 @@ describe('Integration: Form Validation with Concerns', () => {
             value={passwordField.value}
             onChange={(e) => passwordField.setValue(e.target.value)}
           />
-          {passwordConcerns.validationState?.isError && (
+          {passwordField.validationState?.isError && (
             <span data-testid="password-error">Invalid password</span>
           )}
         </div>
@@ -249,8 +251,9 @@ describe('Integration: Form Validation with Concerns', () => {
         },
       })
 
-      const emailField = store.useFieldStore('email')
-      const emailConcerns = store.useFieldConcerns('email')
+      const emailField = store
+        .withConcerns({ validationState: true })
+        .useFieldStore('email')
 
       return (
         <div>
@@ -259,7 +262,7 @@ describe('Integration: Form Validation with Concerns', () => {
             value={emailField.value}
             onChange={(e) => emailField.setValue(e.target.value)}
           />
-          {emailConcerns.validationState?.isError && (
+          {emailField.validationState?.isError && (
             <span data-testid="error-message">Please enter a valid email</span>
           )}
         </div>
@@ -293,8 +296,9 @@ describe('Integration: Form Validation with Concerns', () => {
         },
       })
 
-      const emailField = store.useFieldStore('email')
-      const emailConcerns = store.useFieldConcerns('email')
+      const emailField = store
+        .withConcerns({ validationState: true })
+        .useFieldStore('email')
 
       return (
         <div>
@@ -303,7 +307,7 @@ describe('Integration: Form Validation with Concerns', () => {
             value={emailField.value}
             onChange={(e) => emailField.setValue(e.target.value)}
           />
-          {emailConcerns.validationState?.isError && (
+          {emailField.validationState?.isError && (
             <span data-testid="error">Invalid</span>
           )}
         </div>
@@ -345,16 +349,17 @@ describe('Integration: Form Validation with Concerns', () => {
         password: { validationState: { schema: passwordSchema } },
       })
 
-      const emailField = store.useFieldStore('email')
-      const emailConcerns = store.useFieldConcerns('email')
-      const passwordField = store.useFieldStore('password')
-      const passwordConcerns = store.useFieldConcerns('password')
+      const emailField = store
+        .withConcerns({ validationState: true })
+        .useFieldStore('email')
+      const passwordField = store
+        .withConcerns({ validationState: true })
+        .useFieldStore('password')
 
       const isEmailValid =
-        emailConcerns.validationState && !emailConcerns.validationState.isError
+        emailField.validationState && !emailField.validationState.isError
       const isPasswordValid =
-        passwordConcerns.validationState &&
-        !passwordConcerns.validationState.isError
+        passwordField.validationState && !passwordField.validationState.isError
 
       return (
         <div>

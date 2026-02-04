@@ -132,8 +132,9 @@ describe('React Test Utilities', () => {
           },
         })
 
-        const emailField = store.useFieldStore('email')
-        const emailConcerns = store.useFieldConcerns('email')
+        const emailField = store
+          .withConcerns({ validationState: true })
+          .useFieldStore('email')
 
         return (
           <div>
@@ -142,7 +143,7 @@ describe('React Test Utilities', () => {
               value={emailField.value}
               onChange={(e) => emailField.setValue(e.target.value)}
             />
-            {emailConcerns.validationState?.isError && (
+            {emailField.validationState?.isError && (
               <span data-testid="error">Invalid</span>
             )}
           </div>

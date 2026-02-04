@@ -18,18 +18,30 @@
  * ```
  */
 
+import type { HASH_KEY } from './hashKey'
+
 type IsAny<T> = 0 extends 1 & T ? true : false
 
 // Main DeepValue implementation
 export type DeepValue<T, Path extends string> =
   IsAny<T> extends true
-    ? any
+    ? never
     : T extends readonly any[]
       ? T[number]
-      : Path extends keyof T
-        ? T[Path]
-        : Path extends `${infer First}.${infer Rest}`
-          ? First extends keyof T
-            ? DeepValue<T[First], Rest>
+      : Path extends `${infer First}.${infer Rest}`
+        ? First extends keyof T
+          ? DeepValue<T[First], Rest>
+          : string extends keyof T
+            ? // First doesn't exist as concrete key, but T has string index (Record)
+              First extends HASH_KEY
+              ? DeepValue<T[string], Rest>
+              : unknown
             : unknown
-          : unknown
+        : Path extends HASH_KEY
+          ? // Hash key path: resolve to Record value type
+            string extends keyof T
+            ? T[string]
+            : unknown
+          : Path extends keyof T
+            ? T[Path]
+            : unknown

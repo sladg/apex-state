@@ -40,7 +40,7 @@ const get = <T extends object, P extends DeepKey<T>>(
   obj: T,
   path: P,
 ): DeepValue<T, P> => {
-  const parts = getPathParts(path as string)
+  const parts = getPathParts(path)
   let current: any = obj
   for (const part of parts) {
     if (is.not.object(current)) {
@@ -64,7 +64,7 @@ const get = <T extends object, P extends DeepKey<T>>(
  * const value = dot.get__unsafe(user, dynamicPath) // unknown
  * ```
  */
-const get__unsafe = (obj: unknown, path: string): unknown => {
+const get__unsafe = <P extends string>(obj: unknown, path: P): unknown => {
   const parts = getPathParts(path)
   let current: any = obj
   for (const part of parts) {
@@ -92,7 +92,7 @@ const set = <T extends object, P extends DeepKey<T>>(
   path: P,
   value: DeepValue<T, P>,
 ): void => {
-  const keys = getPathParts(path as string)
+  const keys = getPathParts(path)
   const last = keys.length - 1
   let current: object = obj
   for (let i = 0; i < last; i++) {
@@ -117,9 +117,9 @@ const set = <T extends object, P extends DeepKey<T>>(
  * dot.set__unsafe(user, dynamicPath, 'LA')
  * ```
  */
-const set__unsafe = <T extends object>(
+const set__unsafe = <T extends object, P extends string>(
   obj: T,
-  path: string,
+  path: P,
   value: unknown,
 ): void => {
   const keys = getPathParts(path)
@@ -153,7 +153,7 @@ const has = <T extends object, P extends DeepKey<T>>(
   obj: T,
   path: P,
 ): boolean => {
-  const parts = getPathParts(path as string)
+  const parts = getPathParts(path)
   let current: any = obj
   for (const part of parts) {
     if (is.not.object(current)) {
@@ -178,7 +178,10 @@ const has = <T extends object, P extends DeepKey<T>>(
  * dot.same(obj, 'a.b', 'c.b') // true
  * ```
  */
-const same = <T extends object>(obj: T, ...paths: string[]): boolean => {
+const same = <T extends object, P extends string>(
+  obj: T,
+  ...paths: P[]
+): boolean => {
   if (paths.length === 0) return true
   if (paths.length === 1) return true
 
@@ -197,4 +200,11 @@ const same = <T extends object>(obj: T, ...paths: string[]): boolean => {
  * Provides type-safe and unsafe variants for working with nested objects
  * using dot notation paths (e.g., 'user.address.city')
  */
-export const dot = { get, get__unsafe, set, set__unsafe, has, same }
+export const dot = {
+  get,
+  get__unsafe,
+  set,
+  set__unsafe,
+  has,
+  same,
+}

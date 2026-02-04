@@ -8,32 +8,32 @@
 import { proxy } from 'valtio/vanilla'
 import { effect } from 'valtio-reactive'
 
-import { getDeepValue } from '../concerns/test-utils'
+import { dot } from '../../src/utils/dot'
 
 /**
  * Minimal concern type for testing
  */
-export interface ConcernType {
+export interface ConcernType<TProps = unknown, TResult = unknown> {
   name: string
-  evaluate: (props: any) => any
+  evaluate: (props: TProps) => TResult
 }
 
 /**
  * Concern registration entry (internal)
  */
-interface ConcernRegistration {
+interface ConcernRegistration<TConfig = unknown> {
   id: string
   path: string
   concernName: string
   concern: ConcernType
-  config: any
+  config: TConfig
   dispose: () => void
 }
 
 /**
  * Test store structure returned by createTestStore
  */
-interface TestStore<T> {
+interface TestStore<T extends object> {
   proxy: T
   useConcerns: (id: string, registration: Record<string, any>) => () => void
   getFieldConcerns: <K extends string = string>(
@@ -100,7 +100,7 @@ export const createTestStore = <T extends object>(
         const concernKey = `${id}:${path}:${concernName}`
 
         const dispose = effect(() => {
-          const value = getDeepValue(dataProxy, path)
+          const value = dot.get__unsafe(dataProxy, path)
 
           const result = concern.evaluate({
             state: dataProxy,

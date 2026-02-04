@@ -11,6 +11,9 @@ import type { ConcernType } from '../concerns/types'
 import type { ArrayOfChanges, DeepKey, GenericMeta } from '../types'
 import type { FlipGraph, SyncGraph } from './graphTypes'
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Empty {}
+
 export interface StoreConfig {
   /** Error storage path (default: "_errors") */
   errorStorePath?: string
