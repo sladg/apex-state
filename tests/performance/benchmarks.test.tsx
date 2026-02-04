@@ -119,7 +119,8 @@ const makeBenchState = (): BenchState => ({
 
 const DEEP_PATH =
   'portfolio.books.b1.products.p1.legs.l1.marketData.volSurface.smile.s25p.vol' as const
-const MEDIUM_PATH = 'portfolio.books.b1.products.p1.legs.l1.strike' as const
+const MEDIUM_PATH =
+  `portfolio.books.${_('b1')}.products.${_('p1')}.legs.${_('l1')}.strike` as const
 const SHALLOW_PATH = 'isHedged' as const
 
 // ---------------------------------------------------------------------------
@@ -452,7 +453,6 @@ describe('Benchmark: evaluateBoolLogic throughput', () => {
     // Lodash path (via evaluateBoolLogic)
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      // @ts-expect-error - concrete Record keys don't match type system's [*] pattern
       evaluateBoolLogic({ GT: [MEDIUM_PATH, 0.5] }, state)
     }
     const lodashElapsed = performance.now() - startLodash

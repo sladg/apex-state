@@ -20,6 +20,11 @@ import { bench, describe } from 'vitest'
 import type { StoreInstance } from '../../src/core/types'
 import { normalizeChangesForGroups } from '../../src/pipeline/normalizeChanges'
 import { processChanges } from '../../src/pipeline/processChanges'
+import type { GenericMeta } from '../../src/types'
+import { typeHelpers } from '../mocks/helpers'
+
+/** Benchmark state type - represents dynamic nested paths used in benchmarks */
+type BenchmarkState = Record<string, unknown>
 
 // =============================================================================
 // Mock Store Factory
@@ -28,7 +33,7 @@ import { processChanges } from '../../src/pipeline/processChanges'
 const createMockStore = (
   syncPaths: [string, string][] = [],
   flipPaths: [string, string][] = [],
-): StoreInstance<Record<string, any>, any> => {
+): StoreInstance<BenchmarkState, GenericMeta> => {
   const syncGraph = new Graph({ type: 'undirected' })
   const flipGraph = new Graph({ type: 'undirected' })
 
@@ -53,16 +58,32 @@ const createMockStore = (
     _concerns: proxy({}),
     _internal: {
       graphs: {
-        sync: syncGraph,
-        flip: flipGraph,
-        aggregation: new Graph({ type: 'directed' }),
-        listeners: new Graph({ type: 'directed' }),
+        sync: syncGraph as unknown as StoreInstance<
+          BenchmarkState,
+          GenericMeta
+        >['_internal']['graphs']['sync'],
+        flip: flipGraph as unknown as StoreInstance<
+          BenchmarkState,
+          GenericMeta
+        >['_internal']['graphs']['flip'],
+        listeners: new Map(),
+        sortedListenerPaths: [],
+      },
+      registrations: {
+        concerns: new Map(),
+        effectCleanups: new Set(),
+        sideEffectCleanups: new Map(),
+        aggregations: new Map(),
       },
       processing: {
         queue: [],
       },
     },
-  } as any
+    config: {
+      errorStorePath: '_errors',
+      maxIterations: 100,
+    },
+  } as StoreInstance<BenchmarkState, GenericMeta>
 }
 
 // =============================================================================
@@ -176,71 +197,77 @@ describe('Change Processing Pipeline Benchmarks', () => {
   describe('normalizeChangesForGroups', () => {
     bench('single change, 10 registered paths', () => {
       const paths = generateEcommercePaths(10)
-      const pathGroups = [paths.slice(0, 3), paths.slice(3, 6)]
+      const pathGroups = [
+        paths.slice(0, 3).flatMap((p) => [p[0], p[1]]),
+        paths.slice(3, 6).flatMap((p) => [p[0], p[1]]),
+      ]
 
-      const changes = [['products.product_0.pricing.basePrice', 99.99, {}]]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['products.product_0.pricing.basePrice', 99.99],
+      ])
 
       normalizeChangesForGroups({
-        changes: changes as any[],
-        pathGroups: pathGroups as any[],
+        changes: changes,
+        pathGroups,
       })
     })
 
     bench('single change, 100 registered paths with groups', () => {
       const paths = generateEcommercePaths(50)
       const pathGroups = [
-        paths.slice(0, 15),
-        paths.slice(15, 30),
-        paths.slice(30, 50),
+        paths.slice(0, 15).flatMap((p) => [p[0], p[1]]),
+        paths.slice(15, 30).flatMap((p) => [p[0], p[1]]),
+        paths.slice(30, 50).flatMap((p) => [p[0], p[1]]),
       ]
 
-      const changes = [['products.product_5.pricing.basePrice', 99.99, {}]]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['products.product_5.pricing.basePrice', 99.99],
+      ])
 
       normalizeChangesForGroups({
-        changes: changes as any[],
-        pathGroups: pathGroups as any[],
+        changes: changes,
+        pathGroups,
       })
     })
 
     bench('batch of 50 changes, 100 registered paths', () => {
       const paths = generateEcommercePaths(50)
       const pathGroups = [
-        paths.slice(0, 15),
-        paths.slice(15, 30),
-        paths.slice(30, 50),
+        paths.slice(0, 15).flatMap((p) => [p[0], p[1]]),
+        paths.slice(15, 30).flatMap((p) => [p[0], p[1]]),
+        paths.slice(30, 50).flatMap((p) => [p[0], p[1]]),
       ]
 
-      const changes = Array.from({ length: 50 }, (_, i) => [
-        `products.product_${i % 10}.pricing.basePrice`,
-        Math.random() * 100,
-        {},
-      ])
+      const changes = typeHelpers.changes<BenchmarkState>(
+        Array.from({ length: 50 }, (_, i) => [
+          `products.product_${i % 10}.pricing.basePrice`,
+          Math.random() * 100,
+        ]),
+      )
 
       normalizeChangesForGroups({
-        changes: changes as any[],
-        pathGroups: pathGroups as any[],
+        changes,
+        pathGroups,
       })
     })
 
     bench('deep nested paths (inventory aggregation, 100 paths)', () => {
       const paths = generateInventoryAggregationPaths()
       const pathGroups = [
-        paths.slice(0, 20),
-        paths.slice(20, 50),
-        paths.slice(50, Math.min(100, paths.length)),
+        paths.slice(0, 20).flatMap((p) => [p[0], p[1]]),
+        paths.slice(20, 50).flatMap((p) => [p[0], p[1]]),
+        paths
+          .slice(50, Math.min(100, paths.length))
+          .flatMap((p) => [p[0], p[1]]),
       ].filter((g) => g.length > 0)
 
-      const changes = [
-        [
-          'inventory.electronics.laptops.skus.sku_0.quantity',
-          50,
-          { isUserChange: true },
-        ],
-      ]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['inventory.electronics.laptops.skus.sku_0.quantity', 50],
+      ])
 
       normalizeChangesForGroups({
-        changes: changes as any[],
-        pathGroups: pathGroups as any[],
+        changes,
+        pathGroups,
       })
     })
 
@@ -249,50 +276,40 @@ describe('Change Processing Pipeline Benchmarks', () => {
         ['a.b.c', 'a.b.d'],
         ['x.y.z', 'x.y.w'],
       ]
-      const pathGroups = [paths[0], paths[1]]
+      const pathGroups = [paths[0] as string[], paths[1] as string[]]
 
-      const changes = [
+      const changes = typeHelpers.changes<BenchmarkState>([
         [
           'a.b',
           {
             c: { deep: { nested: 'value' } },
             d: { other: 'data' },
           },
-          {},
         ],
-      ]
+      ])
 
       normalizeChangesForGroups({
-        changes: changes as any[],
-        pathGroups: [pathGroups] as any[],
+        changes,
+        pathGroups,
       })
     })
 
     bench('child change propagation (deep updates)', () => {
       const paths = generateInventoryAggregationPaths().slice(0, 30)
-      const pathGroups = [paths.slice(0, 10), paths.slice(10, 20)]
-
-      const changes = [
-        [
-          'inventory.electronics.laptops.skus.sku_0.quantity',
-          50,
-          { isUpdate: true },
-        ],
-        [
-          'pricing.electronics.laptops.skus.sku_0.price',
-          999.99,
-          { isUpdate: true },
-        ],
-        [
-          'inventory.clothing.shirts.totalStock',
-          250,
-          { isInventorySync: true },
-        ],
+      const pathGroups = [
+        paths.slice(0, 10).flatMap((p) => [p[0], p[1]]),
+        paths.slice(10, 20).flatMap((p) => [p[0], p[1]]),
       ]
 
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['inventory.electronics.laptops.skus.sku_0.quantity', 50],
+        ['pricing.electronics.laptops.skus.sku_0.price', 999.99],
+        ['inventory.clothing.shirts.totalStock', 250],
+      ])
+
       normalizeChangesForGroups({
-        changes: changes as any[],
-        pathGroups: pathGroups as any[],
+        changes,
+        pathGroups,
       })
     })
   })
@@ -304,46 +321,47 @@ describe('Change Processing Pipeline Benchmarks', () => {
   describe('processChanges', () => {
     bench('simple state mutation, no relationships', () => {
       const store = createMockStore()
-      const changes = [['state.name', 'John', {}]]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['state.name', 'John'],
+      ])
 
-      processChanges(store, changes as any[])
+      processChanges(store, changes)
     })
 
     bench('state mutation with sync paths (10 relationships)', () => {
       const syncPaths = generateEcommercePaths(5)
       const store = createMockStore(syncPaths)
 
-      const changes = [['products.product_0.pricing.basePrice', 99.99, {}]]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['products.product_0.pricing.basePrice', 99.99],
+      ])
 
-      processChanges(store, changes as any[])
+      processChanges(store, changes)
     })
 
     bench('batch mutation with sync paths (50 changes, 50 paths)', () => {
       const syncPaths = generateEcommercePaths(25)
       const store = createMockStore(syncPaths)
 
-      const changes = Array.from({ length: 50 }, (_, i) => [
-        `products.product_${i % 10}.pricing.basePrice`,
-        Math.random() * 100,
-        {},
-      ])
+      const changes = typeHelpers.changes<BenchmarkState>(
+        Array.from({ length: 50 }, (_, i) => [
+          `products.product_${i % 10}.pricing.basePrice`,
+          Math.random() * 100,
+        ]),
+      )
 
-      processChanges(store, changes as any[])
+      processChanges(store, changes)
     })
 
     bench('deep nested inventory aggregation (100 relationships)', () => {
       const syncPaths = generateInventoryAggregationPaths()
       const store = createMockStore(syncPaths)
 
-      const changes = [
-        [
-          'inventory.electronics.laptops.skus.sku_0.quantity',
-          50,
-          { isUserChange: true },
-        ],
-      ]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['inventory.electronics.laptops.skus.sku_0.quantity', 50],
+      ])
 
-      processChanges(store, changes as any[])
+      processChanges(store, changes)
     })
 
     bench('cascading updates (parent → child → grandchild)', () => {
@@ -354,9 +372,11 @@ describe('Change Processing Pipeline Benchmarks', () => {
       ] as [string, string][]
       const store = createMockStore(syncPaths)
 
-      const changes = [['user.profile.settings.theme', 'dark', {}]]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['user.profile.settings.theme', 'dark'],
+      ])
 
-      processChanges(store, changes as any[])
+      processChanges(store, changes)
     })
 
     bench('boolean flip paths (5 relationships)', () => {
@@ -369,9 +389,11 @@ describe('Change Processing Pipeline Benchmarks', () => {
       ] as [string, string][]
       const store = createMockStore([], flipPaths)
 
-      const changes = [['feature.enabled', true, {}]]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['feature.enabled', true],
+      ])
 
-      processChanges(store, changes as any[])
+      processChanges(store, changes)
     })
 
     bench('mixed sync and flip operations', () => {
@@ -382,14 +404,14 @@ describe('Change Processing Pipeline Benchmarks', () => {
       ] as [string, string][]
       const store = createMockStore(syncPaths, flipPaths)
 
-      const changes = [
-        ['products.product_0.pricing.basePrice', 99.99, {}],
-        ['products.product_1.inventory.quantity', 50, {}],
-        ['product.isAvailable', true, {}],
-        ['store.isOpen', false, {}],
-      ]
+      const changes = typeHelpers.changes<BenchmarkState>([
+        ['products.product_0.pricing.basePrice', 99.99],
+        ['products.product_1.inventory.quantity', 50],
+        ['product.isAvailable', true],
+        ['store.isOpen', false],
+      ])
 
-      processChanges(store, changes as any[])
+      processChanges(store, changes)
     })
   })
 })

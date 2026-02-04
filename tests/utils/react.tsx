@@ -21,6 +21,7 @@ import { useStoreContext } from '../../src/core/context'
 import type { StoreInstance } from '../../src/core/types'
 import { createGenericStore } from '../../src/store/createStore'
 import type { DeepKey, GenericMeta } from '../../src/types'
+import { dot } from '../../src/utils/dot'
 
 // Type helpers for store
 type GenericStore<
@@ -66,10 +67,6 @@ export const createTestStore = <T extends object>(initialData: T) => {
   const concernsRegistry = new Map<string, ConcernRegistration[]>()
   const evaluationCache = new Map<string, unknown>()
 
-  const getDeepValue = (obj: any, path: string): any => {
-    return path.split('.').reduce((acc, part) => acc?.[part], obj)
-  }
-
   const useConcerns = (
     id: string,
     registration: Record<string, any>,
@@ -89,7 +86,7 @@ export const createTestStore = <T extends object>(initialData: T) => {
         const concernKey = `${id}:${path}:${concernName}`
 
         const dispose = effect(() => {
-          const value = getDeepValue(dataProxy, path)
+          const value = dot.get__unsafe(dataProxy, path)
 
           const result = concern.evaluate({
             state: dataProxy,

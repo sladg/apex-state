@@ -25,11 +25,21 @@ type ValidationStateInput<SUB_STATE, PATH extends DeepKey<SUB_STATE>> =
       }
     }[DeepKey<SUB_STATE>]
 
-export const validationState = {
-  name: 'validationState' as const,
+export interface ValidationStateConcern {
+  name: 'validationState'
+  description: string
+  evaluate: <SUB_STATE, PATH extends DeepKey<SUB_STATE>>(
+    props: BaseConcernProps<SUB_STATE, PATH> &
+      ValidationStateInput<SUB_STATE, PATH>,
+  ) => ValidationStateResult
+}
+
+export const validationState: ValidationStateConcern = {
+  name: 'validationState',
   description: 'Zod schema validation with isError flag and detailed errors',
   evaluate: <SUB_STATE, PATH extends DeepKey<SUB_STATE>>(
-    props: BaseConcernProps<any, PATH> & ValidationStateInput<SUB_STATE, PATH>,
+    props: BaseConcernProps<SUB_STATE, PATH> &
+      ValidationStateInput<SUB_STATE, PATH>,
   ): ValidationStateResult => {
     // If scope is provided, validate at scope path; otherwise validate at registration path
     // Note: props.scope is a runtime string path, use dot.get__unsafe for dynamic access

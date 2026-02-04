@@ -117,42 +117,42 @@ const warehouseState = {
 
 describe('BoolLogic Evaluation', () => {
   bench('simple equality check', () => {
-    const logic: BoolLogic<any> = {
+    const logic: BoolLogic<typeof ecommerceState> = {
       IS_EQUAL: ['user.isLoggedIn', true],
     }
 
-    evaluateBoolLogic(logic, ecommerceState as any)
+    evaluateBoolLogic(logic, ecommerceState)
   })
 
   bench('existence check', () => {
-    const logic: BoolLogic<any> = {
+    const logic: BoolLogic<typeof ecommerceState> = {
       EXISTS: 'user.preferences.minRating',
     }
 
-    evaluateBoolLogic(logic, ecommerceState as any)
+    evaluateBoolLogic(logic, ecommerceState)
   })
 
   bench('numeric comparison (GT)', () => {
-    const logic: BoolLogic<any> = {
+    const logic: BoolLogic<typeof ecommerceState> = {
       GT: ['user.totalSpent', 1000],
     }
 
-    evaluateBoolLogic(logic, ecommerceState as any)
+    evaluateBoolLogic(logic, ecommerceState)
   })
 
   bench('simple AND (2 conditions)', () => {
-    const logic: BoolLogic<any> = {
+    const logic: BoolLogic<typeof ecommerceState> = {
       AND: [
         { IS_EQUAL: ['user.isLoggedIn', true] },
         { GT: ['user.totalSpent', 500] },
       ],
     }
 
-    evaluateBoolLogic(logic, ecommerceState as any)
+    evaluateBoolLogic(logic, ecommerceState)
   })
 
   bench('complex nested AND/OR logic (product visibility)', () => {
-    const logic: BoolLogic<any> = {
+    const logic: BoolLogic<typeof ecommerceState> = {
       AND: [
         { IS_EQUAL: ['user.isLoggedIn', true] },
         {
@@ -163,8 +163,8 @@ describe('BoolLogic Evaluation', () => {
         },
         {
           AND: [
-            { GT: ['products.0.rating', 3.5] },
-            { IS_EQUAL: ['products.0.inStock', true] },
+            { GT: ['user.totalSpent', 1000] },
+            { IS_EQUAL: ['user.isPremium', true] },
           ],
         },
         {
@@ -173,13 +173,13 @@ describe('BoolLogic Evaluation', () => {
       ],
     }
 
-    evaluateBoolLogic(logic, ecommerceState as any)
+    evaluateBoolLogic(logic, ecommerceState)
   })
 
   bench(
     'deep nested logic (8 levels) - warehouse fulfillment visibility',
     () => {
-      const logic: BoolLogic<any> = {
+      const logic: BoolLogic<typeof warehouseState> = {
         AND: [
           {
             OR: [
@@ -219,7 +219,7 @@ describe('BoolLogic Evaluation', () => {
         ],
       }
 
-      evaluateBoolLogic(logic, warehouseState as any)
+      evaluateBoolLogic(logic, warehouseState)
     },
   )
 
@@ -303,7 +303,7 @@ describe('Concern Evaluation Scenarios', () => {
   })
 
   bench('concern re-evaluation on product price change', () => {
-    const state = ecommerceState as any
+    const state = JSON.parse(JSON.stringify(ecommerceState))
 
     // Simulate effect() re-running on price change
     for (let i = 0; i < 5; i++) {
@@ -313,7 +313,7 @@ describe('Concern Evaluation Scenarios', () => {
   })
 
   bench('concern re-evaluation on user preference change (affects all)', () => {
-    const state = ecommerceState as any
+    const state = JSON.parse(JSON.stringify(ecommerceState))
 
     // When minRating changes, all visibility concerns re-evaluate
     state.user.preferences.minRating = 4.0

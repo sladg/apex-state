@@ -8,8 +8,9 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src'
+import { _, createGenericStore } from '../../src'
 import {
+  NestedCart,
   nestedCartFixtures,
   ShoppingCart,
   shoppingCartFixtures,
@@ -18,7 +19,7 @@ import { CartComponent } from '../utils/components'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 const createShoppingCartStore = () => createGenericStore<ShoppingCart>()
-const createNestedCartStore = () => createGenericStore<any>()
+const createNestedCartStore = () => createGenericStore<NestedCart>()
 
 describe('Integration: Computed Values & Aggregations', () => {
   let store: ReturnType<typeof createShoppingCartStore>
@@ -161,12 +162,12 @@ describe('Integration: Computed Values & Aggregations', () => {
 
         setChanges([
           [
-            `categories.${categoryId}.items.${newItemId}`,
+            `categories.${_(categoryId)}.items.${_(newItemId)}`,
             { price: 25, qty: 1 },
             {},
           ],
           [
-            `categories.${categoryId}.categorySubtotal`,
+            `categories.${_(categoryId)}.categorySubtotal`,
             newCategorySubtotal,
             {},
           ],

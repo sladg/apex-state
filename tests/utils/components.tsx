@@ -3,7 +3,14 @@ import React from 'react'
 /**
  * Universal ProductComponent for concerns-ui integration tests
  */
-export const ProductComponent = ({ store }: { store: any }) => {
+export const ProductComponent = ({
+  store,
+}: {
+  store: {
+    useFieldStore: (path: any) => any
+    withConcerns: (selection: any) => { useFieldStore: (path: any) => any }
+  }
+}) => {
   const typeField = store.useFieldStore('type')
   const weightField = store
     .withConcerns({ visibleWhen: true })
@@ -113,7 +120,14 @@ export const ProductComponent = ({ store }: { store: any }) => {
 /**
  * Universal CartComponent for aggregations integration tests
  */
-export const CartComponent = ({ store }: { store: any }) => {
+export const CartComponent = ({
+  store,
+}: {
+  store: {
+    useFieldStore: (path: any) => any
+    useJitStore: () => any
+  }
+}) => {
   const { getState, setChanges } = store.useJitStore()
   const items = store.useFieldStore('items')
   const subtotal = store.useFieldStore('subtotal')
@@ -247,7 +261,10 @@ export const WizardComponent = ({
   store,
   delay = 0,
 }: {
-  store: any
+  store: {
+    useFieldStore: (path: any) => any
+    useJitStore: () => any
+  }
   delay?: number
 }) => {
   const { getState } = store.useJitStore()
@@ -446,7 +463,10 @@ export const Component = ({
   store,
   sideEffects,
 }: {
-  store: any
+  store: {
+    useJitStore: () => any
+    useSideEffects: (id: string, effects: any) => void
+  }
   sideEffects?: any
 }) => {
   if (sideEffects) {

@@ -11,9 +11,11 @@ import { useSnapshot } from 'valtio'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
+import type { ValidationStateResult } from '../../src/concerns/prebuilts'
 import { useStoreContext } from '../../src/core/context'
 import type { StoreInstance } from '../../src/core/types'
 import { createGenericStore } from '../../src/store/createStore'
+import { _ } from '../../src/utils/hashKey'
 import { flushEffects, flushSync, renderWithStore } from '../utils/react'
 import { createRenderTracker, PerformanceBenchmark } from './test-utils'
 
@@ -45,10 +47,12 @@ describe('TEST-007: React Integration', () => {
     }
 
     const concerns = {
-      'products.leg-1.strike': {
+      [`products.${_('leg-1')}.strike`]: {
         validationState: { schema: z.number().min(0).max(200) },
         disabledWhen: {
-          condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+          condition: {
+            IS_EQUAL: [`products.${_('leg-1')}.status`, 'locked'],
+          },
         },
       },
     }
@@ -59,11 +63,13 @@ describe('TEST-007: React Integration', () => {
       storeInstance = useStoreContext<AppState>()
       const snap = useSnapshot(storeInstance.state)
       const strikeValue = snap.products['leg-1'].strike
-      const strikeConcerns = storeInstance._concerns['products.leg-1.strike']
+      const strikeConcerns =
+        storeInstance._concerns[`products.${_('leg-1')}.strike`]
 
       renderTracker.track({
         strike: strikeValue,
-        valid: !(strikeConcerns?.['validationState'] as any)?.isError,
+        valid: !(strikeConcerns?.['validationState'] as ValidationStateResult)
+          ?.isError,
       })
 
       return (
@@ -71,7 +77,8 @@ describe('TEST-007: React Integration', () => {
           value={strikeValue}
           disabled={strikeConcerns?.['disabledWhen'] as boolean | undefined}
           className={
-            !(strikeConcerns?.['validationState'] as any)?.isError
+            !(strikeConcerns?.['validationState'] as ValidationStateResult)
+              ?.isError
               ? ''
               : 'error'
           }
@@ -167,10 +174,12 @@ describe('TEST-007: React Integration', () => {
     const TradeForm = () => {
       storeInstance = useStoreContext<AppState>()
       const snap = useSnapshot(storeInstance.state)
-      const strikeConcerns = storeInstance._concerns['products.leg-1.strike']
+      const strikeConcerns =
+        storeInstance._concerns[`products.${_('leg-1')}.strike`]
 
       renderTracker.track({
-        valid: !(strikeConcerns?.['validationState'] as any)?.isError,
+        valid: !(strikeConcerns?.['validationState'] as ValidationStateResult)
+          ?.isError,
       })
 
       return <div>{snap.products['leg-1'].strike}</div>
@@ -202,10 +211,12 @@ describe('TEST-007: React Integration', () => {
     }
 
     const concerns = {
-      'products.leg-1.strike': {
+      [`products.${_('leg-1')}.strike`]: {
         validationState: { schema: z.number().min(0).max(200) },
         disabledWhen: {
-          condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+          condition: {
+            IS_EQUAL: [`products.${_('leg-1')}.status`, 'locked'],
+          },
         },
       },
     }
@@ -218,14 +229,16 @@ describe('TEST-007: React Integration', () => {
       storeInstance = useStoreContext<AppState>()
       const snap = useSnapshot(storeInstance.state)
       const strikeValue = snap.products['leg-1'].strike
-      const strikeConcerns = storeInstance._concerns['products.leg-1.strike']
+      const strikeConcerns =
+        storeInstance._concerns[`products.${_('leg-1')}.strike`]
 
       const renderEnd = performance.now()
       const renderDuration = renderEnd - renderStart
 
       renderTracker.track({
         strike: strikeValue,
-        valid: !(strikeConcerns?.['validationState'] as any)?.isError,
+        valid: !(strikeConcerns?.['validationState'] as ValidationStateResult)
+          ?.isError,
         renderDuration,
       })
 
@@ -280,12 +293,15 @@ describe('TEST-007: React Integration', () => {
     const TradeForm = () => {
       storeInstance = useStoreContext<AppState>()
       const snap = useSnapshot(storeInstance.state)
-      const strikeConcerns = storeInstance._concerns['products.leg-1.strike']
+      const strikeConcerns =
+        storeInstance._concerns[`products.${_('leg-1')}.strike`]
       const strikeValue = snap.products['leg-1'].strike
 
       renderTracker.track({
         strike: strikeValue,
-        className: !(strikeConcerns?.['validationState'] as any)?.isError
+        className: !(
+          strikeConcerns?.['validationState'] as ValidationStateResult
+        )?.isError
           ? 'valid'
           : 'error',
       })
@@ -294,7 +310,8 @@ describe('TEST-007: React Integration', () => {
         <input
           value={strikeValue}
           className={
-            !(strikeConcerns?.['validationState'] as any)?.isError
+            !(strikeConcerns?.['validationState'] as ValidationStateResult)
+              ?.isError
               ? 'valid'
               : 'error'
           }

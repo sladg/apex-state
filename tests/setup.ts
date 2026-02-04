@@ -69,7 +69,7 @@ async function flushEffects() {
  * Ensures React batching works correctly with valtio updates
  */
 const fireEvent = {
-  change: (element: Element, data: any) => {
+  change: (element: Element, data: { target: { value: unknown } }) => {
     act(() => {
       rtlFireEvent.change(element, data)
     })
@@ -93,7 +93,7 @@ const fireEvent = {
 
 // Type for the wrapped fireEvent
 interface FireEventType {
-  change: (element: Element, data: any) => void
+  change: (element: Element, data: { target: { value: unknown } }) => void
   click: (element: Element) => void
   blur: (element: Element) => void
   focus: (element: Element) => void

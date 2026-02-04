@@ -53,7 +53,7 @@ describe('Deep Access Utilities', () => {
     })
 
     it('should handle objects with null values', () => {
-      const obj = { data: null as any }
+      const obj = { data: null }
       expect(dot.get(obj, 'data')).toBeNull()
     })
   })
@@ -78,15 +78,19 @@ describe('Deep Access Utilities', () => {
     })
 
     it('should create intermediate objects if missing', () => {
-      const obj: any = {}
-      dot.set(obj, 'a.b.c', 'value')
-      expect(obj.a.b.c).toBe('value')
+      const obj: { user?: { profile?: { name?: string } } } = {}
+      dot.set(obj, 'user.profile.name', 'value')
+      expect(obj.user?.profile?.name).toBe('value')
     })
 
     it('should handle deeply nested paths', () => {
-      const obj: any = {}
+      const obj: {
+        level1?: {
+          level2?: { level3?: { level4?: { value?: string } } }
+        }
+      } = {}
       dot.set(obj, 'level1.level2.level3.level4.value', 'deep')
-      expect(obj.level1.level2.level3.level4.value).toBe('deep')
+      expect(obj.level1?.level2?.level3?.level4?.value).toBe('deep')
     })
 
     it('should overwrite existing values', () => {
@@ -106,7 +110,7 @@ describe('Deep Access Utilities', () => {
     })
 
     it('should set object values', () => {
-      const obj: any = {}
+      const obj: { data?: { nested: string } } = {}
       const newValue = { nested: 'object' }
       dot.set(obj, 'data', newValue)
       expect(obj.data).toEqual(newValue)

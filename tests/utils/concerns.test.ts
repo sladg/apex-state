@@ -15,7 +15,7 @@ describe('createTestStore', () => {
   it('creates a working test store with concern registration', async () => {
     const validationState: ConcernType = {
       name: 'validationState',
-      evaluate: (props) => {
+      evaluate: (props: any) => {
         const result = props.schema.safeParse(props.value)
         return {
           isError: !result.success,
@@ -50,7 +50,7 @@ describe('createTestStore', () => {
   it('handles multiple concerns on the same path', async () => {
     const validationState: ConcernType = {
       name: 'validationState',
-      evaluate: (props) => {
+      evaluate: (props: any) => {
         const result = props.schema.safeParse(props.value)
         return {
           isError: !result.success,
@@ -61,7 +61,7 @@ describe('createTestStore', () => {
 
     const tooltip: ConcernType = {
       name: 'tooltip',
-      evaluate: (props) => {
+      evaluate: (props: any) => {
         return props.template.replace('{{value}}', String(props.value))
       },
     }
@@ -88,7 +88,7 @@ describe('createTestStore', () => {
   it('properly cleans up on dispose', async () => {
     const validationState: ConcernType = {
       name: 'validationState',
-      evaluate: (props) => {
+      evaluate: (props: any) => {
         const result = props.schema.safeParse(props.value)
         return {
           isError: !result.success,
@@ -119,7 +119,7 @@ describe('createTestStore', () => {
   it('handles multiple registrations with different ids', async () => {
     const validationState: ConcernType = {
       name: 'validationState',
-      evaluate: (props) => {
+      evaluate: (props: any) => {
         const result = props.schema.safeParse(props.value)
         return {
           isError: !result.success,

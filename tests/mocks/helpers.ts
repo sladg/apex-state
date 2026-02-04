@@ -22,7 +22,7 @@ export const typeHelpers = {
    *
    * @example
    * ```typescript
-   * // Instead of: [`items.${id}.qty`, 10, {}] as any
+   * // Instead of: [`items.${id}.qty`, 10, {}]
    * typeHelpers.change(`items.${id}.qty`, 10, {})
    * ```
    */
@@ -39,7 +39,7 @@ export const typeHelpers = {
    *
    * @example
    * ```typescript
-   * // Instead of: ['firstName', 'lastName'] as any
+   * // Instead of: ['firstName', 'lastName']
    * typeHelpers.syncPair('firstName', 'lastName')
    * ```
    */
@@ -54,7 +54,7 @@ export const typeHelpers = {
    *
    * @example
    * ```typescript
-   * // Instead of: ['isActive', 'isInactive'] as any
+   * // Instead of: ['isActive', 'isInactive']
    * typeHelpers.flipPair('isActive', 'isInactive')
    * ```
    */
