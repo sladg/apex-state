@@ -16,8 +16,21 @@
 export type { ProviderProps, StoreConfig, StoreInstance } from './core/types'
 export { createGenericStore } from './store/createStore'
 
-// Standalone hooks
-export { useFieldTransformedStore } from './hooks/useFieldTransformedStore'
+// Standalone hooks - composable field utilities
+export {
+  type BufferedField,
+  type FieldInput,
+  useBufferedField,
+} from './hooks/useBufferedField'
+export {
+  type KeyboardSelectConfig,
+  type SelectOption,
+  useKeyboardSelect,
+} from './hooks/useKeyboardSelect'
+export {
+  type TransformConfig,
+  useTransformedField,
+} from './hooks/useTransformedField'
 
 // Graph builders for side-effect registration
 export type {
@@ -41,7 +54,6 @@ export type {
   DeepValue,
   EvaluatedConcerns,
   ExtractEvaluateReturn,
-  FieldTransformConfig,
   FlipPair,
   GenericMeta,
   PathsWithSameValueAs,

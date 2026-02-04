@@ -6,10 +6,7 @@
 
 import type { ArrayOfChanges, GenericMeta } from '../types'
 
-export interface QueueChangeArgs<
-  DATA extends object,
-  META extends GenericMeta,
-> {
+interface QueueChangeArgs<DATA extends object, META extends GenericMeta> {
   queue: ArrayOfChanges<DATA, META>
   path: string
   value: unknown

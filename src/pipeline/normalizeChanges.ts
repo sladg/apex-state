@@ -16,16 +16,7 @@ import type {
   NormalizedChangesGrouped,
 } from './normalizeChanges.types'
 
-export type {
-  AnyChange,
-  GroupedChangeMatch,
-  MatchMode,
-  NormalizeChangesArgs,
-  NormalizeChangesGroupedArgs,
-  NormalizedChange,
-  NormalizedChangesGrouped,
-  NormalizedChangesMap,
-} from './normalizeChanges.types'
+export type { AnyChange } from './normalizeChanges.types'
 
 // =============================================================================
 // Core normalization logic

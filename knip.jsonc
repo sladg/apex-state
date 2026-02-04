@@ -12,6 +12,6 @@
     "config": ["tsup.config.ts"],
   },
   "vitest": {
-    "config": ["vitest.config.ts"],
-  },
+    "config": ["vite.config.ts"],
+  }
 }

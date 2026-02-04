@@ -104,18 +104,18 @@ const isEqualObject = (a: any, b: any): boolean => {
 const iEqual = (a: unknown, b: unknown): boolean => {
   if (a === b) return true
 
-  if (a && b && isObject(a) && isObject(b)) {
-    if (isArray(a)) {
-      return isArray(b) && isEqualArray(a, b)
-    }
+  // Handle arrays first (isObject excludes arrays)
+  if (isArray(a) && isArray(b)) {
+    return isEqualArray(a, b)
+  }
 
-    if (isArray(b)) return false
-
-    if (a instanceof Date && b instanceof Date) {
+  // Handle objects (plain objects, Date, RegExp)
+  if (isObject(a) && isObject(b)) {
+    if (isDate(a) && isDate(b)) {
       return a.getTime() === b.getTime()
     }
 
-    if (a instanceof RegExp && b instanceof RegExp) {
+    if (isRegExp(a) && isRegExp(b)) {
       return a.toString() === b.toString()
     }
 

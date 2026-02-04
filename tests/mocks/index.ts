@@ -1,6 +1,5 @@
 // Types
 export type {
-  CartItem,
   FormWithErrors,
   NestedCart,
   OptimizationState,

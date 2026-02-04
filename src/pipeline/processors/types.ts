@@ -9,7 +9,7 @@ import type { AnyChange } from '../normalizeChanges.types'
 // Listener Types
 // =============================================================================
 
-export type ListenerFn = (
+type ListenerFn = (
   changes: AnyChange[],
   state: unknown,
 ) => AnyChange[] | undefined

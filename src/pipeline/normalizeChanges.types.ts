@@ -22,13 +22,6 @@ export type AnyChange = [string, unknown, GenericMeta]
  */
 export type MatchMode = 'all' | 'children-only'
 
-export interface NormalizeChangesArgs {
-  changes: AnyChange[]
-  registeredPaths: string[]
-  /** Default: 'all' */
-  matchMode?: MatchMode
-}
-
 export interface NormalizeChangesGroupedArgs {
   changes: AnyChange[]
   /** Groups of connected paths - each group is processed as a unit */
@@ -45,10 +38,8 @@ export interface NormalizedChange {
   meta: GenericMeta
 }
 
-export type NormalizedChangesMap = Map<string, NormalizedChange[]>
-
 /** Result for grouped normalization */
-export interface GroupedChangeMatch {
+interface GroupedChangeMatch {
   /** The registered path that matched */
   matchedPath: string
   /** Relative path to append to neighbor paths (null for exact/parent match) */
