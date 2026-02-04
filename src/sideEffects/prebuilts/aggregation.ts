@@ -2,7 +2,7 @@ import { effect } from 'valtio-reactive'
 
 import type { Aggregation, StoreInstance } from '../../core/types'
 import type { AggregationPair, GenericMeta } from '../../types'
-import { deepEqual, deepGetUnsafe, deepSetUnsafe } from '../../utils/deepAccess'
+import { dot } from '../../utils/dot'
 
 /**
  * Register multiple aggregations together (follows concerns pattern)
@@ -68,22 +68,19 @@ export const registerAggregations = <
     const dispose = effect(() => {
       // Early exit: stop as soon as we find a mismatch
       if (sourcePaths.length === 0) {
-        deepSetUnsafe(store.state, targetPath, undefined)
+        dot.set__unsafe(store.state, targetPath, undefined)
         return
       }
 
-      const first = deepGetUnsafe(store.state, sourcePaths[0]!)
-
-      let allEqual = true
-      for (let i = 1; i < sourcePaths.length && allEqual; i++) {
-        if (!deepEqual(deepGetUnsafe(store.state, sourcePaths[i]!), first)) {
-          allEqual = false
-        }
-      }
+      // Check if all source paths have equal values
+      const allEqual = dot.same(store.state, ...sourcePaths)
 
       // Set target: value if all equal, undefined otherwise
-      const result = allEqual ? first : undefined
-      deepSetUnsafe(store.state, targetPath, result)
+      const result = allEqual
+        ? dot.get__unsafe(store.state, sourcePaths[0]!)
+        : undefined
+
+      dot.set__unsafe(store.state, targetPath, result)
     })
 
     disposeCallbacks.push(dispose)

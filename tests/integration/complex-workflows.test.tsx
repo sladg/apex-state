@@ -5,20 +5,16 @@
  * Tests form navigation, conditional validation, and progress tracking
  */
 
-import { useState } from 'react'
-
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import type { WizardForm } from '../mocks'
 import { wizardFormFixtures } from '../mocks'
+import { WizardComponent } from '../utils/components'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 const createWizardFormStore = () => createGenericStore<WizardForm>()
-
-/** Wizard step type - used for type-safe step navigation */
-type WizardStep = WizardForm['currentStep']
 
 describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   let store: ReturnType<typeof createWizardFormStore>
@@ -28,73 +24,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.1: validates step fields before navigation', async () => {
-    function WizardComponent() {
-      const currentStepField = store.useFieldStore('currentStep')
-      const personalInfoField = store.useFieldStore('personalInfo')
-      const errorsField = store.useFieldStore('_errors')
-
-      const validateStep = (step: number): boolean => {
-        const errors = { ...errorsField.value }
-        let isValid = true
-
-        if (step === 1) {
-          const { firstName, lastName } = personalInfoField.value
-          if (!firstName) {
-            errors['personalInfo.firstName'] = ['First name required']
-            isValid = false
-          } else {
-            delete errors['personalInfo.firstName']
-          }
-          if (!lastName) {
-            errors['personalInfo.lastName'] = ['Last name required']
-            isValid = false
-          } else {
-            delete errors['personalInfo.lastName']
-          }
-        }
-
-        errorsField.setValue(errors)
-        return isValid
-      }
-
-      const handleNext = () => {
-        if (validateStep(currentStepField.value)) {
-          currentStepField.setValue((currentStepField.value + 1) as WizardStep)
-        }
-      }
-
-      return (
-        <div>
-          <span data-testid="current-step">{currentStepField.value}</span>
-          {currentStepField.value === 1 && (
-            <div>
-              <input
-                data-testid="firstName-input"
-                value={personalInfoField.value.firstName}
-                onChange={(e) => {
-                  personalInfoField.setValue({
-                    ...personalInfoField.value,
-                    firstName: e.target.value,
-                  })
-                }}
-                placeholder="First Name"
-              />
-            </div>
-          )}
-          <button data-testid="next-btn" onClick={handleNext}>
-            Next
-          </button>
-          {errorsField.value['personalInfo.firstName'] && (
-            <span data-testid="firstName-error">
-              {errorsField.value['personalInfo.firstName'][0]}
-            </span>
-          )}
-        </div>
-      )
-    }
-
     renderWithStore(
-      <WizardComponent />,
+      <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
     )
@@ -118,7 +49,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.2: stores and displays validation errors', async () => {
-    function WizardComponent() {
+    // Custom validation for this specific test
+    const CustomWizard = ({ store }: { store: any }) => {
       const personalInfoField = store.useFieldStore('personalInfo')
       const errorsField = store.useFieldStore('_errors')
 
@@ -158,7 +90,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     }
 
     renderWithStore(
-      <WizardComponent />,
+      <CustomWizard store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
     )
@@ -172,87 +104,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.3: conditionally displays fields based on step', async () => {
-    function WizardComponent() {
-      const currentStepField = store.useFieldStore('currentStep')
-      const personalInfoField = store.useFieldStore('personalInfo')
-      const addressInfoField = store.useFieldStore('addressInfo')
-
-      return (
-        <div>
-          <span data-testid="current-step">{currentStepField.value}</span>
-
-          {currentStepField.value === 1 && (
-            <div data-testid="step1-form">
-              <input
-                data-testid="firstName-input"
-                value={personalInfoField.value.firstName}
-                onChange={(e) =>
-                  personalInfoField.setValue({
-                    ...personalInfoField.value,
-                    firstName: e.target.value,
-                  })
-                }
-                placeholder="First Name"
-              />
-              <input
-                data-testid="lastName-input"
-                value={personalInfoField.value.lastName}
-                onChange={(e) =>
-                  personalInfoField.setValue({
-                    ...personalInfoField.value,
-                    lastName: e.target.value,
-                  })
-                }
-                placeholder="Last Name"
-              />
-            </div>
-          )}
-
-          {currentStepField.value === 2 && (
-            <div data-testid="step2-form">
-              <input
-                data-testid="street-input"
-                value={addressInfoField.value.street}
-                onChange={(e) =>
-                  addressInfoField.setValue({
-                    ...addressInfoField.value,
-                    street: e.target.value,
-                  })
-                }
-                placeholder="Street"
-              />
-              <input
-                data-testid="city-input"
-                value={addressInfoField.value.city}
-                onChange={(e) =>
-                  addressInfoField.setValue({
-                    ...addressInfoField.value,
-                    city: e.target.value,
-                  })
-                }
-                placeholder="City"
-              />
-            </div>
-          )}
-
-          <button
-            data-testid="next-btn"
-            onClick={() => {
-              if (currentStepField.value < 3) {
-                currentStepField.setValue(
-                  (currentStepField.value + 1) as WizardStep,
-                )
-              }
-            }}
-          >
-            Next
-          </button>
-        </div>
-      )
-    }
-
     renderWithStore(
-      <WizardComponent />,
+      <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
     )
@@ -261,7 +114,13 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     expect(screen.getByTestId('step1-form')).toBeInTheDocument()
     expect(screen.queryByTestId('step2-form')).not.toBeInTheDocument()
 
-    // Move to step 2
+    // Move to step 2 - need to fill fields first to pass validation in the shared component
+    const firstNameInput = screen.getByTestId('firstName-input')
+    const lastNameInput = screen.getByTestId('lastName-input')
+    fireEvent.change(firstNameInput, { target: { value: 'John' } })
+    fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
+    await flushEffects()
+
     const nextBtn = screen.getByTestId('next-btn')
     fireEvent.click(nextBtn)
 
@@ -272,36 +131,18 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.4: disables navigation while validation in progress', async () => {
-    function WizardComponent() {
-      const currentStepField = store.useFieldStore('currentStep')
-      const [isValidating, setIsValidating] = useState(false)
-
-      const handleNext = async () => {
-        setIsValidating(true)
-        // Simulate validation delay
-        await new Promise((resolve) => setTimeout(resolve, 50))
-        currentStepField.setValue((currentStepField.value + 1) as WizardStep)
-        setIsValidating(false)
-      }
-
-      return (
-        <div>
-          <button
-            data-testid="next-btn"
-            onClick={handleNext}
-            disabled={isValidating}
-          >
-            {isValidating ? 'Validating...' : 'Next'}
-          </button>
-        </div>
-      )
-    }
-
     renderWithStore(
-      <WizardComponent />,
+      <WizardComponent store={store} delay={50} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
     )
+
+    // Fill fields to pass validation
+    const firstNameInput = screen.getByTestId('firstName-input')
+    const lastNameInput = screen.getByTestId('lastName-input')
+    fireEvent.change(firstNameInput, { target: { value: 'John' } })
+    fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
+    await flushEffects()
 
     const nextBtn = screen.getByTestId('next-btn') as HTMLButtonElement
     expect(nextBtn.disabled).toBe(false)
@@ -315,32 +156,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.5: displays progress through steps', () => {
-    function WizardComponent() {
-      const currentStepField = store.useFieldStore('currentStep')
-      const steps = ['Personal Info', 'Address Info', 'Review']
-
-      return (
-        <div>
-          <div data-testid="progress">
-            {steps.map((label, idx) => (
-              <div
-                key={idx}
-                data-testid={`step-${idx + 1}`}
-                className={currentStepField.value === idx + 1 ? 'active' : ''}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-          <span data-testid="progress-text">
-            Step {currentStepField.value} of {steps.length}
-          </span>
-        </div>
-      )
-    }
-
     renderWithStore(
-      <WizardComponent />,
+      <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
     )
@@ -349,41 +166,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.6: review step shows aggregated form data', () => {
-    function WizardComponent() {
-      const currentStepField = store.useFieldStore('currentStep')
-      const personalInfoField = store.useFieldStore('personalInfo')
-      const addressInfoField = store.useFieldStore('addressInfo')
-
-      const aggregateData = () => {
-        const { firstName, lastName } = personalInfoField.value
-        const { street, city, zipCode } = addressInfoField.value
-        return `${firstName} ${lastName}, ${street}, ${city} ${zipCode}`
-      }
-
-      return (
-        <div>
-          <span data-testid="current-step">{currentStepField.value}</span>
-
-          {currentStepField.value === 3 && (
-            <div data-testid="review-section">
-              <h3>Review Your Information</h3>
-              <p data-testid="aggregated-data">{aggregateData()}</p>
-              <p data-testid="personal-summary">
-                {personalInfoField.value.firstName}{' '}
-                {personalInfoField.value.lastName}
-              </p>
-              <p data-testid="address-summary">
-                {addressInfoField.value.street}, {addressInfoField.value.city}{' '}
-                {addressInfoField.value.zipCode}
-              </p>
-            </div>
-          )}
-        </div>
-      )
-    }
-
     renderWithStore(
-      <WizardComponent />,
+      <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step3Review),
     )
@@ -396,44 +180,8 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.7: back button works and validation applies on forward', async () => {
-    function WizardComponent() {
-      const currentStepField = store.useFieldStore('currentStep')
-
-      return (
-        <div>
-          <span data-testid="current-step">{currentStepField.value}</span>
-          <button
-            data-testid="prev-btn"
-            onClick={() => {
-              if (currentStepField.value > 1) {
-                currentStepField.setValue(
-                  (currentStepField.value - 1) as WizardStep,
-                )
-              }
-            }}
-            disabled={currentStepField.value === 1}
-          >
-            Back
-          </button>
-          <button
-            data-testid="next-btn"
-            onClick={() => {
-              if (currentStepField.value < 3) {
-                currentStepField.setValue(
-                  (currentStepField.value + 1) as WizardStep,
-                )
-              }
-            }}
-            disabled={currentStepField.value === 3}
-          >
-            Next
-          </button>
-        </div>
-      )
-    }
-
     renderWithStore(
-      <WizardComponent />,
+      <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
     )
@@ -444,6 +192,13 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     // On step 1, back should be disabled
     expect(prevBtn.disabled).toBe(true)
     expect(nextBtn.disabled).toBe(false)
+
+    // Fill fields to pass validation
+    const firstNameInput = screen.getByTestId('firstName-input')
+    const lastNameInput = screen.getByTestId('lastName-input')
+    fireEvent.change(firstNameInput, { target: { value: 'John' } })
+    fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
+    await flushEffects()
 
     // Move to step 2
     fireEvent.click(nextBtn)
@@ -462,62 +217,9 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.8: concerns and side effects work together in workflow', async () => {
-    function WizardComponent() {
-      const currentStepField = store.useFieldStore('currentStep')
-      const personalInfoField = store.useFieldStore('personalInfo')
-
-      // Register concerns for the form
-      store.useConcerns('wizard-form', {
-        'personalInfo.firstName': {},
-        'personalInfo.lastName': {},
-      })
-
-      // Register side effects
-      store.useSideEffects('wizard-effects', {})
-
-      const handleNext = () => {
-        const { firstName, lastName } = personalInfoField.value
-        if (firstName && lastName) {
-          currentStepField.setValue((currentStepField.value + 1) as WizardStep)
-        }
-      }
-
-      return (
-        <div>
-          <span data-testid="current-step">{currentStepField.value}</span>
-          {currentStepField.value === 1 && (
-            <div>
-              <input
-                data-testid="firstName-input"
-                value={personalInfoField.value.firstName}
-                onChange={(e) =>
-                  personalInfoField.setValue({
-                    ...personalInfoField.value,
-                    firstName: e.target.value,
-                  })
-                }
-              />
-              <input
-                data-testid="lastName-input"
-                value={personalInfoField.value.lastName}
-                onChange={(e) =>
-                  personalInfoField.setValue({
-                    ...personalInfoField.value,
-                    lastName: e.target.value,
-                  })
-                }
-              />
-            </div>
-          )}
-          <button data-testid="next-btn" onClick={handleNext}>
-            Next
-          </button>
-        </div>
-      )
-    }
-
+    // Shared WizardComponent already handles basic validation and has next-btn
     renderWithStore(
-      <WizardComponent />,
+      <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
     )

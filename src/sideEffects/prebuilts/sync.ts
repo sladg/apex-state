@@ -3,7 +3,8 @@ import { connectedComponents } from 'graphology-components'
 import type { StoreInstance } from '../../core/types'
 import { processChanges } from '../../pipeline/processChanges'
 import type { ArrayOfChanges, GenericMeta } from '../../types'
-import { deepGetUnsafe } from '../../utils/deepAccess'
+import { dot } from '../../utils/dot'
+import { is } from '../../utils/is'
 
 export const registerSyncPair = <
   DATA extends object,
@@ -32,8 +33,8 @@ export const registerSyncPair = <
   // Get values and count occurrences (excluding null/undefined)
   const valueCounts = new Map<unknown, number>()
   for (const path of component) {
-    const value = deepGetUnsafe(store.state, path)
-    if (value !== null && value !== undefined) {
+    const value = dot.get__unsafe(store.state, path)
+    if (is.not.nil(value)) {
       const count = valueCounts.get(value) ?? 0
       valueCounts.set(value, count + 1)
     }
@@ -50,10 +51,10 @@ export const registerSyncPair = <
   }
 
   // Sync all paths to most common value (if one exists)
-  if (mostCommonValue !== undefined) {
+  if (is.not.undefined(mostCommonValue)) {
     const changes: ArrayOfChanges<DATA, META> = []
     for (const path of component) {
-      const currentValue = deepGetUnsafe(store.state, path)
+      const currentValue = dot.get__unsafe(store.state, path)
       if (currentValue !== mostCommonValue) {
         // Type cast needed: path is validated at registration, isSyncPathChange is GenericMeta property
         changes.push([

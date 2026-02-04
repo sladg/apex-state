@@ -10,6 +10,7 @@ import { describe, expect, test } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import { typeHelpers } from '../mocks'
+import { Component } from '../utils/components'
 import { renderWithStore } from '../utils/react'
 
 describe('Integration: Core Features Working Together', () => {
@@ -22,25 +23,15 @@ describe('Integration: Core Features Working Together', () => {
 
     const store = createGenericStore<State>()
 
-    function Component() {
-      store.useSideEffects('test', {
-        syncPaths: [typeHelpers.syncPair<State>('a', 'b')],
-      })
-
-      const [a] = store.useStore('a')
-      const [b] = store.useStore('b')
-      const [c] = store.useStore('c')
-
-      return (
-        <div>
-          <span data-testid="a">{a}</span>
-          <span data-testid="b">{b}</span>
-          <span data-testid="c">{c}</span>
-        </div>
-      )
+    const sideEffects = {
+      syncPaths: [typeHelpers.syncPair<State>('a', 'b')],
     }
 
-    renderWithStore(<Component />, store, { a: 1, b: 1, c: 5 })
+    renderWithStore(
+      <Component store={store} sideEffects={sideEffects} />,
+      store,
+      { a: 1, b: 1, c: 5 },
+    )
 
     // Sync: a and b should be synced (both 1)
     expect(screen.getByTestId('a').textContent).toBe('1')
@@ -60,33 +51,21 @@ describe('Integration: Core Features Working Together', () => {
 
     const store = createGenericStore<State>()
 
-    function Component() {
-      store.useSideEffects('multi-effects', {
-        syncPaths: [typeHelpers.syncPair<State>('field1', 'field2')],
-        flipPaths: [typeHelpers.flipPair<State>('flag1', 'flag2')],
-      })
-
-      const [field1] = store.useStore('field1')
-      const [field2] = store.useStore('field2')
-      const [flag1] = store.useStore('flag1')
-      const [flag2] = store.useStore('flag2')
-
-      return (
-        <div>
-          <span data-testid="field1">{field1}</span>
-          <span data-testid="field2">{field2}</span>
-          <span data-testid="flag1">{flag1.toString()}</span>
-          <span data-testid="flag2">{flag2.toString()}</span>
-        </div>
-      )
+    const sideEffects = {
+      syncPaths: [typeHelpers.syncPair<State>('field1', 'field2')],
+      flipPaths: [typeHelpers.flipPair<State>('flag1', 'flag2')],
     }
 
-    renderWithStore(<Component />, store, {
-      field1: 'test',
-      field2: 'test',
-      flag1: true,
-      flag2: false,
-    })
+    renderWithStore(
+      <Component store={store} sideEffects={sideEffects} />,
+      store,
+      {
+        field1: 'test',
+        field2: 'test',
+        flag1: true,
+        flag2: false,
+      },
+    )
 
     // Sync: fields should match
     expect(screen.getByTestId('field1').textContent).toBe('test')
@@ -103,19 +82,7 @@ describe('Integration: Core Features Working Together', () => {
     }
     const store = createGenericStore<State>()
 
-    function Component() {
-      const field = store.useFieldStore('value')
-      const { proxyValue } = store.useJitStore()
-
-      return (
-        <div>
-          <span data-testid="field-value">{field.value}</span>
-          <span data-testid="proxy-value">{proxyValue.value}</span>
-        </div>
-      )
-    }
-
-    renderWithStore(<Component />, store, { value: 'test-value' })
+    renderWithStore(<Component store={store} />, store, { value: 'test-value' })
 
     expect(screen.getByTestId('field-value').textContent).toBe('test-value')
     expect(screen.getByTestId('proxy-value').textContent).toBe('test-value')

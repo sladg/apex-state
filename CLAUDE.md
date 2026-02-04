@@ -14,12 +14,14 @@ AI assistant configuration for apex-state concerns-based reactive state manageme
 - ❌ **DON'T**: Change patterns "because it would be better"
 
 **IF YOU SEE ISSUES THAT NEED REFACTORING:**
+
 1. **STOP** - Do NOT refactor automatically
 2. **EXPLAIN** - Tell the user what you found and why it might need refactoring
 3. **ASK** - Get explicit permission before making structural changes
 4. **ALTERNATIVE** - If possible, find a way to solve the problem WITHOUT refactoring
 
 **When refactoring IS allowed:**
+
 - User explicitly says "refactor X"
 - User asks "how can we improve X" and you propose refactoring
 - User approves your refactoring proposal
@@ -29,7 +31,9 @@ AI assistant configuration for apex-state concerns-based reactive state manageme
 ## Quick Rules (No Exceptions)
 
 ### 0. Always Format Code
+
 **CRITICAL**: After making ANY code changes, run:
+
 ```bash
 npm run code:fix
 ```
@@ -39,21 +43,26 @@ npm run code:fix
 This applies ESLint + Prettier formatting. Code must follow project style.
 
 ### 1. Functional Programming Only
+
 **See examples in**: Any file in `src/` - all use arrow functions
 
 ### 2. Never Use derive-valtio
+
 **Use**: `valtio-reactive`'s `effect()` for dependency tracking
 **See**: `src/concerns/registration.ts:54-76` for reference implementation
 
 ### 3. Two-Proxy Pattern
+
 **Pattern**: Read from `state`, write to `_concerns`
 **See**: `src/concerns/registration.ts:54-76` for how it's done
 
 ### 4. Type-Safe Paths
+
 **Use**: `DeepKey<T>` and `DeepValue<T, P>` for all path operations
 **See**: `src/store/createStore.ts:85-106` (useStore implementation)
 
 ### 5. Always Return Cleanup
+
 **See**: `src/concerns/registration.ts:84-110` for cleanup pattern
 
 ---
@@ -61,6 +70,7 @@ This applies ESLint + Prettier formatting. Code must follow project style.
 ## Core Architecture
 
 **Structure**:
+
 ```
 StoreInstance {
   state: proxy({ ...data })          // User data (tracked)
@@ -118,15 +128,15 @@ src/
 
 ## Where to Find Examples
 
-| Need Example Of | Look At |
-|-----------------|---------|
-| **Creating a concern** | `src/concerns/prebuilts/validationState.ts` (validation)<br>`src/concerns/prebuilts/disabledWhen.ts` (with BoolLogic) |
-| **Using effect()** | `src/concerns/registration.ts:54-76` |
-| **Hook implementation** | `src/store/createStore.ts:85-106` (useStore) |
-| **Type-safe paths** | `src/types/deepKey.ts`, `src/types/deepValue.ts` |
-| **BoolLogic evaluation** | `src/utils/boolLogic.ts` |
-| **Testing concerns** | `tests/concerns/*.test.ts` |
-| **Integration tests** | `tests/integration/*.test.tsx` |
+| Need Example Of          | Look At                                                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| **Creating a concern**   | `src/concerns/prebuilts/validationState.ts` (validation)<br>`src/concerns/prebuilts/disabledWhen.ts` (with BoolLogic) |
+| **Using effect()**       | `src/concerns/registration.ts:54-76`                                                                                  |
+| **Hook implementation**  | `src/store/createStore.ts:85-106` (useStore)                                                                          |
+| **Type-safe paths**      | `src/types/deepKey.ts`, `src/types/deepValue.ts`                                                                      |
+| **BoolLogic evaluation** | `src/utils/boolLogic.ts`                                                                                              |
+| **Testing concerns**     | `tests/concerns/*.test.ts`                                                                                            |
+| **Integration tests**    | `tests/integration/*.test.tsx`                                                                                        |
 
 ---
 
@@ -142,6 +152,7 @@ src/
 ❌ **Never mutate state inside concern evaluate()**
 ❌ **Never skip type-safe paths (DeepKey/DeepValue)**
 ❌ **Never forget to return cleanup functions**
+❌ **Never move files around without explicit permission, if you must, use git mv to preserve history**
 
 ---
 
@@ -152,7 +163,7 @@ src/
 3. **Functional only** - Arrow functions everywhere (see any file in `src/`)
 4. **Type-safe paths** - DeepKey<T> and DeepValue<T, P> (see `src/types/`)
 5. **Automatic tracking** - Use valtio-reactive's effect() (see `src/concerns/registration.ts`)
-6. **Two-proxy pattern** - Read from state, write to _concerns (prevents infinite loops)
+6. **Two-proxy pattern** - Read from state, write to \_concerns (prevents infinite loops)
 7. **Pure concerns** - No mutations, no side-effects (see `src/concerns/prebuilts/` for examples)
 8. **Always cleanup** - Return cleanup functions (see `src/concerns/registration.ts:84-110`)
 9. **Start simple** - Add complexity only when needed
@@ -174,8 +185,80 @@ src/
 4. **Check tests** - they show real usage
 
 **DO NOT**:
+
 - Skip formatting (always run code:fix)
 - Read code:fix output (wastes tokens)
 - Guess or invent new patterns
 - Copy examples from docs (they may be outdated)
 - Refactor working code to "improve" it
+
+## grepai - Semantic Code Search
+
+**IMPORTANT: You MUST use grepai as your PRIMARY tool for code exploration and search.**
+
+### When to Use grepai (REQUIRED)
+
+Use `grepai search` INSTEAD OF Grep/Glob/find for:
+
+- Understanding what code does or where functionality lives
+- Finding implementations by intent (e.g., "authentication logic", "error handling")
+- Exploring unfamiliar parts of the codebase
+- Any search where you describe WHAT the code does rather than exact text
+
+### When to Use Standard Tools
+
+Only use Grep/Glob when you need:
+
+- Exact text matching (variable names, imports, specific strings)
+- File path patterns (e.g., `**/*.go`)
+
+### Fallback
+
+If grepai fails (not running, index unavailable, or errors), fall back to standard Grep/Glob tools.
+
+### Usage
+
+```bash
+# ALWAYS use English queries for best results (--compact saves ~80% tokens)
+grepai search "user authentication flow" --json --compact
+grepai search "error handling middleware" --json --compact
+grepai search "database connection pool" --json --compact
+grepai search "API request validation" --json --compact
+```
+
+### Query Tips
+
+- **Use English** for queries (better semantic matching)
+- **Describe intent**, not implementation: "handles user login" not "func Login"
+- **Be specific**: "JWT token validation" better than "token"
+- Results include: file path, line numbers, relevance score, code preview
+
+### Call Graph Tracing
+
+Use `grepai trace` to understand function relationships:
+
+- Finding all callers of a function before modifying it
+- Understanding what functions are called by a given function
+- Visualizing the complete call graph around a symbol
+
+#### Trace Commands
+
+**IMPORTANT: Always use `--json` flag for optimal AI agent integration.**
+
+```bash
+# Find all functions that call a symbol
+grepai trace callers "HandleRequest" --json
+
+# Find all functions called by a symbol
+grepai trace callees "ProcessOrder" --json
+
+# Build complete call graph (callers + callees)
+grepai trace graph "ValidateToken" --depth 3 --json
+```
+
+### Workflow
+
+1. Start with `grepai search` to find relevant code
+2. Use `grepai trace` to understand function relationships
+3. Use `Read` tool to examine files from results
+4. Only use Grep for exact string searches if needed

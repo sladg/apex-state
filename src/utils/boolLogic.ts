@@ -1,26 +1,33 @@
-import _get from 'lodash/get'
-import _gt from 'lodash/gt'
-import _gte from 'lodash/gte'
-import _includes from 'lodash/includes'
-import _isEmpty from 'lodash/isEmpty'
-import _isNil from 'lodash/isNil'
-import _isNumber from 'lodash/isNumber'
-import _lt from 'lodash/lt'
-import _lte from 'lodash/lte'
-
 import type { BoolLogic, ComparableValue } from '../types'
+import { dot } from './dot'
+import { is } from './is'
 
-const isValueEmpty = (value: unknown): boolean => {
-  if (_isNil(value)) return true
-  if (_isNumber(value) || typeof value === 'boolean') return false
-  return _isEmpty(value)
+const evaluateNumericComparison = <STATE extends object>(
+  logic: BoolLogic<STATE>,
+  state: STATE,
+): boolean | undefined => {
+  if ('GT' in logic) {
+    const [path, threshold] = logic.GT
+    const value = dot.get__unsafe(state, path)
+    return is.number(value) && value > threshold
+  }
+  if ('LT' in logic) {
+    const [path, threshold] = logic.LT
+    const value = dot.get__unsafe(state, path)
+    return is.number(value) && value < threshold
+  }
+  if ('GTE' in logic) {
+    const [path, threshold] = logic.GTE
+    const value = dot.get__unsafe(state, path)
+    return is.number(value) && value >= threshold
+  }
+  if ('LTE' in logic) {
+    const [path, threshold] = logic.LTE
+    const value = dot.get__unsafe(state, path)
+    return is.number(value) && value <= threshold
+  }
+  return undefined
 }
-
-const evaluateNumericComparison = (
-  value: unknown,
-  threshold: number,
-  comparator: (a: number, b: number) => boolean,
-): boolean => _isNumber(value) && comparator(value, threshold)
 
 export const evaluateBoolLogic = <STATE extends object>(
   logic: BoolLogic<STATE>,
@@ -29,17 +36,17 @@ export const evaluateBoolLogic = <STATE extends object>(
   // Equality check
   if ('IS_EQUAL' in logic) {
     const [path, expected] = logic.IS_EQUAL
-    return _get(state, path) === expected
+    return dot.get__unsafe(state, path) === expected
   }
 
   // Existence check (not null/undefined)
   if ('EXISTS' in logic) {
-    return !_isNil(_get(state, logic.EXISTS))
+    return is.not.nil(dot.get__unsafe(state, logic.EXISTS))
   }
 
   // Emptiness check
   if ('IS_EMPTY' in logic) {
-    return isValueEmpty(_get(state, logic.IS_EMPTY))
+    return is.empty(dot.get__unsafe(state, logic.IS_EMPTY))
   }
 
   // Boolean combinators
@@ -53,28 +60,16 @@ export const evaluateBoolLogic = <STATE extends object>(
     return !evaluateBoolLogic(logic.NOT, state)
   }
 
-  // Numeric comparisons using lodash
-  if ('GT' in logic) {
-    const [path, threshold] = logic.GT
-    return evaluateNumericComparison(_get(state, path), threshold, _gt)
-  }
-  if ('LT' in logic) {
-    const [path, threshold] = logic.LT
-    return evaluateNumericComparison(_get(state, path), threshold, _lt)
-  }
-  if ('GTE' in logic) {
-    const [path, threshold] = logic.GTE
-    return evaluateNumericComparison(_get(state, path), threshold, _gte)
-  }
-  if ('LTE' in logic) {
-    const [path, threshold] = logic.LTE
-    return evaluateNumericComparison(_get(state, path), threshold, _lte)
+  // Numeric comparisons
+  const numericResult = evaluateNumericComparison(logic, state)
+  if (is.not.undefined(numericResult)) {
+    return numericResult
   }
 
   // Inclusion check
   if ('IN' in logic) {
     const [path, allowed] = logic.IN
-    return _includes(allowed, _get(state, path) as ComparableValue)
+    return allowed.includes(dot.get__unsafe(state, path) as ComparableValue)
   }
 
   return false

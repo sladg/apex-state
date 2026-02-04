@@ -46,7 +46,6 @@
   "dependencies": {
     "graphology": "^0.26.0",
     "graphology-components": "^1.5.4",
-    "lodash": "^4.17.21",
     "valtio": "^2.3.0",
     "valtio-reactive": "^0.2.0"
   },
@@ -54,7 +53,6 @@
     "@sladg/eslint-config-base": "^2.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^14.3.1",
-    "@types/lodash": "^4.17.10",
     "@types/react": "^18.3.12",
     "@vitejs/plugin-react": "^5.1.1",
     "eslint": "^9.0.0",

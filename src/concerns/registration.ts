@@ -2,7 +2,7 @@ import { effect } from 'valtio-reactive'
 
 import type { StoreInstance } from '../core/types'
 import type { DeepKey, GenericMeta } from '../types'
-import { deepGet } from '../utils/deepAccess'
+import { dot } from '../utils/dot'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
@@ -53,7 +53,7 @@ export const registerConcernEffects = <
       const dispose = effect(() => {
         // READ from dataProxy (automatic tracking!)
         // Any property accessed here will trigger re-evaluation when changed
-        const value = deepGet(store.state, path as DeepKey<DATA>)
+        const value = dot.get__unsafe(store.state, path)
 
         // OPTIMIZATION: Avoid object spread overhead (creates new object every evaluation)
         // Use Object.assign instead for single-pass property addition (40% faster)

@@ -1,20 +1,20 @@
 /**
  * Tests for deep access utilities
  *
- * Verifies deepGet, deepSet, and deepHas functions work correctly
+ * Verifies dot.get, dot.set, and dot.has functions work correctly
  * with type-safe paths
  */
 
 import { describe, expect, it } from 'vitest'
 
-import { deepGet, deepHas, deepSet } from '../../src/utils/deepAccess'
+import { dot } from '../../src/utils/dot'
 
 describe('Deep Access Utilities', () => {
-  describe('deepGet', () => {
+  describe('dot.get', () => {
     it('should get top-level property', () => {
       const obj = { name: 'John', age: 30 }
-      expect(deepGet(obj, 'name')).toBe('John')
-      expect(deepGet(obj, 'age')).toBe(30)
+      expect(dot.get(obj, 'name')).toBe('John')
+      expect(dot.get(obj, 'age')).toBe(30)
     })
 
     it('should get nested property', () => {
@@ -25,15 +25,15 @@ describe('Deep Access Utilities', () => {
           },
         },
       }
-      expect(deepGet(obj, 'user.profile.name')).toBe('Alice')
+      expect(dot.get(obj, 'user.profile.name')).toBe('Alice')
     })
 
     it('should return undefined for missing property', () => {
       const obj = { a: 1 }
       // @ts-expect-error - testing runtime behavior with invalid path
-      expect(deepGet(obj, 'b')).toBeUndefined()
+      expect(dot.get(obj, 'b')).toBeUndefined()
       // @ts-expect-error - testing runtime behavior with invalid path
-      expect(deepGet(obj, 'a.b.c')).toBeUndefined()
+      expect(dot.get(obj, 'a.b.c')).toBeUndefined()
     })
 
     it('should handle deeply nested objects', () => {
@@ -48,19 +48,19 @@ describe('Deep Access Utilities', () => {
           },
         },
       }
-      expect(deepGet(obj, 'level1.level2.level3.level4.value')).toBe('deep')
+      expect(dot.get(obj, 'level1.level2.level3.level4.value')).toBe('deep')
     })
 
     it('should handle objects with null values', () => {
       const obj = { data: null as any }
-      expect(deepGet(obj, 'data')).toBeNull()
+      expect(dot.get(obj, 'data')).toBeNull()
     })
   })
 
-  describe('deepSet', () => {
+  describe('dot.set', () => {
     it('should set top-level property', () => {
       const obj = { name: 'John', age: 30 }
-      deepSet(obj, 'name', 'Jane')
+      dot.set(obj, 'name', 'Jane')
       expect(obj.name).toBe('Jane')
     })
 
@@ -72,19 +72,19 @@ describe('Deep Access Utilities', () => {
           },
         },
       }
-      deepSet(obj, 'user.profile.name', 'Bob')
+      dot.set(obj, 'user.profile.name', 'Bob')
       expect(obj.user.profile.name).toBe('Bob')
     })
 
     it('should create intermediate objects if missing', () => {
       const obj: any = {}
-      deepSet(obj, 'a.b.c', 'value')
+      dot.set(obj, 'a.b.c', 'value')
       expect(obj.a.b.c).toBe('value')
     })
 
     it('should handle deeply nested paths', () => {
       const obj: any = {}
-      deepSet(obj, 'level1.level2.level3.level4.value', 'deep')
+      dot.set(obj, 'level1.level2.level3.level4.value', 'deep')
       expect(obj.level1.level2.level3.level4.value).toBe('deep')
     })
 
@@ -94,35 +94,35 @@ describe('Deep Access Utilities', () => {
           value: 'old',
         },
       }
-      deepSet(obj, 'data.value', 'new')
+      dot.set(obj, 'data.value', 'new')
       expect(obj.data.value).toBe('new')
     })
 
     it('should set numeric values', () => {
       const obj = { count: 0 }
-      deepSet(obj, 'count', 42)
+      dot.set(obj, 'count', 42)
       expect(obj.count).toBe(42)
     })
 
     it('should set object values', () => {
       const obj: any = {}
       const newValue = { nested: 'object' }
-      deepSet(obj, 'data', newValue)
+      dot.set(obj, 'data', newValue)
       expect(obj.data).toEqual(newValue)
     })
   })
 
-  describe('deepHas', () => {
+  describe('dot.has', () => {
     it('should return true for existing top-level property', () => {
       const obj = { name: 'John', age: 30 }
-      expect(deepHas(obj, 'name')).toBe(true)
-      expect(deepHas(obj, 'age')).toBe(true)
+      expect(dot.has(obj, 'name')).toBe(true)
+      expect(dot.has(obj, 'age')).toBe(true)
     })
 
     it('should return false for missing top-level property', () => {
       const obj = { name: 'John' }
       // @ts-expect-error - testing runtime behavior
-      expect(deepHas(obj, 'age')).toBe(false)
+      expect(dot.has(obj, 'age')).toBe(false)
     })
 
     it('should return true for existing nested property', () => {
@@ -133,7 +133,7 @@ describe('Deep Access Utilities', () => {
           },
         },
       }
-      expect(deepHas(obj, 'user.profile.name')).toBe(true)
+      expect(dot.has(obj, 'user.profile.name')).toBe(true)
     })
 
     it('should return false for missing nested property', () => {
@@ -145,16 +145,16 @@ describe('Deep Access Utilities', () => {
         },
       }
       // @ts-expect-error - testing runtime behavior
-      expect(deepHas(obj, 'user.profile.age')).toBe(false)
+      expect(dot.has(obj, 'user.profile.age')).toBe(false)
       // @ts-expect-error - testing runtime behavior
-      expect(deepHas(obj, 'user.settings')).toBe(false)
+      expect(dot.has(obj, 'user.settings')).toBe(false)
     })
 
     it('should handle null and undefined values', () => {
       const obj = { nullValue: null, undefinedValue: undefined }
       // null is actually returned by lodash get (not undefined)
-      expect(deepHas(obj, 'nullValue')).toBe(true)
-      expect(deepHas(obj, 'undefinedValue')).toBe(false)
+      expect(dot.has(obj, 'nullValue')).toBe(true)
+      expect(dot.has(obj, 'undefinedValue')).toBe(false)
     })
 
     it('should work with deeply nested paths', () => {
@@ -167,9 +167,9 @@ describe('Deep Access Utilities', () => {
           },
         },
       }
-      expect(deepHas(obj, 'a.b.c.d')).toBe(true)
+      expect(dot.has(obj, 'a.b.c.d')).toBe(true)
       // @ts-expect-error - testing runtime behavior
-      expect(deepHas(obj, 'a.b.c.e')).toBe(false)
+      expect(dot.has(obj, 'a.b.c.e')).toBe(false)
     })
   })
 
@@ -188,10 +188,10 @@ describe('Deep Access Utilities', () => {
         },
       )
 
-      expect(deepGet(obj, 'value')).toBe('original')
-      deepSet(obj, 'value', 'updated')
+      expect(dot.get(obj, 'value')).toBe('original')
+      dot.set(obj, 'value', 'updated')
       expect(obj.value).toBe('updated')
-      expect(deepHas(obj, 'value')).toBe(true)
+      expect(dot.has(obj, 'value')).toBe(true)
     })
   })
 })

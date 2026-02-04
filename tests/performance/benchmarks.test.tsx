@@ -12,14 +12,13 @@
  * catch regressions. Adjust bounds per machine if needed.
  */
 
-import lodashSet from 'lodash/set'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
 import type { BoolLogic } from '../../src/types/boolLogic'
 import { evaluateBoolLogic } from '../../src/utils/boolLogic'
-import { deepGetUnsafe } from '../../src/utils/deepAccess'
+import { dot } from '../../src/utils/dot'
 import { interpolateTemplate } from '../../src/utils/interpolation'
 import { typeHelpers } from '../mocks'
 import { flushSync, renderWithStore } from '../utils/react'
@@ -133,7 +132,7 @@ describe('Benchmark: deepGet (lodash _get) throughput', () => {
 
     const start = performance.now()
     for (let i = 0; i < iterations; i++) {
-      deepGetUnsafe(state, SHALLOW_PATH)
+      dot.get__unsafe(state, SHALLOW_PATH)
     }
     const elapsed = performance.now() - start
     const perOp = (elapsed / iterations) * 1000 // µs
@@ -151,7 +150,7 @@ describe('Benchmark: deepGet (lodash _get) throughput', () => {
 
     const start = performance.now()
     for (let i = 0; i < iterations; i++) {
-      deepGetUnsafe(state, MEDIUM_PATH)
+      dot.get__unsafe(state, MEDIUM_PATH)
     }
     const elapsed = performance.now() - start
     const perOp = (elapsed / iterations) * 1000
@@ -169,7 +168,7 @@ describe('Benchmark: deepGet (lodash _get) throughput', () => {
 
     const start = performance.now()
     for (let i = 0; i < iterations; i++) {
-      deepGetUnsafe(state, DEEP_PATH)
+      dot.get__unsafe(state, DEEP_PATH)
     }
     const elapsed = performance.now() - start
     const perOp = (elapsed / iterations) * 1000
@@ -206,7 +205,7 @@ describe('Benchmark: deepGet (lodash _get) throughput', () => {
     // Lodash approach
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      deepGetUnsafe(state, DEEP_PATH)
+      dot.get__unsafe(state, DEEP_PATH)
     }
     const lodashElapsed = performance.now() - startLodash
 
@@ -253,7 +252,7 @@ describe('Benchmark: deepSet — lodash vs native', () => {
     const state1 = makeBenchState()
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      lodashSet(state1, DEEP_PATH, 0.12 + (i % 100) * 0.001)
+      dot.set__unsafe(state1, DEEP_PATH, 0.12 + (i % 100) * 0.001)
     }
     const lodashElapsed = performance.now() - startLodash
 
@@ -274,7 +273,7 @@ describe('Benchmark: deepSet — lodash vs native', () => {
     )
 
     // Verify both produce the same result
-    lodashSet(state1, DEEP_PATH, 0.999)
+    dot.set__unsafe(state1, DEEP_PATH, 0.999)
     nativeSet(state2, DEEP_PATH, 0.999)
     expect(state1).toEqual(state2)
 
@@ -297,7 +296,7 @@ describe('Benchmark: deepSet — lodash vs native', () => {
     const state1 = makeBenchState()
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      lodashSet(state1, MEDIUM_PATH, 1.1 + (i % 100) * 0.01)
+      dot.set__unsafe(state1, MEDIUM_PATH, 1.1 + (i % 100) * 0.01)
     }
     const lodashElapsed = performance.now() - startLodash
 
@@ -337,7 +336,7 @@ describe('Benchmark: deepSet — lodash vs native', () => {
     const state1 = makeBenchState()
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      lodashSet(state1, SHALLOW_PATH, i % 2 === 0)
+      dot.set__unsafe(state1, SHALLOW_PATH, i % 2 === 0)
     }
     const lodashElapsed = performance.now() - startLodash
 
@@ -522,10 +521,10 @@ describe('Benchmark: type-safe vs any-based deep access', () => {
     }
     const anyElapsed = performance.now() - startAny
 
-    // Benchmark deepGetUnsafe (lodash, used in library)
+    // Benchmark dot.get__unsafe (lodash, used in library)
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      deepGetUnsafe(state, DEEP_PATH)
+      dot.get__unsafe(state, DEEP_PATH)
     }
     const lodashElapsed = performance.now() - startLodash
 
@@ -535,7 +534,7 @@ describe('Benchmark: type-safe vs any-based deep access', () => {
 
     console.log(`  Reflect.get (type-safe): ${reflectPerOp.toFixed(3)}µs/op`)
     console.log(`  acc?.[key]  (any-based): ${anyPerOp.toFixed(3)}µs/op`)
-    console.log(`  deepGetUnsafe  (lodash): ${lodashPerOp.toFixed(3)}µs/op`)
+    console.log(`  dot.get__unsafe  (lodash): ${lodashPerOp.toFixed(3)}µs/op`)
     console.log(
       `  Reflect vs any ratio:   ${(reflectElapsed / anyElapsed).toFixed(2)}x`,
     )
@@ -545,7 +544,7 @@ describe('Benchmark: type-safe vs any-based deep access', () => {
 
     // Verify all return same result
     expect(reflectGet(state, DEEP_PATH)).toBe(anyGet(state, DEEP_PATH))
-    expect(reflectGet(state, DEEP_PATH)).toBe(deepGetUnsafe(state, DEEP_PATH))
+    expect(reflectGet(state, DEEP_PATH)).toBe(dot.get__unsafe(state, DEEP_PATH))
 
     // All should complete in reasonable time
     expect(reflectElapsed).toBeLessThan(500)
@@ -587,7 +586,7 @@ describe('Benchmark: type-safe vs any-based deep access', () => {
 
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      deepGetUnsafe(state, SHALLOW_PATH)
+      dot.get__unsafe(state, SHALLOW_PATH)
     }
     const lodashElapsed = performance.now() - startLodash
 
@@ -642,7 +641,7 @@ describe('Benchmark: type-safe vs any-based deep access', () => {
 
     const startLodash = performance.now()
     for (let i = 0; i < iterations; i++) {
-      deepGetUnsafe(state, MEDIUM_PATH)
+      dot.get__unsafe(state, MEDIUM_PATH)
     }
     const lodashElapsed = performance.now() - startLodash
 
@@ -717,7 +716,7 @@ describe('Benchmark: interpolateTemplate throughput', () => {
     const startInline = performance.now()
     for (let i = 0; i < iterations; i++) {
       template.replace(/\{\{([^}]+)\}\}/g, (_match, path) => {
-        const val = deepGetUnsafe(state, path)
+        const val = dot.get__unsafe(state, path)
         return typeof val === 'number' ? String(val) : String(val)
       })
     }
@@ -729,7 +728,7 @@ describe('Benchmark: interpolateTemplate throughput', () => {
     for (let i = 0; i < iterations; i++) {
       REGEX.lastIndex = 0
       template.replace(REGEX, (_match, path) => {
-        const val = deepGetUnsafe(state, path)
+        const val = dot.get__unsafe(state, path)
         return typeof val === 'number' ? String(val) : String(val)
       })
     }

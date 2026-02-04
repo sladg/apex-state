@@ -5,6 +5,8 @@
  * valtio's proxyWithComputed pattern.
  */
 
+import { is } from './is'
+
 /**
  * Detects getter properties in an object (including nested objects)
  * Returns an object mapping property paths to their getter functions
@@ -32,7 +34,7 @@ export const detectGetters = <T extends object>(
 
   for (const [key, descriptor] of Object.entries(descriptors)) {
     // Skip non-enumerable properties and symbols
-    if (!descriptor.enumerable || typeof key === 'symbol') {
+    if (!descriptor.enumerable || is.not.symbol(key)) {
       continue
     }
 
@@ -53,12 +55,9 @@ export const detectGetters = <T extends object>(
     }
     // Recursively check nested objects (but not functions, arrays, or primitives)
     else if (
-      descriptor.value &&
-      typeof descriptor.value === 'object' &&
-      descriptor.value !== null &&
-      !Array.isArray(descriptor.value) &&
-      !(descriptor.value instanceof Date) &&
-      !(descriptor.value instanceof RegExp)
+      is.object(descriptor.value) &&
+      is.not.date(descriptor.value) &&
+      is.not.regexp(descriptor.value)
     ) {
       const nestedGetters = detectGetters(descriptor.value, fullPath)
       Object.assign(getters, nestedGetters)
@@ -99,7 +98,7 @@ export const extractGetters = <T extends object>(
   const descriptors = Object.getOwnPropertyDescriptors(obj)
 
   for (const [key, descriptor] of Object.entries(descriptors)) {
-    if (!descriptor.enumerable || typeof key === 'symbol') {
+    if (!descriptor.enumerable || is.not.symbol(key)) {
       continue
     }
 

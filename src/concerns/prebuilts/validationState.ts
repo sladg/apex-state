@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import type { DeepKey, DeepValue } from '../../types'
-import { deepGetUnsafe } from '../../utils/deepAccess'
+import { dot } from '../../utils/dot'
 import type { BaseConcernProps } from '../types'
 
 export interface ValidationError {
@@ -32,10 +32,10 @@ export const validationState = {
     props: BaseConcernProps<any, PATH> & ValidationStateInput<SUB_STATE, PATH>,
   ): ValidationStateResult => {
     // If scope is provided, validate at scope path; otherwise validate at registration path
-    // Note: props.scope is a runtime string path, use deepGetUnsafe for dynamic access
+    // Note: props.scope is a runtime string path, use dot.get__unsafe for dynamic access
     const valueToValidate =
       'scope' in props && props.scope
-        ? deepGetUnsafe(props.state, props.scope)
+        ? dot.get__unsafe(props.state, props.scope)
         : props.value
 
     // Run Zod validation

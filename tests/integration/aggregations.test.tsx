@@ -10,17 +10,15 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import {
-  CartItem,
-  NestedCart,
   nestedCartFixtures,
   ShoppingCart,
   shoppingCartFixtures,
-  typeHelpers,
 } from '../mocks'
+import { CartComponent } from '../utils/components'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
 const createShoppingCartStore = () => createGenericStore<ShoppingCart>()
-const createNestedCartStore = () => createGenericStore<NestedCart>()
+const createNestedCartStore = () => createGenericStore<any>()
 
 describe('Integration: Computed Values & Aggregations', () => {
   let store: ReturnType<typeof createShoppingCartStore>
@@ -30,42 +28,11 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.1: recalculates cart subtotal when item added', async () => {
-    function CartComponent() {
-      const { setChanges } = store.useJitStore()
-
-      const handleAddItem = () => {
-        const newId = `item-${Date.now()}`
-        setChanges([
-          [
-            `items.${newId}`,
-            {
-              name: 'Test Item',
-              price: 10,
-              quantity: 1,
-              subtotal: 10,
-            },
-            {},
-          ],
-        ])
-      }
-
-      const items = store.useFieldStore('items')
-      const subtotal = store.useFieldStore('subtotal')
-
-      return (
-        <div>
-          <button data-testid="add-item-btn" onClick={handleAddItem}>
-            Add Item
-          </button>
-          <span data-testid="item-count">
-            {Object.keys(items.value).length}
-          </span>
-          <span data-testid="subtotal">{subtotal.value}</span>
-        </div>
-      )
-    }
-
-    renderWithStore(<CartComponent />, store, shoppingCartFixtures.empty)
+    renderWithStore(
+      <CartComponent store={store} />,
+      store,
+      shoppingCartFixtures.empty,
+    )
 
     const addBtn = screen.getByTestId('add-item-btn')
     fireEvent.click(addBtn)
@@ -76,40 +43,11 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.2: updates item subtotal when quantity changes', async () => {
-    function CartComponent() {
-      const { getState, setChanges } = store.useJitStore()
-
-      const handleChangeQuantity = (itemId: string, newQuantity: number) => {
-        const state = getState()
-        const item = state.items[itemId]!
-        const newSubtotal = item.price * newQuantity
-        setChanges([
-          typeHelpers.change<ShoppingCart>(
-            `items.${itemId}.quantity`,
-            newQuantity,
-            {},
-          ),
-          typeHelpers.change<ShoppingCart>(
-            `items.${itemId}.subtotal`,
-            newSubtotal,
-            {},
-          ),
-        ])
-      }
-
-      return (
-        <div>
-          <button
-            data-testid="change-qty-btn"
-            onClick={() => handleChangeQuantity('item-1', 5)}
-          >
-            Set Qty to 5
-          </button>
-        </div>
-      )
-    }
-
-    renderWithStore(<CartComponent />, store, shoppingCartFixtures.singleItem)
+    renderWithStore(
+      <CartComponent store={store} />,
+      store,
+      shoppingCartFixtures.singleItem,
+    )
 
     const btn = screen.getByTestId('change-qty-btn')
     fireEvent.click(btn)
@@ -119,40 +57,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.3: updates item subtotal when price changes', async () => {
-    function CartComponent() {
-      const { getState, setChanges } = store.useJitStore()
-
-      const handleChangePrice = (itemId: string, newPrice: number) => {
-        const state = getState()
-        const item = state.items[itemId]!
-        const newSubtotal = newPrice * item.quantity
-        setChanges([
-          typeHelpers.change<ShoppingCart>(
-            `items.${itemId}.price`,
-            newPrice,
-            {},
-          ),
-          typeHelpers.change<ShoppingCart>(
-            `items.${itemId}.subtotal`,
-            newSubtotal,
-            {},
-          ),
-        ])
-      }
-
-      return (
-        <div>
-          <button
-            data-testid="change-price-btn"
-            onClick={() => handleChangePrice('item-1', 50)}
-          >
-            Set Price to 50
-          </button>
-        </div>
-      )
-    }
-
-    renderWithStore(<CartComponent />, store, {
+    renderWithStore(<CartComponent store={store} />, store, {
       items: {
         'item-1': {
           name: 'Product A',
@@ -173,91 +78,18 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.4: updates cart subtotal when items are added/removed', async () => {
-    function CartComponent() {
-      const { getState, setChanges } = store.useJitStore()
-
-      const handleAddItem = () => {
-        const state = getState()
-        const newId = `item-${Date.now()}`
-        const newItem: CartItem = {
-          name: 'New Item',
-          price: 15,
-          quantity: 1,
-          subtotal: 15,
-        }
-        const newSubtotal = state.subtotal + 15
-        setChanges([
-          [`items.${newId}`, newItem, {}],
-          ['subtotal', newSubtotal, {}],
-        ])
-      }
-
-      const handleRemoveItem = (itemId: string) => {
-        const state = getState()
-        const item = state.items[itemId]!
-        const newSubtotal = state.subtotal - item.subtotal
-        setChanges([
-          typeHelpers.change<ShoppingCart>(`items.${itemId}`, undefined, {}),
-          ['subtotal', newSubtotal, {}],
-        ])
-      }
-
-      const subtotal = store.useFieldStore('subtotal')
-      const itemCount = store.useFieldStore('itemCount')
-
-      return (
-        <div>
-          <button data-testid="add-btn" onClick={handleAddItem}>
-            Add
-          </button>
-          <button
-            data-testid="remove-btn"
-            onClick={() => handleRemoveItem('item-1')}
-          >
-            Remove
-          </button>
-          <span data-testid="subtotal">{subtotal.value}</span>
-          <span data-testid="item-count">{itemCount.value}</span>
-        </div>
-      )
-    }
-
-    renderWithStore(<CartComponent />, store, shoppingCartFixtures.singleItem)
+    renderWithStore(
+      <CartComponent store={store} />,
+      store,
+      shoppingCartFixtures.singleItem,
+    )
 
     const addBtn = screen.getByTestId('add-btn')
     expect(addBtn).toBeInTheDocument()
   })
 
   it('TC3.5: automatically calculates tax from subtotal', async () => {
-    function CartComponent() {
-      const { setChanges } = store.useJitStore()
-
-      const handleUpdateSubtotal = (newSubtotal: number) => {
-        const newTax = newSubtotal * 0.1 // 10% tax
-        setChanges([
-          ['subtotal', newSubtotal, {}],
-          ['tax', newTax, {}],
-        ])
-      }
-
-      const subtotal = store.useFieldStore('subtotal')
-      const tax = store.useFieldStore('tax')
-
-      return (
-        <div>
-          <button
-            data-testid="update-subtotal-btn"
-            onClick={() => handleUpdateSubtotal(100)}
-          >
-            Set Subtotal to 100
-          </button>
-          <span data-testid="subtotal">{subtotal.value}</span>
-          <span data-testid="tax">{tax.value}</span>
-        </div>
-      )
-    }
-
-    renderWithStore(<CartComponent />, store, {
+    renderWithStore(<CartComponent store={store} />, store, {
       items: {},
       subtotal: 50,
       tax: 5,
@@ -274,35 +106,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.6: automatically calculates total from subtotal + tax', async () => {
-    function CartComponent() {
-      const { setChanges } = store.useJitStore()
-
-      const handleUpdateValues = (subtotal: number) => {
-        const tax = subtotal * 0.1
-        const total = subtotal + tax
-        setChanges([
-          ['subtotal', subtotal, {}],
-          ['tax', tax, {}],
-          ['total', total, {}],
-        ])
-      }
-
-      const total = store.useFieldStore('total')
-
-      return (
-        <div>
-          <button
-            data-testid="update-btn"
-            onClick={() => handleUpdateValues(200)}
-          >
-            Update
-          </button>
-          <span data-testid="total">{total.value}</span>
-        </div>
-      )
-    }
-
-    renderWithStore(<CartComponent />, store, {
+    renderWithStore(<CartComponent store={store} />, store, {
       items: {},
       subtotal: 100,
       tax: 10,
@@ -319,41 +123,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.7: tracks item count accurately', async () => {
-    function CartComponent() {
-      const { getState, setChanges } = store.useJitStore()
-
-      const handleAddItem = () => {
-        const state = getState()
-        const newId = `item-${Date.now()}`
-        const newCount = Object.keys(state.items).length + 1
-        setChanges([
-          [
-            `items.${newId}`,
-            {
-              name: 'Item',
-              price: 10,
-              quantity: 1,
-              subtotal: 10,
-            },
-            {},
-          ],
-          ['itemCount', newCount, {}],
-        ])
-      }
-
-      const itemCount = store.useFieldStore('itemCount')
-
-      return (
-        <div>
-          <button data-testid="add-btn" onClick={handleAddItem}>
-            Add
-          </button>
-          <span data-testid="count">{itemCount.value}</span>
-        </div>
-      )
-    }
-
-    renderWithStore(<CartComponent />, store, {
+    renderWithStore(<CartComponent store={store} />, store, {
       items: {
         'item-1': {
           name: 'Product A',
@@ -390,21 +160,21 @@ describe('Integration: Computed Values & Aggregations', () => {
         const newTotal = state.total + 25
 
         setChanges([
-          typeHelpers.change<NestedCart>(
+          [
             `categories.${categoryId}.items.${newItemId}`,
             { price: 25, qty: 1 },
             {},
-          ),
-          typeHelpers.change<NestedCart>(
+          ],
+          [
             `categories.${categoryId}.categorySubtotal`,
             newCategorySubtotal,
             {},
-          ),
+          ],
           ['total', newTotal, {}],
         ])
       }
 
-      const total = nestedStore.useFieldStore('total')
+      const totalValue = nestedStore.useFieldStore('total')
 
       return (
         <div>
@@ -414,7 +184,7 @@ describe('Integration: Computed Values & Aggregations', () => {
           >
             Add Item
           </button>
-          <span data-testid="nested-total">{total.value}</span>
+          <span data-testid="nested-total">{totalValue.value}</span>
         </div>
       )
     }

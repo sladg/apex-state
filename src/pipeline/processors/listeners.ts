@@ -5,10 +5,9 @@
  * Listeners only receive child changes (not exact path matches).
  */
 
-import _get from 'lodash/get'
-
 import type { StoreInstance } from '../../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../../types'
+import { dot } from '../../utils/dot'
 import { getPathDepth } from '../../utils/pathUtils'
 import { AnyChange } from '../normalizeChanges'
 import { queueChange } from '../queue'
@@ -27,7 +26,9 @@ const processListener = <DATA extends object, META extends GenericMeta>(
 
   // Get scoped state for the listener
   const scopedState =
-    scope === '' ? props.currentState : _get(props.currentState, scope)
+    scope === ''
+      ? props.currentState
+      : dot.get__unsafe(props.currentState, scope)
 
   // Call listener ONCE with changes and SCOPED state
   const result = props.registration.fn(props.relevantChanges, scopedState)

@@ -5,7 +5,8 @@
  * Used by concerns and side effects for dynamic text generation.
  */
 
-import { deepGet } from './deepAccess'
+import { dot } from './dot'
+import { is } from './is'
 
 /**
  * Extract all {{path}} placeholders from a template string
@@ -55,12 +56,12 @@ export const interpolateTemplate = <STATE extends object>(
   state: STATE,
 ): string => {
   return template.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
-    const value = deepGet(state, path as never)
+    const value = dot.get__unsafe(state, path)
 
     // Only interpolate serializable primitives
-    if (typeof value === 'string') return value
-    if (typeof value === 'number') return String(value)
-    if (typeof value === 'boolean') return String(value)
+    if (is.string(value)) return value
+    if (is.number(value)) return String(value)
+    if (is.boolean(value)) return String(value)
 
     // Leave original {{path}} for debugging (null, undefined, objects, arrays)
     return match

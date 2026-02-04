@@ -16,7 +16,7 @@ import type {
   GenericMeta,
 } from '../types'
 import type { SideEffects } from '../types/sideEffects'
-import { deepGet } from '../utils/deepAccess'
+import { dot } from '../utils/dot'
 import { createProvider } from './Provider'
 
 export const createGenericStore = <
@@ -40,7 +40,7 @@ export const createGenericStore = <
     ] => {
       const store = useStoreContext<DATA, META>()
       const snap = useSnapshot(store.state) as DATA
-      const value = deepGet(snap, path) as DeepValue<DATA, P>
+      const value = dot.get(snap, path)
 
       const setValue = useCallback(
         (newValue: DeepValue<DATA, P>, meta?: META) => {
@@ -97,7 +97,7 @@ export const createGenericStore = <
     } => {
       const store = useStoreContext<DATA, META>()
       const snap = useSnapshot(store.state) as DATA
-      const value = deepGet(snap, path) as DeepValue<DATA, P>
+      const value = dot.get(snap, path)
 
       const setValue = useCallback(
         (newValue: DeepValue<DATA, P>, meta?: META) => {
@@ -130,7 +130,7 @@ export const createGenericStore = <
       const { toTemporary, fromTemporary, context } = config
 
       const snap = useSnapshot(store.state) as DATA
-      const storedValue = deepGet(snap, path) as DeepValue<DATA, P>
+      const storedValue = dot.get(snap, path)
       const temporaryValue = toTemporary(storedValue as VAL, context)
 
       const [localValue, setLocalValue] = useState<CTX>(temporaryValue)
@@ -211,7 +211,7 @@ export const createGenericStore = <
 
           // 1. Base State (same as useFieldStore)
           const snap = useSnapshot(store.state) as DATA
-          const value = deepGet(snap, path) as DeepValue<DATA, P>
+          const value = dot.get(snap, path)
 
           const setValue = useCallback(
             (newValue: DeepValue<DATA, P>, meta?: META) => {

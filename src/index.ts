@@ -104,15 +104,22 @@ export type { SideEffects } from './types/sideEffects'
  *
  * @example
  * ```typescript
- * const value = deepGet(state, 'user.address.street')
- * deepSet(state, 'user.address.street', 'New Street')
- * if (deepHas(state, 'user.address.city')) { ... }
+ * const value = dot.get(state, 'user.address.street')
+ * dot.set(state, 'user.address.street', 'New Street')
  * ```
  */
-export { deepGet, deepHas, deepSet } from './utils/deepAccess'
+export { dot } from './utils/dot'
 
-// =============================================================================
-// PACKAGE METADATA
-// =============================================================================
-
-export const VERSION = '0.1.0'
+/**
+ * @advanced
+ * Type-checking predicates for runtime value inspection.
+ *
+ * @example
+ * ```typescript
+ * import { is } from '@sladg/apex-state'
+ *
+ * if (is.object(value)) { ... }
+ * if (is.array(value)) { ... }
+ * ```
+ */
+export { is } from './utils/is'

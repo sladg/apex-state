@@ -7,8 +7,8 @@
  * - Child change: change path is descendant of registered path (preserves relative path)
  */
 
-import _get from 'lodash/get'
-
+import { dot } from '../utils/dot'
+import { is } from '../utils/is'
 import type {
   NormalizeChangeArgs,
   NormalizeChangesGroupedArgs,
@@ -51,13 +51,13 @@ const normalizeChange = (
   // e.g., changePath='a.b', registeredPath='a.b.c.d'
   // Extract nested value, relativePath is empty (applies to base neighbor path)
   if (matchMode === 'all' && registeredPath.startsWith(changePath + '.')) {
-    if (changeValue === null || typeof changeValue !== 'object') {
+    if (is.not.object(changeValue)) {
       return null
     }
 
     // Extract nested value: 'a.b.c.d' - 'a.b.' = 'c.d'
     const nestedPath = registeredPath.slice(changePath.length + 1)
-    const extractedValue = _get(changeValue, nestedPath)
+    const extractedValue = dot.get__unsafe(changeValue, nestedPath)
 
     if (extractedValue === undefined) {
       return null

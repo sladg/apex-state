@@ -26,7 +26,7 @@ import {
 } from '../../src'
 import type { ConcernType } from '../../src/concerns/types'
 import { useStoreContext } from '../../src/core/context'
-import { deepGetUnsafe } from '../../src/utils/deepAccess'
+import { dot } from '../../src/utils/dot'
 import { typeHelpers } from '../mocks'
 import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
 
@@ -320,8 +320,8 @@ const marginCheck: ConcernType<
   evaluate: (props) => {
     const state = props.state
 
-    const riskLimit = Number(deepGetUnsafe(state, props.riskLimitPath)) || 0
-    const notional = Number(deepGetUnsafe(state, props.notionalPath)) || 0
+    const riskLimit = Number(dot.get__unsafe(state, props.riskLimitPath)) || 0
+    const notional = Number(dot.get__unsafe(state, props.notionalPath)) || 0
 
     return {
       sufficient: notional <= riskLimit,
@@ -344,9 +344,9 @@ const barrierProximity: ConcernType<
   evaluate: (props) => {
     const state = props.state
 
-    const spot = Number(deepGetUnsafe(state, props.spotPath)) || 0
+    const spot = Number(dot.get__unsafe(state, props.spotPath)) || 0
     const barrierLevel =
-      Number(deepGetUnsafe(state, props.barrierLevelPath)) || 0
+      Number(dot.get__unsafe(state, props.barrierLevelPath)) || 0
 
     if (barrierLevel === 0 || spot === 0) {
       return { isNearBarrier: false, distance: 0, distancePct: 0 }
@@ -381,12 +381,6 @@ const createCatalogStore = () => createGenericStore<EcommerceCatalog>()
 // Test component
 // ---------------------------------------------------------------------------
 
-const LEG1 = 'portfolio.books.b1.products.p1.legGroups.g1.legs.l1'
-const LEG2 = 'portfolio.books.b1.products.p1.legGroups.g1.legs.l2'
-const PRODUCT_P1 = 'portfolio.books.b1.products.p1'
-const _PRODUCT_P2 = 'portfolio.books.b1.products.p2'
-const _P2_LEG1 = 'portfolio.books.b1.products.p2.legGroups.g1.legs.l1'
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -405,10 +399,12 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
   describe('Validation on deeply nested paths', () => {
     it('validates strike price with Zod schema at depth 9', async () => {
       function StrikeValidator() {
-        const strikeField = store.useFieldStore(`${LEG1}.strike`)
+        const strikeField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
 
         store.useConcerns('strike-validation', {
-          [`${LEG1}.strike`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike']: {
             validationState: {
               schema: z
                 .number()
@@ -418,7 +414,9 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.strike`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
         const validation = concerns['validationState']
 
         return (
@@ -587,24 +585,45 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
   describe('Conditional UI with BoolLogic', () => {
     it('disables strike editing when product status is approved (deep BoolLogic)', async () => {
       function StrikeDisable() {
-        const statusField = store.useFieldStore(`${PRODUCT_P1}.status`)
-        const strikeField = store.useFieldStore(`${LEG1}.strike`)
+        const statusField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.status',
+        )
+        const strikeField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
 
         store.useConcerns('strike-disabled', {
-          [`${LEG1}.strike`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike']: {
             disabledWhen: {
               condition: {
                 OR: [
-                  { IS_EQUAL: [`${PRODUCT_P1}.status`, 'approved'] },
-                  { IS_EQUAL: [`${PRODUCT_P1}.status`, 'executed'] },
-                  { IS_EQUAL: [`${LEG1}.isLocked`, true] },
+                  {
+                    IS_EQUAL: [
+                      'portfolio.books.b1.products.p1.status',
+                      'approved',
+                    ],
+                  },
+                  {
+                    IS_EQUAL: [
+                      'portfolio.books.b1.products.p1.status',
+                      'executed',
+                    ],
+                  },
+                  {
+                    IS_EQUAL: [
+                      'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.isLocked',
+                      true,
+                    ],
+                  },
                 ],
               },
             },
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.strike`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
         const isDisabled = concerns['disabledWhen'] === true
 
         return (
@@ -727,17 +746,21 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
     it('makes fields readonly in crisis market regime (readonlyWhen)', async () => {
       function CrisisReadonly() {
         const regimeField = store.useFieldStore('globalMarket.regime')
-        const strikeField = store.useFieldStore(`${LEG1}.strike`)
+        const strikeField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
 
         store.useConcerns('crisis-readonly', {
-          [`${LEG1}.strike`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike']: {
             readonlyWhen: {
               condition: { IS_EQUAL: ['globalMarket.regime', 'crisis'] },
             },
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.strike`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
         const isReadonly = concerns['readonlyWhen'] === true
 
         return (
@@ -776,17 +799,28 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
 
     it('uses complex AND/OR/NOT BoolLogic for multi-condition disable', async () => {
       function ComplexConditions() {
-        const statusField = store.useFieldStore(`${PRODUCT_P1}.status`)
+        const statusField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.status',
+        )
         const regimeField = store.useFieldStore('globalMarket.regime')
-        const notionalField = store.useFieldStore(`${LEG1}.notional`)
+        const notionalField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional',
+        )
 
         // Disable notional when: (status != draft) AND (regime = stressed OR regime = crisis)
         store.useConcerns('complex-conditions', {
-          [`${LEG1}.notional`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional']: {
             disabledWhen: {
               condition: {
                 AND: [
-                  { NOT: { IS_EQUAL: [`${PRODUCT_P1}.status`, 'draft'] } },
+                  {
+                    NOT: {
+                      IS_EQUAL: [
+                        'portfolio.books.b1.products.p1.status',
+                        'draft',
+                      ],
+                    },
+                  },
                   {
                     OR: [
                       { IS_EQUAL: ['globalMarket.regime', 'stressed'] },
@@ -799,7 +833,9 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.notional`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional',
+        )
         const isDisabled = concerns['disabledWhen'] === true
 
         return (
@@ -871,17 +907,21 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
   describe('Dynamic text interpolation', () => {
     it('interpolates dynamic tooltip from deeply nested market data', async () => {
       function DynamicTooltipComponent() {
-        const strikeField = store.useFieldStore(`${LEG1}.strike`)
+        const strikeField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
 
         store.useConcerns('tooltips', {
-          [`${LEG1}.strike`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike']: {
             dynamicTooltip: {
-              template: `Spot: {{${LEG1}.marketData.spot}} | Fwd: {{${LEG1}.marketData.forward}}`,
+              template: `Spot: {{portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.spot}} | Fwd: {{portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.forward}}`,
             },
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.strike`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
         const tooltip = concerns['dynamicTooltip'] ?? ''
 
         return (
@@ -912,14 +952,16 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
     it('interpolates dynamic label with ccyPair and strategy', async () => {
       function DynamicLabelComponent() {
         store.useConcerns('labels', {
-          [`${LEG1}.notional`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional']: {
             dynamicLabel: {
-              template: `Notional ({{${PRODUCT_P1}.ccyPair}} {{${PRODUCT_P1}.legGroups.g1.strategy}})`,
+              template: `Notional ({{portfolio.books.b1.products.p1.ccyPair}} {{portfolio.books.b1.products.p1.legGroups.g1.strategy}})`,
             },
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.notional`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional',
+        )
         const label = concerns['dynamicLabel'] ?? ''
 
         return <span data-testid="notional-label">{label}</span>
@@ -936,14 +978,16 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
     it('interpolates dynamic placeholder with vol surface data at depth 14', async () => {
       function DynamicPlaceholderComponent() {
         store.useConcerns('placeholders', {
-          [`${LEG1}.strike`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike']: {
             dynamicPlaceholder: {
-              template: `ATM Vol: {{${LEG1}.marketData.volSurface.atmVol}}`,
+              template: `ATM Vol: {{portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.volSurface.atmVol}}`,
             },
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.strike`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
         const placeholder = concerns['dynamicPlaceholder'] ?? ''
 
         return (
@@ -1104,7 +1148,12 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
                 schema: z.number().positive('Notional must be positive'),
               },
               disabledWhen: {
-                condition: { IS_EQUAL: [`${PRODUCT_P1}.status`, 'executed'] },
+                condition: {
+                  IS_EQUAL: [
+                    'portfolio.books.b1.products.p1.status',
+                    'executed',
+                  ],
+                },
               },
               marginCheck: {
                 riskLimitPath: 'portfolio.books.b1.riskLimit',
@@ -1162,14 +1211,18 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
   describe('Side effects on deep state', () => {
     it('syncs strike across legs within a straddle', async () => {
       function StrikeSync() {
-        const [strike1, setStrike1] = store.useStore(`${LEG1}.strike`)
-        const [strike2] = store.useStore(`${LEG2}.strike`)
+        const [strike1, setStrike1] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
+        const [strike2] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l2.strike',
+        )
 
         store.useSideEffects('straddle-sync', {
           syncPaths: [
             typeHelpers.syncPair<EcommerceCatalog>(
-              `${LEG1}.strike`,
-              `${LEG2}.strike`,
+              'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+              'portfolio.books.b1.products.p1.legGroups.g1.legs.l2.strike',
             ),
           ],
         })
@@ -1246,13 +1299,17 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
     it('listener computes aggregated delta from leg changes', async () => {
       function DeltaListener() {
         const storeInstance = useStoreContext<EcommerceCatalog>()
-        const [leg1Delta, setLeg1Delta] = store.useStore(`${LEG1}.greeks.delta`)
-        const [leg2Delta] = store.useStore(`${LEG2}.greeks.delta`)
+        const [leg1Delta, setLeg1Delta] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.greeks.delta',
+        )
+        const [leg2Delta] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l2.greeks.delta',
+        )
         const [aggDelta] = store.useStore('aggregatedDelta')
 
         useLayoutEffect(() => {
           const cleanup = registerListener(storeInstance, {
-            path: `${LEG1}.greeks`,
+            path: 'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.greeks',
             scope: null,
             fn: (changes, state) => {
               // Changes have paths relative to watched path: ['delta', 0.7, {}]
@@ -1312,16 +1369,26 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
     it('applies batch changes across multiple deeply nested paths', async () => {
       function BatchUpdater() {
         const { setChanges } = store.useJitStore()
-        const [strike] = store.useStore(`${LEG1}.strike`)
-        const [notional] = store.useStore(`${LEG1}.notional`)
-        const [status] = store.useStore(`${PRODUCT_P1}.status`)
+        const [strike] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
+        const [notional] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional',
+        )
+        const [status] = store.useStore('portfolio.books.b1.products.p1.status')
 
         const handleBatchUpdate = () => {
           setChanges(
             typeHelpers.changes<EcommerceCatalog>([
-              [`${LEG1}.strike`, 1.35],
-              [`${LEG1}.notional`, 5_000_000],
-              [`${PRODUCT_P1}.status`, 'pending'],
+              [
+                'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+                1.35,
+              ],
+              [
+                'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.notional',
+                5_000_000,
+              ],
+              ['portfolio.books.b1.products.p1.status', 'pending'],
             ]),
           )
         }
@@ -1356,23 +1423,29 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
   describe('Combined concerns and side effects', () => {
     it('validation + sync + conditional UI work together on straddle', async () => {
       function StraddleForm() {
-        const [strike1, setStrike1] = store.useStore(`${LEG1}.strike`)
-        const [strike2] = store.useStore(`${LEG2}.strike`)
-        const statusField = store.useFieldStore(`${PRODUCT_P1}.status`)
+        const [strike1, setStrike1] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
+        const [strike2] = store.useStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l2.strike',
+        )
+        const statusField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.status',
+        )
 
         // Sync strikes
         store.useSideEffects('straddle-effects', {
           syncPaths: [
             typeHelpers.syncPair<EcommerceCatalog>(
-              `${LEG1}.strike`,
-              `${LEG2}.strike`,
+              'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+              'portfolio.books.b1.products.p1.legGroups.g1.legs.l2.strike',
             ),
           ],
         })
 
         // Validate + disable
         store.useConcerns('straddle-concerns', {
-          [`${LEG1}.strike`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike']: {
             validationState: {
               schema: z
                 .number()
@@ -1382,18 +1455,30 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
             disabledWhen: {
               condition: {
                 OR: [
-                  { IS_EQUAL: [`${PRODUCT_P1}.status`, 'approved'] },
-                  { IS_EQUAL: [`${PRODUCT_P1}.status`, 'executed'] },
+                  {
+                    IS_EQUAL: [
+                      'portfolio.books.b1.products.p1.status',
+                      'approved',
+                    ],
+                  },
+                  {
+                    IS_EQUAL: [
+                      'portfolio.books.b1.products.p1.status',
+                      'executed',
+                    ],
+                  },
                 ],
               },
             },
             dynamicTooltip: {
-              template: `Strike for {{${PRODUCT_P1}.ccyPair}} (spot: {{${LEG1}.marketData.spot}})`,
+              template: `Strike for {{portfolio.books.b1.products.p1.ccyPair}} (spot: {{portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.spot}})`,
             },
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.strike`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
         const validation = concerns['validationState']
         const disabled = concerns['disabledWhen'] === true
         const tooltip = concerns['dynamicTooltip'] ?? ''
@@ -1465,20 +1550,29 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
 
     it('re-evaluates all concerns when deep state changes propagate', async () => {
       function PropagationTest() {
-        const spotField = store.useFieldStore(`${LEG1}.marketData.spot`)
+        const spotField = store.useFieldStore(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.spot',
+        )
 
         store.useConcerns('propagation', {
-          [`${LEG1}.strike`]: {
+          ['portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike']: {
             dynamicTooltip: {
-              template: `Moneyness vs spot {{${LEG1}.marketData.spot}}`,
+              template: `Moneyness vs spot {{portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.spot}}`,
             },
             disabledWhen: {
-              condition: { GT: [`${LEG1}.marketData.spot`, 2] },
+              condition: {
+                GT: [
+                  'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.spot',
+                  2,
+                ],
+              },
             },
           },
         })
 
-        const concerns = store.useFieldConcerns(`${LEG1}.strike`)
+        const concerns = store.useFieldConcerns(
+          'portfolio.books.b1.products.p1.legGroups.g1.legs.l1.strike',
+        )
         const tooltip = concerns['dynamicTooltip'] ?? ''
         const disabled = concerns['disabledWhen'] === true
 
@@ -1533,7 +1627,9 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
               schema: z.string().min(1, 'Status required'),
             },
             disabledWhen: {
-              condition: { IS_EQUAL: [`${PRODUCT_P1}.status`, 'approved'] },
+              condition: {
+                IS_EQUAL: ['portfolio.books.b1.products.p1.status', 'approved'],
+              },
             },
           },
         })
