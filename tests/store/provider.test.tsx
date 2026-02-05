@@ -67,7 +67,7 @@ describe('Provider Component', () => {
       const storeInstance = useContext(StoreContext)
       return (
         <div data-testid="errorPath">
-          {storeInstance?.config.errorStorePath}
+          {storeInstance?._internal.config.errorStorePath}
         </div>
       )
     }
@@ -81,23 +81,20 @@ describe('Provider Component', () => {
     interface TestState {
       value: string
     }
-    const store = createGenericStore<TestState>()
+    const store = createGenericStore<TestState>({
+      errorStorePath: 'customErrors',
+    })
 
     const TestComponent = () => {
       const storeInstance = useContext(StoreContext)
       return (
         <div data-testid="errorPath">
-          {storeInstance?.config.errorStorePath}
+          {storeInstance?._internal.config.errorStorePath}
         </div>
       )
     }
 
-    renderWithStore(
-      <TestComponent />,
-      store,
-      { value: 'test' },
-      { errorStorePath: 'customErrors' },
-    )
+    renderWithStore(<TestComponent />, store, { value: 'test' })
 
     expect(screen.getByTestId('errorPath').textContent).toBe('customErrors')
   })

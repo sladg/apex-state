@@ -13,9 +13,13 @@ const isUndefined = (value: unknown): value is undefined => value === undefined
 /** Check if value is null */
 const isNull = (value: unknown): value is null => value === null
 
-/** Check if value is a plain object (not null, array, or primitive) */
-const isObject = (value: unknown): value is object =>
-  value != null && typeof value === 'object' && !Array.isArray(value)
+/** Check if value is a plain object (not null, array, Date, RegExp, class instances, etc.) */
+const isObject = (value: unknown): value is Record<string, unknown> => {
+  if (value == null || typeof value !== 'object' || Array.isArray(value))
+    return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
 
 /** Check if value is an array */
 const isArray = (value: unknown): value is unknown[] => Array.isArray(value)
@@ -74,7 +78,8 @@ const isEmpty = (value: unknown): boolean => {
   if (isNumber(value) || isBoolean(value)) return false
   if (isString(value)) return value.length === 0
   if (isArray(value)) return value.length === 0
-  if (isObject(value)) return isEmptyObject(value)
+  if (isObject(value)) return isEmptyObject(value as object)
+  // Date, RegExp, Map, Set, class instances, functions, symbols — not empty
   return false
 }
 
@@ -104,21 +109,19 @@ const isEqualObject = (a: any, b: any): boolean => {
 const iEqual = (a: unknown, b: unknown): boolean => {
   if (a === b) return true
 
-  // Handle arrays first (isObject excludes arrays)
   if (isArray(a) && isArray(b)) {
     return isEqualArray(a, b)
   }
 
-  // Handle objects (plain objects, Date, RegExp)
+  if (isDate(a) && isDate(b)) {
+    return a.getTime() === b.getTime()
+  }
+
+  if (isRegExp(a) && isRegExp(b)) {
+    return a.toString() === b.toString()
+  }
+
   if (isObject(a) && isObject(b)) {
-    if (isDate(a) && isDate(b)) {
-      return a.getTime() === b.getTime()
-    }
-
-    if (isRegExp(a) && isRegExp(b)) {
-      return a.toString() === b.toString()
-    }
-
     return isEqualObject(a, b)
   }
 
@@ -137,8 +140,7 @@ const isNotUndefined = <T>(value: T | undefined): value is T =>
 const isNotNull = <T>(value: T | null): value is T => value !== null
 
 /** Check if value is not a plain object */
-const isNotObject = (value: unknown): boolean =>
-  value == null || typeof value !== 'object' || Array.isArray(value)
+const isNotObject = (value: unknown): boolean => !isObject(value)
 
 /** Check if value is not an array */
 const isNotArray = (value: unknown): boolean => !Array.isArray(value)

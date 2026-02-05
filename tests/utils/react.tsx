@@ -156,7 +156,6 @@ export function renderWithStore<
   store: GenericStore<T, META>,
   initialState: T,
   options?: {
-    errorStorePath?: string
     concerns?: ConcernsRegistration<T>
     concernsId?: string
   },
@@ -170,7 +169,6 @@ export function renderWithStore<
   store: GenericStore<T, META>,
   initialState: T,
   options?: {
-    errorStorePath?: string
     concerns?: ConcernsRegistration<T>
     concernsId?: string
     testId?: string
@@ -269,21 +267,11 @@ export function renderWithStore<
     content = <div data-testid={options?.testId || 'test-root'}>Test</div>
   }
 
-  const providerProps: {
-    initialState: T
-    children: React.ReactNode
-    errorStorePath?: string
-  } = {
-    initialState,
-    children: <WrapperComponent>{content}</WrapperComponent>,
-  }
-
-  if (options?.errorStorePath) {
-    providerProps.errorStorePath = options.errorStorePath
-  }
-
   const renderResult = render(
-    React.createElement(store.Provider, providerProps),
+    React.createElement(store.Provider, {
+      initialState,
+      children: <WrapperComponent>{content}</WrapperComponent>,
+    }),
   )
 
   return {

@@ -51,6 +51,14 @@ export const registerListener = <
   const mapKey = registration.path ?? ''
   const existing = listeners.get(mapKey) ?? []
 
+  // Wrap fn with timing measurement (no-op when timing is disabled)
+  const originalFn = registration.fn
+  registration.fn = (changes, state) =>
+    store._internal.timing.run('listeners', () => originalFn(changes, state), {
+      path: mapKey,
+      name: 'listener',
+    })
+
   listeners.set(mapKey, [...existing, registration])
 
   // Update sorted paths cache

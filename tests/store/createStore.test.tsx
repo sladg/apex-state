@@ -36,7 +36,7 @@ describe('createGenericStore', () => {
     expect(screen.getByText('Child Component')).toBeTruthy()
   })
 
-  it('should accept errorStorePath prop', () => {
+  it('should accept errorStorePath config', () => {
     interface TestState {
       data: string
     }

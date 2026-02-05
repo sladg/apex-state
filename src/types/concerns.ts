@@ -5,6 +5,8 @@
  * their return types for proper type-safe concern registration and reading.
  */
 
+import type { DeepKey } from './deepKey'
+
 /**
  * Extract the return type from a concern's evaluate function
  *
@@ -43,3 +45,21 @@ export type ExtractEvaluateReturn<T> = T extends {
 export type EvaluatedConcerns<CONCERNS extends readonly any[]> = {
   [K in CONCERNS[number] as K['name']]?: ExtractEvaluateReturn<K>
 }
+
+/**
+ * Maps field paths to per-concern config objects.
+ *
+ * Used as the `registration` parameter for `useConcerns` / `registerConcernEffects`.
+ * Each key is a `DeepKey<DATA>` path, and the value maps concern names to their config.
+ *
+ * @example
+ * ```typescript
+ * const registration: ConcernRegistrationMap<MyFormState> = {
+ *   email: { validationState: { schema: z.string().email() } },
+ *   name: { validationState: { schema: z.string().min(1) } },
+ * }
+ * ```
+ */
+export type ConcernRegistrationMap<DATA extends object> = Partial<
+  Record<DeepKey<DATA>, Partial<Record<string, unknown>>>
+>

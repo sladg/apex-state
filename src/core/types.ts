@@ -8,19 +8,36 @@
 import type { ReactNode } from 'react'
 
 import type { ConcernType } from '../concerns/types'
-import type { ArrayOfChanges, DeepKey, GenericMeta } from '../types'
+import type {
+  ArrayOfChanges,
+  DeepKey,
+  DeepRequired,
+  GenericMeta,
+} from '../types'
+import type { Timing } from '../utils/timing'
 import type { FlipGraph, SyncGraph } from './graphTypes'
+
+/**
+ * Debug configuration for development tooling
+ */
+export interface DebugConfig {
+  /** Enable timing measurement for concerns and listeners */
+  timing?: boolean
+  /** Threshold in milliseconds for slow operation warnings (default: 5ms) */
+  timingThreshold?: number
+}
 
 export interface StoreConfig {
   /** Error storage path (default: "_errors") */
   errorStorePath?: string
   /** Max iterations for change processing (default: 100) */
   maxIterations?: number
+  /** Debug configuration for development tooling */
+  debug?: DebugConfig
 }
 
 export interface ProviderProps<DATA extends object> {
   initialState: DATA
-  errorStorePath?: string
   children: ReactNode
 }
 
@@ -130,6 +147,8 @@ export interface InternalState<
   graphs: SideEffectGraphs<DATA, META>
   registrations: Registrations
   processing: ProcessingState<DATA, META>
+  timing: Timing
+  config: DeepRequired<StoreConfig>
 }
 
 export type ConcernValues = Record<string, Record<string, unknown>>
@@ -142,5 +161,4 @@ export interface StoreInstance<
   state: DATA
   _concerns: ConcernValues
   _internal: InternalState<DATA, META>
-  config: Required<StoreConfig>
 }

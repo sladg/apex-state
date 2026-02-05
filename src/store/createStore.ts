@@ -10,6 +10,7 @@ import { processChanges } from '../pipeline/processChanges'
 import { registerSideEffects } from '../sideEffects'
 import type {
   ArrayOfChanges,
+  ConcernRegistrationMap,
   DeepKey,
   DeepValue,
   EvaluatedConcerns,
@@ -24,9 +25,9 @@ export const createGenericStore = <
   META extends GenericMeta = GenericMeta,
   CONCERNS extends readonly any[] = typeof defaultConcerns,
 >(
-  _config?: StoreConfig,
+  config?: StoreConfig,
 ) => {
-  const Provider = createProvider<DATA, META>()
+  const Provider = createProvider<DATA, META>(config)
 
   // Internal helper hook for field state access
   const _useFieldValue = <P extends DeepKey<DATA>>(path: P) => {
@@ -98,7 +99,7 @@ export const createGenericStore = <
 
   const useConcerns = (
     id: string,
-    registration: Partial<Record<DeepKey<DATA>, Partial<Record<string, any>>>>,
+    registration: ConcernRegistrationMap<DATA>,
     customConcerns?: readonly ConcernType<any, any>[],
   ): void => {
     const store = useStoreContext<DATA, META>()

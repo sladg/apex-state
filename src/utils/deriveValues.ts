@@ -54,11 +54,7 @@ export const detectGetters = <T extends object>(
       }
     }
     // Recursively check nested objects (but not functions, arrays, or primitives)
-    else if (
-      is.object(descriptor.value) &&
-      is.not.date(descriptor.value) &&
-      is.not.regexp(descriptor.value)
-    ) {
+    else if (is.object(descriptor.value)) {
       const nestedGetters = detectGetters(descriptor.value, fullPath)
       Object.assign(getters, nestedGetters)
     } else {

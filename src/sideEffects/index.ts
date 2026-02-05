@@ -10,5 +10,5 @@
 
 export { registerFlipPair } from './prebuilts/flip'
 export { registerListener } from './prebuilts/listeners'
-export { registerSyncPair } from './prebuilts/sync'
+export { registerSyncPair, registerSyncPairsBatch } from './prebuilts/sync'
 export { registerSideEffects } from './registration'

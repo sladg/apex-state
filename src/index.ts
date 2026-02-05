@@ -13,7 +13,12 @@
 // =============================================================================
 
 // Store factory
-export type { ProviderProps, StoreConfig, StoreInstance } from './core/types'
+export type {
+  DebugConfig,
+  ProviderProps,
+  StoreConfig,
+  StoreInstance,
+} from './core/types'
 export { createGenericStore } from './store/createStore'
 
 // Standalone hooks - composable field utilities
@@ -47,14 +52,18 @@ export {
   registerListener,
   registerSideEffects,
   registerSyncPair,
+  registerSyncPairsBatch,
 } from './sideEffects'
 
 // Type utilities
 export type {
   AggregationPair,
   ArrayOfChanges,
+  ConcernRegistrationMap,
   DeepKey,
   DeepKeyFiltered,
+  DeepPartial,
+  DeepRequired,
   DeepValue,
   EvaluatedConcerns,
   ExtractEvaluateReturn,
@@ -143,3 +152,17 @@ export { _, hashKey } from './utils/hashKey'
  * ```
  */
 export { is } from './utils/is'
+
+/**
+ * @advanced
+ * Utilities for applying changes to objects.
+ *
+ * @example
+ * ```typescript
+ * import { applyChangesToObject } from '@sladg/apex-state'
+ *
+ * const state = { user: { name: 'Alice' } }
+ * const newState = applyChangesToObject(state, [['user.name', 'Bob']])
+ * ```
+ */
+export { applyChangesToObject } from './utils/applyChanges'

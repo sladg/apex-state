@@ -21,6 +21,7 @@ import type { StoreInstance } from '../../src/core/types'
 import { normalizeChangesForGroups } from '../../src/pipeline/normalizeChanges'
 import { processChanges } from '../../src/pipeline/processChanges'
 import type { GenericMeta } from '../../src/types'
+import { createTiming } from '../../src/utils/timing'
 import { typeHelpers } from '../mocks/helpers'
 
 /** Benchmark state type - represents dynamic nested paths used in benchmarks */
@@ -64,10 +65,15 @@ const createMockStore = (
       processing: {
         queue: [],
       },
-    },
-    config: {
-      errorStorePath: '_errors',
-      maxIterations: 100,
+      timing: createTiming({ timing: false, timingThreshold: 16 }),
+      config: {
+        errorStorePath: '_errors',
+        maxIterations: 100,
+        debug: {
+          timing: false,
+          timingThreshold: 16,
+        },
+      },
     },
   } as StoreInstance<BenchmarkState, GenericMeta>
 }

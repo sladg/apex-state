@@ -3,14 +3,24 @@ import { useMemo } from 'react'
 import { proxy, ref } from 'valtio'
 
 import { StoreContext } from '../core/context'
+import { DEFAULT_STORE_CONFIG } from '../core/defaults'
 import { createPathGroups } from '../core/pathGroups'
-import type { InternalState, ProviderProps, StoreInstance } from '../core/types'
-import type { GenericMeta } from '../types'
+import type {
+  InternalState,
+  ProviderProps,
+  StoreConfig,
+  StoreInstance,
+} from '../core/types'
+import type { DeepRequired, GenericMeta } from '../types'
+import { deepMerge } from '../utils/deepMerge'
+import { createTiming } from '../utils/timing'
 
 const createInternalState = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
->(): InternalState<DATA, META> => ({
+>(
+  config: DeepRequired<StoreConfig>,
+): InternalState<DATA, META> => ({
   graphs: {
     sync: createPathGroups(),
     flip: createPathGroups(),
@@ -26,19 +36,22 @@ const createInternalState = <
   processing: {
     queue: [],
   },
+  timing: createTiming(config.debug),
+  config,
 })
 
 export const createProvider = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
->() => {
-  const Provider = ({
-    initialState,
-    errorStorePath = '_errors',
-    children,
-  }: ProviderProps<DATA>) => {
-    const store = useMemo<StoreInstance<DATA, META>>(
-      () => ({
+>(
+  storeConfig?: StoreConfig,
+) => {
+  // Resolve config with defaults at factory time
+  const resolvedConfig = deepMerge(DEFAULT_STORE_CONFIG, storeConfig)
+
+  const Provider = ({ initialState, children }: ProviderProps<DATA>) => {
+    const store = useMemo<StoreInstance<DATA, META>>(() => {
+      return {
         // state: Application data (tracked by valtio)
         // User actions WRITE to this, effects READ from this
         state: proxy(initialState),
@@ -49,17 +62,10 @@ export const createProvider = <
 
         // _internal: Graphs, registrations, processing (NOT tracked)
         // Wrapped in ref() to prevent tracking even if store is later wrapped in a proxy
-        _internal: ref(createInternalState<DATA, META>()),
-
-        // config: Store configuration
-        config: {
-          errorStorePath,
-          maxIterations: 100,
-        },
-      }),
+        _internal: ref(createInternalState<DATA, META>(resolvedConfig)),
+      }
       // Only initialize once - ignore changes to initialState after mount
-      [],
-    )
+    }, [])
 
     return (
       <StoreContext.Provider

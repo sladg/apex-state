@@ -21,21 +21,23 @@ const store = createGenericStore<MyState>({
 })
 ```
 
-When `timing` is enabled, every concern evaluation and listener execution is wrapped in `performance.now()` measurements. Operations exceeding the threshold trigger a `console.warn`.
+When `timing` is enabled, every concern evaluation, listener execution, and registration call is wrapped in `performance.now()` measurements. Operations exceeding the threshold trigger a `console.warn`.
 
 ## What Gets Measured
 
-| Operation          | When it fires                             | Threshold applies to            |
-| ------------------ | ----------------------------------------- | ------------------------------- |
-| Concern evaluation | Each `evaluate()` call inside `effect()`  | Single concern on a single path |
-| Listener execution | Each listener `fn()` call during pipeline | Single listener invocation      |
+| Operation          | When it fires                                         | Threshold applies to                      |
+| ------------------ | ----------------------------------------------------- | ----------------------------------------- |
+| Concern evaluation | Each `evaluate()` call inside `effect()`              | Single concern on a single path           |
+| Listener execution | Each listener `fn()` call during pipeline             | Single listener invocation                |
+| Registration       | Each `registerConcernEffects` / `registerSideEffects` | Full registration batch for one component |
 
 ## Console Output
 
 When a slow operation is detected:
 
 ```
-[apex-state] Slow concern: user.email/validationState took 18.42ms (threshold: 16ms)
+[apex-state] Slow concerns: user.email/validationState took 18.42ms (threshold: 16ms)
+[apex-state] Slow registration: my-form-id/sideEffects took 12.50ms (threshold: 16ms)
 ```
 
 After a batch of operations, a summary is logged if any were slow or total time exceeded 16ms:
@@ -52,7 +54,7 @@ All utilities live in `src/utils/timing.ts`.
 
 ```typescript
 interface TimingEvent {
-  type: "concern" | "listener"
+  type: "concerns" | "listeners" | "registration"
   path: string
   name: string
   duration: number
@@ -60,7 +62,7 @@ interface TimingEvent {
 }
 
 interface TimingSummary {
-  type: "concerns" | "listeners"
+  type: "concerns" | "listeners" | "registration"
   totalDuration: number
   operationCount: number
   slowOperations: TimingEvent[]
@@ -106,11 +108,12 @@ interface StoreConfig {
 
 ## Key Files
 
-| File                           | Role                                                |
-| ------------------------------ | --------------------------------------------------- |
-| `src/utils/timing.ts`          | Timing utilities, types, default handlers           |
-| `src/core/types.ts`            | `DebugConfig`, `ResolvedDebugConfig`, `StoreConfig` |
-| `src/concerns/registration.ts` | Uses `measureTiming` for concern evaluation         |
+| File                              | Role                                                      |
+| --------------------------------- | --------------------------------------------------------- |
+| `src/utils/timing.ts`             | Timing utilities, types, default handlers                 |
+| `src/core/types.ts`               | `DebugConfig`, `ResolvedDebugConfig`, `StoreConfig`       |
+| `src/concerns/registration.ts`    | Uses `timing.run` for concern evaluation and registration |
+| `src/sideEffects/registration.ts` | Uses `timing.run` for side effect registration            |
 
 ## Testing
 

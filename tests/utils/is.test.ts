@@ -67,8 +67,13 @@ describe('is utility', () => {
       expect(is.object({ a: 1 })).toBe(true)
     })
 
+    it('should return true for Object.create(null)', () => {
+      const obj = Object.create(null)
+      obj.a = 1
+      expect(is.object(obj)).toBe(true)
+    })
+
     it('should return false for arrays', () => {
-      // Note: isObject explicitly excludes arrays
       expect(is.object([])).toBe(false)
       expect(is.object([1, 2, 3])).toBe(false)
     })
@@ -82,6 +87,20 @@ describe('is utility', () => {
       expect(is.object('string')).toBe(false)
       expect(is.object(true)).toBe(false)
       expect(is.object(undefined)).toBe(false)
+    })
+
+    it('should return false for Date, RegExp, Map, Set', () => {
+      expect(is.object(new Date())).toBe(false)
+      expect(is.object(/regex/)).toBe(false)
+      expect(is.object(new Map())).toBe(false)
+      expect(is.object(new Set())).toBe(false)
+    })
+
+    it('should return false for class instances', () => {
+      class Foo {
+        value = 1
+      }
+      expect(is.object(new Foo())).toBe(false)
     })
   })
 
@@ -286,14 +305,12 @@ describe('is utility', () => {
       expect(is.empty(Symbol('test'))).toBe(false)
     })
 
-    it('should return true for dates (treated as empty objects)', () => {
-      // Note: Dates are objects with no enumerable own properties
-      expect(is.empty(new Date())).toBe(true)
+    it('should return false for dates', () => {
+      expect(is.empty(new Date())).toBe(false)
     })
 
-    it('should return true for regexps (treated as empty objects)', () => {
-      // Note: RegExps are objects with no enumerable own properties
-      expect(is.empty(/test/)).toBe(true)
+    it('should return false for regexps', () => {
+      expect(is.empty(/test/)).toBe(false)
     })
   })
 
@@ -455,9 +472,17 @@ describe('is utility', () => {
         expect(is.not.object([])).toBe(true)
       })
 
-      it('should return false for objects', () => {
+      it('should return true for non-plain object types', () => {
+        expect(is.not.object(new Date())).toBe(true)
+        expect(is.not.object(/regex/)).toBe(true)
+        expect(is.not.object(new Map())).toBe(true)
+        expect(is.not.object(new Set())).toBe(true)
+      })
+
+      it('should return false for plain objects', () => {
         expect(is.not.object({})).toBe(false)
         expect(is.not.object({ a: 1 })).toBe(false)
+        expect(is.not.object(Object.create(null))).toBe(false)
       })
     })
 
@@ -623,7 +648,8 @@ describe('is utility', () => {
       const proto = { inherited: true }
       const obj = Object.create(proto)
       obj.own = true
-      expect(is.object(obj)).toBe(true)
+      // Object.create(customProto) is not a plain object
+      expect(is.object(obj)).toBe(false)
       // empty check only considers own properties
       expect(is.empty({ ...{} })).toBe(true)
     })

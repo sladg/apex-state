@@ -41,7 +41,7 @@ const cleanup = registerSideEffects(store, 'my-effects', { ... })
 // Call cleanup() when done
 ```
 
-Individual registration functions are also exported: `registerSyncPair`, `registerFlipPair`, `registerListener`.
+Individual registration functions are also exported: `registerSyncPair`, `registerSyncPairsBatch`, `registerFlipPair`, `registerListener`.
 
 ## Sync Paths
 
@@ -61,6 +61,27 @@ store.useSideEffects("sync", {
 **Implementation**: Uses `PathGroups` data structure for O(1) connected component lookups. Multiple sync pairs can form a group — if A syncs with B and B syncs with C, all three stay in sync.
 
 **Source**: `src/sideEffects/prebuilts/sync.ts`
+
+### Batched Registration (Performance-Critical)
+
+When registering multiple sync pairs at once (e.g. via `registerSideEffects` or `useSideEffects`), the system uses `registerSyncPairsBatch` instead of calling `registerSyncPair` in a loop. This is a **critical performance optimization** — do not revert to per-pair registration.
+
+**Why**: Each `registerSyncPair` call triggers `processChanges()`, which writes to the valtio proxy via `applyBatch`, firing all registered concern `effect()` subscriptions. With N sync pairs and M concern effects, the loop approach causes N × M redundant re-evaluations. The batch approach adds all edges first, then calls `processChanges` once.
+
+**Measured impact** (75 pairs / 150 fields, no concern effects):
+
+| Approach | Median |
+|----------|--------|
+| Loop (75 `processChanges` calls) | ~4.0 ms |
+| Batch (1 `processChanges` call) | ~0.4 ms |
+
+With concern effects registered (real-world scenario), the difference is significantly larger.
+
+**Functions**:
+- `registerSyncPair(store, path1, path2)` — registers a single pair, calls `processChanges` immediately. Use for standalone/dynamic registration.
+- `registerSyncPairsBatch(store, pairs)` — registers all pairs, calls `processChanges` once. Used internally by `registerSideEffects`.
+
+Both share the same helpers (`collectGroupSyncChanges`, `makeSyncEdgeCleanup`) and produce identical behavior — only the number of `processChanges` calls differs.
 
 ## Flip Paths
 

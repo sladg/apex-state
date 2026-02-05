@@ -77,6 +77,7 @@ interface SideEffects<DATA, META> {
 - Multiple sync pairs form groups via PathGroups
 - On registration, all paths in a group sync to the most common non-null value
 - During pipeline processing, a change to any path propagates to all group members
+- **IMPORTANT**: Bulk registration uses `registerSyncPairsBatch` (single `processChanges` call), NOT a loop over `registerSyncPair`. This is a 10x perf optimization at 150 fields. See `docs/SIDE_EFFECTS_GUIDE.md` "Batched Registration" section. Do not revert `registerSideEffects` to per-pair loop.
 
 ### Flip Paths
 - Pairs of boolean paths that stay inverse

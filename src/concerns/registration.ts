@@ -1,18 +1,17 @@
 import { effect } from 'valtio-reactive'
 
 import type { StoreInstance } from '../core/types'
-import type { DeepKey, GenericMeta } from '../types'
+import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
-import { measureTiming } from '../utils/timing'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
-export const registerConcernEffects = <
+const registerConcernEffectsImpl = <
   DATA extends object,
   META extends GenericMeta,
 >(
   store: StoreInstance<DATA, META>,
-  registration: Partial<Record<DeepKey<DATA>, Partial<Record<string, any>>>>,
+  registration: ConcernRegistrationMap<DATA>,
   concerns: readonly ConcernType[],
 ): (() => void) => {
   const disposeCallbacks: (() => void)[] = []
@@ -63,15 +62,10 @@ export const registerConcernEffects = <
 
         // EVALUATE concern (all state accesses inside are tracked!)
         // Wrapped with timing measurement when debug.timing is enabled
-        const result = measureTiming(
+        const result = store._internal.timing.run(
+          'concerns',
           () => concern.evaluate(evalProps),
-          store.config.debug,
-          {
-            type: 'concern',
-            path,
-            name: concernName,
-            threshold: store.config.debug.timingThreshold,
-          },
+          { path, name: concernName },
         )
 
         // Check cache (non-reactive!) to see if value changed
@@ -123,3 +117,17 @@ export const registerConcernEffects = <
     })
   }
 }
+
+export const registerConcernEffects = <
+  DATA extends object,
+  META extends GenericMeta,
+>(
+  store: StoreInstance<DATA, META>,
+  registration: ConcernRegistrationMap<DATA>,
+  concerns: readonly ConcernType[],
+): (() => void) =>
+  store._internal.timing.run(
+    'registration',
+    () => registerConcernEffectsImpl(store, registration, concerns),
+    { path: Object.keys(registration).join(','), name: 'concerns' },
+  )

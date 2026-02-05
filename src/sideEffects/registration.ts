@@ -3,9 +3,9 @@ import type { GenericMeta } from '../types'
 import type { SideEffects } from '../types/sideEffects'
 import { registerAggregations } from './prebuilts/aggregation'
 import { registerFlipPair } from './prebuilts/flip'
-import { registerSyncPair } from './prebuilts/sync'
+import { registerSyncPairsBatch } from './prebuilts/sync'
 
-export const registerSideEffects = <
+const registerSideEffectsImpl = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
 >(
@@ -16,11 +16,12 @@ export const registerSideEffects = <
   const cleanups: (() => void)[] = []
 
   // Register sync paths: [path1, path2]
+  // PERF: Uses registerSyncPairsBatch (1 processChanges call) instead of per-pair loop.
+  // Do NOT revert to a loop over registerSyncPair — causes N × M redundant effect evaluations.
+  // See docs/SIDE_EFFECTS_GUIDE.md "Batched Registration" section.
   if (effects.syncPaths) {
-    for (const [path1, path2] of effects.syncPaths) {
-      const cleanup = registerSyncPair(store, path1, path2)
-      cleanups.push(cleanup)
-    }
+    const cleanup = registerSyncPairsBatch(store, effects.syncPaths)
+    cleanups.push(cleanup)
   }
 
   // Register flip paths: [path1, path2]
@@ -46,3 +47,17 @@ export const registerSideEffects = <
     store._internal.registrations.sideEffectCleanups.delete(id)
   }
 }
+
+export const registerSideEffects = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  store: StoreInstance<DATA, META>,
+  id: string,
+  effects: SideEffects<DATA, META>,
+): (() => void) =>
+  store._internal.timing.run(
+    'registration',
+    () => registerSideEffectsImpl(store, id, effects),
+    { path: id, name: 'sideEffects' },
+  )
