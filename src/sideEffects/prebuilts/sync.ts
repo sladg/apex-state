@@ -1,5 +1,11 @@
-import { connectedComponents } from 'graphology-components'
-
+import {
+  addEdge,
+  getGroupPaths,
+  getPathDegree,
+  hasEdge,
+  hasPath,
+  removeEdge,
+} from '../../core/pathGroups'
 import type { StoreInstance } from '../../core/types'
 import { processChanges } from '../../pipeline/processChanges'
 import type { ArrayOfChanges, GenericMeta } from '../../types'
@@ -16,19 +22,11 @@ export const registerSyncPair = <
 ): (() => void) => {
   const { sync } = store._internal.graphs
 
-  // Add nodes if they don't exist
-  if (!sync.hasNode(path1)) sync.addNode(path1)
-  if (!sync.hasNode(path2)) sync.addNode(path2)
+  // Add edge (implicitly adds nodes if they don't exist)
+  addEdge(sync, path1, path2)
 
-  // Add edge if it doesn't exist
-  const edgeKey = `${path1}--${path2}`
-  if (!sync.hasEdge(path1, path2)) {
-    sync.addEdge(path1, path2, { key: edgeKey })
-  }
-
-  // Find all paths in this sync group using connected components
-  const components = connectedComponents(sync)
-  const component = components.find((c) => c.includes(path1)) ?? [path1, path2]
+  // Find all paths in this sync group
+  const component = getGroupPaths(sync, path1)
 
   // Get values and count occurrences (excluding null/undefined)
   const valueCounts = new Map<unknown, number>()
@@ -71,11 +69,16 @@ export const registerSyncPair = <
 
   return () => {
     // Remove edge
-    if (sync.hasEdge(path1, path2)) {
-      sync.dropEdge(path1, path2)
+    if (hasEdge(sync, path1, path2)) {
+      removeEdge(sync, path1, path2)
     }
-    // Remove isolated nodes
-    if (sync.hasNode(path1) && sync.degree(path1) === 0) sync.dropNode(path1)
-    if (sync.hasNode(path2) && sync.degree(path2) === 0) sync.dropNode(path2)
+    // Note: removeEdge handles isolated node cleanup automatically
+    // But we check explicitly for paths that might have other connections
+    if (hasPath(sync, path1) && getPathDegree(sync, path1) === 0) {
+      removeEdge(sync, path1, path1) // This is a no-op but keeps the pattern
+    }
+    if (hasPath(sync, path2) && getPathDegree(sync, path2) === 0) {
+      removeEdge(sync, path2, path2) // This is a no-op but keeps the pattern
+    }
   }
 }

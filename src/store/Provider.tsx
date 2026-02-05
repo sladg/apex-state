@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 
-import Graph from 'graphology'
 import { proxy, ref } from 'valtio'
 
 import { StoreContext } from '../core/context'
+import { createPathGroups } from '../core/pathGroups'
 import type { InternalState, ProviderProps, StoreInstance } from '../core/types'
 import type { GenericMeta } from '../types'
 
@@ -12,8 +12,8 @@ const createInternalState = <
   META extends GenericMeta = GenericMeta,
 >(): InternalState<DATA, META> => ({
   graphs: {
-    sync: new Graph({ type: 'undirected' }),
-    flip: new Graph({ type: 'undirected' }),
+    sync: createPathGroups(),
+    flip: createPathGroups(),
     listeners: new Map(),
     sortedListenerPaths: [],
   },

@@ -46,8 +46,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "graphology": "^0.26.0",
-    "graphology-components": "^1.5.4",
     "valtio": "^2.3.0",
     "valtio-reactive": "^0.2.0"
   },
@@ -60,7 +58,6 @@
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9.0.0",
-    "graphology-types": "^0.24.0",
     "jsdom": "^27.4.0",
     "knip": "^5.82.1",
     "react": "^18.3.1",

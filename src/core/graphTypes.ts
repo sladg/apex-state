@@ -1,37 +1,23 @@
 /**
- * Strongly-Typed Graph Definitions
+ * Graph Type Definitions
  *
- * Each graph in the store has specific node and edge attributes.
- * These type definitions provide compile-time safety for graph operations.
+ * Type aliases for the PathGroups data structure used in sync and flip operations.
+ * These aliases maintain backward compatibility with the previous graphology-based API.
  */
 
-import type Graph from 'graphology'
-
-/** Type representing no attributes */
-type Empty = Record<string, never>
+import type { PathGroups } from './pathGroups'
 
 /**
- * Sync graph: Undirected graph of paths that must have synchronized values
- *
- * Nodes: path identifiers (strings)
- * Node attributes: none
- * Edge attributes: { key: string } for deduplication
+ * Sync graph: Paths that must have synchronized values
+ * Type alias for PathGroups - maintains backward compatibility
  */
-export type SyncGraph = Graph<
-  Empty, // no node attributes
-  { key: string }, // edges have a key
-  Empty // no graph attributes
->
+export type SyncGraph = PathGroups
 
 /**
- * Flip graph: Undirected graph of paths with inverted boolean values
- *
- * Nodes: path identifiers (strings)
- * Node attributes: none
- * Edge attributes: { key: string } for consistency with sync graph
+ * Flip graph: Paths with inverted boolean values
+ * Type alias for PathGroups - maintains backward compatibility
  */
-export type FlipGraph = Graph<
-  Empty, // no node attributes
-  { key: string }, // edges have a key
-  Empty // no graph attributes
->
+export type FlipGraph = PathGroups
+
+// Re-export PathGroups type
+export type { PathGroups } from './pathGroups'

@@ -5,8 +5,7 @@
  * Uses normalizeChangesForGroups to handle exact, parent, and child changes.
  */
 
-import { connectedComponents } from 'graphology-components'
-
+import { getAllGroups } from '../../core/pathGroups'
 import type { StoreInstance } from '../../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../../types'
 import { AnyChange, normalizeChangesForGroups } from '../normalizeChanges'
@@ -19,8 +18,8 @@ export const processSyncPaths = <DATA extends object, META extends GenericMeta>(
   const { sync } = store._internal.graphs
   const { queue } = store._internal.processing
 
-  // Get connected components (groups of synced paths)
-  const pathGroups = connectedComponents(sync)
+  // Get connected components (groups of synced paths) - O(1) with PathGroups
+  const pathGroups = getAllGroups(sync)
   if (pathGroups.length === 0) return
 
   // Normalize changes for grouped paths

@@ -429,7 +429,6 @@ describe('dot utility', () => {
 
     it('should return false when intermediate path is null', () => {
       const state = { data: null as { nested: string } | null }
-      // @ts-expect-error - testing path through null
       expect(dot.has(state, 'data.nested')).toBe(false)
     })
   })

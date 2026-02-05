@@ -5,8 +5,7 @@
  * Uses normalizeChangesForGroups to handle exact, parent, and child changes.
  */
 
-import { connectedComponents } from 'graphology-components'
-
+import { getAllGroups } from '../../core/pathGroups'
 import type { StoreInstance } from '../../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../../types'
 import { AnyChange, normalizeChangesForGroups } from '../normalizeChanges'
@@ -19,8 +18,8 @@ export const processFlipPaths = <DATA extends object, META extends GenericMeta>(
   const { flip } = store._internal.graphs
   const { queue } = store._internal.processing
 
-  // Get connected components (groups of flipped paths)
-  const pathGroups = connectedComponents(flip)
+  // Get connected components (groups of flipped paths) - O(1) with PathGroups
+  const pathGroups = getAllGroups(flip)
   if (pathGroups.length === 0) return
 
   // Normalize changes for grouped paths

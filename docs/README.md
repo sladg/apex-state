@@ -18,5 +18,6 @@ Use this index to pick the right reference quickly. Each entry links to the cano
 | `docs/P0_TEST_COVERAGE_REPORT.md`    | QA / regression reviewers     | Snapshot of P0 coverage and scenarios; rerun guidance.                                |
 | `docs/USEFIELDCONCERNS_API.md`       | Frontend consumers            | How to read concern results from React components.                                    |
 | `docs/INPUT.md` / `docs/INPUT_v2.md` | Historical context            | Early requirements; marked as legacy for reference only.                              |
+| `docs/GRAPHOLOGY_REPLACEMENT.md`     | Maintainers                   | PathGroups data structure replacing graphology for O(1) connected component lookups.  |
 
 If you add or retire documentation, update this list so the next person can find it without spelunking the tree.

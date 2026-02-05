@@ -7,12 +7,5 @@ export default defineConfig({
   splitting: false,
   clean: true,
   sourcemap: true,
-  external: [
-    'react',
-    'zod',
-    'valtio',
-    'lodash',
-    'graphology',
-    'graphology-components',
-  ],
+  external: ['react', 'zod', 'valtio'],
 })

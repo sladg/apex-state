@@ -13,10 +13,10 @@
  * - Large pathGroups with many connected paths
  */
 
-import Graph from 'graphology'
 import { proxy } from 'valtio/vanilla'
 import { bench, describe } from 'vitest'
 
+import { addEdge, createPathGroups } from '../../src/core/pathGroups'
 import type { StoreInstance } from '../../src/core/types'
 import { normalizeChangesForGroups } from '../../src/pipeline/normalizeChanges'
 import { processChanges } from '../../src/pipeline/processChanges'
@@ -34,23 +34,15 @@ const createMockStore = (
   syncPaths: [string, string][] = [],
   flipPaths: [string, string][] = [],
 ): StoreInstance<BenchmarkState, GenericMeta> => {
-  const syncGraph = new Graph({ type: 'undirected' })
-  const flipGraph = new Graph({ type: 'undirected' })
+  const syncGraph = createPathGroups()
+  const flipGraph = createPathGroups()
 
   for (const [path1, path2] of syncPaths) {
-    if (!syncGraph.hasNode(path1)) syncGraph.addNode(path1)
-    if (!syncGraph.hasNode(path2)) syncGraph.addNode(path2)
-    if (!syncGraph.hasEdge(path1, path2)) {
-      syncGraph.addEdge(path1, path2)
-    }
+    addEdge(syncGraph, path1, path2)
   }
 
   for (const [path1, path2] of flipPaths) {
-    if (!flipGraph.hasNode(path1)) flipGraph.addNode(path1)
-    if (!flipGraph.hasNode(path2)) flipGraph.addNode(path2)
-    if (!flipGraph.hasEdge(path1, path2)) {
-      flipGraph.addEdge(path1, path2)
-    }
+    addEdge(flipGraph, path1, path2)
   }
 
   return {
@@ -58,14 +50,8 @@ const createMockStore = (
     _concerns: proxy({}),
     _internal: {
       graphs: {
-        sync: syncGraph as unknown as StoreInstance<
-          BenchmarkState,
-          GenericMeta
-        >['_internal']['graphs']['sync'],
-        flip: flipGraph as unknown as StoreInstance<
-          BenchmarkState,
-          GenericMeta
-        >['_internal']['graphs']['flip'],
+        sync: syncGraph,
+        flip: flipGraph,
         listeners: new Map(),
         sortedListenerPaths: [],
       },

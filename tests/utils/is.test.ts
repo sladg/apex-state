@@ -151,10 +151,22 @@ describe('is utility', () => {
 
   describe('function', () => {
     it('should return true for functions', () => {
-      expect(is.function(() => {})).toBe(true)
-      expect(is.function(function () {})).toBe(true)
-      expect(is.function(async () => {})).toBe(true)
-      expect(is.function(class {})).toBe(true)
+      expect(is.function(() => 0)).toBe(true)
+      expect(
+        is.function(function () {
+          return undefined
+        }),
+      ).toBe(true)
+      expect(is.function(async () => 0)).toBe(true)
+      expect(
+        is.function(
+          class {
+            m() {
+              return 1
+            }
+          },
+        ),
+      ).toBe(true)
     })
 
     it('should return false for other types', () => {
@@ -215,7 +227,7 @@ describe('is utility', () => {
     it('should return false for non-primitives', () => {
       expect(is.primitive({})).toBe(false)
       expect(is.primitive([])).toBe(false)
-      expect(is.primitive(() => {})).toBe(false)
+      expect(is.primitive(() => 0)).toBe(false)
     })
   })
 
@@ -261,8 +273,12 @@ describe('is utility', () => {
     })
 
     it('should return false for functions', () => {
-      expect(is.empty(() => {})).toBe(false)
-      expect(is.empty(function () {})).toBe(false)
+      expect(is.empty(() => 0)).toBe(false)
+      expect(
+        is.empty(function () {
+          return undefined
+        }),
+      ).toBe(false)
     })
 
     it('should return false for symbols', () => {
@@ -501,7 +517,7 @@ describe('is utility', () => {
       })
 
       it('should return false for functions', () => {
-        expect(is.not.function(() => {})).toBe(false)
+        expect(is.not.function(() => 0)).toBe(false)
       })
     })
 
@@ -542,7 +558,7 @@ describe('is utility', () => {
       it('should return true for non-primitives', () => {
         expect(is.not.primitive({})).toBe(true)
         expect(is.not.primitive([])).toBe(true)
-        expect(is.not.primitive(() => {})).toBe(true)
+        expect(is.not.primitive(() => 0)).toBe(true)
       })
 
       it('should return false for primitives', () => {
