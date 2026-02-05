@@ -327,7 +327,7 @@ type Paths = DeepKey<State>
 // 'users' | 'users.[*]' | 'users.[*].name' | 'users.[*].age'
 
 // Access with concrete keys at runtime
-const [name, setName] = store.useStore("users.alice.name")
+const [name, setName] = store.useStore(`users.${_("alice")}.name`)
 ```
 
 See `docs/WILDCARD_UTILITIES_EXAMPLE.md` and `docs/WILD_FUNCTION_GUIDE.md` for utility helpers.
