@@ -6,7 +6,7 @@ audience: contributors working on concerns
 
 # Concerns System Guide
 
-Read the shared workflow rules in `docs/agents/WORKFLOW_RULES.md` before touching this area.
+Read the shared workflow rules in `docs/guides/WORKFLOW_RULES.md` before touching this area.
 
 Concerns are synchronous computations that keep UI state in sync with `store.state` by writing their results into `store._concerns`. Everything below focuses on how to build, register, and verify them without wading through redundant reminders.
 
@@ -25,20 +25,18 @@ Reference implementations live in `src/concerns/registration.ts` and `src/concer
 
 ```ts
 // src/concerns/prebuilts/example.ts
-import type { ConcernType } from "../types";
+import type { ConcernType } from "../types"
 
 export const exampleConcern: ConcernType<{ threshold: number }, boolean> = {
   name: "aboveThreshold",
   description: "True when value exceeds configured threshold",
   evaluate: ({ state, path, config }) => state[path] > config.threshold,
-};
+}
 
 // usage in React component
-store.useConcerns("legs.0.strike", ({ register }) =>
-  register(exampleConcern, { threshold: 100 }),
-);
+store.useConcerns("legs.0.strike", ({ register }) => register(exampleConcern, { threshold: 100 }))
 
-const { aboveThreshold } = store.useFieldConcerns("legs.0.strike");
+const { aboveThreshold } = store.useFieldConcerns("legs.0.strike")
 ```
 
 Lifecycle:
@@ -54,7 +52,7 @@ Lifecycle:
 | Concern                                                  | Returns                 | Primary dependency          | Notes                                                             |
 | -------------------------------------------------------- | ----------------------- | --------------------------- | ----------------------------------------------------------------- |
 | `validationState`                                        | `ValidationStateResult` | Zod schema + optional scope | Aggregates errors; see tests under `tests/concerns/validation`.   |
-| `disabledWhen` / `visibleWhen` / `readonlyWhen`          | `boolean`               | BoolLogic tree              | Use `HAS_CONCERN` for chaining; see `src/utils/boolLogic.ts`.     |
+| `disabledWhen` / `visibleWhen` / `readonlyWhen`          | `boolean`               | BoolLogic tree              | See `src/utils/boolLogic.ts` for available operators.             |
 | `dynamicTooltip` / `dynamicLabel` / `dynamicPlaceholder` | `string`                | Interpolation template      | Uses `interpolateTemplate`; references are tracked automatically. |
 | `prefillValue` (if registered)                           | `unknown`               | explicit config             | Example of pure compute without BoolLogic.                        |
 
@@ -73,7 +71,7 @@ Treat the source files as documentation; this table is just a routing map.
 
 ## Dependency Tracking Primer
 
-`effect()` captures every property access on `state` during `evaluate()`. Use helpers like `deepGet` or plain property reads; both are tracked. Writes go exclusively to `_concerns`. If you need to read another concern's output, use BoolLogic's `HAS_CONCERN` instead of touching `_concerns` directly. Detailed reasoning lives in `docs/agents/ARCHITECTURE.md` and `CONCERNS_REFERENCE.md`.
+`effect()` captures every property access on `state` during `evaluate()`. Use helpers like `deepGet` or plain property reads; both are tracked. Writes go exclusively to `_concerns`. If you need to read another concern's output, do so through BoolLogic conditions on state paths rather than touching `_concerns` directly. Detailed reasoning lives in `docs/guides/ARCHITECTURE.md` and `CONCERNS_REFERENCE.md`.
 
 ## Testing
 

@@ -3,6 +3,7 @@ import { effect } from 'valtio-reactive'
 import type { StoreInstance } from '../core/types'
 import type { DeepKey, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
+import { measureTiming } from '../utils/timing'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
@@ -61,7 +62,17 @@ export const registerConcernEffects = <
           Object.assign({ state: store.state, path, value }, config)
 
         // EVALUATE concern (all state accesses inside are tracked!)
-        const result = concern.evaluate(evalProps)
+        // Wrapped with timing measurement when debug.timing is enabled
+        const result = measureTiming(
+          () => concern.evaluate(evalProps),
+          store.config.debug,
+          {
+            type: 'concern',
+            path,
+            name: concernName,
+            threshold: store.config.debug.timingThreshold,
+          },
+        )
 
         // Check cache (non-reactive!) to see if value changed
         const prev = resultCache.get(cacheKey)

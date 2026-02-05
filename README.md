@@ -21,7 +21,7 @@ The core functions (`evaluateBoolLogic`, `validationState`, etc.) are tested onc
 Built on [valtio](https://github.com/pmndrs/valtio) for proxy-based state and [valtio-reactive](https://github.com/jotaijs/valtio-reactive) for automatic dependency tracking.
 
 - **valtio**: Mutable-style API, immutable under the hood. Write `state.count++`, get efficient React updates.
-- **valtio-reactive**: Effects that auto-track which state paths they read. Change `state.user.name` → only effects reading that path re-run.
+- **valtio-reactive**: Effects that auto-track which state paths they read. Change `state.user.name` -> only effects reading that path re-run.
 
 Concerns wrap this: you declare _what_ to compute, the library handles _when_ to recompute.
 
@@ -186,6 +186,8 @@ Declarative conditions for `disabledWhen`, `readonlyWhen`, `visibleWhen`:
 
 ## Hooks
 
+### Store Hooks
+
 ```typescript
 // useState-like access
 const [value, setValue] = store.useStore("path.to.field")
@@ -210,8 +212,158 @@ jit.setChanges([
 jit.getState() // snapshot
 ```
 
----
+### Composable Field Hooks
 
-https://github.com/0xfurai/claude-code-subagents/blob/main/agents/vitest-expert.md
-https://github.com/0xfurai/claude-code-subagents/blob/main/agents/typescript-expert.md
-https://github.com/0xfurai/claude-code-subagents/blob/main/agents/react-expert.md
+Standalone hooks that wrap any field hook to add behavior. They compose with each other.
+
+```typescript
+import { useBufferedField, useThrottledField, useTransformedField, useKeyboardSelect } from "@sladg/apex-state"
+
+// Buffered editing - hold changes locally until commit
+const field = store.useFieldStore("user.name")
+const buffered = useBufferedField(field)
+buffered.setValue("draft") // local only
+buffered.commit() // push to store
+buffered.cancel() // revert to stored value
+buffered.isDirty // true if local !== stored
+
+// Throttled updates - rate-limit setValue calls
+const price = store.useFieldStore("spotPrice")
+const throttled = useThrottledField(price, { ms: 100 })
+throttled.setValue(1.234) // immediate
+throttled.setValue(1.235) // buffered, last value wins
+// After 100ms: 1.235 is applied
+
+// Value transformation - convert between storage and display formats
+const date = store.useFieldStore("user.birthdate")
+const formatted = useTransformedField(date, {
+  to: (iso) => format(new Date(iso), "MM/dd/yyyy"),
+  from: (display) => parse(display, "MM/dd/yyyy").toISOString(),
+})
+// formatted.value is "01/15/2024", store holds ISO string
+
+// Keyboard selection - type-ahead for select inputs
+const country = store.useFieldStore("user.country")
+const { onKeyDown, ...rest } = useKeyboardSelect(country, {
+  options: [
+    { value: "us", label: "United States" },
+    { value: "uk", label: "United Kingdom" },
+  ],
+})
+// User types "u" -> selects "United States"
+
+// Compose them together
+const raw = store.useFieldStore("price")
+const transformed = useTransformedField(raw, {
+  to: (cents) => (cents / 100).toFixed(2),
+  from: (dollars) => Math.round(parseFloat(dollars) * 100),
+})
+const throttled2 = useThrottledField(transformed, { ms: 50 })
+```
+
+## Side Effects
+
+Side effects react to state changes synchronously during the change processing pipeline. They run before concerns re-evaluate.
+
+```typescript
+// Register via hook
+store.useSideEffects("my-effects", {
+  // Sync paths: keep two paths in sync
+  syncPaths: [["billing.email", "shipping.email"]],
+
+  // Flip paths: inverse boolean pairs
+  flipPaths: [["isActive", "isInactive"]],
+
+  // Aggregations: derive target from sources
+  // Target is always first. Value = common value if all sources agree, else undefined.
+  aggregations: [
+    ["summary.price", "legs.0.price"],
+    ["summary.price", "legs.1.price"],
+  ],
+
+  // Listeners: react to changes under a path
+  listeners: [
+    {
+      path: "user.profile", // watch changes under this path
+      scope: "user.profile", // receive scoped state
+      fn: (changes, state) => {
+        // changes: [['name', 'Alice', {}]]  -- relative to scope
+        // state: user.profile sub-object
+        return [["audit.lastEdit", Date.now(), {}]] // return full paths
+      },
+    },
+  ],
+})
+```
+
+See `docs/SIDE_EFFECTS_GUIDE.md` for the full API reference.
+
+## Store Configuration
+
+```typescript
+const store = createGenericStore<MyState>({
+  // Max iterations for the change processing loop (default: 100)
+  maxIterations: 100,
+
+  // Debug tooling
+  debug: {
+    timing: true, // measure concern/listener execution time
+    timingThreshold: 16, // warn when an operation exceeds this (ms)
+  },
+})
+```
+
+## Record and Wildcard Paths
+
+Types with `Record<string, V>` are supported. Dynamic keys use `[*]` wildcard notation in paths:
+
+```typescript
+type State = {
+  users: Record<string, { name: string; age: number }>
+}
+
+// Type-safe paths include wildcards
+type Paths = DeepKey<State>
+// 'users' | 'users.[*]' | 'users.[*].name' | 'users.[*].age'
+
+// Access with concrete keys at runtime
+const [name, setName] = store.useStore("users.alice.name")
+```
+
+See `docs/WILDCARD_UTILITIES_EXAMPLE.md` and `docs/WILD_FUNCTION_GUIDE.md` for utility helpers.
+
+## Advanced Utilities
+
+```typescript
+import { dot, is, applyChangesToObject, evaluateBoolLogic } from "@sladg/apex-state"
+
+// Deep path access (for performance-critical code outside React)
+dot.get(state, "user.address.street")
+dot.set(state, "user.address.street", "New Street")
+
+// Type predicates
+is.object(value)
+is.array(value)
+is.not.nil(value)
+
+// Apply changes immutably (returns new object)
+const newState = applyChangesToObject(state, [
+  ["user.name", "Bob"],
+  ["user.age", 31],
+])
+
+// Evaluate BoolLogic outside concerns
+const disabled = evaluateBoolLogic({ IS_EQUAL: ["status", "submitted"] }, state)
+```
+
+## Documentation
+
+See `docs/README.md` for a full index. Key guides:
+
+| Guide                           | Audience                        |
+| ------------------------------- | ------------------------------- |
+| `docs/guides/ARCHITECTURE.md`   | Core architecture and data flow |
+| `docs/guides/CONCERNS_GUIDE.md` | Building and testing concerns   |
+| `docs/guides/STORE_HOOKS.md`    | Hook reference and patterns     |
+| `docs/SIDE_EFFECTS_GUIDE.md`    | Side effects API reference      |
+| `docs/DEBUG_TIMING.md`          | Debug and performance tooling   |

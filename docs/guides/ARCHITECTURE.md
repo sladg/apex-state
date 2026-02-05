@@ -6,7 +6,7 @@ audience: contributors touching core architecture
 
 # Apex State Architecture
 
-Review `docs/agents/WORKFLOW_RULES.md` for the non-negotiables. This document explains _why_ the architecture looks the way it does so you can make surgical changes without breaking the feedback loops that keep Apex State stable.
+Review `docs/guides/WORKFLOW_RULES.md` for the non-negotiables. This document explains _why_ the architecture looks the way it does so you can make surgical changes without breaking the feedback loops that keep Apex State stable.
 
 ## Goals at a Glance
 
@@ -49,7 +49,7 @@ The separation between `proxy` and `ref` is the reason React renders only when u
 
 - We rely on `valtio-reactive`'s `effect()` (see `src/concerns/registration.ts`).
 - Any deep property read during `evaluate()` becomes a tracked dependency.
-- Concern outputs are written into `_concerns`; reading another concern should go through BoolLogic (`HAS_CONCERN`) instead of `_concerns` directly.
+- Concern outputs are written into `_concerns`; reading another concern should go through BoolLogic conditions on state paths instead of reading `_concerns` directly.
 - `derive-valtio` was rejected because it tracks proxies wholesale; rationale captured in `CONCERNS_REFERENCE.md`.
 
 ## Change Processing
@@ -81,7 +81,7 @@ Keep these generics untouched; they enforce invariants across the public API.
 | Topic                                   | Source                          |
 | --------------------------------------- | ------------------------------- |
 | Failure stories and rejected approaches | `CONCERNS_REFERENCE.md`         |
-| Concern lifecycle                       | `docs/agents/CONCERNS_GUIDE.md` |
-| Hook surface area                       | `docs/agents/STORE_HOOKS.md`    |
+| Concern lifecycle                       | `docs/guides/CONCERNS_GUIDE.md` |
+| Hook surface area                       | `docs/guides/STORE_HOOKS.md`    |
 
 If a change conflicts with any invariant above, stop and escalate—it likely warrants an ADR rather than a stealth edit.

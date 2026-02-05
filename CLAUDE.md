@@ -82,7 +82,7 @@ StoreInstance {
 **Read**: `src/store/types.ts:193-221` for complete type definition
 
 **Key Insight**: Reading from `state` and writing to `_concerns` prevents infinite loops.
-**See why**: `docs/agents/ARCHITECTURE.md`
+**See why**: `docs/guides/ARCHITECTURE.md`
 
 ---
 
@@ -110,16 +110,28 @@ src/
 
 ---
 
+## Expert Agents
+
+**Before working on code in any of these areas, read the corresponding expert prompt first.** These contain domain-specific architecture context, key files, patterns, and rules. When spawning subagents (Task tool), include the expert prompt content in the task description.
+
+| Files touched                                                           | Read first                          |
+| ----------------------------------------------------------------------- | ----------------------------------- |
+| `src/concerns/`, `src/utils/boolLogic.ts`, `src/utils/interpolation.ts` | `docs/agents/expert-concerns.md`    |
+| `src/pipeline/`, `src/sideEffects/`, `src/core/pathGroups.ts`           | `docs/agents/expert-pipeline.md`    |
+| `src/store/`, `src/hooks/`, `src/core/context.ts`                       | `docs/agents/expert-store-hooks.md` |
+| `tests/` (any test work)                                                | `docs/agents/expert-testing.md`     |
+| Cross-cutting changes, new features, architecture decisions             | `docs/agents/expert-architect.md`   |
+
 ## Documentation Navigation
 
 **Working on concerns system?**
-→ Read `docs/agents/CONCERNS_GUIDE.md`
+→ Read `docs/guides/CONCERNS_GUIDE.md`
 
 **Understanding architecture?**
-→ Read `docs/agents/ARCHITECTURE.md`
+→ Read `docs/guides/ARCHITECTURE.md`
 
 **Using store hooks?**
-→ Read `docs/agents/STORE_HOOKS.md`
+→ Read `docs/guides/STORE_HOOKS.md`
 
 **Architecture decisions?**
 → Read `CONCERNS_REFERENCE.md`
@@ -153,7 +165,7 @@ src/
 ❌ **Never skip type-safe paths (DeepKey/DeepValue)**
 ❌ **Never forget to return cleanup functions**
 ❌ **Never move files around without explicit permission, if you must, use git mv to preserve history**
-❌ **Never pick shortcuts in typescript types. Do NOT use `as any` pattern**
+❌ **Never pick shortcuts in typescript types. Do NOT use `as any`, `as never`, `@ts-ignore`, or `@ts-expect-error` to suppress real type errors. Fix the types properly.**
 
 ---
 
