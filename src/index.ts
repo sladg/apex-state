@@ -28,6 +28,10 @@ export {
   useKeyboardSelect,
 } from './hooks/useKeyboardSelect'
 export {
+  type ThrottleConfig,
+  useThrottledField,
+} from './hooks/useThrottledField'
+export {
   type TransformConfig,
   useTransformedField,
 } from './hooks/useTransformedField'
