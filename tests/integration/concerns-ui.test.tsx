@@ -8,28 +8,28 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src'
-import type { ProductForm } from '../mocks'
-import { productFormFixtures } from '../mocks'
+import type { TestState } from '../mocks'
+import { defaults, testStateFixtures } from '../mocks'
 import { ProductComponent } from '../utils/components'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
-
-const createProductFormStore = () => createGenericStore<ProductForm>()
+import {
+  createStore,
+  fireEvent,
+  flushEffects,
+  renderWithStore,
+} from '../utils/react'
 
 describe('Integration: Dynamic UI State from Concerns', () => {
-  let store: ReturnType<typeof createProductFormStore>
+  let store: ReturnType<typeof createStore<TestState>>
 
   beforeEach(() => {
-    store = createProductFormStore()
+    store = createStore<TestState>(testStateFixtures.productEmpty)
   })
 
   it('TC4.1: shows weight field only for physical products', async () => {
     renderWithStore(
       <ProductComponent store={store} />,
       store,
-      {
-        ...productFormFixtures.empty,
-      },
+      { ...testStateFixtures.productEmpty },
       {
         concerns: {
           weight: {
@@ -59,9 +59,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     renderWithStore(
       <ProductComponent store={store} />,
       store,
-      {
-        ...productFormFixtures.empty,
-      },
+      { ...testStateFixtures.productEmpty },
       {
         concerns: {
           downloadUrl: {
@@ -88,13 +86,11 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       <ProductComponent store={store} />,
       store,
       {
-        type: 'physical',
-        name: '',
+        ...defaults,
+        type: 'physical' as const,
         price: 10,
         requiresShipping: true,
         taxable: true,
-        isPublished: false,
-        _errors: {},
       },
       {
         concerns: {
@@ -120,9 +116,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.4: updates field label based on product type', async () => {
-    renderWithStore(<ProductComponent store={store} />, store, {
-      ...productFormFixtures.empty,
-    })
+    renderWithStore(<ProductComponent store={store} />, store)
 
     expect(screen.getByTestId('name-label')).toHaveTextContent('Product Name')
 
@@ -134,9 +128,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.5: updates field placeholder dynamically', async () => {
-    renderWithStore(<ProductComponent store={store} />, store, {
-      ...productFormFixtures.empty,
-    })
+    renderWithStore(<ProductComponent store={store} />, store)
 
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
@@ -148,9 +140,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.6: displays dynamic tooltip with field restrictions', async () => {
-    renderWithStore(<ProductComponent store={store} />, store, {
-      ...productFormFixtures.empty,
-    })
+    renderWithStore(<ProductComponent store={store} />, store)
 
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
@@ -169,13 +159,11 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       <ProductComponent store={store} />,
       store,
       {
-        type: 'physical',
+        ...defaults,
+        type: 'physical' as const,
         name: 'Test Product',
-        price: 0,
         requiresShipping: true,
         taxable: true,
-        isPublished: false,
-        _errors: {},
       },
       {
         concerns: {
@@ -203,13 +191,11 @@ describe('Integration: Dynamic UI State from Concerns', () => {
       <ProductComponent store={store} />,
       store,
       {
-        type: 'physical',
-        name: '',
+        ...defaults,
+        type: 'physical' as const,
         price: 10,
         requiresShipping: true,
         taxable: true,
-        isPublished: false,
-        _errors: {},
       },
       {
         concerns: {

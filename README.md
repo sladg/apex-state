@@ -74,40 +74,43 @@ const OrderForm = () => {
     },
   })
 
-  // Access state with hooks
-  const [quantity, setQuantity] = store.useStore('product.quantity')
-  const address = store.useFieldStore('shipping.address')
-  const cardNumber = store.useFieldStore('payment.cardNumber')
+  // withConcerns selects which concern results to include alongside value/setValue
+  const { useFieldStore } = store.withConcerns({
+    validationState: true,
+    disabledWhen: true,
+    visibleWhen: true,
+    dynamicLabel: true,
+    dynamicTooltip: true,
+  })
 
-  // Access evaluated concerns
-  const quantityConcerns = store.useFieldConcerns('product.quantity')
-  const addressConcerns = store.useFieldConcerns('shipping.address')
-  const cardConcerns = store.useFieldConcerns('payment.cardNumber')
+  const quantity = useFieldStore('product.quantity')
+  const address = useFieldStore('shipping.address')
+  const card = useFieldStore('payment.cardNumber')
 
   return (
     <form>
       <input
         type="number"
-        value={quantity}
-        onChange={(e) => setQuantity(Number(e.target.value))}
-        disabled={quantityConcerns.disabledWhen}
-        className={quantityConcerns.validationState?.isError ? 'invalid' : 'valid'}
+        value={quantity.value}
+        onChange={(e) => quantity.setValue(Number(e.target.value))}
+        disabled={quantity.disabledWhen}
+        className={quantity.validationState?.isError ? 'invalid' : 'valid'}
       />
 
-      {addressConcerns.visibleWhen && (
+      {address.visibleWhen && (
         <input
           value={address.value}
           onChange={(e) => address.setValue(e.target.value)}
-          placeholder={addressConcerns.dynamicLabel}
+          placeholder={address.dynamicLabel}
         />
       )}
 
-      {cardConcerns.visibleWhen && (
+      {card.visibleWhen && (
         <input
-          value={cardNumber.value}
-          onChange={(e) => cardNumber.setValue(e.target.value)}
-          disabled={cardConcerns.disabledWhen}
-          title={cardConcerns.dynamicTooltip}
+          value={card.value}
+          onChange={(e) => card.setValue(e.target.value)}
+          disabled={card.disabledWhen}
+          title={card.dynamicTooltip}
         />
       )}
     </form>
@@ -197,11 +200,13 @@ const field = store.useFieldStore("path.to.field")
 field.value // current value
 field.setValue(v) // update value
 
-// Evaluated concerns for a path
-const concerns = store.useFieldConcerns("path.to.field")
-concerns.validationState // { isError: boolean, errors: ValidationError[] }
-concerns.disabledWhen // boolean
-concerns.dynamicTooltip // string
+// Access field value + selected concerns together
+const { useFieldStore: useFieldWithConcerns } = store.withConcerns({ validationState: true, disabledWhen: true, dynamicTooltip: true })
+const fieldWithConcerns = useFieldWithConcerns("path.to.field")
+fieldWithConcerns.value // current value
+fieldWithConcerns.validationState // { isError: boolean, errors: ValidationError[] }
+fieldWithConcerns.disabledWhen // boolean
+fieldWithConcerns.dynamicTooltip // string
 
 // Bulk operations (non-reactive)
 const jit = store.useJitStore()

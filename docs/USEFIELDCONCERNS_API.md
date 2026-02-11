@@ -1,33 +1,37 @@
 ---
-title: useFieldConcerns Hook
-updated: 2026-01-29
+title: withConcerns API
+updated: 2026-02-05
 audience: frontend consumers of concern results
 ---
 
-# `store.useFieldConcerns` API
+# `store.withConcerns` API
 
-`useFieldConcerns` exposes the computed concern outputs for a given path on the store instance created by `createGenericStore`. Pair it with `store.useConcerns` to register computations; this hook does the reading.
+`withConcerns` creates a scoped `useFieldStore` hook that includes selected concern values alongside the field's `value` and `setValue`. Pair it with `store.useConcerns` to register computations; `withConcerns` does the reading.
 
 ## Location
 
-- Implementation: `src/store/createStore.ts` (`useFieldConcerns` export)
-- Types: `EvaluatedConcerns` in `src/concerns/types.ts`
+- Implementation: `src/store/createStore.ts` (`withConcerns` export)
+- Types: `EvaluatedConcerns` in `src/types/concerns.ts`
 
 ## Signature
 
 ```ts
-store.useFieldConcerns<P extends DeepKey<DATA>>(
-  path: P,
-): EvaluatedConcerns<CONCERNS>
+store.withConcerns<SELECTION extends Partial<Record<string, boolean>>>(
+  selection: SELECTION,
+): { useFieldStore: <P extends DeepKey<DATA>>(path: P) => { value, setValue, ...selectedConcerns } }
 ```
 
 ### Parameters
 
-- `path`: Type-safe field path (e.g. `'user.email'`, `'legs.0.strike'`).
+- `selection`: An object mapping concern names to `true` to include them. E.g. `{ validationState: true, disabledWhen: true }`.
 
 ### Returns
 
-An object whose optional keys align with the concerns registered for that path. Example shape when using the built-ins:
+An object with a `useFieldStore` hook. When called with a path, it returns:
+
+- `value`: The current field value (`DeepValue<DATA, P>`)
+- `setValue`: Setter function
+- Plus each selected concern value as a property (if registered for that path)
 
 ```ts
 type ConcernValues = {
@@ -39,45 +43,48 @@ type ConcernValues = {
 };
 ```
 
-When no concerns exist for the path the hook returns an empty object (`{}`), so defensive null checks are unnecessary.
+When no concerns exist for the path, concern properties are `undefined`.
 
 ## How It Works
 
-1. Reads the store instance from context via `useStoreContext()`.
+1. Calls `_useFieldValue(path)` to get `value` and `setValue` from store context.
 2. Subscribes to `store._concerns` with `useSnapshot` from Valtio.
-3. Returns the value at `path`, cast to `EvaluatedConcerns<CONCERNS>`.
+3. Filters concern values based on the `selection` keys.
+4. Returns merged object with field value, setter, and selected concerns.
 
 Because concern evaluation writes into `_concerns`, React components re-render only when the relevant concern data changes.
 
 ## Usage
 
 ```tsx
+const { useFieldStore } = store.withConcerns({
+  validationState: true,
+  disabledWhen: true,
+  dynamicTooltip: true,
+})
+
 const Component = () => {
   store.useConcerns("form.concerns", {
     email: {
-      validationState: {
-        concern: validationState,
-        config: { schema: emailSchema },
-      },
-      dynamicTooltip: {
-        concern: dynamicTooltip,
-        config: { template: "Current value: {{email}}" },
-      },
+      validationState: { schema: emailSchema },
+      dynamicTooltip: { template: "Current value: {{email}}" },
     },
   });
 
-  const emailConcerns = store.useFieldConcerns("email");
+  const email = useFieldStore("email");
 
   return (
     <label>
       <input
         type="email"
-        className={emailConcerns.validationState?.isValid ? "" : "error"}
-        disabled={emailConcerns.disabledWhen === true}
-        placeholder={emailConcerns.dynamicTooltip}
+        className={email.validationState?.isValid ? "" : "error"}
+        disabled={email.disabledWhen === true}
+        placeholder={email.dynamicTooltip}
+        value={email.value}
+        onChange={(e) => email.setValue(e.target.value)}
       />
-      {emailConcerns.validationState?.message && (
-        <span role="alert">{emailConcerns.validationState.message}</span>
+      {email.validationState?.message && (
+        <span role="alert">{email.validationState.message}</span>
       )}
     </label>
   );
@@ -87,8 +94,7 @@ const Component = () => {
 ## Related Hooks
 
 - `store.useConcerns(id, registration, customConcerns?)` — Registers the concerns that populate `_concerns`.
-- `store.useStore(path)` / `store.useFieldStore(path)` — Read/write the underlying field value.
-- `store.withConcerns(selection)` — Compose concern values directly into `useFieldStore` results when you want a single call site.
+- `store.useStore(path)` / `store.useFieldStore(path)` — Read/write the underlying field value (without concerns).
 
 ## Test Coverage
 

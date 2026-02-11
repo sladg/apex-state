@@ -62,7 +62,7 @@ export const myConcern = {
 - `useStore('path.to.prop')`: `useState`-like.
 - `useFieldStore('path.to.prop')`: Object API `{ value, setValue }`.
 - `useConcerns('id', { ...config })`: Register logic.
-- `useFieldConcerns('path.to.prop')`: Read evaluated logic.
+- `withConcerns({ concernName: true })`: Returns `{ useFieldStore }` with selected concern values merged in.
 
 ## Type Safety
 Always use `DeepKey<T>` for path arguments to ensure compile-time validity.

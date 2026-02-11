@@ -1,28 +1,17 @@
 // Types
 export type {
-  FormWithErrors,
+  AddressInfo,
+  CartItem,
   NestedCart,
-  OptimizationState,
-  ProductForm,
-  ProfileForm,
-  RegistrationForm,
-  ShoppingCart,
-  UserProfile,
-  WizardForm,
+  PersonalInfo,
+  TestState,
 } from './types'
 
 // Fixtures
-export {
-  formWithErrorsFixtures,
-  nestedCartFixtures,
-  optimizationFixtures,
-  productFormFixtures,
-  profileFormFixtures,
-  registrationFormFixtures,
-  shoppingCartFixtures,
-  userProfileFixtures,
-  wizardFormFixtures,
-} from './fixtures'
+export { defaults, nestedCartFixtures, testStateFixtures } from './fixtures'
 
 // Helpers
 export { typeHelpers } from './helpers'
+
+// Store factory (re-exported from utils/react for convenience)
+export { createStore } from '../utils/react'

@@ -166,6 +166,7 @@ src/
 ❌ **Never forget to return cleanup functions**
 ❌ **Never move files around without explicit permission, if you must, use git mv to preserve history**
 ❌ **Never pick shortcuts in typescript types. Do NOT use `as any`, `as never`, `@ts-ignore`, or `@ts-expect-error` to suppress real type errors. Fix the types properly.**
+❌ **Never remove or modify existing code comments unless explicitly asked. Comments contain valuable context, intent, and history that is easily lost and hard to recover.**
 
 ---
 

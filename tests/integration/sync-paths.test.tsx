@@ -8,24 +8,26 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src'
-import type { ProfileForm } from '../mocks'
-import { profileFormFixtures, typeHelpers } from '../mocks'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
-
-const createProfileFormStore = () => createGenericStore<ProfileForm>()
+import type { TestState } from '../mocks'
+import { testStateFixtures, typeHelpers } from '../mocks'
+import {
+  createStore,
+  fireEvent,
+  flushEffects,
+  renderWithStore,
+} from '../utils/react'
 
 describe('Integration: Bidirectional Field Sync', () => {
-  let store: ReturnType<typeof createProfileFormStore>
+  let store: ReturnType<typeof createStore<TestState>>
 
   beforeEach(() => {
-    store = createProfileFormStore()
+    store = createStore<TestState>(testStateFixtures.profileSyncEmpty)
   })
 
   it('TC2.1: updates fullName when firstName changes', async () => {
     function FormComponent() {
       store.useSideEffects('profile-sync', {
-        syncPaths: [typeHelpers.syncPair<ProfileForm>('firstName', 'lastName')],
+        syncPaths: [typeHelpers.syncPair<TestState>('firstName', 'lastName')],
       })
 
       const firstNameField = store.useFieldStore('firstName')
@@ -44,7 +46,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.empty })
+    renderWithStore(<FormComponent />, store)
 
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'John' } })
@@ -76,8 +78,8 @@ describe('Integration: Bidirectional Field Sync', () => {
     }
 
     renderWithStore(<FormComponent />, store, {
+      ...testStateFixtures.profileSyncEmpty,
       firstName: 'John',
-      lastName: '',
       fullName: 'John',
       displayName: 'John',
     })
@@ -94,7 +96,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     function FormComponent() {
       store.useSideEffects('display-sync', {
         syncPaths: [
-          typeHelpers.syncPair<ProfileForm>('displayName', 'firstName'),
+          typeHelpers.syncPair<TestState>('displayName', 'firstName'),
         ],
       })
 
@@ -114,7 +116,11 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.filled })
+    renderWithStore(
+      <FormComponent />,
+      store,
+      testStateFixtures.profileSyncFilled,
+    )
 
     const input = screen.getByTestId('displayName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'Jane' } })
@@ -132,8 +138,8 @@ describe('Integration: Bidirectional Field Sync', () => {
 
       store.useSideEffects('circular-sync', {
         syncPaths: [
-          typeHelpers.syncPair<ProfileForm>('firstName', 'lastName'),
-          typeHelpers.syncPair<ProfileForm>('lastName', 'firstName'),
+          typeHelpers.syncPair<TestState>('firstName', 'lastName'),
+          typeHelpers.syncPair<TestState>('lastName', 'firstName'),
         ],
       })
 
@@ -157,7 +163,11 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.filled })
+    renderWithStore(
+      <FormComponent />,
+      store,
+      testStateFixtures.profileSyncFilled,
+    )
 
     const firstInput = screen.getByTestId('firstName-input') as HTMLInputElement
     const initialRenderCount = renderCount
@@ -176,7 +186,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     function FormComponent() {
       store.useSideEffects('multi-sync', {
         syncPaths: [
-          typeHelpers.syncPair<ProfileForm>('firstName', 'displayName'),
+          typeHelpers.syncPair<TestState>('firstName', 'displayName'),
         ],
       })
 
@@ -195,7 +205,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.empty })
+    renderWithStore(<FormComponent />, store)
 
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
 
@@ -214,8 +224,8 @@ describe('Integration: Bidirectional Field Sync', () => {
     function FormComponent() {
       store.useSideEffects('ordered-sync', {
         syncPaths: [
-          typeHelpers.syncPair<ProfileForm>('firstName', 'lastName'),
-          typeHelpers.syncPair<ProfileForm>('lastName', 'displayName'),
+          typeHelpers.syncPair<TestState>('firstName', 'lastName'),
+          typeHelpers.syncPair<TestState>('lastName', 'displayName'),
         ],
       })
 
@@ -239,7 +249,7 @@ describe('Integration: Bidirectional Field Sync', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, { ...profileFormFixtures.empty })
+    renderWithStore(<FormComponent />, store)
 
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'John' } })

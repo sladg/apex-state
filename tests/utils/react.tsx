@@ -29,6 +29,12 @@ type GenericStore<
   META extends GenericMeta = GenericMeta,
 > = ReturnType<typeof createGenericStore<T, META>>
 
+// Store with attached default state (returned by createStore)
+type StoreWithDefault<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+> = GenericStore<T, META> & { defaultState: T }
+
 // Type for concerns registration - inferred from store
 type ConcernsRegistration<T extends object> = Partial<
   Record<DeepKey<T>, Record<string, any>>
@@ -147,6 +153,43 @@ export const createTestStore = <T extends object>(initialData: T) => {
   }
 }
 
+/**
+ * Create a store with attached default state for use with renderWithStore.
+ *
+ * Wraps createGenericStore and attaches `defaultState` so that
+ * renderWithStore can use it automatically when no explicit initialState is passed.
+ *
+ * @example
+ * ```typescript
+ * const store = createStore<TestState>(testStateFixtures.formEmpty)
+ * renderWithStore(<FormComponent />, store) // uses store.defaultState
+ * renderWithStore(<FormComponent />, store, overrideState) // uses override
+ * ```
+ */
+export const createStore = <
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  defaultState: T,
+  config?: Parameters<typeof createGenericStore<T, META>>[0],
+): StoreWithDefault<T, META> => {
+  const store = createGenericStore<T, META>(config)
+  return Object.assign(store, { defaultState })
+}
+
+// Overload: Old API with component, initialState from store.defaultState
+export function renderWithStore<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  component: ReactElement,
+  store: StoreWithDefault<T, META>,
+  options?: {
+    concerns?: ConcernsRegistration<T>
+    concernsId?: string
+  },
+): RenderResult & { storeInstance: StoreInstance<T, META> }
+
 // Overload: Old API with component (backward compatible)
 export function renderWithStore<
   T extends object,
@@ -207,7 +250,7 @@ export function renderWithStore<
 >(
   componentOrStore: ReactElement | GenericStore<T, META>,
   storeOrInitialState: GenericStore<T, META> | T,
-  initialStateOrOptions: T | any,
+  initialStateOrOptions?: T | any,
   optionsOrUndefined?: any,
 ): RenderResult & { storeInstance: StoreInstance<T, META> } {
   // Detect which API is being used
@@ -219,11 +262,29 @@ export function renderWithStore<
   let options: any
 
   if (isOldAPI) {
-    // Old API: (component, store, initialState, options)
+    // Old API: (component, store, ...)
     component = componentOrStore as ReactElement
     store = storeOrInitialState as GenericStore<T, META>
-    initialState = initialStateOrOptions as T
-    options = optionsOrUndefined
+
+    // Check if initialState was provided or should use store.defaultState
+    if (
+      initialStateOrOptions === undefined ||
+      (initialStateOrOptions &&
+        typeof initialStateOrOptions === 'object' &&
+        ('concerns' in initialStateOrOptions ||
+          'concernsId' in initialStateOrOptions))
+    ) {
+      // No initialState provided, or third arg is options — use store.defaultState
+      // structuredClone prevents valtio's proxy() from mutating the shared fixture
+      initialState = structuredClone(
+        (store as StoreWithDefault<T, META>).defaultState,
+      )
+      options = initialStateOrOptions
+    } else {
+      // Old API: (component, store, initialState, options)
+      initialState = initialStateOrOptions as T
+      options = optionsOrUndefined
+    }
   } else {
     // New API: (store, initialState, options)
     component = null
@@ -369,6 +430,26 @@ export const flushSync = async () => {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+/**
+ * Validate a field and update the errors object.
+ *
+ * Replaces the repeated spread-set-delete pattern:
+ *   const errors = { ...errorsField.value }
+ *   if (!isValid) errors[name] = [msg]; else delete errors[name];
+ *   errorsField.setValue(errors)
+ */
+export const validateField = (
+  errorsField: { value: Record<string, any[]>; setValue: (v: any) => void },
+  fieldName: string,
+  isValid: boolean,
+  errorMessage: string,
+) => {
+  const { [fieldName]: _, ...rest } = errorsField.value
+  errorsField.setValue(
+    isValid ? rest : { ...rest, [fieldName]: [errorMessage] },
+  )
 }
 
 /**

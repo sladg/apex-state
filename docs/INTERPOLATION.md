@@ -53,7 +53,8 @@ store.useConcerns("legs.0.strike", {
   },
 });
 
-const { dynamicTooltip } = store.useFieldConcerns("legs.0.strike");
+const { useFieldStore } = store.withConcerns({ dynamicTooltip: true });
+const { dynamicTooltip } = useFieldStore("legs.0.strike");
 // → "Current value: 105"
 ```
 

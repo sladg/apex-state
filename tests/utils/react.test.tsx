@@ -8,19 +8,17 @@ import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createGenericStore } from '../../src'
-import type { RegistrationForm } from '../mocks'
-import { registrationFormFixtures } from '../mocks'
+import type { TestState } from '../mocks'
+import { testStateFixtures } from '../mocks'
 import {
   assertions,
+  createStore,
   createTestStore,
   domHelpers,
   fireEvent,
   flushEffects,
   renderWithStore,
 } from './react'
-
-const createRegistrationFormStore = () => createGenericStore<RegistrationForm>()
 
 describe('React Test Utilities', () => {
   describe('createTestStore', () => {
@@ -48,7 +46,7 @@ describe('React Test Utilities', () => {
 
   describe('renderWithStore', () => {
     it('renders component with store Provider', async () => {
-      const store = createRegistrationFormStore()
+      const store = createStore<TestState>(testStateFixtures.formEmpty)
 
       const TestComponent = () => {
         const emailField = store.useFieldStore('email')
@@ -61,7 +59,7 @@ describe('React Test Utilities', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, registrationFormFixtures.empty)
+      renderWithStore(<TestComponent />, store)
 
       const input = screen.getByTestId('email-input') as HTMLInputElement
       expect(input).toBeInTheDocument()
@@ -71,7 +69,7 @@ describe('React Test Utilities', () => {
 
   describe('fireEvent', () => {
     it('wraps change events in act()', async () => {
-      const store = createRegistrationFormStore()
+      const store = createStore<TestState>(testStateFixtures.formEmpty)
 
       const TestComponent = () => {
         const emailField = store.useFieldStore('email')
@@ -84,7 +82,7 @@ describe('React Test Utilities', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, registrationFormFixtures.empty)
+      renderWithStore(<TestComponent />, store)
 
       const input = screen.getByTestId('email-input') as HTMLInputElement
 
@@ -95,7 +93,7 @@ describe('React Test Utilities', () => {
     })
 
     it('wraps click events in act()', async () => {
-      const store = createRegistrationFormStore()
+      const store = createStore<TestState>(testStateFixtures.formEmpty)
 
       const TestComponent = () => {
         const termsField = store.useFieldStore('agreeToTerms')
@@ -109,7 +107,7 @@ describe('React Test Utilities', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, registrationFormFixtures.empty)
+      renderWithStore(<TestComponent />, store)
 
       const checkbox = screen.getByTestId('terms-checkbox') as HTMLInputElement
       expect(checkbox.checked).toBe(false)
@@ -123,7 +121,7 @@ describe('React Test Utilities', () => {
 
   describe('flushEffects', () => {
     it('flushes async valtio updates', async () => {
-      const store = createRegistrationFormStore()
+      const store = createStore<TestState>(testStateFixtures.formEmpty)
 
       const TestComponent = () => {
         store.useConcerns('test', {
@@ -150,7 +148,7 @@ describe('React Test Utilities', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, registrationFormFixtures.empty)
+      renderWithStore(<TestComponent />, store)
 
       const input = screen.getByTestId('email-input') as HTMLInputElement
       fireEvent.change(input, { target: { value: 'invalid' } })

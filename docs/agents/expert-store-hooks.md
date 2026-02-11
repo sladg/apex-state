@@ -11,7 +11,7 @@ You own `src/store/`, `src/hooks/`, `src/core/context.ts`, and the public API su
 ```
 createGenericStore<DATA>(config?)
   → creates Provider component (wraps createProvider)
-  → returns { Provider, useStore, useFieldStore, useJitStore, useConcerns, useFieldConcerns, useSideEffects, withConcerns }
+  → returns { Provider, useStore, useFieldStore, useJitStore, useConcerns, useSideEffects, withConcerns }
 
 Provider mounts:
   → store.state = proxy(initialState)        // tracked user data
@@ -46,7 +46,6 @@ interface StoreInstance<DATA, META> {
   state: DATA                              // proxy({...}) — tracked
   _concerns: ConcernValues                 // proxy({}) — tracked
   _internal: InternalState<DATA, META>     // ref({...}) — NOT tracked
-  config: ResolvedStoreConfig
 }
 ```
 
@@ -58,7 +57,6 @@ interface StoreInstance<DATA, META> {
 | `useFieldStore(path)` | `<P extends DeepKey<DATA>>(path: P)` | `{ value, setValue }` |
 | `useJitStore()` | `()` | `{ proxyValue, setChanges, getState }` |
 | `useConcerns(id, registration, customConcerns?)` | `(id: string, registration: Record<...>, concerns?: ConcernType[])` | `void` |
-| `useFieldConcerns(path)` | — | `EvaluatedConcerns` |
 | `useSideEffects(id, config)` | `(id: string, effects: SideEffects<DATA>)` | `void` |
 | `withConcerns(selection)` | `(selection: Record<string, boolean>)` | `{ useFieldStore }` with concern props merged |
 

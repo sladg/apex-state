@@ -26,7 +26,7 @@
 |-----------|--------|----------|
 | Two-proxy architecture | ✅ DONE | store.state + store._concerns |
 | useConcerns effect() | ✅ DONE | Automatic dependency tracking |
-| useFieldConcerns hook | ✅ DONE | React integration working |
+| withConcerns hook | ✅ DONE | React integration working |
 | P0 test suite | ✅ DONE | 19 tests, 100% passing |
 | flipPaths evaluation | ✅ DONE | Incompatible (keep as side-effect) |
 | onStateListeners eval | ✅ DONE | Incompatible (keep separate) |

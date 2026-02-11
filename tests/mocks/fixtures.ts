@@ -1,127 +1,211 @@
 /**
  * Shared test fixtures and initial states
  *
- * Pre-built initial state configurations for each test scenario,
- * reducing duplication across test files.
+ * All fixtures are based on the unified TestState type. A `defaults` object
+ * provides sensible zero-values for every field. Each named fixture spreads
+ * `defaults` and overrides the domain-specific fields it needs.
  *
- * ## Purpose
- * Provides consistent, type-safe initial state data for stores in
- * integration tests. Each fixture represents a specific test scenario
- * state (empty form, partially filled, complete, with errors, etc.).
- *
- * ## Usage Pattern
+ * ## Usage
  * ```typescript
- * import { createRegistrationFormStore, registrationFormFixtures } from '../mocks'
+ * import { testStateFixtures } from '../mocks'
+ * import { createGenericStore } from '../../src'
+ * import type { TestState } from '../mocks'
  *
- * const store = createRegistrationFormStore()
- *
- * // Start with empty form
- * render(<store.Provider initialState={registrationFormFixtures.empty}>...)
- *
- * // Or start with partial data
- * render(<store.Provider initialState={registrationFormFixtures.partial}>...)
+ * const store = createGenericStore<TestState>()
+ * render(<store.Provider initialState={testStateFixtures.formEmpty}>...)
  * ```
- *
- * ## Fixture Naming Convention
- * Each fixture set follows a consistent naming pattern:
- * - **empty** - All fields empty/default
- * - **partial** - Some fields filled
- * - **complete/filled** - All required fields valid
- * - **withErrors** - Pre-populated with validation errors
- * - **updated** - Modified state for testing updates
- * - **step[N]** - Multi-step workflow states (wizard forms)
- *
- * ## Benefits
- * - Type-safe: Uses `satisfies` to catch schema mismatches
- * - Consistent: Same structure across all tests
- * - DRY: No repeated initial state objects
- * - Discoverable: IDE autocomplete shows all fixtures
- *
- * ## Companion Files
- * - Use with `stores.ts` factory functions
- * - Combine with `helpers.ts` for validation and test patterns
  */
 
-import type {
-  FormWithErrors,
-  NestedCart,
-  OptimizationState,
-  ProductForm,
-  ProfileForm,
-  RegistrationForm,
-  ShoppingCart,
-  UserProfile,
-  WizardForm,
-} from './types'
+import type { NestedCart, TestState } from './types'
 
 /**
- * Registration Form fixtures
+ * Default values for all TestState fields
  */
-export const registrationFormFixtures = {
-  empty: {
-    email: '',
-    password: '',
-    confirmPassword: '',
-    agreeToTerms: false,
-    _errors: {},
-  } satisfies RegistrationForm,
+export const defaults: TestState = {
+  // Form fields
+  email: '',
+  password: '',
+  confirmPassword: '',
+  agreeToTerms: false,
+  submitted: false,
 
-  partial: {
+  // User profile fields
+  username: '',
+  age: 0,
+  bio: '',
+  isActive: false,
+  lastUpdated: 0,
+
+  // Product form fields
+  type: 'physical',
+  name: '',
+  price: 0,
+  requiresShipping: true,
+  taxable: true,
+  isPublished: false,
+
+  // Shopping cart fields
+  items: {},
+  subtotal: 0,
+  tax: 0,
+  total: 0,
+  itemCount: 0,
+
+  // Wizard form fields
+  currentStep: 1,
+  personalInfo: { firstName: '', lastName: '' },
+  addressInfo: { street: '', city: '', zipCode: '' },
+  reviewData: { allFilled: false, isValid: false },
+
+  // Optimization fields
+  val: '',
+  isInternal: false,
+
+  // Profile sync fields
+  firstName: '',
+  lastName: '',
+  fullName: '',
+  displayName: '',
+
+  // Shared error storage
+  _errors: {},
+}
+
+/**
+ * Unified test state fixtures
+ */
+export const testStateFixtures = {
+  // --- Form Validation & Error Handling ---
+  formEmpty: {
+    ...defaults,
+  } satisfies TestState,
+
+  formPartial: {
+    ...defaults,
     email: 'john@example.com',
     password: 'Test123',
     confirmPassword: 'Test123',
-    agreeToTerms: false,
-    _errors: {},
-  } satisfies RegistrationForm,
+  } satisfies TestState,
 
-  complete: {
+  formComplete: {
+    ...defaults,
     email: 'john@example.com',
     password: 'StrongPass123',
     confirmPassword: 'StrongPass123',
     agreeToTerms: true,
-    _errors: {},
-  } satisfies RegistrationForm,
-}
+  } satisfies TestState,
 
-/**
- * Profile Form fixtures (Sync Paths)
- */
-export const profileFormFixtures = {
-  empty: {
-    firstName: '',
-    lastName: '',
-    fullName: '',
-    displayName: '',
-  } satisfies ProfileForm,
+  formWithErrors: {
+    ...defaults,
+    email: 'invalid',
+    password: 'weak',
+    confirmPassword: 'weak',
+    _errors: {
+      email: ['Invalid email format'],
+      password: ['Password too short'],
+    },
+  } satisfies TestState,
 
-  filled: {
+  formValid: {
+    ...defaults,
+    email: 'valid@example.com',
+    password: 'StrongPass123',
+    confirmPassword: 'StrongPass123',
+  } satisfies TestState,
+
+  formSubmitted: {
+    ...defaults,
+    email: 'valid@example.com',
+    password: 'StrongPass123',
+    confirmPassword: 'StrongPass123',
+    submitted: true,
+  } satisfies TestState,
+
+  // --- User Profile (Side Effects) ---
+  profileEmpty: {
+    ...defaults,
+  } satisfies TestState,
+
+  profileFilled: {
+    ...defaults,
+    username: 'john_doe',
+    email: 'john@example.com',
+    age: 30,
+    bio: 'Software developer',
+    isActive: true,
+    lastUpdated: Date.now(),
+  } satisfies TestState,
+
+  profileWithErrors: {
+    ...defaults,
+    username: 'admin',
+    email: 'invalid-email',
+    age: 25,
+    isActive: false,
+    lastUpdated: Date.now(),
+    _errors: {
+      username: ['Username is taken'],
+      email: ['Invalid email format'],
+    },
+  } satisfies TestState,
+
+  // --- Profile Sync ---
+  profileSyncEmpty: {
+    ...defaults,
+  } satisfies TestState,
+
+  profileSyncFilled: {
+    ...defaults,
     firstName: 'John',
     lastName: 'Doe',
     fullName: 'John Doe',
     displayName: 'John',
-  } satisfies ProfileForm,
+  } satisfies TestState,
 
-  updated: {
+  profileSyncUpdated: {
+    ...defaults,
     firstName: 'Jane',
     lastName: 'Smith',
     fullName: 'Jane Smith',
     displayName: 'Jane',
-  } satisfies ProfileForm,
-}
+  } satisfies TestState,
 
-/**
- * Shopping Cart fixtures (Aggregations)
- */
-export const shoppingCartFixtures = {
-  empty: {
-    items: {},
-    subtotal: 0,
-    tax: 0,
-    total: 0,
-    itemCount: 0,
-  } satisfies ShoppingCart,
+  // --- Product Form (Concerns UI) ---
+  productEmpty: {
+    ...defaults,
+    type: 'physical' as const,
+    requiresShipping: true,
+    taxable: true,
+  } satisfies TestState,
 
-  singleItem: {
+  productDigital: {
+    ...defaults,
+    type: 'digital' as const,
+    name: 'Software Suite',
+    price: 99,
+    downloadUrl: 'https://download.example.com/software.zip',
+    requiresShipping: false,
+    taxable: false,
+  } satisfies TestState,
+
+  productPhysical: {
+    ...defaults,
+    type: 'physical' as const,
+    name: 'Widget',
+    price: 29.99,
+    weight: 2.5,
+    requiresShipping: true,
+    taxable: true,
+    isPublished: true,
+  } satisfies TestState,
+
+  // --- Shopping Cart (Aggregations) ---
+  cartEmpty: {
+    ...defaults,
+  } satisfies TestState,
+
+  cartSingleItem: {
+    ...defaults,
     items: {
       'item-1': {
         name: 'Product A',
@@ -134,9 +218,10 @@ export const shoppingCartFixtures = {
     tax: 2,
     total: 22,
     itemCount: 1,
-  } satisfies ShoppingCart,
+  } satisfies TestState,
 
-  multipleItems: {
+  cartMultipleItems: {
+    ...defaults,
     items: {
       'item-1': {
         name: 'Product A',
@@ -155,11 +240,58 @@ export const shoppingCartFixtures = {
     tax: 7,
     total: 77,
     itemCount: 2,
-  } satisfies ShoppingCart,
+  } satisfies TestState,
+
+  // --- Wizard Form (Complex Workflows) ---
+  wizardStep1Empty: {
+    ...defaults,
+    currentStep: 1 as const,
+    personalInfo: { firstName: '', lastName: '' },
+    addressInfo: { street: '', city: '', zipCode: '' },
+    reviewData: { allFilled: false, isValid: false },
+  } satisfies TestState,
+
+  wizardStep1Filled: {
+    ...defaults,
+    currentStep: 1 as const,
+    personalInfo: { firstName: 'John', lastName: 'Doe' },
+    addressInfo: { street: '', city: '', zipCode: '' },
+    reviewData: { allFilled: false, isValid: false },
+  } satisfies TestState,
+
+  wizardStep2Filled: {
+    ...defaults,
+    currentStep: 2 as const,
+    personalInfo: { firstName: 'John', lastName: 'Doe' },
+    addressInfo: {
+      street: '123 Main St',
+      city: 'Springfield',
+      zipCode: '12345',
+    },
+    reviewData: { allFilled: false, isValid: false },
+  } satisfies TestState,
+
+  wizardStep3Review: {
+    ...defaults,
+    currentStep: 3 as const,
+    personalInfo: { firstName: 'John', lastName: 'Doe' },
+    addressInfo: {
+      street: '123 Main St',
+      city: 'Springfield',
+      zipCode: '12345',
+    },
+    reviewData: { allFilled: true, isValid: true },
+  } satisfies TestState,
+
+  // --- Optimization ---
+  optimizationInitial: {
+    ...defaults,
+    val: 'A',
+  } satisfies TestState,
 }
 
 /**
- * Nested Cart fixtures
+ * Nested Cart fixtures (separate domain, TC3.8 only)
  */
 export const nestedCartFixtures = {
   withElectronics: {
@@ -193,174 +325,4 @@ export const nestedCartFixtures = {
     },
     total: 260,
   } satisfies NestedCart,
-}
-
-/**
- * Product Form fixtures (Concerns UI)
- */
-export const productFormFixtures = {
-  empty: {
-    type: 'physical' as const,
-    name: '',
-    price: 0,
-    requiresShipping: true,
-    taxable: true,
-    isPublished: false,
-    _errors: {},
-  } satisfies ProductForm,
-
-  digitalProduct: {
-    type: 'digital' as const,
-    name: 'Software Suite',
-    price: 99,
-    downloadUrl: 'https://download.example.com/software.zip',
-    requiresShipping: false,
-    taxable: false,
-    isPublished: false,
-    _errors: {},
-  } satisfies ProductForm,
-
-  physicalProduct: {
-    type: 'physical' as const,
-    name: 'Widget',
-    price: 29.99,
-    weight: 2.5,
-    requiresShipping: true,
-    taxable: true,
-    isPublished: true,
-    _errors: {},
-  } satisfies ProductForm,
-}
-
-/**
- * User Profile fixtures (Side Effects)
- */
-export const userProfileFixtures = {
-  empty: {
-    username: '',
-    email: '',
-    age: 0,
-    bio: '',
-    isActive: false,
-    lastUpdated: 0,
-    _errors: {},
-  } satisfies UserProfile,
-
-  filled: {
-    username: 'john_doe',
-    email: 'john@example.com',
-    age: 30,
-    bio: 'Software developer',
-    isActive: true,
-    lastUpdated: Date.now(),
-    _errors: {},
-  } satisfies UserProfile,
-
-  withErrors: {
-    username: 'admin',
-    email: 'invalid-email',
-    age: 25,
-    bio: '',
-    isActive: false,
-    lastUpdated: Date.now(),
-    _errors: {
-      username: ['Username is taken'],
-      email: ['Invalid email format'],
-    },
-  } satisfies UserProfile,
-}
-
-/**
- * Wizard Form fixtures (Complex Workflows)
- */
-export const wizardFormFixtures = {
-  step1Empty: {
-    currentStep: 1,
-    personalInfo: { firstName: '', lastName: '' },
-    addressInfo: { street: '', city: '', zipCode: '' },
-    reviewData: { allFilled: false, isValid: false },
-    _errors: {},
-  } satisfies WizardForm,
-
-  step1Filled: {
-    currentStep: 1,
-    personalInfo: { firstName: 'John', lastName: 'Doe' },
-    addressInfo: { street: '', city: '', zipCode: '' },
-    reviewData: { allFilled: false, isValid: false },
-    _errors: {},
-  } satisfies WizardForm,
-
-  step2Filled: {
-    currentStep: 2,
-    personalInfo: { firstName: 'John', lastName: 'Doe' },
-    addressInfo: {
-      street: '123 Main St',
-      city: 'Springfield',
-      zipCode: '12345',
-    },
-    reviewData: { allFilled: false, isValid: false },
-    _errors: {},
-  } satisfies WizardForm,
-
-  step3Review: {
-    currentStep: 3,
-    personalInfo: { firstName: 'John', lastName: 'Doe' },
-    addressInfo: {
-      street: '123 Main St',
-      city: 'Springfield',
-      zipCode: '12345',
-    },
-    reviewData: { allFilled: true, isValid: true },
-    _errors: {},
-  } satisfies WizardForm,
-}
-
-/**
- * Form with Errors fixtures (Error Handling)
- */
-export const formWithErrorsFixtures = {
-  empty: {
-    email: '',
-    password: '',
-    confirmPassword: '',
-    submitted: false,
-    _errors: {},
-  } satisfies FormWithErrors,
-
-  withValidationErrors: {
-    email: 'invalid',
-    password: 'weak',
-    confirmPassword: 'weak',
-    submitted: false,
-    _errors: {
-      email: ['Invalid email format'],
-      password: ['Password too short'],
-    },
-  } satisfies FormWithErrors,
-
-  valid: {
-    email: 'valid@example.com',
-    password: 'StrongPass123',
-    confirmPassword: 'StrongPass123',
-    submitted: false,
-    _errors: {},
-  } satisfies FormWithErrors,
-
-  submitted: {
-    email: 'valid@example.com',
-    password: 'StrongPass123',
-    confirmPassword: 'StrongPass123',
-    submitted: true,
-    _errors: {},
-  } satisfies FormWithErrors,
-}
-
-/**
- * Optimization Scenario fixtures
- */
-export const optimizationFixtures = {
-  initial: {
-    val: 'A',
-    isInternal: false,
-  } satisfies OptimizationState,
 }

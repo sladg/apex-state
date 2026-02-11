@@ -238,12 +238,13 @@ concerns = {
    let renderCount = 0
 
    const TestComponent = () => {
-     const leg1Concerns = store.useFieldConcerns('products.leg-1.strike')
-     const leg2Concerns = store.useFieldConcerns('products.leg-2.strike')
+     const { useFieldStore } = store.withConcerns({ tooltip: true })
+     const leg1 = useFieldStore('products.leg-1.strike')
+     const leg2 = useFieldStore('products.leg-2.strike')
 
      renderCount++
 
-     return <div>{leg1Concerns.tooltip} / {leg2Concerns.tooltip}</div>
+     return <div>{leg1.tooltip} / {leg2.tooltip}</div>
    }
    ```
 
@@ -567,12 +568,13 @@ state = {
 
 const TradeForm = () => {
   const strikeValue = useSnapshot(store.proxy).products['leg-1'].strike
-  const strikeConcerns = store.useFieldConcerns('products.leg-1.strike')
+  const { useFieldStore } = store.withConcerns({ validationState: true })
+  const { validationState } = useFieldStore('products.leg-1.strike')
 
   renderLog.push({
     timestamp: performance.now(),
     strike: strikeValue,
-    valid: strikeConcerns.validationState
+    valid: validationState
   })
 
   return (

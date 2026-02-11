@@ -8,18 +8,22 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src'
-import type { UserProfile } from '../mocks'
-import { userProfileFixtures } from '../mocks'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
-
-const createUserProfileStore = () => createGenericStore<UserProfile>()
+import type { TestState } from '../mocks'
+import { defaults, testStateFixtures } from '../mocks'
+import { EmailValidationForm } from '../utils/components'
+import {
+  createStore,
+  fireEvent,
+  flushEffects,
+  renderWithStore,
+  validateField,
+} from '../utils/react'
 
 describe('Integration: Side Effects - Listeners & Validators', () => {
-  let store: ReturnType<typeof createUserProfileStore>
+  let store: ReturnType<typeof createStore<TestState>>
 
   beforeEach(() => {
-    store = createUserProfileStore()
+    store = createStore<TestState>(testStateFixtures.profileEmpty)
   })
 
   it('TC5.1: listener updates lastUpdated on field change', async () => {
@@ -27,10 +31,8 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       const usernameField = store.useFieldStore('username')
       const lastUpdatedField = store.useFieldStore('lastUpdated')
 
-      // Side effect listener to update timestamp
       store.useSideEffects('timestamp-listener', {})
 
-      // Simulate listener behavior by manually updating
       const handleChange = (newValue: string) => {
         usernameField.setValue(newValue)
         lastUpdatedField.setValue(Date.now())
@@ -49,7 +51,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    renderWithStore(<ProfileComponent />, store)
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
     const initialTime = parseInt(
@@ -67,42 +69,14 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
   })
 
   it('TC5.2: validates email format and stores errors', async () => {
-    function ProfileComponent() {
-      const emailField = store.useFieldStore('email')
-      const errorsField = store.useFieldStore('_errors')
-
-      const validateEmail = (email: string) => {
-        const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-        const newErrors = { ...errorsField.value }
-
-        if (!isValid && email) {
-          newErrors['email'] = ['Invalid email format']
-        } else {
-          delete newErrors['email']
-        }
-
-        emailField.setValue(email)
-        errorsField.setValue(newErrors)
-      }
-
-      return (
-        <div>
-          <input
-            data-testid="email-input"
-            value={emailField.value}
-            onChange={(e) => validateEmail(e.target.value)}
-            placeholder="Email"
-          />
-          {errorsField.value['email'] && (
-            <span data-testid="email-error">
-              {errorsField.value['email'][0]}
-            </span>
-          )}
-        </div>
-      )
-    }
-
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    renderWithStore(
+      <EmailValidationForm
+        store={store}
+        errorMessage="Invalid email format"
+        showErrorCount={false}
+      />,
+      store,
+    )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
 
@@ -131,19 +105,18 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       const usernameField = store.useFieldStore('username')
       const errorsField = store.useFieldStore('_errors')
 
-      const validateUsername = async (username: string) => {
+      const handleChange = async (username: string) => {
         usernameField.setValue(username)
 
         // Simulate async check
         await new Promise((resolve) => setTimeout(resolve, 10))
 
-        const newErrors = { ...errorsField.value }
-        if (takenUsernames.includes(username.toLowerCase())) {
-          newErrors['username'] = ['Username is already taken']
-        } else {
-          delete newErrors['username']
-        }
-        errorsField.setValue(newErrors)
+        validateField(
+          errorsField,
+          'username',
+          !takenUsernames.includes(username.toLowerCase()),
+          'Username is already taken',
+        )
       }
 
       return (
@@ -151,7 +124,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
           <input
             data-testid="username-input"
             value={usernameField.value}
-            onChange={(e) => validateUsername(e.target.value)}
+            onChange={(e) => handleChange(e.target.value)}
             placeholder="Username"
           />
           {errorsField.value['username'] && (
@@ -163,7 +136,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    renderWithStore(<ProfileComponent />, store)
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
 
@@ -187,7 +160,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       const { setChanges } = store.useJitStore()
 
       const handleClearBio = () => {
-        // Clear bio field
         setChanges([['bio', '', {}]])
       }
 
@@ -210,13 +182,13 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     }
 
     renderWithStore(<ProfileComponent />, store, {
+      ...defaults,
       username: 'john',
       email: 'john@example.com',
       age: 30,
       bio: 'Software developer',
       isActive: true,
       lastUpdated: Date.now(),
-      _errors: {},
     })
 
     expect(screen.getByTestId('bio-value')).toHaveTextContent(
@@ -235,7 +207,6 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     function ProfileComponent() {
       store.useSideEffects('flip-active', {
         flipPaths: [],
-        // In real scenario: would include isActive ↔ isInactive mapping
       })
 
       const isActiveField = store.useFieldStore('isActive')
@@ -259,13 +230,12 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     }
 
     renderWithStore(<ProfileComponent />, store, {
+      ...defaults,
       username: 'john',
       email: 'john@example.com',
       age: 30,
-      bio: '',
       isActive: false,
       lastUpdated: Date.now(),
-      _errors: {},
     })
 
     expect(screen.getByTestId('active-status')).toHaveTextContent('Inactive')
@@ -290,14 +260,12 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       const handleUsernameChange = (value: string) => {
         usernameField.setValue(value)
         lastUpdatedField.setValue(Date.now())
-
-        const errors = { ...errorsField.value }
-        if (value.length < 3) {
-          errors['username'] = ['Username too short']
-        } else {
-          delete errors['username']
-        }
-        errorsField.setValue(errors)
+        validateField(
+          errorsField,
+          'username',
+          value.length >= 3,
+          'Username too short',
+        )
       }
 
       return (
@@ -319,7 +287,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    renderWithStore(<ProfileComponent />, store)
 
     const usernameInput = screen.getByTestId(
       'username-input',
@@ -338,50 +306,18 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
   it('TC5.7: side effects and concerns work together', async () => {
     function ProfileComponent() {
       store.useSideEffects('validators', {})
-
       store.useConcerns('form', {})
 
-      const usernameField = store.useFieldStore('username')
-      const emailField = store.useFieldStore('email')
-      const errorsField = store.useFieldStore('_errors')
-
-      const handleEmailChange = (email: string) => {
-        emailField.setValue(email)
-
-        const errors = { ...errorsField.value }
-        const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-        if (!isValid && email) {
-          errors['email'] = ['Invalid email']
-        } else {
-          delete errors['email']
-        }
-        errorsField.setValue(errors)
-      }
-
       return (
-        <div>
-          <input
-            data-testid="username-input"
-            value={usernameField.value}
-            onChange={(e) => usernameField.setValue(e.target.value)}
-            placeholder="Username"
-          />
-          <input
-            data-testid="email-input"
-            value={emailField.value}
-            onChange={(e) => handleEmailChange(e.target.value)}
-            placeholder="Email"
-          />
-          {errorsField.value['email'] && (
-            <span data-testid="email-error">
-              {errorsField.value['email'][0]}
-            </span>
-          )}
-        </div>
+        <EmailValidationForm
+          store={store}
+          errorMessage="Invalid email"
+          showErrorCount={false}
+        />
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    renderWithStore(<ProfileComponent />, store)
 
     const emailInput = screen.getByTestId('email-input') as HTMLInputElement
 

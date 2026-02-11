@@ -9,11 +9,9 @@ import { describe, expect, test } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
-import type { OptimizationState } from '../mocks'
-import { optimizationFixtures } from '../mocks'
-import { flushEffects, renderWithStore } from '../utils/react'
-
-const createOptimizationStore = () => createGenericStore<OptimizationState>()
+import type { TestState } from '../mocks'
+import { testStateFixtures } from '../mocks'
+import { createStore, flushEffects, renderWithStore } from '../utils/react'
 
 describe('Integration: withConcerns', () => {
   test('returns typed field store with selected concerns', async () => {
@@ -88,7 +86,7 @@ describe('Integration: withConcerns', () => {
 
   test('render optimization: does not re-render when unselected concern changes', async () => {
     // 1. Setup
-    const store = createOptimizationStore()
+    const store = createStore<TestState>(testStateFixtures.optimizationInitial)
     let renderCount = 0
 
     function TestComponent() {
@@ -149,7 +147,6 @@ describe('Integration: withConcerns', () => {
         <Control />
       </>,
       store,
-      optimizationFixtures.initial,
     )
 
     // Wait for initial concerns to evaluate

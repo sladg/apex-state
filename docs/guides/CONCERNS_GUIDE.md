@@ -36,7 +36,8 @@ export const exampleConcern: ConcernType<{ threshold: number }, boolean> = {
 // usage in React component
 store.useConcerns("legs.0.strike", ({ register }) => register(exampleConcern, { threshold: 100 }))
 
-const { aboveThreshold } = store.useFieldConcerns("legs.0.strike")
+const { useFieldStore } = store.withConcerns({ aboveThreshold: true })
+const { value, aboveThreshold } = useFieldStore("legs.0.strike")
 ```
 
 Lifecycle:
@@ -44,7 +45,7 @@ Lifecycle:
 1. Define concern (pure evaluate, typed config).
 2. Add to `src/concerns/index.ts` if it ships as a default.
 3. Register via `store.useConcerns(path, fn)`.
-4. Read results with `store.useFieldConcerns(path)`.
+4. Read results with `store.withConcerns({ ... }).useFieldStore(path)`.
 5. Cover behavior with concern/unit tests + integration tests.
 
 ## Built-in Concerns

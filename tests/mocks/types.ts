@@ -6,94 +6,7 @@
  */
 
 /**
- * Optimization Scenario (for render optimization test)
- */
-export interface OptimizationState {
-  val: string
-  isInternal: boolean
-}
-
-/**
- * Form Validation Scenario
- */
-export interface RegistrationForm {
-  email: string
-  password: string
-  confirmPassword: string
-  agreeToTerms: boolean
-  _errors: Record<string, any[]>
-}
-
-/**
- * Sync Paths Scenario
- */
-export interface ProfileForm {
-  firstName: string
-  lastName: string
-  fullName: string
-  displayName: string
-}
-
-/**
- * Aggregations Scenario
- */
-export interface CartItem {
-  name: string
-  price: number
-  quantity: number
-  subtotal: number
-}
-
-export interface ShoppingCart {
-  items: Record<string, CartItem>
-  subtotal: number
-  tax: number
-  total: number
-  itemCount: number
-}
-
-export interface NestedCart {
-  categories: Record<
-    string,
-    {
-      name: string
-      items: Record<string, { price: number; qty: number }>
-      categorySubtotal: number
-    }
-  >
-  total: number
-}
-
-/**
- * Concerns UI Scenario
- */
-export interface ProductForm {
-  type: 'digital' | 'physical'
-  name: string
-  price: number
-  weight?: number
-  downloadUrl?: string
-  requiresShipping: boolean
-  taxable: boolean
-  isPublished: boolean
-  _errors: Record<string, any[]>
-}
-
-/**
- * Side Effects Scenario
- */
-export interface UserProfile {
-  username: string
-  email: string
-  age: number
-  bio: string
-  isActive: boolean
-  lastUpdated: number
-  _errors: Record<string, any[]>
-}
-
-/**
- * Complex Workflows Scenario
+ * Companion sub-types used within TestState
  */
 export interface PersonalInfo {
   firstName: string
@@ -106,7 +19,53 @@ export interface AddressInfo {
   zipCode: string
 }
 
-export interface WizardForm {
+export interface CartItem {
+  name: string
+  price: number
+  quantity: number
+  subtotal: number
+}
+
+/**
+ * Unified test state type
+ *
+ * Combines all domain-specific fields into a single type used across
+ * all integration tests. Each test scenario uses a subset of fields
+ * via fixtures that provide appropriate defaults and overrides.
+ */
+export interface TestState {
+  // Form fields
+  email: string
+  password: string
+  confirmPassword: string
+  agreeToTerms: boolean
+  submitted: boolean
+
+  // User profile fields
+  username: string
+  age: number
+  bio: string
+  isActive: boolean
+  lastUpdated: number
+
+  // Product form fields
+  type: 'digital' | 'physical'
+  name: string
+  price: number
+  weight?: number
+  downloadUrl?: string
+  requiresShipping: boolean
+  taxable: boolean
+  isPublished: boolean
+
+  // Shopping cart fields
+  items: Record<string, CartItem>
+  subtotal: number
+  tax: number
+  total: number
+  itemCount: number
+
+  // Wizard form fields
   currentStep: 1 | 2 | 3
   personalInfo: PersonalInfo
   addressInfo: AddressInfo
@@ -115,16 +74,32 @@ export interface WizardForm {
     isValid: boolean
     submittedAt?: number
   }
+
+  // Optimization fields
+  val: string
+  isInternal: boolean
+
+  // Profile sync fields
+  firstName: string
+  lastName: string
+  fullName: string
+  displayName: string
+
+  // Shared error storage
   _errors: Record<string, any[]>
 }
 
 /**
- * Error Handling Scenario
+ * Nested cart type (separate domain, used only in TC3.8 with its own store)
  */
-export interface FormWithErrors {
-  email: string
-  password: string
-  confirmPassword: string
-  submitted: boolean
-  _errors: Record<string, any[]>
+export interface NestedCart {
+  categories: Record<
+    string,
+    {
+      name: string
+      items: Record<string, { price: number; qty: number }>
+      categorySubtotal: number
+    }
+  >
+  total: number
 }

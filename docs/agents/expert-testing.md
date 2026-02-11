@@ -22,30 +22,34 @@ Global test setup provides:
 
 | File | What it provides |
 | ---- | ---------------- |
-| `types.ts` | Shared type definitions: `RegistrationForm`, `ProfileForm`, `ShoppingCart`, `ProductForm`, `UserProfile`, `WizardForm`, `FormWithErrors`, etc. |
-| `fixtures.ts` | Pre-built initial states for each type: `registrationFormFixtures.empty`, `.partial`, `.complete`, etc. Uses `satisfies` for type safety. |
+| `types.ts` | Shared type definitions: `TestState` (unified), `PersonalInfo`, `AddressInfo`, `CartItem`, `NestedCart` |
+| `fixtures.ts` | `defaults` (zero-value TestState), `testStateFixtures` with named variants (`.formEmpty`, `.profileFilled`, `.cartSingleItem`, etc.), `nestedCartFixtures`. Uses `satisfies` for type safety. |
 | `helpers.ts` | `typeHelpers` — runtime type assertion helpers: `.change()`, `.syncPair()`, `.flipPair()`, `.changes()` for dynamic paths in tests |
 | `index.ts` | Re-exports everything |
 
 ### Fixture Naming Convention
 
-- `empty` — all fields empty/default
-- `partial` — some fields filled
-- `complete` / `filled` — all required fields valid
-- `withErrors` — pre-populated with validation errors
-- `updated` — modified state for testing updates
-- `step[N]` — multi-step workflow states
+- `formEmpty` / `profileEmpty` / `cartEmpty` — all fields empty/default
+- `formPartial` — some fields filled
+- `formComplete` / `profileFilled` — all required fields valid
+- `formWithErrors` / `profileWithErrors` — pre-populated with validation errors
+- `profileSyncUpdated` — modified state for testing updates
+- `wizardStep[N]Empty` / `wizardStep[N]Filled` — multi-step workflow states
+- `productEmpty` / `productDigital` / `productPhysical` — product form variants
+- `optimizationInitial` — optimization scenario initial state
 
 ## Test Patterns
 
 ### Basic Store + Concern Test
 
 ```typescript
-import { createGenericStore } from '../../src'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { z } from 'zod'
+import { testStateFixtures } from '../mocks'
+import { createStore, renderWithStore, fireEvent, flushEffects } from '../utils/react'
 
-const store = createGenericStore<RegistrationForm>()
+// createStore attaches defaultState so renderWithStore can use it automatically
+const store = createStore<TestState>(testStateFixtures.formEmpty)
 
 const TestComponent = () => {
   store.useConcerns('test', {
@@ -55,28 +59,29 @@ const TestComponent = () => {
   })
 
   const [email, setEmail] = store.useStore('email')
-  const concerns = store.useFieldConcerns('email')
+  const { useFieldStore } = store.withConcerns({ validationState: true })
+  const { validationState } = useFieldStore('email')
 
   return (
     <div>
       <input data-testid="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-      {concerns.validationState?.isError && <span data-testid="error">Invalid</span>}
+      {validationState?.isError && <span data-testid="error">Invalid</span>}
     </div>
   )
 }
 
 it('validates email', async () => {
-  render(
-    <store.Provider initialState={registrationFormFixtures.empty}>
-      <TestComponent />
-    </store.Provider>
-  )
+  // No initialState needed — uses store.defaultState
+  renderWithStore(<TestComponent />, store)
 
   fireEvent.change(screen.getByTestId('email'), { target: { value: 'bad' } })
   await flushEffects()
 
   expect(screen.getByTestId('error')).toBeInTheDocument()
 })
+
+// Override when needed:
+renderWithStore(<TestComponent />, store, { ...testStateFixtures.formEmpty, email: 'pre@filled.com' })
 ```
 
 ### Side Effects Test
@@ -85,7 +90,7 @@ it('validates email', async () => {
 const TestComponent = () => {
   store.useSideEffects('sync', {
     syncPaths: [
-      typeHelpers.syncPair<ProfileForm>('firstName', 'displayName'),
+      typeHelpers.syncPair<TestState>('firstName', 'displayName'),
     ],
   })
 
@@ -151,12 +156,30 @@ Use for ALL runtime/dynamic path assertions. Never cast manually.
 import { typeHelpers } from '../mocks'
 
 // Change tuples with dynamic paths
-typeHelpers.change<MyState>(`items.${id}.qty`, 10, {})
-typeHelpers.changes<MyState>([['a', 1], ['b', 2]])
+typeHelpers.change<TestState>(`items.${id}.qty`, 10, {})
+typeHelpers.changes<TestState>([['a', 1], ['b', 2]])
 
 // Side effect pair tuples
-typeHelpers.syncPair<MyState>('firstName', 'displayName')
-typeHelpers.flipPair<MyState>('isActive', 'isInactive')
+typeHelpers.syncPair<TestState>('firstName', 'displayName')
+typeHelpers.flipPair<TestState>('isActive', 'isInactive')
+```
+
+### From `tests/utils/react.tsx` — `createStore`
+
+Use `createStore` to create stores with a default initial state. `renderWithStore` will use it automatically:
+
+```typescript
+import { createStore, renderWithStore } from '../utils/react'
+import { testStateFixtures } from '../mocks'
+
+// Store carries its default state
+const store = createStore<TestState>(testStateFixtures.formEmpty)
+
+// No initialState needed — uses store.defaultState
+renderWithStore(<MyComponent />, store)
+
+// Override when a specific test needs different initial state
+renderWithStore(<MyComponent />, store, { ...testStateFixtures.formEmpty, email: 'custom@example.com' })
 ```
 
 ### From `tests/mocks/fixtures.ts` — Pre-built initial states
@@ -164,28 +187,30 @@ typeHelpers.flipPair<MyState>('isActive', 'isInactive')
 Never recreate initial state objects inline. Use or extend existing fixtures:
 
 ```typescript
-import { registrationFormFixtures, productFormFixtures } from '../mocks'
+import { testStateFixtures, defaults } from '../mocks'
 
-// Use directly
-render(<store.Provider initialState={registrationFormFixtures.empty}>...)
+// Use with createStore
+const store = createStore<TestState>(testStateFixtures.formEmpty)
 
-// Available fixture sets:
-// registrationFormFixtures  (.empty, .partial, .complete)
-// profileFormFixtures       (.empty, .filled, .updated)
-// shoppingCartFixtures      (.empty, .singleItem, .multipleItems)
-// nestedCartFixtures        (.withElectronics, .withMultipleCategories)
-// productFormFixtures       (.empty, .digitalProduct, .physicalProduct)
-// userProfileFixtures       (.empty, .filled, .withErrors)
-// wizardFormFixtures        (.step1Empty, .step1Filled, .step2Filled, .step3Review)
-// formWithErrorsFixtures    (.empty, .withValidationErrors, .valid, .submitted)
-// optimizationFixtures      (.initial)
+// Override specific fields when needed
+renderWithStore(<MyComponent />, store, { ...defaults, email: 'custom@example.com' })
+
+// Available fixture variants:
+// testStateFixtures.formEmpty, .formPartial, .formComplete, .formWithErrors, .formValid, .formSubmitted
+// testStateFixtures.profileEmpty, .profileFilled, .profileWithErrors
+// testStateFixtures.profileSyncEmpty, .profileSyncFilled, .profileSyncUpdated
+// testStateFixtures.productEmpty, .productDigital, .productPhysical
+// testStateFixtures.cartEmpty, .cartSingleItem, .cartMultipleItems
+// testStateFixtures.wizardStep1Empty, .wizardStep1Filled, .wizardStep2Filled, .wizardStep3Review
+// testStateFixtures.optimizationInitial
+// nestedCartFixtures.withElectronics, .withMultipleCategories
 ```
 
 ### From `tests/mocks/types.ts` — Shared test types
 
 Never define types inline that already exist:
 
-`RegistrationForm`, `ProfileForm`, `ShoppingCart`, `CartItem`, `NestedCart`, `ProductForm`, `UserProfile`, `WizardForm`, `FormWithErrors`, `OptimizationState`, `PersonalInfo`, `AddressInfo`
+`TestState`, `PersonalInfo`, `AddressInfo`, `CartItem`, `NestedCart`
 
 ### From `tests/setup.ts` — Global test utilities
 
@@ -206,7 +231,7 @@ Check this file first when writing concern tests.
 4. **Use fixtures** from `tests/mocks/fixtures.ts` — don't recreate initial states
 5. **Use shared types** from `tests/mocks/types.ts` — don't redefine existing interfaces
 6. **Use `satisfies`** when defining new fixture data
-7. **Store per test file** — create `const store = createGenericStore<Type>()` at file scope
+7. **Store per test file** — create `const store = createStore<TestState>(testStateFixtures.XXX)` in beforeEach (or at file scope for simple tests)
 8. **Components inside test file** — define `TestComponent` in the test file, not shared
 9. **`data-testid` for queries** — prefer over text queries for stability
 10. **Check `tests/mocks/` before creating helpers** — reuse what exists

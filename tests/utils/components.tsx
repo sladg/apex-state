@@ -1,5 +1,244 @@
 import React from 'react'
 
+import { useSnapshot } from 'valtio'
+
+import type { ValidationStateResult } from '../../src/concerns/prebuilts'
+import { useStoreContext } from '../../src/core/context'
+import { _ } from '../../src/utils/hashKey'
+import type { createRenderTracker } from '../concerns/test-utils'
+import { validateField } from './react'
+
+// Common store type for components that only need useFieldStore
+interface FieldStore {
+  useFieldStore: (path: any) => any
+}
+
+/**
+ * Email validation form for error-handling and side-effects tests.
+ *
+ * Renders: email input, error count, error message span.
+ * Uses regex validation and stores errors in `_errors` field.
+ */
+export const EmailValidationForm = ({
+  store,
+  errorMessage = 'Invalid email',
+  errorTestId = 'email-error',
+  showErrorCount = true,
+  showSubmitButton = false,
+}: {
+  store: FieldStore
+  errorMessage?: string
+  errorTestId?: string
+  showErrorCount?: boolean
+  showSubmitButton?: boolean
+}) => {
+  const emailField = store.useFieldStore('email')
+  const errorsField = store.useFieldStore('_errors')
+
+  const handleChange = (email: string) => {
+    const isValid = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    emailField.setValue(email)
+    validateField(errorsField, 'email', isValid, errorMessage)
+  }
+
+  const hasErrors = Object.keys(errorsField.value).length > 0
+
+  return (
+    <div>
+      <input
+        data-testid="email-input"
+        value={emailField.value}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder="Email"
+      />
+      {showErrorCount && (
+        <span data-testid="error-count">
+          {Object.keys(errorsField.value).length}
+        </span>
+      )}
+      {errorsField.value['email'] && (
+        <span data-testid={errorTestId}>{errorsField.value['email'][0]}</span>
+      )}
+      {showSubmitButton && (
+        <button data-testid="submit-btn" disabled={hasErrors}>
+          Submit
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Email validation form with custom error message template.
+ *
+ * TC7.6: uses the actual email value in the error message.
+ */
+export const EmailTemplateForm = ({ store }: { store: FieldStore }) => {
+  const emailField = store.useFieldStore('email')
+  const errorsField = store.useFieldStore('_errors')
+
+  const handleChange = (email: string) => {
+    const errors = { ...errorsField.value }
+    if (!email) {
+      errors['email'] = ['Email is required']
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors['email'] = [`"${email}" is not a valid email address`]
+    } else {
+      delete errors['email']
+    }
+    emailField.setValue(email)
+    errorsField.setValue(errors)
+  }
+
+  return (
+    <div>
+      <input
+        data-testid="email-input"
+        value={emailField.value}
+        onChange={(e) => handleChange(e.target.value)}
+      />
+      {errorsField.value['email'] && (
+        <span data-testid="error-message">{errorsField.value['email'][0]}</span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Multi-field form (email + password) with validate-on-blur and reset.
+ *
+ * Used in error-handling TC7.4 (reset) and TC7.8 (error preservation).
+ */
+export const MultiFieldForm = ({
+  store,
+  showResetButton = false,
+  validateOnBlur = false,
+  validateEmailOnChange = false,
+}: {
+  store: FieldStore
+  showResetButton?: boolean
+  validateOnBlur?: boolean
+  validateEmailOnChange?: boolean
+}) => {
+  const emailField = store.useFieldStore('email')
+  const passwordField = store.useFieldStore('password')
+  const errorsField = store.useFieldStore('_errors')
+
+  const handleValidate = () => {
+    const errors: Record<string, any[]> = {}
+    if (!emailField.value || !/^[^\s@]+@[^\s@]+$/.test(emailField.value)) {
+      errors['email'] = ['Invalid email']
+    }
+    if (!passwordField.value || passwordField.value.length < 8) {
+      errors['password'] = ['Password too short']
+    }
+    errorsField.setValue(errors)
+  }
+
+  const handleReset = () => {
+    emailField.setValue('')
+    passwordField.setValue('')
+    errorsField.setValue({})
+  }
+
+  const handleEmailChange = (email: string) => {
+    emailField.setValue(email)
+    if (validateEmailOnChange) {
+      const isValid = !email || /^[^\s@]+@[^\s@]+$/.test(email)
+      validateField(errorsField, 'email', isValid, 'Invalid email')
+    }
+  }
+
+  return (
+    <div>
+      <input
+        data-testid="email-input"
+        value={emailField.value}
+        onChange={(e) => handleEmailChange(e.target.value)}
+        onBlur={validateOnBlur ? handleValidate : undefined}
+      />
+      <input
+        data-testid="password-input"
+        type="password"
+        value={passwordField.value}
+        onChange={(e) => passwordField.setValue(e.target.value)}
+        onBlur={validateOnBlur ? handleValidate : undefined}
+      />
+      {showResetButton && (
+        <button data-testid="reset-btn" onClick={handleReset}>
+          Reset
+        </button>
+      )}
+      {errorsField.value['email'] && (
+        <span data-testid="email-error">{errorsField.value['email'][0]}</span>
+      )}
+      <span data-testid="error-count">
+        {Object.keys(errorsField.value).length}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Trade form component for react-integration performance tests.
+ *
+ * Wraps useStoreContext + useSnapshot + renderTracker pattern.
+ */
+export const TradeFormComponent = ({
+  renderTracker,
+  trackFields,
+  measurePerf = false,
+}: {
+  renderTracker: ReturnType<typeof createRenderTracker>
+  trackFields?: (snap: any, concerns: any) => Record<string, any>
+  measurePerf?: boolean
+}) => {
+  const renderStart = measurePerf ? performance.now() : 0
+
+  const storeInstance = useStoreContext<{
+    products: { 'leg-1': { strike: number; notional: number; status: string } }
+    market: { spot: number }
+  }>()
+  const snap = useSnapshot(storeInstance.state)
+  const strikeValue = snap.products['leg-1'].strike
+  const strikeConcerns =
+    storeInstance._concerns[`products.${_('leg-1')}.strike`]
+
+  const trackData = trackFields
+    ? trackFields(snap, strikeConcerns)
+    : {
+        strike: strikeValue,
+        valid: !(strikeConcerns?.['validationState'] as ValidationStateResult)
+          ?.isError,
+      }
+
+  if (measurePerf) {
+    trackData['renderDuration'] = performance.now() - renderStart
+  }
+
+  renderTracker.track(trackData)
+
+  return (
+    <input
+      value={strikeValue}
+      disabled={strikeConcerns?.['disabledWhen'] as boolean | undefined}
+      className={
+        !(strikeConcerns?.['validationState'] as ValidationStateResult)?.isError
+          ? 'valid'
+          : 'error'
+      }
+      readOnly
+    />
+  )
+}
+
+// Re-export TradeFormComponent's store instance accessor
+export const useTradeStoreInstance = () =>
+  useStoreContext<{
+    products: { 'leg-1': { strike: number; notional: number; status: string } }
+    market: { spot: number }
+  }>()
+
 /**
  * Universal ProductComponent for concerns-ui integration tests
  */

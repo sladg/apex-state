@@ -10,30 +10,29 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { _, createGenericStore } from '../../src'
 import {
+  defaults,
   NestedCart,
   nestedCartFixtures,
-  ShoppingCart,
-  shoppingCartFixtures,
+  TestState,
+  testStateFixtures,
 } from '../mocks'
 import { CartComponent } from '../utils/components'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
-
-const createShoppingCartStore = () => createGenericStore<ShoppingCart>()
-const createNestedCartStore = () => createGenericStore<NestedCart>()
+import {
+  createStore,
+  fireEvent,
+  flushEffects,
+  renderWithStore,
+} from '../utils/react'
 
 describe('Integration: Computed Values & Aggregations', () => {
-  let store: ReturnType<typeof createShoppingCartStore>
+  let store: ReturnType<typeof createStore<TestState>>
 
   beforeEach(() => {
-    store = createShoppingCartStore()
+    store = createStore<TestState>(testStateFixtures.cartEmpty)
   })
 
   it('TC3.1: recalculates cart subtotal when item added', async () => {
-    renderWithStore(
-      <CartComponent store={store} />,
-      store,
-      shoppingCartFixtures.empty,
-    )
+    renderWithStore(<CartComponent store={store} />, store)
 
     const addBtn = screen.getByTestId('add-item-btn')
     fireEvent.click(addBtn)
@@ -47,7 +46,7 @@ describe('Integration: Computed Values & Aggregations', () => {
     renderWithStore(
       <CartComponent store={store} />,
       store,
-      shoppingCartFixtures.singleItem,
+      testStateFixtures.cartSingleItem,
     )
 
     const btn = screen.getByTestId('change-qty-btn')
@@ -59,6 +58,7 @@ describe('Integration: Computed Values & Aggregations', () => {
 
   it('TC3.3: updates item subtotal when price changes', async () => {
     renderWithStore(<CartComponent store={store} />, store, {
+      ...defaults,
       items: {
         'item-1': {
           name: 'Product A',
@@ -82,8 +82,8 @@ describe('Integration: Computed Values & Aggregations', () => {
     renderWithStore(
       <CartComponent store={store} />,
       store,
-      shoppingCartFixtures.singleItem,
-    )
+      testStateFixtures.cartSingleItem,
+    ) // explicit: cartSingleItem differs from default
 
     const addBtn = screen.getByTestId('add-btn')
     expect(addBtn).toBeInTheDocument()
@@ -91,11 +91,10 @@ describe('Integration: Computed Values & Aggregations', () => {
 
   it('TC3.5: automatically calculates tax from subtotal', async () => {
     renderWithStore(<CartComponent store={store} />, store, {
-      items: {},
+      ...defaults,
       subtotal: 50,
       tax: 5,
       total: 55,
-      itemCount: 0,
     })
 
     const btn = screen.getByTestId('update-subtotal-btn')
@@ -108,11 +107,10 @@ describe('Integration: Computed Values & Aggregations', () => {
 
   it('TC3.6: automatically calculates total from subtotal + tax', async () => {
     renderWithStore(<CartComponent store={store} />, store, {
-      items: {},
+      ...defaults,
       subtotal: 100,
       tax: 10,
       total: 110,
-      itemCount: 0,
     })
 
     const btn = screen.getByTestId('update-btn')
@@ -125,6 +123,7 @@ describe('Integration: Computed Values & Aggregations', () => {
 
   it('TC3.7: tracks item count accurately', async () => {
     renderWithStore(<CartComponent store={store} />, store, {
+      ...defaults,
       items: {
         'item-1': {
           name: 'Product A',
@@ -148,7 +147,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.8: handles nested object aggregations', async () => {
-    const nestedStore = createNestedCartStore()
+    const nestedStore = createGenericStore<NestedCart>()
 
     function NestedComponent() {
       const { getState, setChanges } = nestedStore.useJitStore()

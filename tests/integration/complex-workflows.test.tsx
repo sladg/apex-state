@@ -8,27 +8,25 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src'
-import type { WizardForm } from '../mocks'
-import { wizardFormFixtures } from '../mocks'
+import type { TestState } from '../mocks'
+import { testStateFixtures } from '../mocks'
 import { WizardComponent } from '../utils/components'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
-
-const createWizardFormStore = () => createGenericStore<WizardForm>()
+import {
+  createStore,
+  fireEvent,
+  flushEffects,
+  renderWithStore,
+} from '../utils/react'
 
 describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
-  let store: ReturnType<typeof createWizardFormStore>
+  let store: ReturnType<typeof createStore<TestState>>
 
   beforeEach(() => {
-    store = createWizardFormStore()
+    store = createStore<TestState>(testStateFixtures.wizardStep1Empty)
   })
 
   it('TC6.1: validates step fields before navigation', async () => {
-    renderWithStore(
-      <WizardComponent store={store} />,
-      store,
-      structuredClone(wizardFormFixtures.step1Empty),
-    )
+    renderWithStore(<WizardComponent store={store} />, store)
 
     const nextBtn = screen.getByTestId('next-btn')
 
@@ -89,11 +87,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    renderWithStore(
-      <CustomWizard store={store} />,
-      store,
-      structuredClone(wizardFormFixtures.step1Empty),
-    )
+    renderWithStore(<CustomWizard store={store} />, store)
 
     const input = screen.getByTestId('firstName-input')
     fireEvent.change(input, { target: { value: 'invalid' } })
@@ -104,11 +98,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.3: conditionally displays fields based on step', async () => {
-    renderWithStore(
-      <WizardComponent store={store} />,
-      store,
-      structuredClone(wizardFormFixtures.step1Empty),
-    )
+    renderWithStore(<WizardComponent store={store} />, store)
 
     // Step 1 should be visible
     expect(screen.getByTestId('step1-form')).toBeInTheDocument()
@@ -131,11 +121,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.4: disables navigation while validation in progress', async () => {
-    renderWithStore(
-      <WizardComponent store={store} delay={50} />,
-      store,
-      structuredClone(wizardFormFixtures.step1Empty),
-    )
+    renderWithStore(<WizardComponent store={store} delay={50} />, store)
 
     // Fill fields to pass validation
     const firstNameInput = screen.getByTestId('firstName-input')
@@ -156,11 +142,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.5: displays progress through steps', () => {
-    renderWithStore(
-      <WizardComponent store={store} />,
-      store,
-      structuredClone(wizardFormFixtures.step1Empty),
-    )
+    renderWithStore(<WizardComponent store={store} />, store)
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Step 1 of 3')
   })
@@ -169,7 +151,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     renderWithStore(
       <WizardComponent store={store} />,
       store,
-      structuredClone(wizardFormFixtures.step3Review),
+      structuredClone(testStateFixtures.wizardStep3Review),
     )
 
     expect(screen.getByTestId('review-section')).toBeInTheDocument()
@@ -180,11 +162,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.7: back button works and validation applies on forward', async () => {
-    renderWithStore(
-      <WizardComponent store={store} />,
-      store,
-      structuredClone(wizardFormFixtures.step1Empty),
-    )
+    renderWithStore(<WizardComponent store={store} />, store)
 
     const prevBtn = screen.getByTestId('prev-btn') as HTMLButtonElement
     const nextBtn = screen.getByTestId('next-btn') as HTMLButtonElement
@@ -218,11 +196,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
 
   it('TC6.8: concerns and side effects work together in workflow', async () => {
     // Shared WizardComponent already handles basic validation and has next-btn
-    renderWithStore(
-      <WizardComponent store={store} />,
-      store,
-      structuredClone(wizardFormFixtures.step1Empty),
-    )
+    renderWithStore(<WizardComponent store={store} />, store)
 
     const firstNameInput = screen.getByTestId('firstName-input')
     const lastNameInput = screen.getByTestId('lastName-input')

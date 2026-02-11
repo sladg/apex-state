@@ -300,36 +300,21 @@ const useConcerns = (id: string, registration: Record<string, any>) => {
 
 ### ⚛️ Reading Concerns (React)
 
+> **Note:** The early design used a standalone `useFieldConcerns` hook. The final API uses `withConcerns(selection)` which returns a `useFieldStore` with selected concern values merged in.
+
 ```typescript
-// ✅ Hook to read concerns (not state!)
-const useFieldConcerns = (path: string) => {
-  // Trigger re-render when concern cache changes
-  // (Implementation detail: might need a separate reactive wrapper)
-
-  const concernKeys = getConcernKeysForPath(path)
-  const concerns: Record<string, any> = {}
-
-  concernKeys.forEach(key => {
-    const [, , concernName] = key.split(':')
-    concerns[concernName] = concernCache.get(key)
-  })
-
-  return concerns
-}
+// ✅ withConcerns selects which concern results to include with field value
+const { useFieldStore } = store.withConcerns({ disabled: true, validationState: true })
 
 // Usage in React
 const MyComponent = () => {
-  const strike = useSnapshot(store.proxy).products['leg-1'].strike
-  const concerns = useFieldConcerns('products.leg-1.strike')
+  const { value, setValue, disabled, validationState } = useFieldStore('products.leg-1.strike')
 
   return (
     <input
-      value={strike}                    // ✅ Read state
-      disabled={concerns.disabled}      // ✅ Read concern
-      onChange={e => {
-        store.proxy.products['leg-1'].strike = Number(e.target.value)
-        // ✅ Write to state (not concerns!)
-      }}
+      value={value}                     // ✅ Read state
+      disabled={disabled}               // ✅ Read concern
+      onChange={e => setValue(Number(e.target.value))}
     />
   )
 }
@@ -364,19 +349,10 @@ effect(() => {
   concernsProxy[concernKey] = result
 })
 
-// React hook
-const useFieldConcerns = (path: string) => {
-  const concernsSnapshot = useSnapshot(concernsProxy)
-
-  const concernKeys = getConcernKeysForPath(path)
-  const concerns: Record<string, any> = {}
-
-  concernKeys.forEach(key => {
-    concerns[key.split(':')[2]] = concernsSnapshot[key]
-  })
-
-  return concerns
-}
+// Final API: withConcerns returns useFieldStore with concerns merged in
+const { useFieldStore } = store.withConcerns({ validationState: true, disabled: true })
+const field = useFieldStore('products.leg-1.strike')
+// field.value, field.setValue, field.validationState, field.disabled
 ```
 
 **Key insight**: We need TWO separate proxies:
@@ -406,11 +382,9 @@ const concernsProxy = derive({
   // ... more concerns
 })
 
-// React hook
-const useFieldConcerns = (path: string) => {
-  const concernsSnapshot = useSnapshot(concernsProxy)
-  // Read from derived proxy
-}
+// Reading concerns via withConcerns (final API)
+const { useFieldStore } = store.withConcerns({ validationState: true, disabled: true })
+const field = useFieldStore('products.leg-1.strike')
 ```
 
 **Wait, this brings back derive() issues!**

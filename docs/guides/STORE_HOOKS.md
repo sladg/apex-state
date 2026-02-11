@@ -20,7 +20,6 @@ Returned by `createGenericStore()`. All implementations live in `src/store/creat
 | `useFieldStore(path)`           | `{ value, setValue }`                  | Form fields needing object API    | Captures default values automatically.                      |
 | `useJitStore()`                 | `{ proxyValue, setChanges, getState }` | Bulk updates / non-reactive reads | `setChanges` accepts ArrayOfChanges.                        |
 | `useConcerns(id, registration)` | `void`                                 | Register concern definitions      | Returns cleanup that unregisters effects.                   |
-| `useFieldConcerns(path)`        | `EvaluatedConcerns`                    | Read concern results              | Reads from `_concerns` proxy snapshot.                      |
 | `useSideEffects(id, config)`    | `void`                                 | Register side-effects graph       | Delegates to `src/sideEffects/registration.ts`.             |
 | `withConcerns(selection)`       | `{ useFieldStore }`                    | Field + selected concerns in one  | Returns a scoped `useFieldStore` with concern props merged. |
 
@@ -64,7 +63,7 @@ If you need the underlying logic, start with `src/store/Provider.tsx`, then trac
 
 ## Patterns In Practice
 
-- **Validation workflows**: `useConcerns` + `useFieldConcerns` + `validationState` concern. Integration tests: `tests/integration/form-validation.test.tsx`.
+- **Validation workflows**: `useConcerns` + `withConcerns` + `validationState` concern. Integration tests: `tests/integration/form-validation.test.tsx`.
 - **Conditional UI / BoolLogic**: `disabledWhen` + `visibleWhen`. See `tests/integration/concerns-ui.test.tsx`.
 - **Bulk imports**: `useJitStore().setChanges` for loading server payloads. Covered in `tests/integration/bulk-updates.test.tsx`.
 - **Composable hooks**: `useBufferedField`, `useThrottledField`, `useTransformedField`, `useKeyboardSelect`. Tests under `tests/hooks/`.

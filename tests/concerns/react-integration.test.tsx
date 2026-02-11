@@ -16,6 +16,7 @@ import { useStoreContext } from '../../src/core/context'
 import type { StoreInstance } from '../../src/core/types'
 import { createGenericStore } from '../../src/store/createStore'
 import { _ } from '../../src/utils/hashKey'
+import { TradeFormComponent, useTradeStoreInstance } from '../utils/components'
 import { flushEffects, flushSync, renderWithStore } from '../utils/react'
 import { createRenderTracker, PerformanceBenchmark } from './test-utils'
 
@@ -33,66 +34,46 @@ describe('TEST-007: React Integration', () => {
     benchmark = new PerformanceBenchmark()
   })
 
-  const createAppStore = () => createGenericStore<AppState>()
+  const initialState: AppState = {
+    products: {
+      'leg-1': { strike: 100, notional: 1000000, status: 'active' },
+    },
+    market: { spot: 102 },
+  }
+
+  const fullConcerns = {
+    [`products.${_('leg-1')}.strike`]: {
+      validationState: { schema: z.number().min(0).max(200) },
+      disabledWhen: {
+        condition: {
+          IS_EQUAL: [`products.${_('leg-1')}.status`, 'locked'],
+        },
+      },
+    },
+  }
+
+  const validationOnlyConcerns = {
+    'products.leg-1.strike': {
+      validationState: { schema: z.number().min(0).max(200) },
+    },
+  }
 
   it('AC1: Single re-render with React 18 batching', async () => {
     const renderTracker = createRenderTracker()
-    const store = createAppStore()
-
-    const initialState = {
-      products: {
-        'leg-1': { strike: 100, notional: 1000000, status: 'active' },
-      },
-      market: { spot: 102 },
-    }
-
-    const concerns = {
-      [`products.${_('leg-1')}.strike`]: {
-        validationState: { schema: z.number().min(0).max(200) },
-        disabledWhen: {
-          condition: {
-            IS_EQUAL: [`products.${_('leg-1')}.status`, 'locked'],
-          },
-        },
-      },
-    }
+    const store = createGenericStore<AppState>()
 
     let storeInstance: StoreInstance<AppState>
 
-    const TradeForm = () => {
-      storeInstance = useStoreContext<AppState>()
-      const snap = useSnapshot(storeInstance.state)
-      const strikeValue = snap.products['leg-1'].strike
-      const strikeConcerns =
-        storeInstance._concerns[`products.${_('leg-1')}.strike`]
-
-      renderTracker.track({
-        strike: strikeValue,
-        valid: !(strikeConcerns?.['validationState'] as ValidationStateResult)
-          ?.isError,
-      })
-
-      return (
-        <input
-          value={strikeValue}
-          disabled={strikeConcerns?.['disabledWhen'] as boolean | undefined}
-          className={
-            !(strikeConcerns?.['validationState'] as ValidationStateResult)
-              ?.isError
-              ? ''
-              : 'error'
-          }
-          readOnly
-        />
-      )
+    const Wrapper = () => {
+      storeInstance = useTradeStoreInstance() as StoreInstance<AppState>
+      return <TradeFormComponent renderTracker={renderTracker} />
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    renderWithStore(<Wrapper />, store, structuredClone(initialState), {
+      concerns: fullConcerns,
+    })
 
-    // Wait for initial render
     await flushEffects()
-
-    // Clear after initial render
     renderTracker.clear()
 
     // Bulk update
@@ -100,7 +81,6 @@ describe('TEST-007: React Integration', () => {
     storeInstance!.state.products['leg-1'].notional = 2000000
     storeInstance!.state.products['leg-1'].status = 'locked'
 
-    // Wait for re-renders to settle
     await flushEffects()
 
     // React 18 automatic batching should result in a single render
@@ -109,20 +89,7 @@ describe('TEST-007: React Integration', () => {
 
   it('AC2: No intermediate states visible', async () => {
     const renderTracker = createRenderTracker()
-    const store = createAppStore()
-
-    const initialState = {
-      products: {
-        'leg-1': { strike: 100, notional: 1000000, status: 'active' },
-      },
-      market: { spot: 102 },
-    }
-
-    const concerns = {
-      'products.leg-1.strike': {
-        validationState: { schema: z.number().min(0).max(200) },
-      },
-    }
+    const store = createGenericStore<AppState>()
 
     let storeInstance: StoreInstance<AppState>
 
@@ -138,10 +105,11 @@ describe('TEST-007: React Integration', () => {
       return <div>{strikeValue}</div>
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    renderWithStore(<TradeForm />, store, structuredClone(initialState), {
+      concerns: validationOnlyConcerns,
+    })
 
     await flushEffects()
-
     renderTracker.clear()
 
     storeInstance!.state.products['leg-1'].strike = 150
@@ -154,20 +122,7 @@ describe('TEST-007: React Integration', () => {
 
   it('AC3: Concerns reflect final state', async () => {
     const renderTracker = createRenderTracker()
-    const store = createAppStore()
-
-    const initialState = {
-      products: {
-        'leg-1': { strike: 100, notional: 1000000, status: 'active' },
-      },
-      market: { spot: 102 },
-    }
-
-    const concerns = {
-      'products.leg-1.strike': {
-        validationState: { schema: z.number().min(0).max(200) },
-      },
-    }
+    const store = createGenericStore<AppState>()
 
     let storeInstance: StoreInstance<AppState>
 
@@ -185,10 +140,11 @@ describe('TEST-007: React Integration', () => {
       return <div>{snap.products['leg-1'].strike}</div>
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    renderWithStore(<TradeForm />, store, structuredClone(initialState), {
+      concerns: validationOnlyConcerns,
+    })
 
     await flushEffects()
-
     renderTracker.clear()
 
     storeInstance!.state.products['leg-1'].strike = 150
@@ -201,68 +157,27 @@ describe('TEST-007: React Integration', () => {
 
   it('Performance target: < 16ms render time (60fps)', async () => {
     const renderTracker = createRenderTracker()
-    const store = createAppStore()
-
-    const initialState = {
-      products: {
-        'leg-1': { strike: 100, notional: 1000000, status: 'active' },
-      },
-      market: { spot: 102 },
-    }
-
-    const concerns = {
-      [`products.${_('leg-1')}.strike`]: {
-        validationState: { schema: z.number().min(0).max(200) },
-        disabledWhen: {
-          condition: {
-            IS_EQUAL: [`products.${_('leg-1')}.status`, 'locked'],
-          },
-        },
-      },
-    }
+    const store = createGenericStore<AppState>()
 
     let storeInstance: StoreInstance<AppState>
 
-    const TradeForm = () => {
-      const renderStart = performance.now()
-
-      storeInstance = useStoreContext<AppState>()
-      const snap = useSnapshot(storeInstance.state)
-      const strikeValue = snap.products['leg-1'].strike
-      const strikeConcerns =
-        storeInstance._concerns[`products.${_('leg-1')}.strike`]
-
-      const renderEnd = performance.now()
-      const renderDuration = renderEnd - renderStart
-
-      renderTracker.track({
-        strike: strikeValue,
-        valid: !(strikeConcerns?.['validationState'] as ValidationStateResult)
-          ?.isError,
-        renderDuration,
-      })
-
-      return (
-        <input
-          value={strikeValue}
-          disabled={strikeConcerns?.['disabledWhen'] as boolean | undefined}
-          readOnly
-        />
-      )
+    const Wrapper = () => {
+      storeInstance = useTradeStoreInstance() as StoreInstance<AppState>
+      return <TradeFormComponent renderTracker={renderTracker} measurePerf />
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    renderWithStore(<Wrapper />, store, structuredClone(initialState), {
+      concerns: fullConcerns,
+    })
 
-    // Effects run synchronously, no wait needed
     renderTracker.clear()
 
     benchmark.start('react-render')
     storeInstance!.state.products['leg-1'].strike = 150
-    await flushSync() // Use flushSync for performance tests (no 20ms setTimeout)
+    await flushSync()
     const totalDuration = benchmark.end('react-render')
 
     // Total time should be < 5ms for React render + synchronous effects
-    // This test uses Zod validation which is synchronous, no async validators
     expect(totalDuration).toBeLessThan(5)
 
     // Individual render should be under 16ms (60fps target)
@@ -273,20 +188,7 @@ describe('TEST-007: React Integration', () => {
 
   it('No flashing or visual glitches during updates', async () => {
     const renderTracker = createRenderTracker()
-    const store = createAppStore()
-
-    const initialState = {
-      products: {
-        'leg-1': { strike: 100, notional: 1000000, status: 'active' },
-      },
-      market: { spot: 102 },
-    }
-
-    const concerns = {
-      'products.leg-1.strike': {
-        validationState: { schema: z.number().min(0).max(200) },
-      },
-    }
+    const store = createGenericStore<AppState>()
 
     let storeInstance: StoreInstance<AppState>
 
@@ -320,10 +222,11 @@ describe('TEST-007: React Integration', () => {
       )
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    renderWithStore(<TradeForm />, store, structuredClone(initialState), {
+      concerns: validationOnlyConcerns,
+    })
 
     await flushEffects()
-
     renderTracker.clear()
 
     // Multiple rapid updates
