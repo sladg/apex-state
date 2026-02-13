@@ -11,12 +11,10 @@ import { z } from 'zod'
 import type { TestState } from '../mocks'
 import { testStateFixtures } from '../mocks'
 import {
-  assertions,
   createStore,
   createTestStore,
-  domHelpers,
   fireEvent,
-  flushEffects,
+  flush,
   renderWithStore,
 } from './react'
 
@@ -87,7 +85,7 @@ describe('React Test Utilities', () => {
       const input = screen.getByTestId('email-input') as HTMLInputElement
 
       fireEvent.change(input, { target: { value: 'test@example.com' } })
-      await flushEffects()
+      await flush()
 
       expect(input.value).toBe('test@example.com')
     })
@@ -113,13 +111,13 @@ describe('React Test Utilities', () => {
       expect(checkbox.checked).toBe(false)
 
       fireEvent.click(checkbox)
-      await flushEffects()
+      await flush()
 
       expect(checkbox.checked).toBe(true)
     })
   })
 
-  describe('flushEffects', () => {
+  describe('flush', () => {
     it('flushes async valtio updates', async () => {
       const store = createStore<TestState>(testStateFixtures.formEmpty)
 
@@ -153,149 +151,9 @@ describe('React Test Utilities', () => {
       const input = screen.getByTestId('email-input') as HTMLInputElement
       fireEvent.change(input, { target: { value: 'invalid' } })
 
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('error')).toBeInTheDocument()
-    })
-  })
-
-  describe('assertions', () => {
-    it('fieldValue checks input value', () => {
-      const input = document.createElement('input')
-      input.value = 'test'
-
-      expect(assertions.fieldValue(input, 'test')).toBe(true)
-      expect(assertions.fieldValue(input, 'other')).toBe(false)
-    })
-
-    it('checkboxState checks checkbox', () => {
-      const checkbox = document.createElement('input')
-      checkbox.type = 'checkbox'
-      checkbox.checked = true
-
-      expect(assertions.checkboxState(checkbox, true)).toBe(true)
-      expect(assertions.checkboxState(checkbox, false)).toBe(false)
-    })
-
-    it('isVisible checks element exists', () => {
-      const element = document.createElement('div')
-
-      expect(assertions.isVisible(element)).toBe(true)
-      expect(assertions.isVisible(null)).toBe(false)
-    })
-
-    it('isHidden checks element is null', () => {
-      const element = document.createElement('div')
-
-      expect(assertions.isHidden(null)).toBe(true)
-      expect(assertions.isHidden(element)).toBe(false)
-    })
-
-    it('isDisabled checks disabled state', () => {
-      const button = document.createElement('button')
-
-      button.disabled = false
-      expect(assertions.isDisabled(button)).toBe(false)
-
-      button.disabled = true
-      expect(assertions.isDisabled(button)).toBe(true)
-    })
-
-    it('isEnabled checks enabled state', () => {
-      const button = document.createElement('button')
-
-      button.disabled = false
-      expect(assertions.isEnabled(button)).toBe(true)
-
-      button.disabled = true
-      expect(assertions.isEnabled(button)).toBe(false)
-    })
-
-    it('isReadOnly checks readonly state', () => {
-      const input = document.createElement('input')
-
-      input.readOnly = false
-      expect(assertions.isReadOnly(input)).toBe(false)
-
-      input.readOnly = true
-      expect(assertions.isReadOnly(input)).toBe(true)
-    })
-  })
-
-  describe('domHelpers', () => {
-    it('getAllErrors finds error elements', () => {
-      const container = document.createElement('div')
-      const error1 = document.createElement('span')
-      error1.setAttribute('data-testid', 'email-error')
-      error1.textContent = 'Invalid email'
-
-      const error2 = document.createElement('span')
-      error2.setAttribute('data-testid', 'password-error')
-      error2.textContent = 'Invalid password'
-
-      container.appendChild(error1)
-      container.appendChild(error2)
-
-      const errors = domHelpers.getAllErrors(container)
-      expect(errors).toHaveLength(2)
-      expect(errors).toContain('Invalid email')
-      expect(errors).toContain('Invalid password')
-    })
-
-    it('hasErrors checks if errors exist', () => {
-      const container = document.createElement('div')
-      expect(domHelpers.hasErrors(container)).toBe(false)
-
-      const error = document.createElement('span')
-      error.setAttribute('data-testid', 'email-error')
-      container.appendChild(error)
-
-      expect(domHelpers.hasErrors(container)).toBe(true)
-    })
-
-    it('getErrorCount returns error count', () => {
-      const container = document.createElement('div')
-      expect(domHelpers.getErrorCount(container)).toBe(0)
-
-      const error1 = document.createElement('span')
-      error1.setAttribute('data-testid', 'email-error')
-      container.appendChild(error1)
-
-      expect(domHelpers.getErrorCount(container)).toBe(1)
-
-      const error2 = document.createElement('span')
-      error2.setAttribute('data-testid', 'password-error')
-      container.appendChild(error2)
-
-      expect(domHelpers.getErrorCount(container)).toBe(2)
-    })
-
-    it('getField retrieves input by testid', () => {
-      const container = document.createElement('div')
-      const input = document.createElement('input')
-      input.setAttribute('data-testid', 'email-input')
-      container.appendChild(input)
-
-      document.body.appendChild(container)
-
-      const found = domHelpers.getField('email-input')
-      expect(found).toBe(input)
-
-      document.body.removeChild(container)
-    })
-
-    it('getButton retrieves button by testid', () => {
-      const container = document.createElement('div')
-      const button = document.createElement('button')
-      button.setAttribute('data-testid', 'submit-button')
-      container.appendChild(button)
-
-      document.body.appendChild(container)
-
-      const found = domHelpers.getButton('submit-button')
-      expect(found).toBe(button)
-
-      document.body.removeChild(container)
     })
   })
 })

@@ -1,7 +1,9 @@
 ---
 title: Architecture Guide
-updated: 2026-01-29
 audience: contributors touching core architecture
+created: 2026-01-29 (0f7ee88)
+updated: 2026-02-05 (c2c957e)
+status: active
 ---
 
 # Apex State Architecture

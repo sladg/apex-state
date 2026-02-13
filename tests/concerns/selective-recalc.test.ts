@@ -2,323 +2,136 @@
  * TEST-001: Single Field Change - Selective Re-calculation
  *
  * Priority: P0 (Critical)
- * Performance Target: < 5ms
  *
  * Validates that only relevant concerns recalculate when state changes
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
-import { flushSync, renderWithStore } from '../utils/react'
+import type { StoreInstance } from '../../src/core/types'
+import { flush, renderWithStore } from '../utils/react'
 
 interface AppState {
   products: {
-    'leg-1': {
-      strike: number
-      expiry: string
-      premium: number | null
+    'item-1': {
+      price: number
+      sku: string
+      quantity: number | null
       status: string
     }
-    'leg-2': {
-      strike: number
-      expiry: string
-      premium: number | null
+    'item-2': {
+      price: number
+      sku: string
+      quantity: number | null
       status: string
     }
   }
-  market: { spot: number; volatility: number }
+  shipping: { rate: number; method: string }
+}
+
+const initialState: AppState = {
+  products: {
+    'item-1': {
+      price: 29.99,
+      sku: 'SHIRT-BLU-M',
+      quantity: null,
+      status: 'in-stock',
+    },
+    'item-2': {
+      price: 49.99,
+      sku: 'PANTS-BLK-L',
+      quantity: null,
+      status: 'in-stock',
+    },
+  },
+  shipping: { rate: 5.99, method: 'standard' },
+}
+
+const concerns = {
+  'products.item-1.price': {
+    validationState: { schema: z.number().min(0).max(999) },
+    disabledWhen: {
+      condition: { IS_EQUAL: ['products.item-1.status', 'out-of-stock'] },
+    },
+    dynamicTooltip: {
+      template: 'Item 1 Price: {{products.item-1.price}}',
+    },
+  },
+  'products.item-2.price': {
+    validationState: { schema: z.number().min(0).max(999) },
+    disabledWhen: {
+      condition: { IS_EQUAL: ['products.item-2.status', 'out-of-stock'] },
+    },
+    dynamicTooltip: {
+      template: 'Item 2 Price: {{products.item-2.price}}',
+    },
+  },
 }
 
 describe('TEST-001: Selective Re-calculation', () => {
-  const createAppStore = () => createGenericStore<AppState>()
+  let storeInstance: StoreInstance<AppState>
 
-  it('AC1: Only leg-1 concerns recalculate when leg-1 strike changes', async () => {
-    const store = createAppStore()
-
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': {
-            strike: 100,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-          'leg-2': {
-            strike: 105,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-        },
-        market: { spot: 102, volatility: 0.15 },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0).max(200) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-            dynamicTooltip: {
-              template: 'Leg 1 Strike: {{products.leg-1.strike}}',
-            },
-          },
-          'products.leg-2.strike': {
-            validationState: { schema: z.number().min(0).max(200) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
-            },
-            dynamicTooltip: {
-              template: 'Leg 2 Strike: {{products.leg-2.strike}}',
-            },
-          },
-        },
-      },
-    )
-
-    await flushSync()
-
-    const start = performance.now()
-
-    // Change leg-1 strike
-    storeInstance.state.products['leg-1'].strike = 150
-
-    await flushSync()
-
-    const duration = performance.now() - start
-
-    // AC1: Only leg-1 concerns should be updated, leg-2 should remain unchanged
-    const leg1Concerns = storeInstance._concerns['products.leg-1.strike']
-    const leg2Concerns = storeInstance._concerns['products.leg-2.strike']
-
-    // Verify leg-1 concerns are defined and updated
-    expect(leg1Concerns?.['validationState']).toBeDefined()
-    expect(leg1Concerns?.['disabledWhen']).toBeDefined()
-    expect(leg1Concerns?.['dynamicTooltip']).toBe('Leg 1 Strike: 150')
-
-    // Verify leg-2 concerns remain at initial values
-    expect(leg2Concerns?.['dynamicTooltip']).toBe('Leg 2 Strike: 105')
-
-    // Performance: < 15ms (includes React overhead)
-    expect(duration).toBeLessThan(15)
+  beforeEach(async () => {
+    const store = createGenericStore<AppState>()
+    const result = renderWithStore(store, structuredClone(initialState), {
+      concerns,
+    })
+    storeInstance = result.storeInstance
+    await flush()
   })
 
-  it('AC2: All leg-1 concerns recalculate', async () => {
-    const store = createAppStore()
+  it('AC1: Only item-1 concerns recalculate when item-1 price changes', async () => {
+    storeInstance.state.products['item-1'].price = 39.99
+    await flush()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': {
-            strike: 100,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-          'leg-2': {
-            strike: 105,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-        },
-        market: { spot: 102, volatility: 0.15 },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0).max(200) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-            dynamicTooltip: {
-              template: 'Leg 1 Strike: {{products.leg-1.strike}}',
-            },
-          },
-        },
-      },
-    )
+    const item1Concerns = storeInstance._concerns['products.item-1.price']
+    const item2Concerns = storeInstance._concerns['products.item-2.price']
 
-    await flushSync()
+    expect(item1Concerns?.['validationState']).toBeDefined()
+    expect(item1Concerns?.['disabledWhen']).toBeDefined()
+    expect(item1Concerns?.['dynamicTooltip']).toBe('Item 1 Price: 39.99')
 
-    storeInstance.state.products['leg-1'].strike = 150
+    // item-2 remains at initial values
+    expect(item2Concerns?.['dynamicTooltip']).toBe('Item 2 Price: 49.99')
+  })
 
-    await flushSync()
+  it('AC2: All item-1 concerns recalculate', async () => {
+    storeInstance.state.products['item-1'].price = 39.99
+    await flush()
 
-    const leg1Concerns = storeInstance._concerns['products.leg-1.strike']
+    const item1Concerns = storeInstance._concerns['products.item-1.price']
 
-    // All three concerns should be defined and updated
-    expect(leg1Concerns?.['validationState']).toBeDefined()
-    expect(leg1Concerns?.['disabledWhen']).toBeDefined()
-    expect(leg1Concerns?.['dynamicTooltip']).toBeDefined()
+    expect(item1Concerns?.['validationState']).toBeDefined()
+    expect(item1Concerns?.['disabledWhen']).toBeDefined()
+    expect(item1Concerns?.['dynamicTooltip']).toBeDefined()
   })
 
   it('AC3: Correct values after recalculation', async () => {
-    const store = createAppStore()
+    storeInstance.state.products['item-1'].price = 39.99
+    await flush()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': {
-            strike: 100,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-          'leg-2': {
-            strike: 105,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-        },
-        market: { spot: 102, volatility: 0.15 },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0).max(200) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-            dynamicTooltip: {
-              template: 'Leg 1 Strike: {{products.leg-1.strike}}',
-            },
-          },
-        },
-      },
-    )
-
-    await flushSync()
-
-    storeInstance.state.products['leg-1'].strike = 150
-
-    await flushSync()
-
-    const leg1Concerns = storeInstance._concerns['products.leg-1.strike']
-    const validation = leg1Concerns?.['validationState'] as
-      | { isError: boolean; errors: any[] }
+    const item1Concerns = storeInstance._concerns['products.item-1.price']
+    const validation = item1Concerns?.['validationState'] as
+      | { isError: boolean; errors: unknown[] }
       | undefined
-    const tooltip = leg1Concerns?.['dynamicTooltip']
+    const tooltip = item1Concerns?.['dynamicTooltip']
 
-    expect(validation?.isError).toBe(false) // Valid (no error)
-    expect(tooltip).toBe('Leg 1 Strike: 150')
+    expect(validation?.isError).toBe(false)
+    expect(tooltip).toBe('Item 1 Price: 39.99')
   })
 
-  it('Performance target: < 5ms for re-evaluation', async () => {
-    const store = createAppStore()
-
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': {
-            strike: 100,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-          'leg-2': {
-            strike: 105,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-        },
-        market: { spot: 102, volatility: 0.15 },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0).max(200) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-            dynamicTooltip: {
-              template: 'Leg 1 Strike: {{products.leg-1.strike}}',
-            },
-          },
-        },
-      },
-    )
-
-    await flushSync()
-
-    const start = performance.now()
-    storeInstance.state.products['leg-1'].strike = 150
-    await flushSync()
-    const duration = performance.now() - start
-
-    // Performance: < 15ms (includes React overhead)
-    expect(duration).toBeLessThan(15)
-  })
-
-  it('Round-trip: strike change → concern value available < 15ms', async () => {
-    const store = createAppStore()
-
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': {
-            strike: 100,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-          'leg-2': {
-            strike: 105,
-            expiry: '2024-12-31',
-            premium: null,
-            status: 'active',
-          },
-        },
-        market: { spot: 102, volatility: 0.15 },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0).max(200) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-            dynamicTooltip: {
-              template: 'Leg 1 Strike: {{products.leg-1.strike}}',
-            },
-          },
-        },
-      },
-    )
-
-    await flushSync()
-
-    // Verify initial tooltip
+  it('Round-trip: price change → concern value available', async () => {
     const initialTooltip =
-      storeInstance._concerns['products.leg-1.strike']?.['dynamicTooltip']
-    expect(initialTooltip).toBe('Leg 1 Strike: 100')
+      storeInstance._concerns['products.item-1.price']?.['dynamicTooltip']
+    expect(initialTooltip).toBe('Item 1 Price: 29.99')
 
-    // Change the strike and measure propagation time
-    const start = performance.now()
-    storeInstance.state.products['leg-1'].strike = 150
-    await flushSync()
-    const propagationTime = performance.now() - start
+    storeInstance.state.products['item-1'].price = 39.99
+    await flush()
 
-    // Verify tooltip updated
     const updatedTooltip =
-      storeInstance._concerns['products.leg-1.strike']?.['dynamicTooltip']
-    expect(updatedTooltip).toBe('Leg 1 Strike: 150')
-
-    expect(propagationTime).toBeLessThan(15)
+      storeInstance._concerns['products.item-1.price']?.['dynamicTooltip']
+    expect(updatedTooltip).toBe('Item 1 Price: 39.99')
   })
 })

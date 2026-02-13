@@ -4,6 +4,7 @@ import { proxy, ref } from 'valtio'
 
 import { StoreContext } from '../core/context'
 import { DEFAULT_STORE_CONFIG } from '../core/defaults'
+import { createListenerGraph } from '../core/listenerGraph'
 import { createPathGroups } from '../core/pathGroups'
 import type {
   InternalState,
@@ -24,8 +25,7 @@ const createInternalState = <
   graphs: {
     sync: createPathGroups(),
     flip: createPathGroups(),
-    listeners: new Map(),
-    sortedListenerPaths: [],
+    listenerGraph: createListenerGraph(),
   },
   registrations: {
     concerns: new Map(),

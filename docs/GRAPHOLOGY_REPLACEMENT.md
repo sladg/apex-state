@@ -1,7 +1,9 @@
 ---
 title: Graphology Replacement with PathGroups
-updated: 2026-02-05
 audience: maintainers
+created: 2026-02-05 (aee8140)
+updated: 2026-02-05 (aee8140)
+status: archived
 ---
 
 # Graphology Replacement with PathGroups

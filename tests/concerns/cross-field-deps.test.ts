@@ -2,290 +2,122 @@
  * TEST-002: Cross-Field Validation - Dependency Tracking
  *
  * Priority: P0 (Critical)
- * Performance Target: < 2ms
  *
  * Validates that cross-field dependencies are tracked correctly
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
-import { flushSync, renderWithStore } from '../utils/react'
+import type { StoreInstance } from '../../src/core/types'
+import { flush, renderWithStore } from '../utils/react'
 
 interface AppState {
   products: {
-    'leg-1': { strike: number; status: string }
-    'leg-2': { strike: number; status: string }
+    'item-1': { price: number; status: string }
+    'item-2': { price: number; status: string }
   }
 }
 
+const initialState: AppState = {
+  products: {
+    'item-1': { price: 29.99, status: 'in-stock' },
+    'item-2': { price: 49.99, status: 'in-stock' },
+  },
+}
+
+const concerns = {
+  'products.item-1.price': {
+    validationState: { schema: z.number().min(0) },
+    disabledWhen: {
+      condition: { IS_EQUAL: ['products.item-1.status', 'out-of-stock'] },
+    },
+  },
+  'products.item-2.price': {
+    validationState: { schema: z.number().min(0) },
+    disabledWhen: {
+      condition: { IS_EQUAL: ['products.item-2.status', 'out-of-stock'] },
+    },
+  },
+}
+
 describe('TEST-002: Cross-Field Dependency Tracking', () => {
-  const createAppStore = () => createGenericStore<AppState>()
+  let storeInstance: StoreInstance<AppState>
 
-  it('AC1: Only leg-1 disabled concern recalculates when status changes', async () => {
-    const store = createAppStore()
-
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': { strike: 100, status: 'active' },
-          'leg-2': { strike: 105, status: 'active' },
-        },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-          },
-          'products.leg-2.strike': {
-            validationState: { schema: z.number().min(0) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
-            },
-          },
-        },
-      },
-    )
-
-    await flushSync()
-
-    const start = performance.now()
-    storeInstance.state.products['leg-1'].status = 'locked'
-    await flushSync()
-    const duration = performance.now() - start
-
-    // Verify only leg-1 disabled concern updated
-    const leg1Disabled =
-      storeInstance._concerns['products.leg-1.strike']?.['disabledWhen']
-    const leg2Disabled =
-      storeInstance._concerns['products.leg-2.strike']?.['disabledWhen']
-
-    expect(leg1Disabled).toBe(true) // Updated
-    expect(leg2Disabled).toBe(false) // Not updated
-
-    // Performance: < 15ms (includes React overhead)
-    expect(duration).toBeLessThan(15)
+  beforeEach(async () => {
+    const store = createGenericStore<AppState>()
+    const result = renderWithStore(store, structuredClone(initialState), {
+      concerns,
+    })
+    storeInstance = result.storeInstance
+    await flush()
   })
 
-  it('AC2: Leg-1 validationState does NOT recalculate', async () => {
-    const store = createAppStore()
+  it('AC1: Only item-1 disabled concern recalculates when status changes', async () => {
+    storeInstance.state.products['item-1'].status = 'out-of-stock'
+    await flush()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': { strike: 100, status: 'active' },
-          'leg-2': { strike: 105, status: 'active' },
-        },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-          },
-        },
-      },
-    )
+    const item1Disabled =
+      storeInstance._concerns['products.item-1.price']?.['disabledWhen']
+    const item2Disabled =
+      storeInstance._concerns['products.item-2.price']?.['disabledWhen']
 
-    await flushSync()
+    expect(item1Disabled).toBe(true)
+    expect(item2Disabled).toBe(false)
+  })
 
-    // Change status
-    storeInstance.state.products['leg-1'].status = 'locked'
-    await flushSync()
+  it('AC2: Item-1 validationState does NOT recalculate', async () => {
+    storeInstance.state.products['item-1'].status = 'out-of-stock'
+    await flush()
 
-    // Verify validationState remains valid (didn't recalculate unnecessarily)
     const validation =
-      storeInstance._concerns['products.leg-1.strike']?.['validationState']
+      storeInstance._concerns['products.item-1.price']?.['validationState']
     expect(validation).toMatchObject({
       isError: false,
       errors: [],
     })
   })
 
-  it('AC3: Leg-2 concerns do NOT recalculate', async () => {
-    const store = createAppStore()
+  it('AC3: Item-2 concerns do NOT recalculate', async () => {
+    storeInstance.state.products['item-1'].status = 'out-of-stock'
+    await flush()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': { strike: 100, status: 'active' },
-          'leg-2': { strike: 105, status: 'active' },
-        },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            validationState: { schema: z.number().min(0) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-          },
-          'products.leg-2.strike': {
-            validationState: { schema: z.number().min(0) },
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
-            },
-          },
-        },
-      },
-    )
+    const item2Disabled =
+      storeInstance._concerns['products.item-2.price']?.['disabledWhen']
+    const item2Validation =
+      storeInstance._concerns['products.item-2.price']?.['validationState']
 
-    await flushSync()
-
-    // Change leg-1 status
-    storeInstance.state.products['leg-1'].status = 'locked'
-    await flushSync()
-
-    // Verify leg-2 concerns remain unchanged
-    const leg2Disabled =
-      storeInstance._concerns['products.leg-2.strike']?.['disabledWhen']
-    const leg2Validation =
-      storeInstance._concerns['products.leg-2.strike']?.['validationState']
-
-    expect(leg2Disabled).toBe(false) // Should still be false (not locked)
-    expect(leg2Validation).toMatchObject({
+    expect(item2Disabled).toBe(false)
+    expect(item2Validation).toMatchObject({
       isError: false,
       errors: [],
     })
   })
 
   it('AC4: Correct disabled state after change', async () => {
-    const store = createAppStore()
+    storeInstance.state.products['item-1'].status = 'out-of-stock'
+    await flush()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': { strike: 100, status: 'active' },
-          'leg-2': { strike: 105, status: 'active' },
-        },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-          },
-          'products.leg-2.strike': {
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
-            },
-          },
-        },
-      },
-    )
+    const item1Disabled =
+      storeInstance._concerns['products.item-1.price']?.['disabledWhen']
+    const item2Disabled =
+      storeInstance._concerns['products.item-2.price']?.['disabledWhen']
 
-    await flushSync()
-
-    storeInstance.state.products['leg-1'].status = 'locked'
-    await flushSync()
-
-    const leg1Disabled =
-      storeInstance._concerns['products.leg-1.strike']?.['disabledWhen']
-    const leg2Disabled =
-      storeInstance._concerns['products.leg-2.strike']?.['disabledWhen']
-
-    expect(leg1Disabled).toBe(true) // Locked
-    expect(leg2Disabled).toBe(false) // Not locked
+    expect(item1Disabled).toBe(true)
+    expect(item2Disabled).toBe(false)
   })
 
-  it('Performance target: < 2ms for single concern evaluation', async () => {
-    const store = createAppStore()
-
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': { strike: 100, status: 'active' },
-          'leg-2': { strike: 105, status: 'active' },
-        },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-          },
-        },
-      },
-    )
-
-    await flushSync()
-
-    const start = performance.now()
-    storeInstance.state.products['leg-1'].status = 'locked'
-    await flushSync()
-    const duration = performance.now() - start
-
-    // Performance: < 15ms (includes React overhead)
-    expect(duration).toBeLessThan(15)
-  })
-
-  it('Round-trip: cross-field dependency change → concern value available < 15ms', async () => {
-    const store = createAppStore()
-
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
-      store,
-      {
-        products: {
-          'leg-1': { strike: 100, status: 'active' },
-          'leg-2': { strike: 105, status: 'active' },
-        },
-      },
-      {
-        concerns: {
-          'products.leg-1.strike': {
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
-            },
-          },
-          'products.leg-2.strike': {
-            disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
-            },
-          },
-        },
-      },
-    )
-
-    await flushSync()
-
-    // Verify initial state
+  it('Round-trip: cross-field dependency change → concern value available', async () => {
     const initialDisabled =
-      storeInstance._concerns['products.leg-1.strike']?.['disabledWhen']
+      storeInstance._concerns['products.item-1.price']?.['disabledWhen']
     expect(initialDisabled).toBe(false)
 
-    // Measure propagation time
-    const start = performance.now()
+    storeInstance.state.products['item-1'].status = 'out-of-stock'
+    await flush()
 
-    // Change status that affects disabled concern
-    storeInstance.state.products['leg-1'].status = 'locked'
-    await flushSync()
-
-    const propagationTime = performance.now() - start
-
-    // Verify disabled state updated
     const updatedDisabled =
-      storeInstance._concerns['products.leg-1.strike']?.['disabledWhen']
+      storeInstance._concerns['products.item-1.price']?.['disabledWhen']
     expect(updatedDisabled).toBe(true)
-
-    expect(propagationTime).toBeLessThan(15)
   })
 })

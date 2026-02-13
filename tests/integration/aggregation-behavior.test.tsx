@@ -11,7 +11,7 @@ import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
-import { flushEffects, renderWithStore } from '../utils/react'
+import { flush, renderWithStore } from '../utils/react'
 
 // Use symbol-based enum for clearer test semantics and type safety
 const SelectionSymbol = {
@@ -79,7 +79,7 @@ describe('Aggregation Behavior', () => {
         item4: { selected: SelectionSymbol.Unselected, value: 'd' },
       })
 
-      await flushEffects()
+      await flush()
 
       // With no aggregation sources, target keeps its initial value
       expect(screen.getByTestId('all-selected').textContent).toBe('Unselected')
@@ -125,20 +125,20 @@ describe('Aggregation Behavior', () => {
         item4: { selected: SelectionSymbol.Unselected, value: 'd' },
       })
 
-      await flushEffects()
+      await flush()
 
       // With 1 source, target should match that source
       expect(screen.getByTestId('all-selected').textContent).toBe('Unselected')
 
       // Change source to Selected
       screen.getByTestId('set-selected').click()
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('all-selected').textContent).toBe('Selected')
 
       // Change source back to Unselected
       screen.getByTestId('set-unselected').click()
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('all-selected').textContent).toBe('Unselected')
     })
@@ -183,14 +183,14 @@ describe('Aggregation Behavior', () => {
         item4: { selected: SelectionSymbol.Selected, value: 'd' },
       })
 
-      await flushEffects()
+      await flush()
 
       // All 4 sources are Selected, so target should be Selected
       expect(screen.getByTestId('all-selected').textContent).toBe('Selected')
 
       // Change item4 to Unselected (different from the other 3)
       screen.getByTestId('set-different').click()
-      await flushEffects()
+      await flush()
 
       // Now sources have different values, target should be undefined
       expect(screen.getByTestId('all-selected').textContent).toBe('undefined')
@@ -245,14 +245,14 @@ describe('Aggregation Behavior', () => {
         item4: { selected: SelectionSymbol.Unselected, value: 'd' },
       })
 
-      await flushEffects()
+      await flush()
 
       // Mixed values -> undefined
       expect(screen.getByTestId('all-selected').textContent).toBe('undefined')
 
       // Write to target should distribute to all sources
       screen.getByTestId('select-all').click()
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('all-selected').textContent).toBe('Selected')
       expect(screen.getByTestId('item1').textContent).toBe('Selected')
@@ -261,7 +261,7 @@ describe('Aggregation Behavior', () => {
 
       // Deselect all
       screen.getByTestId('deselect-all').click()
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('all-selected').textContent).toBe('Unselected')
       expect(screen.getByTestId('item1').textContent).toBe('Unselected')
@@ -341,7 +341,7 @@ describe('Aggregation Behavior', () => {
         pathD: true,
       })
 
-      await flushEffects()
+      await flush()
 
       // Initial state: A=true, B=false, C=true, D=true
       // Sources are not all equal -> undefined
@@ -355,7 +355,7 @@ describe('Aggregation Behavior', () => {
       // So we end up with: A=true, B=false, C=true, D=true
       // Sources not equal -> master becomes undefined
       screen.getByTestId('set-master').click()
-      await flushEffects()
+      await flush()
 
       // The key assertion: master should be undefined
       // because the flip relationship interferes with the aggregation
@@ -422,14 +422,14 @@ describe('Aggregation Behavior', () => {
         pathD: false,
       })
 
-      await flushEffects()
+      await flush()
 
       // Mixed values -> undefined
       expect(screen.getByTestId('master').textContent).toBe('undefined')
 
       // Set master to true (should distribute to all)
       screen.getByTestId('set-master').click()
-      await flushEffects()
+      await flush()
 
       // Without flip interference, all sources should be true
       expect(screen.getByTestId('master').textContent).toBe('true')
@@ -490,20 +490,20 @@ describe('Aggregation Behavior', () => {
         item4: { selected: SelectionSymbol.Unselected, value: 'd' },
       })
 
-      await flushEffects()
+      await flush()
 
       // Different initial values -> undefined
       expect(screen.getByTestId('master').textContent).toBe('undefined')
 
       // Set both to same value
       screen.getByTestId('set-same').click()
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('master').textContent).toBe('same')
 
       // Set to different values
       screen.getByTestId('set-different').click()
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('master').textContent).toBe('undefined')
     })
@@ -551,14 +551,14 @@ describe('Aggregation Behavior', () => {
         item4: { selected: SelectionSymbol.Unselected, value: 'd' },
       })
 
-      await flushEffects()
+      await flush()
 
       // item1=Selected, item2=Unselected -> undefined
       expect(screen.getByTestId('all-selected').textContent).toBe('undefined')
 
       // Change item2 to match item1
       screen.getByTestId('set-item2-selected').click()
-      await flushEffects()
+      await flush()
 
       // Now both are Selected -> target should be Selected
       expect(screen.getByTestId('all-selected').textContent).toBe('Selected')

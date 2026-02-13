@@ -1,3 +1,9 @@
+---
+created: 2026-01-28 (37db2cf)
+updated: 2026-02-11 (bd07f7d)
+status: active
+---
+
 # String Interpolation
 
 Dynamic template helpers that power concerns like `dynamicTooltip`, `dynamicLabel`, and `dynamicPlaceholder`.

@@ -1,3 +1,9 @@
+---
+created: 2026-02-04 (15bee6f)
+updated: 2026-02-04 (15bee6f)
+status: active
+---
+
 # Wildcard Utilities Example
 
 The new `toWildcardPath` and `toWildcardPathAuto` utilities help convert concrete Record paths to wildcard paths.

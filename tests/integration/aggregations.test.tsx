@@ -17,12 +17,7 @@ import {
   testStateFixtures,
 } from '../mocks'
 import { CartComponent } from '../utils/components'
-import {
-  createStore,
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../utils/react'
+import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'
 
 describe('Integration: Computed Values & Aggregations', () => {
   let store: ReturnType<typeof createStore<TestState>>
@@ -37,7 +32,7 @@ describe('Integration: Computed Values & Aggregations', () => {
     const addBtn = screen.getByTestId('add-item-btn')
     fireEvent.click(addBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('item-count').textContent).toBe('1')
   })
@@ -100,7 +95,7 @@ describe('Integration: Computed Values & Aggregations', () => {
     const btn = screen.getByTestId('update-subtotal-btn')
     fireEvent.click(btn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('subtotal').textContent).toBe('100')
   })
@@ -116,7 +111,7 @@ describe('Integration: Computed Values & Aggregations', () => {
     const btn = screen.getByTestId('update-btn')
     fireEvent.click(btn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('total').textContent).toBe('220')
   })
@@ -141,7 +136,7 @@ describe('Integration: Computed Values & Aggregations', () => {
     const addBtn = screen.getByTestId('add-btn')
     fireEvent.click(addBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('count').textContent).toBe('2')
   })
@@ -198,7 +193,7 @@ describe('Integration: Computed Values & Aggregations', () => {
     const btn = screen.getByTestId('add-nested-btn')
     fireEvent.click(btn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('nested-total').textContent).toBe('125')
   })

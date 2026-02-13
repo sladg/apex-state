@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { dot } from '../../src/utils/dot'
-import { _, hashKey } from '../../src/utils/hashKey'
+import { guard } from '../../src/utils/guards'
+import { _ } from '../../src/utils/hashKey'
 
 describe('Deep Access Utilities', () => {
   describe('dot.get', () => {
@@ -200,16 +201,16 @@ describe('Deep Access Utilities', () => {
     })
   })
 
-  describe('hashKey.rejectDynamic (dynamic key validation)', () => {
-    it('throws error when [*] is passed to hashKey.rejectDynamic', () => {
-      expect(() => hashKey.rejectDynamic('nested.[*].value')).toThrow(
+  describe('guard.dynamicPath (dynamic key validation)', () => {
+    it('throws error when [*] is passed to guard.dynamicPath', () => {
+      expect(() => guard.dynamicPath('nested.[*].value')).toThrow(
         /contains \[\*\] hash key/,
       )
     })
 
     it('allows normal paths without hash keys', () => {
-      expect(() => hashKey.rejectDynamic('nested.value')).not.toThrow()
-      expect(() => hashKey.rejectDynamic('user.profile.name')).not.toThrow()
+      expect(() => guard.dynamicPath('nested.value')).not.toThrow()
+      expect(() => guard.dynamicPath('user.profile.name')).not.toThrow()
     })
 
     it('works with dot.get/set/has when paths are valid', () => {

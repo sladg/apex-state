@@ -1,7 +1,9 @@
 ---
 title: P0 Test Coverage Snapshot
-updated: 2026-01-29
 audience: QA, maintainers
+created: 2026-01-28 (37db2cf)
+updated: 2026-01-29 (d667b86)
+status: archived
 ---
 
 # P0 Suite Coverage

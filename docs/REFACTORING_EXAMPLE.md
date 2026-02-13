@@ -1,3 +1,9 @@
+---
+created: 2026-01-29 (2d06fb2)
+updated: 2026-02-04 (15bee6f)
+status: archived
+---
+
 # Test Refactoring Example: Using Real Implementation
 
 This document shows how to refactor tests from using custom `createTestStore` utilities to using the real `createGenericStore` implementation.

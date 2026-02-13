@@ -7,12 +7,13 @@
 
 import { getAllGroups } from '../../core/pathGroups'
 import type { StoreInstance } from '../../core/types'
-import type { ArrayOfChanges, GenericMeta } from '../../types'
-import { AnyChange, normalizeChangesForGroups } from '../normalizeChanges'
+import type { GenericMeta } from '../../types'
+import type { ArrayOfChanges__internal } from '../../types/changes'
+import { normalizeChangesForGroups } from '../normalizeChanges'
 import { queueChange } from '../queue'
 
 export const processFlipPaths = <DATA extends object, META extends GenericMeta>(
-  changes: ArrayOfChanges<DATA, META>,
+  changes: ArrayOfChanges__internal<DATA, META>,
   store: StoreInstance<DATA, META>,
 ): void => {
   const { flip } = store._internal.graphs
@@ -24,7 +25,7 @@ export const processFlipPaths = <DATA extends object, META extends GenericMeta>(
 
   // Normalize changes for grouped paths
   const normalizedChanges = normalizeChangesForGroups({
-    changes: changes as AnyChange[],
+    changes,
     pathGroups,
     matchMode: 'all',
   })

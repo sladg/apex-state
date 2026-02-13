@@ -1,8 +1,10 @@
 ---
 title: Initial Requirements (Legacy)
-updated: 2026-01-29
 audience: historical reference
-status: legacy
+created: 2026-01-28 (2995319)
+updated: 2026-01-29 (d667b86)
+status: obsolete
+superseded_by: docs/INPUT_v2.md
 ---
 
 > **Legacy specification** – preserved for context only. The architecture described below predates the current two-proxy concern system. For current guidance see `docs/agents/ARCHITECTURE.md` and `docs/agents/CONCERNS_GUIDE.md`.

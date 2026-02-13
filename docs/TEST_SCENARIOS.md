@@ -1,3 +1,9 @@
+---
+created: 2026-01-28 (37db2cf)
+updated: 2026-02-11 (bd07f7d)
+status: active
+---
+
 # Valtio-Reactive Concerns: Test Scenarios
 
 **Document Type**: Test Specifications

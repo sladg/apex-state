@@ -9,6 +9,6 @@
  */
 
 export { registerFlipPair } from './prebuilts/flip'
-export { registerListener } from './prebuilts/listeners'
+export { registerListener, registerListenersBatch } from './prebuilts/listeners'
 export { registerSyncPair, registerSyncPairsBatch } from './prebuilts/sync'
 export { registerSideEffects } from './registration'

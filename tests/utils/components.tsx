@@ -1,11 +1,5 @@
 import React from 'react'
 
-import { useSnapshot } from 'valtio'
-
-import type { ValidationStateResult } from '../../src/concerns/prebuilts'
-import { useStoreContext } from '../../src/core/context'
-import { _ } from '../../src/utils/hashKey'
-import type { createRenderTracker } from '../concerns/test-utils'
 import { validateField } from './react'
 
 // Common store type for components that only need useFieldStore
@@ -178,66 +172,6 @@ export const MultiFieldForm = ({
     </div>
   )
 }
-
-/**
- * Trade form component for react-integration performance tests.
- *
- * Wraps useStoreContext + useSnapshot + renderTracker pattern.
- */
-export const TradeFormComponent = ({
-  renderTracker,
-  trackFields,
-  measurePerf = false,
-}: {
-  renderTracker: ReturnType<typeof createRenderTracker>
-  trackFields?: (snap: any, concerns: any) => Record<string, any>
-  measurePerf?: boolean
-}) => {
-  const renderStart = measurePerf ? performance.now() : 0
-
-  const storeInstance = useStoreContext<{
-    products: { 'leg-1': { strike: number; notional: number; status: string } }
-    market: { spot: number }
-  }>()
-  const snap = useSnapshot(storeInstance.state)
-  const strikeValue = snap.products['leg-1'].strike
-  const strikeConcerns =
-    storeInstance._concerns[`products.${_('leg-1')}.strike`]
-
-  const trackData = trackFields
-    ? trackFields(snap, strikeConcerns)
-    : {
-        strike: strikeValue,
-        valid: !(strikeConcerns?.['validationState'] as ValidationStateResult)
-          ?.isError,
-      }
-
-  if (measurePerf) {
-    trackData['renderDuration'] = performance.now() - renderStart
-  }
-
-  renderTracker.track(trackData)
-
-  return (
-    <input
-      value={strikeValue}
-      disabled={strikeConcerns?.['disabledWhen'] as boolean | undefined}
-      className={
-        !(strikeConcerns?.['validationState'] as ValidationStateResult)?.isError
-          ? 'valid'
-          : 'error'
-      }
-      readOnly
-    />
-  )
-}
-
-// Re-export TradeFormComponent's store instance accessor
-export const useTradeStoreInstance = () =>
-  useStoreContext<{
-    products: { 'leg-1': { strike: number; notional: number; status: string } }
-    market: { spot: number }
-  }>()
 
 /**
  * Universal ProductComponent for concerns-ui integration tests

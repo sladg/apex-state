@@ -1,36 +1,93 @@
-import type { ListenerRegistration, StoreInstance } from '../../core/types'
+import {
+  addGroup,
+  addGroups,
+  addNode,
+  removeGroup,
+  removeNode,
+} from '../../core/listenerGraph'
+import type {
+  ListenerRegistration,
+  ListenerRegistration__unsafe,
+  StoreInstance,
+} from '../../core/types'
+import type { ListenerFn } from '../../pipeline/processors/listeners.types'
 import type { GenericMeta } from '../../types'
-import { getPathDepth } from '../../utils/pathUtils'
+import { generateListenerId, guard } from '../../utils/guards'
 
-const updateSortedListenerPaths = (graphs: {
-  listeners: Map<string, unknown[]>
-  sortedListenerPaths: string[]
-}): void => {
-  graphs.sortedListenerPaths = Array.from(graphs.listeners.keys()).sort(
-    (a, b) => getPathDepth(b) - getPathDepth(a),
-  )
+/**
+ * Internal registration logic shared by both single and batch variants.
+ * Works with ListenerRegistration__unsafe to avoid DeepKey resolution overhead.
+ */
+const prepareRegistration = (
+  store: StoreInstance<object>,
+  registration: ListenerRegistration__unsafe,
+  graph: { fns: Map<string, ListenerFn> },
+): {
+  path: string
+  id: string
+  wrappedFn: ListenerFn
+  scope: string | null
+} => {
+  guard.listenerScope(registration.path, registration.scope)
+
+  const path = registration.path ?? ''
+  const id = generateListenerId(path, registration.fn, graph.fns)
+
+  const originalFn = registration.fn
+  const wrappedFn: ListenerFn = (changes, state) =>
+    store._internal.timing.run('listeners', () => originalFn(changes, state), {
+      path,
+      name: 'listener',
+    })
+
+  return { path, id, wrappedFn, scope: registration.scope ?? null }
 }
 
 /**
- * Helper to validate that scope is a parent/ancestor of path
+ * Batch version of registerListener. Adds all groups first (single sort + edge
+ * recomputation), then registers all nodes. Returns a single combined cleanup.
+ *
+ * PERF: For N listeners sharing M unique groups, this does O(M log M) work once
+ * instead of O(M × M log M) from N individual addGroup calls.
  */
-const validateScopeAndPath = (
-  path: string | null,
-  scope: string | null,
-): void => {
-  // If either is null, validation passes
-  if (path === null || scope === null) return
+export const registerListenersBatch = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  store: StoreInstance<DATA, META>,
+  registrations: ListenerRegistration<DATA, META>[],
+): (() => void) => {
+  const graph = store._internal.graphs.listenerGraph
+  const regs = registrations as ListenerRegistration__unsafe[]
 
-  // If scope === path, that's valid
-  if (path === scope) return
+  // Phase 1: Validate all registrations and collect group paths
+  const groupPaths: string[] = []
+  const prepared: ReturnType<typeof prepareRegistration>[] = []
 
-  // Scope must be a prefix of path (parent/ancestor)
-  // e.g., path: 'a.b.c', scope: 'a.b' ✅
-  // e.g., path: 'a.b.c', scope: '1.2.3' ❌
-  if (!path.startsWith(scope + '.')) {
-    throw new Error(
-      `Invalid listener: scope '${scope}' must be a parent/ancestor of path '${path}', or one must be null`,
-    )
+  for (const registration of regs) {
+    const entry = prepareRegistration(store, registration, graph)
+    groupPaths.push(entry.path)
+    prepared.push(entry)
+  }
+
+  // Phase 2: Add all groups at once (single sort + edge recomputation)
+  addGroups(graph, groupPaths)
+
+  // Phase 3: Register all nodes and fns
+  const cleanupEntries: { id: string; path: string }[] = []
+  for (const { path, id, wrappedFn, scope } of prepared) {
+    graph.fns.set(id, wrappedFn)
+    addNode(graph, id, scope, path)
+    cleanupEntries.push({ id, path })
+  }
+
+  // Return combined cleanup
+  return () => {
+    for (const { id, path } of cleanupEntries) {
+      const isEmpty = removeNode(graph, id, path)
+      if (isEmpty) removeGroup(graph, path)
+      graph.fns.delete(id)
+    }
   }
 }
 
@@ -41,40 +98,21 @@ export const registerListener = <
   store: StoreInstance<DATA, META>,
   registration: ListenerRegistration<DATA, META>,
 ): (() => void) => {
-  const { graphs } = store._internal
-  const { listeners } = graphs
+  const graph = store._internal.graphs.listenerGraph
+  const reg = registration as ListenerRegistration__unsafe
+  const { path, id, wrappedFn, scope } = prepareRegistration(store, reg, graph)
 
-  // Validate that scope is a parent/ancestor of path
-  validateScopeAndPath(registration.path, registration.scope)
+  // Ensure group exists for this path
+  addGroup(graph, path)
 
-  // Use path as the map key (empty string for null)
-  const mapKey = registration.path ?? ''
-  const existing = listeners.get(mapKey) ?? []
+  // Store wrapped fn and node metadata
+  graph.fns.set(id, wrappedFn)
+  addNode(graph, id, scope, path)
 
-  // Wrap fn with timing measurement (no-op when timing is disabled)
-  const originalFn = registration.fn
-  registration.fn = (changes, state) =>
-    store._internal.timing.run('listeners', () => originalFn(changes, state), {
-      path: mapKey,
-      name: 'listener',
-    })
-
-  listeners.set(mapKey, [...existing, registration])
-
-  // Update sorted paths cache
-  updateSortedListenerPaths(graphs)
-
+  // Return cleanup function
   return () => {
-    const list = listeners.get(mapKey)
-    if (list) {
-      const filtered = list.filter((l) => l !== registration)
-      if (filtered.length > 0) {
-        listeners.set(mapKey, filtered)
-      } else {
-        listeners.delete(mapKey)
-      }
-      // Update sorted paths cache after removal
-      updateSortedListenerPaths(graphs)
-    }
+    const isEmpty = removeNode(graph, id, path)
+    if (isEmpty) removeGroup(graph, path)
+    graph.fns.delete(id)
   }
 }

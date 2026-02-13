@@ -11,12 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { TestState } from '../mocks'
 import { defaults, testStateFixtures } from '../mocks'
 import { ProductComponent } from '../utils/components'
-import {
-  createStore,
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../utils/react'
+import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'
 
 describe('Integration: Dynamic UI State from Concerns', () => {
   let store: ReturnType<typeof createStore<TestState>>
@@ -48,7 +43,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
 
-    await flushEffects()
+    await flush()
 
     // Weight field should now be hidden
     // We expect it to be gone from DOM because showWeight will be false
@@ -75,7 +70,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
 
-    await flushEffects()
+    await flush()
 
     // Digital product - download URL should be visible
     expect(screen.getByTestId('download-url-input')).toBeInTheDocument()
@@ -111,7 +106,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     fireEvent.click(publishedCheckbox)
 
     // Price input should now be disabled
-    await flushEffects()
+    await flush()
     expect(priceInput.disabled).toBe(true)
   })
 
@@ -123,7 +118,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
 
-    await flushEffects()
+    await flush()
     expect(screen.getByTestId('name-label')).toHaveTextContent('Software Name')
   })
 
@@ -133,7 +128,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
 
-    await flushEffects()
+    await flush()
 
     const input = screen.getByTestId('download-url-input') as HTMLInputElement
     expect(input.placeholder).toContain('https://download.example.com')
@@ -145,7 +140,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
 
-    await flushEffects()
+    await flush()
 
     const tooltip = screen.getByTestId('price-tooltip')
     expect(tooltip).toHaveAttribute(
@@ -182,7 +177,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     const publishedCheckbox = screen.getByTestId('published-checkbox')
     fireEvent.click(publishedCheckbox)
 
-    await flushEffects()
+    await flush()
     expect(nameInput.readOnly).toBe(true)
   })
 
@@ -216,7 +211,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
     const typeSelect = screen.getByTestId('type-select')
     fireEvent.change(typeSelect, { target: { value: 'digital' } })
 
-    await flushEffects()
+    await flush()
     expect(priceInput.disabled).toBe(true)
     expect(screen.getByTestId('price-disabled-msg')).toBeInTheDocument()
   })

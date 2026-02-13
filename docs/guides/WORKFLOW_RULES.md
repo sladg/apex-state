@@ -1,7 +1,9 @@
 ---
 title: Shared Agent Workflow Rules
-updated: 2026-01-29
 audience: contributors, automation
+created: 2026-01-29 (d667b86)
+updated: 2026-02-05 (c2c957e)
+status: active
 ---
 
 # Shared Agent Workflow Rules

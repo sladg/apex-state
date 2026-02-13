@@ -1,3 +1,10 @@
+---
+created: 2026-02-04 (f11ceca)
+updated: 2026-02-04 (f11ceca)
+status: obsolete
+superseded_by: docs/INPUT_v4.md
+---
+
 ## In tests (aggregations)
 
 i want to make sure that:

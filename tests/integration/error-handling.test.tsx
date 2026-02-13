@@ -15,12 +15,7 @@ import {
   EmailValidationForm,
   MultiFieldForm,
 } from '../utils/components'
-import {
-  createStore,
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../utils/react'
+import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'
 
 describe('Integration: Error Handling & Recovery', () => {
   let store: ReturnType<typeof createStore<TestState>>
@@ -41,7 +36,7 @@ describe('Integration: Error Handling & Recovery', () => {
     const input = screen.getByTestId('email-input')
     fireEvent.change(input, { target: { value: 'invalid-email' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-count')).toHaveTextContent('1')
     expect(screen.getByTestId('email-error')).toBeInTheDocument()
@@ -65,7 +60,7 @@ describe('Integration: Error Handling & Recovery', () => {
     const input = screen.getByTestId('email-input')
     fireEvent.change(input, { target: { value: 'bad-email' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-display')).toBeInTheDocument()
     expect(screen.getByTestId('error-display')).toHaveTextContent(
@@ -81,14 +76,14 @@ describe('Integration: Error Handling & Recovery', () => {
     // Create error
     fireEvent.change(input, { target: { value: 'bad' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('email-error')).toBeInTheDocument()
 
     // Fix error
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
   })
@@ -105,11 +100,11 @@ describe('Integration: Error Handling & Recovery', () => {
 
     fireEvent.change(emailInput, { target: { value: 'bad' } })
     fireEvent.blur(emailInput)
-    await flushEffects()
+    await flush()
 
     fireEvent.change(passwordInput, { target: { value: 'short' } })
     fireEvent.blur(passwordInput)
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-count')).toHaveTextContent('2')
 
@@ -117,7 +112,7 @@ describe('Integration: Error Handling & Recovery', () => {
     const resetBtn = screen.getByTestId('reset-btn')
     fireEvent.click(resetBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-count')).toHaveTextContent('0')
   })
@@ -128,7 +123,7 @@ describe('Integration: Error Handling & Recovery', () => {
       store,
     )
 
-    await flushEffects()
+    await flush()
 
     const submitBtn = screen.getByTestId('submit-btn') as HTMLButtonElement
     expect(submitBtn.disabled).toBe(false)
@@ -137,14 +132,14 @@ describe('Integration: Error Handling & Recovery', () => {
     const input = screen.getByTestId('email-input')
     fireEvent.change(input, { target: { value: 'invalid' } })
 
-    await flushEffects()
+    await flush()
 
     expect(submitBtn.disabled).toBe(true)
 
     // Fix error
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
 
-    await flushEffects()
+    await flush()
 
     expect(submitBtn.disabled).toBe(false)
   })
@@ -155,7 +150,7 @@ describe('Integration: Error Handling & Recovery', () => {
     const input = screen.getByTestId('email-input')
     fireEvent.change(input, { target: { value: 'invalid-email' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-message')).toHaveTextContent(
       '"invalid-email" is not a valid email address',
@@ -228,7 +223,7 @@ describe('Integration: Error Handling & Recovery', () => {
     const validateBtn = screen.getByTestId('validate-btn')
     fireEvent.click(validateBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('field-error-email')).toBeInTheDocument()
     expect(screen.getByTestId('field-error-password')).toBeInTheDocument()
@@ -238,14 +233,14 @@ describe('Integration: Error Handling & Recovery', () => {
     const passwordInput = screen.getByTestId('password-input')
 
     fireEvent.change(emailInput, { target: { value: 'test@example.com' } })
-    await flushEffects()
+    await flush()
 
     fireEvent.change(passwordInput, { target: { value: 'admin' } })
-    await flushEffects()
+    await flush()
 
     fireEvent.click(validateBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('field-error-email')).not.toBeInTheDocument()
     expect(screen.queryByTestId('field-error-password')).not.toBeInTheDocument()
@@ -262,7 +257,7 @@ describe('Integration: Error Handling & Recovery', () => {
     const emailInput = screen.getByTestId('email-input')
     fireEvent.change(emailInput, { target: { value: 'bad' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('email-error')).toBeInTheDocument()
     expect(screen.getByTestId('error-count')).toHaveTextContent('1')
@@ -272,7 +267,7 @@ describe('Integration: Error Handling & Recovery', () => {
     fireEvent.change(passwordInput, { target: { value: 'some-password' } })
 
     // Email error should still exist
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('email-error')).toBeInTheDocument()
     expect(screen.getByTestId('error-count')).toHaveTextContent('1')

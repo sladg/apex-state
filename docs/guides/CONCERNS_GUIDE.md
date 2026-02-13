@@ -1,7 +1,9 @@
 ---
 title: Concerns Agent Guide
-updated: 2026-01-29
 audience: contributors working on concerns
+created: 2026-01-29 (0f7ee88)
+updated: 2026-02-11 (bd07f7d)
+status: active
 ---
 
 # Concerns System Guide

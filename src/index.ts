@@ -15,6 +15,7 @@
 // Store factory
 export type {
   DebugConfig,
+  InferListener,
   ProviderProps,
   StoreConfig,
   StoreInstance,
@@ -50,6 +51,7 @@ export type {
 export {
   registerFlipPair,
   registerListener,
+  registerListenersBatch,
   registerSideEffects,
   registerSyncPair,
   registerSyncPairsBatch,
@@ -137,7 +139,7 @@ export type { SideEffects } from './types/sideEffects'
  * ```
  */
 export { dot } from './utils/dot'
-export { _, hashKey } from './utils/hashKey'
+export { _ } from './utils/hashKey'
 
 /**
  * @advanced

@@ -1,3 +1,9 @@
+---
+created: 2026-01-29 (2d06fb2)
+updated: 2026-02-04 (15bee6f)
+status: active
+---
+
 # Test Cases Inventory
 
 Complete listing of all test cases in the apex-state test suite, organized by directory and describe blocks.

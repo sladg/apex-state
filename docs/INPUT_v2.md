@@ -1,8 +1,10 @@
 ---
 title: Requirements Addendum (Legacy)
-updated: 2026-01-29
 audience: historical reference
-status: legacy
+created: 2026-01-28 (ae61dbd)
+updated: 2026-01-29 (d667b86)
+status: obsolete
+superseded_by: docs/INPUT_v3.md
 ---
 
 > **Legacy addendum** – kept for traceability. Current implementations have dedicated documentation in `docs/agents/ARCHITECTURE.md`, `docs/agents/CONCERNS_GUIDE.md`, and `docs/INTERPOLATION.md`.

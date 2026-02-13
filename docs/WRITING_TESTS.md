@@ -1,3 +1,9 @@
+---
+created: 2026-01-29 (2d06fb2)
+updated: 2026-01-29 (2d06fb2)
+status: active
+---
+
 # Writing Tests for Apex State
 
 A practical guide for writing tests using the real store implementation.

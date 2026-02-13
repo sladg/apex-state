@@ -1,3 +1,9 @@
+---
+created: 2026-02-05 (d221b60)
+updated: 2026-02-05 (d221b60)
+status: active
+---
+
 # HMR Behavior with Apex State
 
 How Vite Hot Module Replacement interacts with concerns, side effects, and store state.

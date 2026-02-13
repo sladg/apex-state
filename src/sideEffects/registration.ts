@@ -3,6 +3,7 @@ import type { GenericMeta } from '../types'
 import type { SideEffects } from '../types/sideEffects'
 import { registerAggregations } from './prebuilts/aggregation'
 import { registerFlipPair } from './prebuilts/flip'
+import { registerListenersBatch } from './prebuilts/listeners'
 import { registerSyncPairsBatch } from './prebuilts/sync'
 
 const registerSideEffectsImpl = <
@@ -35,6 +36,14 @@ const registerSideEffectsImpl = <
   // Register aggregations: [target, source] - target always first
   if (effects.aggregations) {
     const cleanup = registerAggregations(store, id, effects.aggregations)
+    cleanups.push(cleanup)
+  }
+
+  // Register listeners: { path, scope, fn }
+  // PERF: Uses registerListenersBatch (1 sort + edge recomputation) instead of per-listener loop.
+  // Do NOT revert to a loop over registerListener — causes N × addGroup redundant sorts.
+  if (effects.listeners) {
+    const cleanup = registerListenersBatch(store, effects.listeners)
     cleanups.push(cleanup)
   }
 

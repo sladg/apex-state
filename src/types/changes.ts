@@ -32,3 +32,14 @@ import type { GenericMeta } from './meta'
 export type ArrayOfChanges<DATA, META extends GenericMeta = GenericMeta> = {
   [K in DeepKey<DATA>]: [K, DeepValue<DATA, K>, META]
 }[DeepKey<DATA>][]
+
+/**
+ * Internal variant of ArrayOfChanges with plain strings.
+ * Matches the generic signature of ArrayOfChanges but ignores type params,
+ * avoiding expensive DeepKey/DeepValue resolution for internal pipeline plumbing.
+ * Public API uses ArrayOfChanges<DATA, META> for type safety.
+ */
+export type ArrayOfChanges__internal<
+  _DATA = unknown,
+  _META extends GenericMeta = GenericMeta,
+> = [string, unknown, GenericMeta][]

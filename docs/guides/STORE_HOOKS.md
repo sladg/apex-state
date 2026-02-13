@@ -1,7 +1,9 @@
 ---
 title: Store Hook Guide
-updated: 2026-01-29
 audience: contributors working on store hooks
+created: 2026-02-05 (c2c957e)
+updated: 2026-02-11 (bd07f7d)
+status: active
 ---
 
 # Store Hooks Reference

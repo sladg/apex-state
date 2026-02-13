@@ -8,12 +8,15 @@
 import type { ReactNode } from 'react'
 
 import type { ConcernType } from '../concerns/types'
+import type { ListenerGraph } from '../pipeline/processors/listeners.types'
 import type {
   ArrayOfChanges,
   DeepKey,
   DeepRequired,
+  DeepValue,
   GenericMeta,
 } from '../types'
+import type { SideEffects } from '../types/sideEffects'
 import type { Timing } from '../utils/timing'
 import type { FlipGraph, SyncGraph } from './graphTypes'
 
@@ -93,36 +96,91 @@ export type OnStateListener<
  * }
  * ```
  */
-export interface ListenerRegistration<
+/** path + scope: fn receives scoped state and changes with paths relative to scope */
+type PathWithScope<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> = {
+  [SCOPE in DeepKey<DATA>]: {
+    path: DeepKey<DATA>
+    scope: SCOPE
+    fn: OnStateListener<DATA, DeepValue<DATA, SCOPE>, META>
+  }
+}[DeepKey<DATA>]
+
+/** path + null scope: fn receives full DATA and changes with full paths */
+type PathWithNullScope<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> = {
+  [PATH in DeepKey<DATA>]: {
+    path: PATH
+    scope: null
+    fn: OnStateListener<DATA, DATA, META>
+  }
+}[DeepKey<DATA>]
+
+/** path only (no scope): fn receives full DATA and changes with full paths */
+type PathOnly<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> = {
+  [PATH in DeepKey<DATA>]: {
+    path: PATH
+    scope?: undefined
+    fn: OnStateListener<DATA, DATA, META>
+  }
+}[DeepKey<DATA>]
+
+/** root listener: watches all top-level paths, fn receives full DATA */
+interface RootListener<
   DATA extends object = object,
   META extends GenericMeta = GenericMeta,
 > {
-  /**
-   * Path to watch - only changes under this path will trigger the listener
-   * null = watch all top-level paths
-   */
-  path: DeepKey<DATA> | null
+  path: null
+  scope?: undefined
+  fn: OnStateListener<DATA, DATA, META>
+}
 
-  /**
-   * Scope for state and changes presentation
-   * - If null: state is full DATA, changes use FULL paths
-   * - If set: state is value at scope, changes use paths RELATIVE to scope
-   *
-   * Note: Changes are filtered based on `path`, even when scope is null
-   */
-  scope: DeepKey<DATA> | null
+/**
+ * Type-safe listener registration. Scope determines fn signature:
+ * - PathWithScope: path + scope → fn typed by scope's DeepValue
+ * - PathWithNullScope: path + scope:null → fn gets full DATA
+ * - PathOnly: path only → fn gets full DATA
+ * - RootListener: path:null → fn gets full DATA
+ */
+export type ListenerRegistration<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> =
+  | PathWithScope<DATA, META>
+  | PathWithNullScope<DATA, META>
+  | PathOnly<DATA, META>
+  | RootListener<DATA, META>
 
-  fn: OnStateListener<DATA, any, META>
+/**
+ * Internal listener registration with plain strings.
+ * Matches the generic signature of ListenerRegistration but ignores type params,
+ * avoiding expensive DeepKey resolution for internal pipeline plumbing.
+ * Public API uses ListenerRegistration<DATA, META> for type safety.
+ */
+
+export interface ListenerRegistration__internal<
+  _DATA extends object = object,
+  _META extends GenericMeta = GenericMeta,
+> {
+  path: string | null
+  scope?: string | null
+  fn: (...args: never[]) => unknown
 }
 
 export interface SideEffectGraphs<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
+  _DATA extends object = object,
+  _META extends GenericMeta = GenericMeta,
 > {
   sync: SyncGraph
   flip: FlipGraph
-  listeners: Map<string, ListenerRegistration<DATA, META>[]>
-  sortedListenerPaths: string[]
+  listenerGraph: ListenerGraph
 }
 
 export interface Registrations {
@@ -150,6 +208,18 @@ export interface InternalState<
   timing: Timing
   config: DeepRequired<StoreConfig>
 }
+
+/** Extract the Listener type from a store created by createGenericStore */
+export type InferListener<T> = T extends {
+  useSideEffects: (
+    id: string,
+    effects: SideEffects<infer DATA, infer META>,
+  ) => void
+}
+  ? DATA extends object
+    ? ListenerRegistration<DATA, META>
+    : never
+  : never
 
 export type ConcernValues = Record<string, Record<string, unknown>>
 

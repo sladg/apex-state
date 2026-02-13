@@ -372,62 +372,16 @@ export const fireEvent = {
 }
 
 /**
- * Flush all pending updates (microtasks, macrotasks, valtio changes, React renders)
+ * Flush all pending valtio + React updates.
  *
- * Extracted from tests/setup.ts for explicit reuse in tests.
- * Used as a replacement for waitFor() for better performance and determinism.
+ * Valtio's subscribe() batches via Promise.resolve() (one microtask).
+ * valtio-reactive's effect() uses notifyInSync (synchronous).
+ * React's useSyncExternalStore is handled by act().
  *
- * This flushes:
- * - All pending microtasks (Promises, queueMicrotask, valtio subscribers)
- * - All pending macrotasks (setTimeout, setInterval)
- * - Multiple rounds to catch cascading effects
- *
- * All async updates are wrapped in act() to prevent React warnings.
- *
- * Timing: Uses minimal timeout (20ms) to handle async validators like
- * setTimeout(resolve, 10) while keeping test overhead reasonable.
+ * A single microtask tick inside act() is sufficient to flush everything.
  */
-export const flushEffects = async () => {
+export const flush = async () => {
   await act(async () => {
-    // First flush microtasks
-    await Promise.resolve()
-
-    // Then allow macrotasks (setTimeout calls) to execute
-    // 20ms is enough for setTimeout(resolve, 10) + overhead
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 20)
-    })
-
-    // Final microtask flush
-    await Promise.resolve()
-  })
-}
-
-/**
- * Flush only synchronous effects (no setTimeout wait)
- *
- * Use this for performance tests where you only need React renders
- * and synchronous valtio effects, not async validators.
- *
- * This flushes:
- * - All pending microtasks (Promises, queueMicrotask, valtio subscribers)
- * - React renders and effects
- *
- * Does NOT wait for:
- * - setTimeout/setInterval callbacks (async validators)
- *
- * @example
- * ```typescript
- * benchmark.start('render')
- * store.value = 123
- * await flushSync()  // Only ~0-2ms overhead instead of 20ms
- * const duration = benchmark.end('render')
- * ```
- */
-export const flushSync = async () => {
-  await act(async () => {
-    // Flush microtasks only - no setTimeout wait
-    await Promise.resolve()
     await Promise.resolve()
   })
 }
@@ -441,117 +395,14 @@ export const flushSync = async () => {
  *   errorsField.setValue(errors)
  */
 export const validateField = (
-  errorsField: { value: Record<string, any[]>; setValue: (v: any) => void },
+  errorsField: { value: unknown; setValue: (v: unknown) => void },
   fieldName: string,
   isValid: boolean,
   errorMessage: string,
 ) => {
-  const { [fieldName]: _, ...rest } = errorsField.value
+  const errors = errorsField.value as Record<string, string[]>
+  const { [fieldName]: _, ...rest } = errors
   errorsField.setValue(
     isValid ? rest : { ...rest, [fieldName]: [errorMessage] },
   )
-}
-
-/**
- * Common assertions for form validation tests
- */
-export const assertions = {
-  /**
-   * Assert field value matches expected
-   */
-  fieldValue: (
-    element: HTMLInputElement | HTMLSelectElement,
-    expected: string,
-  ): boolean => {
-    return element.value === expected
-  },
-
-  /**
-   * Assert checkbox state
-   */
-  checkboxState: (element: HTMLInputElement, expected: boolean): boolean => {
-    return element.checked === expected
-  },
-
-  /**
-   * Assert element is visible (not null)
-   */
-  isVisible: (element: HTMLElement | null): boolean => {
-    return element !== null
-  },
-
-  /**
-   * Assert element is hidden (null)
-   */
-  isHidden: (element: HTMLElement | null): boolean => {
-    return element === null
-  },
-
-  /**
-   * Assert element is disabled
-   */
-  isDisabled: (element: HTMLButtonElement | HTMLInputElement): boolean => {
-    return element.disabled
-  },
-
-  /**
-   * Assert element is enabled
-   */
-  isEnabled: (element: HTMLButtonElement | HTMLInputElement): boolean => {
-    return !element.disabled
-  },
-
-  /**
-   * Assert element is readonly
-   */
-  isReadOnly: (element: HTMLInputElement): boolean => {
-    return element.readOnly
-  },
-}
-
-/**
- * DOM query helpers
- */
-export const domHelpers = {
-  /**
-   * Get all error messages in the document
-   */
-  getAllErrors: (root: HTMLElement | Document = document): string[] => {
-    const errorElements = root.querySelectorAll('[data-testid*="error"]')
-    return Array.from(errorElements).map((el) => el.textContent || '')
-  },
-
-  /**
-   * Check if form has any validation errors
-   */
-  hasErrors: (root: HTMLElement | Document = document): boolean => {
-    return root.querySelectorAll('[data-testid*="error"]').length > 0
-  },
-
-  /**
-   * Get error count
-   */
-  getErrorCount: (root: HTMLElement | Document = document): number => {
-    return root.querySelectorAll('[data-testid*="error"]').length
-  },
-
-  /**
-   * Get field by testid
-   */
-  getField: (
-    testId: string,
-    root: HTMLElement | Document = document,
-  ): HTMLInputElement => {
-    return root.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement
-  },
-
-  /**
-   * Get button by testid
-   */
-  getButton: (
-    testId: string,
-    root: HTMLElement | Document = document,
-  ): HTMLButtonElement => {
-    return root.querySelector(`[data-testid="${testId}"]`) as HTMLButtonElement
-  },
 }

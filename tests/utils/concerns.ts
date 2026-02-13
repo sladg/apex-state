@@ -63,7 +63,7 @@ interface TestStore<T extends object> {
  *
  * // Update state
  * store.proxy.user.age = 31
- * await waitForEffects()
+ * await flush()
  *
  * // Check concern results
  * const concerns = store.getFieldConcerns('user.age')

@@ -11,12 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { TestState } from '../mocks'
 import { testStateFixtures } from '../mocks'
 import { WizardComponent } from '../utils/components'
-import {
-  createStore,
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../utils/react'
+import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'
 
 describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   let store: ReturnType<typeof createStore<TestState>>
@@ -32,7 +27,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
 
     // Click next without filling - should show error
     fireEvent.click(nextBtn)
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('firstName-error')).toBeInTheDocument()
     expect(screen.getByTestId('current-step')).toHaveTextContent('1')
@@ -40,7 +35,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     // Fill field and try again
     const input = screen.getByTestId('firstName-input')
     fireEvent.change(input, { target: { value: 'John' } })
-    await flushEffects()
+    await flush()
 
     // Still on step 1 because lastName is not filled
     expect(screen.getByTestId('current-step')).toHaveTextContent('1')
@@ -92,7 +87,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     const input = screen.getByTestId('firstName-input')
     fireEvent.change(input, { target: { value: 'invalid' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-message')).toBeInTheDocument()
   })
@@ -109,12 +104,12 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     const lastNameInput = screen.getByTestId('lastName-input')
     fireEvent.change(firstNameInput, { target: { value: 'John' } })
     fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
-    await flushEffects()
+    await flush()
 
     const nextBtn = screen.getByTestId('next-btn')
     fireEvent.click(nextBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('step1-form')).not.toBeInTheDocument()
     expect(screen.getByTestId('step2-form')).toBeInTheDocument()
@@ -128,14 +123,14 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     const lastNameInput = screen.getByTestId('lastName-input')
     fireEvent.change(firstNameInput, { target: { value: 'John' } })
     fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
-    await flushEffects()
+    await flush()
 
     const nextBtn = screen.getByTestId('next-btn') as HTMLButtonElement
     expect(nextBtn.disabled).toBe(false)
 
     fireEvent.click(nextBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(nextBtn.disabled).toBe(true)
     expect(nextBtn).toHaveTextContent('Validating...')
@@ -176,12 +171,12 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     const lastNameInput = screen.getByTestId('lastName-input')
     fireEvent.change(firstNameInput, { target: { value: 'John' } })
     fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
-    await flushEffects()
+    await flush()
 
     // Move to step 2
     fireEvent.click(nextBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('current-step')).toHaveTextContent('2')
     expect(prevBtn.disabled).toBe(false)
@@ -189,7 +184,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
     // Go back
     fireEvent.click(prevBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('current-step')).toHaveTextContent('1')
   })
@@ -204,15 +199,15 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
 
     // Fill both fields
     fireEvent.change(firstNameInput, { target: { value: 'John' } })
-    await flushEffects()
+    await flush()
 
     fireEvent.change(lastNameInput, { target: { value: 'Doe' } })
-    await flushEffects()
+    await flush()
 
     // Click next
     fireEvent.click(nextBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('current-step')).toHaveTextContent('2')
   })

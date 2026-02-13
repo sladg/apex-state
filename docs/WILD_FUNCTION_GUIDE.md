@@ -1,3 +1,9 @@
+---
+created: 2026-02-04 (15bee6f)
+updated: 2026-02-04 (15bee6f)
+status: active
+---
+
 # Wild() - Inline Wildcard Template Strings
 
 The `Wild()` utility provides the cleanest way to construct Record paths with `[*]` wildcards directly in template strings.

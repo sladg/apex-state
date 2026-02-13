@@ -1,3 +1,9 @@
+---
+created: 2026-01-28 (37db2cf)
+updated: 2026-02-11 (bd07f7d)
+status: active
+---
+
 # Critical Architecture: Valtio Execution Order & Concerns Storage
 
 **Document Type**: Architecture Decision & Patterns

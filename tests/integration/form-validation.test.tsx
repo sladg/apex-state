@@ -5,18 +5,13 @@
  * Tests validation, error storage, and dynamic UI state from concerns
  */
 
-import { cleanup, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import type { TestState } from '../mocks'
 import { testStateFixtures } from '../mocks'
-import {
-  createStore,
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../utils/react'
+import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'
 
 describe('Integration: Form Validation with Concerns', () => {
   let store: ReturnType<typeof createStore<TestState>>
@@ -25,57 +20,85 @@ describe('Integration: Form Validation with Concerns', () => {
     store = createStore<TestState>(testStateFixtures.formEmpty)
   })
 
-  afterEach(() => {
-    cleanup()
-  })
+  /**
+   * Shared validation form component for tests that follow the pattern:
+   * register validationState concern → render input + conditional error span.
+   *
+   * Used by TC1.1, TC1.2, TC1.5, TC1.6.
+   */
+  function ValidationFormField({
+    schema,
+    path,
+    inputTestId,
+    errorTestId,
+    errorText,
+    inputType = 'text',
+    showValidIndicator = false,
+    validTestId,
+  }: {
+    schema: z.ZodSchema
+    path: 'email' | 'password'
+    inputTestId: string
+    errorTestId: string
+    errorText: string
+    inputType?: string
+    showValidIndicator?: boolean
+    validTestId?: string
+  }) {
+    store.useConcerns('form', {
+      [path]: { validationState: { schema } },
+    })
+
+    const field = store
+      .withConcerns({ validationState: true })
+      .useFieldStore(path)
+
+    return (
+      <div>
+        <input
+          data-testid={inputTestId}
+          type={inputType}
+          value={field.value}
+          onChange={(e) => field.setValue(e.target.value)}
+        />
+        {field.validationState?.isError && (
+          <span data-testid={errorTestId}>{errorText}</span>
+        )}
+        {showValidIndicator &&
+          field.validationState &&
+          !field.validationState.isError && (
+            <span data-testid={validTestId}>✓</span>
+          )}
+      </div>
+    )
+  }
 
   it('TC1.1: validates email format with Zod schema', async () => {
-    const emailSchema = z.string().email('Invalid email format')
-
-    function FormComponent() {
-      store.useConcerns('form', {
-        email: {
-          validationState: { schema: emailSchema },
-        },
-      })
-
-      const emailField = store
-        .withConcerns({ validationState: true })
-        .useFieldStore('email')
-
-      return (
-        <div>
-          <input
-            data-testid="email-input"
-            value={emailField.value}
-            onChange={(e) => emailField.setValue(e.target.value)}
-            placeholder="Enter email"
-          />
-          {emailField.validationState?.isError && (
-            <span data-testid="email-error">Invalid email format</span>
-          )}
-          {emailField.validationState &&
-            !emailField.validationState.isError && (
-              <span data-testid="email-valid">✓</span>
-            )}
-        </div>
-      )
-    }
-
-    renderWithStore(<FormComponent />, store)
+    renderWithStore(
+      <ValidationFormField
+        schema={z.string().email('Invalid email format')}
+        path="email"
+        inputTestId="email-input"
+        errorTestId="email-error"
+        errorText="Invalid email format"
+        showValidIndicator
+        validTestId="email-valid"
+      />,
+      store,
+    )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
     expect(input.value).toBe('')
 
     // Invalid email - should show error concern
     fireEvent.change(input, { target: { value: 'invalid-email' } })
-    await flushEffects()
+    await flush()
     expect(input.value).toBe('invalid-email')
 
     // Valid email - should show valid concern
     fireEvent.change(input, { target: { value: '' } })
     fireEvent.change(input, { target: { value: 'test@example.com' } })
-    await flushEffects()
+    await flush()
     expect(input.value).toBe('test@example.com')
   })
 
@@ -85,52 +108,34 @@ describe('Integration: Form Validation with Concerns', () => {
    * Acceptance: Weak passwords show error concern, strong passwords pass validation.
    */
   it('TC1.2: validates password complexity', async () => {
-    const passwordSchema = z
-      .string()
-      .min(8, 'At least 8 characters')
-      .regex(/[A-Z]/, 'Must contain uppercase')
-      .regex(/[0-9]/, 'Must contain number')
-
-    function FormComponent() {
-      store.useConcerns('form', {
-        password: {
-          validationState: { schema: passwordSchema },
-        },
-      })
-
-      const passwordField = store
-        .withConcerns({ validationState: true })
-        .useFieldStore('password')
-
-      return (
-        <div>
-          <input
-            data-testid="password-input"
-            type="password"
-            value={passwordField.value}
-            onChange={(e) => passwordField.setValue(e.target.value)}
-          />
-          {passwordField.validationState?.isError && (
-            <span data-testid="password-error">Invalid password</span>
-          )}
-        </div>
-      )
-    }
-
-    renderWithStore(<FormComponent />, store)
+    renderWithStore(
+      <ValidationFormField
+        schema={z
+          .string()
+          .min(8, 'At least 8 characters')
+          .regex(/[A-Z]/, 'Must contain uppercase')
+          .regex(/[0-9]/, 'Must contain number')}
+        path="password"
+        inputTestId="password-input"
+        errorTestId="password-error"
+        errorText="Invalid password"
+        inputType="password"
+      />,
+      store,
+    )
 
     const input = screen.getByTestId('password-input') as HTMLInputElement
 
     // Weak password
     fireEvent.change(input, { target: { value: 'weak' } })
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('password-error')).toBeInTheDocument()
 
     // Strong password
     fireEvent.change(input, { target: { value: '' } })
     fireEvent.change(input, { target: { value: 'StrongPass123' } })
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('password-error')).not.toBeInTheDocument()
   })
@@ -177,7 +182,7 @@ describe('Integration: Form Validation with Concerns', () => {
     fireEvent.change(passwordInput, { target: { value: 'Test123' } })
     fireEvent.change(confirmInput, { target: { value: 'Test123' } })
 
-    await flushEffects()
+    await flush()
 
     expect(passwordInput.value).toBe('Test123')
     expect(confirmInput.value).toBe('Test123')
@@ -185,7 +190,7 @@ describe('Integration: Form Validation with Concerns', () => {
     // Change confirm to not match
     fireEvent.change(confirmInput, { target: { value: '' } })
     fireEvent.change(confirmInput, { target: { value: 'Different' } })
-    await flushEffects()
+    await flush()
 
     expect(confirmInput.value).toBe('Different')
   })
@@ -224,7 +229,7 @@ describe('Integration: Form Validation with Concerns', () => {
     expect(screen.getByTestId('terms-error')).toBeInTheDocument()
 
     fireEvent.click(input)
-    await flushEffects()
+    await flush()
 
     expect(input.checked).toBe(true)
     expect(screen.queryByTestId('terms-error')).not.toBeInTheDocument()
@@ -236,39 +241,21 @@ describe('Integration: Form Validation with Concerns', () => {
    * Acceptance: Invalid field values trigger concerns that display specific error messages.
    */
   it('TC1.5: displays error messages from concerns', async () => {
-    const emailSchema = z.string().email('Please enter a valid email')
-
-    function FormComponent() {
-      store.useConcerns('form', {
-        email: {
-          validationState: { schema: emailSchema },
-        },
-      })
-
-      const emailField = store
-        .withConcerns({ validationState: true })
-        .useFieldStore('email')
-
-      return (
-        <div>
-          <input
-            data-testid="email-input"
-            value={emailField.value}
-            onChange={(e) => emailField.setValue(e.target.value)}
-          />
-          {emailField.validationState?.isError && (
-            <span data-testid="error-message">Please enter a valid email</span>
-          )}
-        </div>
-      )
-    }
-
-    renderWithStore(<FormComponent />, store)
+    renderWithStore(
+      <ValidationFormField
+        schema={z.string().email('Please enter a valid email')}
+        path="email"
+        inputTestId="email-input"
+        errorTestId="error-message"
+        errorText="Please enter a valid email"
+      />,
+      store,
+    )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'invalid' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-message')).toBeInTheDocument()
   })
@@ -279,47 +266,29 @@ describe('Integration: Form Validation with Concerns', () => {
    * Acceptance: Error concerns clear reactively when field value becomes valid.
    */
   it('TC1.6: clears errors when field becomes valid', async () => {
-    const emailSchema = z.string().email()
-
-    function FormComponent() {
-      store.useConcerns('form', {
-        email: {
-          validationState: { schema: emailSchema },
-        },
-      })
-
-      const emailField = store
-        .withConcerns({ validationState: true })
-        .useFieldStore('email')
-
-      return (
-        <div>
-          <input
-            data-testid="email-input"
-            value={emailField.value}
-            onChange={(e) => emailField.setValue(e.target.value)}
-          />
-          {emailField.validationState?.isError && (
-            <span data-testid="error">Invalid</span>
-          )}
-        </div>
-      )
-    }
-
-    renderWithStore(<FormComponent />, store)
+    renderWithStore(
+      <ValidationFormField
+        schema={z.string().email()}
+        path="email"
+        inputTestId="email-input"
+        errorTestId="error"
+        errorText="Invalid"
+      />,
+      store,
+    )
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
 
     // Create error
     fireEvent.change(input, { target: { value: 'invalid' } })
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error')).toBeInTheDocument()
 
     // Fix error - select all and type new value
     fireEvent.change(input, { target: { value: '' } })
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('error')).not.toBeInTheDocument()
   })
@@ -374,7 +343,7 @@ describe('Integration: Form Validation with Concerns', () => {
     renderWithStore(<FormComponent />, store)
 
     // Submit should not be visible initially - wait for fields to be in document first
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('email-input')).toBeInTheDocument()
 
@@ -385,7 +354,7 @@ describe('Integration: Form Validation with Concerns', () => {
     fireEvent.change(emailInput, { target: { value: 'test@example.com' } })
 
     // Still no submit (password invalid)
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('submit-btn')).not.toBeInTheDocument()
 
@@ -394,7 +363,7 @@ describe('Integration: Form Validation with Concerns', () => {
     fireEvent.change(passwordInput, { target: { value: 'ValidPass123' } })
 
     // Now submit should be visible
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('submit-btn')).toBeInTheDocument()
   })

@@ -3,13 +3,7 @@
  */
 
 import type { GenericMeta } from '../types'
-
-// =============================================================================
-// Shared Types
-// =============================================================================
-
-/** Simplified change tuple for internal processing (untyped meta) */
-export type AnyChange = [string, unknown, GenericMeta]
+import type { ArrayOfChanges__internal } from '../types/changes'
 
 // =============================================================================
 // Normalization Types
@@ -23,7 +17,7 @@ export type AnyChange = [string, unknown, GenericMeta]
 export type MatchMode = 'all' | 'children-only'
 
 export interface NormalizeChangesGroupedArgs {
-  changes: AnyChange[]
+  changes: ArrayOfChanges__internal
   /** Groups of connected paths - each group is processed as a unit */
   pathGroups: string[][]
   /** Default: 'all' */

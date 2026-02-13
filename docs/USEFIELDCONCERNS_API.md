@@ -1,7 +1,9 @@
 ---
 title: withConcerns API
-updated: 2026-02-05
 audience: frontend consumers of concern results
+created: 2026-01-28 (37db2cf)
+updated: 2026-02-11 (bd07f7d)
+status: active
 ---
 
 # `store.withConcerns` API

@@ -16,8 +16,6 @@ import type {
   NormalizedChangesGrouped,
 } from './normalizeChanges.types'
 
-export type { AnyChange } from './normalizeChanges.types'
-
 // =============================================================================
 // Core normalization logic
 // =============================================================================

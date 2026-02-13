@@ -1,3 +1,9 @@
+---
+created: 2026-01-28 (37db2cf)
+updated: 2026-02-04 (f11ceca)
+status: archived
+---
+
 # Should We Switch to valtio-reactive?
 
 **Document Type**: Technical Analysis & Decision

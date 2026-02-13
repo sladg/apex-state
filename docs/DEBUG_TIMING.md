@@ -1,7 +1,9 @@
 ---
 title: Debug & Timing Guide
-updated: 2026-02-05
 audience: contributors debugging performance
+created: 2026-02-05 (c2c957e)
+updated: 2026-02-05 (d221b60)
+status: active
 ---
 
 # Debug & Timing

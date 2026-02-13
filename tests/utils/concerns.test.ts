@@ -7,9 +7,9 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { waitForEffects } from '../concerns/test-utils'
 import type { ConcernType } from './concerns'
 import { createTestStore } from './concerns'
+import { flush } from './react'
 
 describe('createTestStore', () => {
   it('creates a working test store with concern registration', async () => {
@@ -32,14 +32,14 @@ describe('createTestStore', () => {
       },
     })
 
-    await waitForEffects()
+    await flush()
 
     const concerns = store.getFieldConcerns('user.age')
     expect(concerns['validationState']).toBeDefined()
 
     store.proxy.user.age = 10
 
-    await waitForEffects()
+    await flush()
 
     const concernsAfter = store.getFieldConcerns('user.age')
     expect(concernsAfter['validationState']).toBeDefined()
@@ -78,7 +78,7 @@ describe('createTestStore', () => {
       },
     })
 
-    await waitForEffects()
+    await flush()
 
     const concerns = store.getFieldConcerns('user.age')
     expect(concerns['validationState']).toBeDefined()
@@ -105,7 +105,7 @@ describe('createTestStore', () => {
       },
     })
 
-    await waitForEffects()
+    await flush()
 
     const concerns = store.getFieldConcerns('user.age')
     expect(concerns['validationState']).toBeDefined()
@@ -142,7 +142,7 @@ describe('createTestStore', () => {
       },
     })
 
-    await waitForEffects()
+    await flush()
 
     const concerns = store.getFieldConcerns('user.age')
     expect(concerns['validationState']).toBeDefined()
