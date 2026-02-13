@@ -13,11 +13,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
 import type { GenericMeta } from '../../src/types'
-import {
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../../tests/utils/react'
+import { fireEvent, flush, renderWithStore } from '../../tests/utils/react'
 
 const initialTestState = {
   count: 0,
@@ -62,7 +58,7 @@ describe('Pipeline integration with useJitStore', () => {
     // Click update button
     fireEvent.click(screen.getByText('Update'))
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('count').textContent).toBe('42')
     expect(screen.getByTestId('name').textContent).toBe('Alice')
@@ -106,7 +102,7 @@ describe('Pipeline integration with useJitStore', () => {
     // Click increment
     fireEvent.click(screen.getByText('Increment'))
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('count').textContent).toBe('1')
 
@@ -141,7 +137,7 @@ describe('Pipeline integration with useStore', () => {
 
     fireEvent.click(screen.getByText('Update Count'))
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('count').textContent).toBe('100')
 
@@ -176,7 +172,7 @@ describe('Pipeline integration with useStore', () => {
 
     fireEvent.click(screen.getByText('Update with Meta'))
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('count').textContent).toBe('50')
 
@@ -201,7 +197,7 @@ describe('Pipeline integration with useStore', () => {
 
     fireEvent.click(screen.getByText('Update Name'))
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('name').textContent).toBe('Bob')
   })

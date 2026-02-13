@@ -160,9 +160,19 @@ export type ListenerRegistration<
 
 /**
  * Internal listener registration with plain strings.
- * Matches the generic signature of ListenerRegistration but ignores type params,
- * avoiding expensive DeepKey resolution for internal pipeline plumbing.
- * Public API uses ListenerRegistration<DATA, META> for type safety.
+ * Structurally compatible with ListenerRegistration<DATA, META> to allow
+ * passing type-safe registrations to internal functions without casting.
+ *
+ * Key design:
+ * - path: string | null (accepts both string literals from DeepKey and plain strings)
+ * - scope: optional string | null | undefined (accepts all scope variants)
+ * - fn: (...args: any[]) => any (accepts any function signature)
+ *
+ * This allows:
+ * ```ts
+ * const typeSafe: ListenerRegistration<DATA, META> = { ... }
+ * const internal: ListenerRegistration__internal = typeSafe // ✓ works
+ * ```
  */
 
 export interface ListenerRegistration__internal<
@@ -170,8 +180,8 @@ export interface ListenerRegistration__internal<
   _META extends GenericMeta = GenericMeta,
 > {
   path: string | null
-  scope?: string | null
-  fn: (...args: never[]) => unknown
+  scope?: string | null | undefined
+  fn: (...args: any[]) => any
 }
 
 export interface SideEffectGraphs<

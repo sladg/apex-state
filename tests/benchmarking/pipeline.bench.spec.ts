@@ -53,8 +53,14 @@ const createMockStore = (
       graphs: {
         sync: syncGraph,
         flip: flipGraph,
-        listeners: new Map(),
-        sortedListenerPaths: [],
+        listenerGraph: {
+          order: [],
+          groupMeta: new Map(),
+          groupMembers: new Map(),
+          nodes: new Map(),
+          edges: new Map(),
+          fns: new Map(),
+        },
       },
       registrations: {
         concerns: new Map(),

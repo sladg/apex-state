@@ -130,10 +130,9 @@ export const processListeners = <
       // Process produced changes
       for (const [path, value, changeMeta] of produced) {
         const enrichedMeta = { isListenerChange: true, ...changeMeta }
-        const change = [path, value, enrichedMeta] as const
 
         // Push to queue for applyBatch
-        queue.push(change)
+        queue.push([path, value, enrichedMeta])
 
         // Append relativized change to groupRelevant for within-group accumulation
         if (meta.depth === 0 && !path.includes('.')) {

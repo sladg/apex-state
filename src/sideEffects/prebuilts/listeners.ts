@@ -6,8 +6,7 @@ import {
   removeNode,
 } from '../../core/listenerGraph'
 import type {
-  ListenerRegistration,
-  ListenerRegistration__unsafe,
+  ListenerRegistration__internal,
   StoreInstance,
 } from '../../core/types'
 import type { ListenerFn } from '../../pipeline/processors/listeners.types'
@@ -16,11 +15,11 @@ import { generateListenerId, guard } from '../../utils/guards'
 
 /**
  * Internal registration logic shared by both single and batch variants.
- * Works with ListenerRegistration__unsafe to avoid DeepKey resolution overhead.
+ * Works with ListenerRegistration__internal to avoid DeepKey resolution overhead.
  */
 const prepareRegistration = (
   store: StoreInstance<object>,
-  registration: ListenerRegistration__unsafe,
+  registration: ListenerRegistration__internal,
   graph: { fns: Map<string, ListenerFn> },
 ): {
   path: string
@@ -33,12 +32,15 @@ const prepareRegistration = (
   const path = registration.path ?? ''
   const id = generateListenerId(path, registration.fn, graph.fns)
 
-  const originalFn = registration.fn
   const wrappedFn: ListenerFn = (changes, state) =>
-    store._internal.timing.run('listeners', () => originalFn(changes, state), {
-      path,
-      name: 'listener',
-    })
+    store._internal.timing.run(
+      'listeners',
+      () => registration.fn(changes, state),
+      {
+        path,
+        name: 'listener',
+      },
+    )
 
   return { path, id, wrappedFn, scope: registration.scope ?? null }
 }
@@ -55,16 +57,15 @@ export const registerListenersBatch = <
   META extends GenericMeta = GenericMeta,
 >(
   store: StoreInstance<DATA, META>,
-  registrations: ListenerRegistration<DATA, META>[],
+  registrations: ListenerRegistration__internal<DATA, META>[],
 ): (() => void) => {
   const graph = store._internal.graphs.listenerGraph
-  const regs = registrations as ListenerRegistration__unsafe[]
 
   // Phase 1: Validate all registrations and collect group paths
   const groupPaths: string[] = []
   const prepared: ReturnType<typeof prepareRegistration>[] = []
 
-  for (const registration of regs) {
+  for (const registration of registrations) {
     const entry = prepareRegistration(store, registration, graph)
     groupPaths.push(entry.path)
     prepared.push(entry)
@@ -96,11 +97,14 @@ export const registerListener = <
   META extends GenericMeta = GenericMeta,
 >(
   store: StoreInstance<DATA, META>,
-  registration: ListenerRegistration<DATA, META>,
+  registration: ListenerRegistration__internal<DATA, META>,
 ): (() => void) => {
   const graph = store._internal.graphs.listenerGraph
-  const reg = registration as ListenerRegistration__unsafe
-  const { path, id, wrappedFn, scope } = prepareRegistration(store, reg, graph)
+  const { path, id, wrappedFn, scope } = prepareRegistration(
+    store,
+    registration,
+    graph,
+  )
 
   // Ensure group exists for this path
   addGroup(graph, path)

@@ -14,12 +14,7 @@ import type { ListenerRegistration } from '../../src/core/types'
 import { registerListener } from '../../src/sideEffects/prebuilts/listeners'
 import type { TestState } from '../mocks'
 import { testStateFixtures } from '../mocks'
-import {
-  createStore,
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../utils/react'
+import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'
 
 describe('Pipeline: Listener Spillage', () => {
   let store: ReturnType<typeof createStore<TestState>>
@@ -86,7 +81,7 @@ describe('Pipeline: Listener Spillage', () => {
     registerListener(rendered.storeInstance, listenerC)
 
     fireEvent.click(screen.getByTestId('set'))
-    await flushEffects()
+    await flush()
 
     expect(callOrder).toEqual(['A', 'B', 'C'])
   })
@@ -144,7 +139,7 @@ describe('Pipeline: Listener Spillage', () => {
     registerListener(rendered.storeInstance, rootListener)
 
     fireEvent.click(screen.getByTestId('set'))
-    await flushEffects()
+    await flush()
 
     // Root listener should have received the 'bio' change produced by the deeper listener
     expect(shallowSpy).toHaveBeenCalled()
@@ -214,7 +209,7 @@ describe('Pipeline: Listener Spillage', () => {
     registerListener(rendered.storeInstance, listenerB)
 
     fireEvent.click(screen.getByTestId('set'))
-    await flushEffects()
+    await flush()
 
     // Listener B should see both the original firstName change AND the lastName
     // change produced by listener A (accumulated)
@@ -323,7 +318,7 @@ describe('Pipeline: Listener Spillage', () => {
     registerListener(rendered.storeInstance, listenerB)
 
     fireEvent.click(screen.getByTestId('set'))
-    await flushEffects()
+    await flush()
 
     // Listener B should NOT have been called — no addressInfo child changes
     expect(addressListenerSpy).not.toHaveBeenCalled()

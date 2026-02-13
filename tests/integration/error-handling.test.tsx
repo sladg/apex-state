@@ -164,7 +164,7 @@ describe('Integration: Error Handling & Recovery', () => {
       const errorsField = store.useFieldStore('_errors')
 
       const validateForm = () => {
-        const errors: Record<string, any[]> = {}
+        const errors: Record<string, string[]> = {}
 
         // Field-level errors
         if (!emailField.value) {

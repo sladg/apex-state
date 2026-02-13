@@ -13,11 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { StoreContext } from '../../src/core/context'
 import { createGenericStore } from '../../src/store/createStore'
 import { detectGetters, extractGetters } from '../../src/utils/deriveValues'
-import {
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../../tests/utils/react'
+import { fireEvent, flush, renderWithStore } from '../../tests/utils/react'
 import { typeHelpers } from '../mocks'
 
 /**
@@ -201,7 +197,7 @@ describe('Derived Values', () => {
       fireEvent.click(screen.getByTestId('change-name'))
 
       // Wait for effects to flush
-      await flushEffects()
+      await flush()
 
       // Getter should recalculate
       expect(screen.getByTestId('fullName').textContent).toBe('Jane Doe')
@@ -325,7 +321,7 @@ describe('Derived Values', () => {
 
       // Increment count - all getters should update
       fireEvent.click(screen.getByTestId('inc-count'))
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('doubled').textContent).toBe('12')
       expect(screen.getByTestId('tripled').textContent).toBe('18')
@@ -333,7 +329,7 @@ describe('Derived Values', () => {
 
       // Increment multiplier - only multiplied getter should change
       fireEvent.click(screen.getByTestId('inc-mult'))
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('doubled').textContent).toBe('12')
       expect(screen.getByTestId('tripled').textContent).toBe('18')
@@ -386,7 +382,7 @@ describe('Derived Values', () => {
       expect(screen.getByTestId('fullName').textContent).toBe('John Doe')
 
       fireEvent.click(screen.getByTestId('change-name'))
-      await flushEffects()
+      await flush()
 
       expect(screen.getByTestId('fullName').textContent).toBe('Jane Doe')
     })
@@ -452,7 +448,7 @@ describe('Derived Values', () => {
 
       // Add item
       fireEvent.click(screen.getByTestId('add-item'))
-      await flushEffects()
+      await flush()
 
       // New total: 300 + 10 = 310, with 10% tax = 341
       expect(screen.getByTestId('total').textContent).toBe('310')
@@ -581,7 +577,7 @@ describe('Derived Values', () => {
 
       // Now change the dependency
       fireEvent.click(screen.getByTestId('increment'))
-      await flushEffects()
+      await flush()
 
       // After dependency change, getter should recalculate
       const newCallCount = getterCallCount

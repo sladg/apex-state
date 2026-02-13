@@ -6,7 +6,7 @@
  */
 
 import { screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { TestState } from '../mocks'
 import { defaults, testStateFixtures } from '../mocks'
@@ -14,7 +14,7 @@ import { EmailValidationForm } from '../utils/components'
 import {
   createStore,
   fireEvent,
-  flushEffects,
+  flush,
   renderWithStore,
   validateField,
 } from '../utils/react'
@@ -60,7 +60,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
 
     fireEvent.change(input, { target: { value: 'john_doe' } })
 
-    await flushEffects()
+    await flush()
 
     const newTime = parseInt(
       screen.getByTestId('last-updated').textContent || '0',
@@ -83,7 +83,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     // Invalid email
     fireEvent.change(input, { target: { value: 'invalid-email' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('email-error')).toBeInTheDocument()
     expect(screen.getByTestId('email-error')).toHaveTextContent(
@@ -93,12 +93,14 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     // Valid email
     fireEvent.change(input, { target: { value: 'valid@example.com' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.queryByTestId('email-error')).not.toBeInTheDocument()
   })
 
   it('TC5.3: validates username uniqueness asynchronously', async () => {
+    vi.useFakeTimers()
+
     const takenUsernames = ['admin', 'user', 'test']
 
     function ProfileComponent() {
@@ -143,16 +145,20 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     // Try taken username
     fireEvent.change(input, { target: { value: 'admin' } })
 
-    await flushEffects()
+    await vi.advanceTimersByTimeAsync(10)
+    await flush()
 
     expect(screen.getByTestId('username-error')).toBeInTheDocument()
 
     // Try available username
     fireEvent.change(input, { target: { value: 'newuser' } })
 
-    await flushEffects()
+    await vi.advanceTimersByTimeAsync(10)
+    await flush()
 
     expect(screen.queryByTestId('username-error')).not.toBeInTheDocument()
+
+    vi.useRealTimers()
   })
 
   it('TC5.4: clears unnecessary fields from state', async () => {
@@ -198,7 +204,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     const clearBtn = screen.getByTestId('clear-bio-btn')
     fireEvent.click(clearBtn)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('bio-value')).toHaveTextContent('')
   })
@@ -243,7 +249,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     const checkbox = screen.getByTestId('active-checkbox') as HTMLInputElement
     fireEvent.click(checkbox)
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('active-status')).toHaveTextContent('Active')
   })
@@ -298,7 +304,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
     fireEvent.change(usernameInput, { target: { value: 'ab' } })
     fireEvent.change(emailInput, { target: { value: 'test@example.com' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('error-count')).toHaveTextContent('1')
   })
@@ -323,7 +329,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
 
     fireEvent.change(emailInput, { target: { value: 'invalid' } })
 
-    await flushEffects()
+    await flush()
 
     expect(screen.getByTestId('email-error')).toBeInTheDocument()
   })

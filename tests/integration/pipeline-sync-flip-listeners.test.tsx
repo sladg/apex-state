@@ -7,7 +7,7 @@ import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
-import { flushEffects, renderWithStore } from '../utils/react'
+import { flush, renderWithStore } from '../utils/react'
 
 interface TestForm {
   email: string
@@ -63,7 +63,7 @@ describe('Pipeline Integration Tests', () => {
     const button = screen.getByTestId('set-email')
     button.click()
 
-    await flushEffects()
+    await flush()
 
     // Email and backup should be synced
     expect(screen.getByTestId('email').textContent).toBe('test@example.com')
@@ -101,7 +101,7 @@ describe('Pipeline Integration Tests', () => {
     const button = screen.getByTestId('toggle')
     button.click()
 
-    await flushEffects()
+    await flush()
 
     // Values should be flipped
     expect(screen.getByTestId('enabled').textContent).toBe('false')
@@ -150,7 +150,7 @@ describe('Pipeline Integration Tests', () => {
     const button = screen.getByTestId('update-all')
     button.click()
 
-    await flushEffects()
+    await flush()
 
     // Sync should work
     expect(screen.getByTestId('email').textContent).toBe('test@example.com')

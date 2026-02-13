@@ -11,23 +11,22 @@
 
 import { bench, describe } from 'vitest'
 
-import type { ListenerRegistration } from '../../src/core/types'
+import type { ListenerRegistration__internal } from '../../src/core/types'
 import type {
-  GroupMeta,
   ListenerFn,
   ListenerGraph,
   ListenerRoute,
-} from '../../src/pipeline/processors/types'
-import type { GenericMeta } from '../../src/types'
+} from '../../src/pipeline/processors/listeners.types'
+import type { ArrayOfChanges__internal } from '../../src/types/changes'
 import { dot } from '../../src/utils/dot'
 import { getPathDepth } from '../../src/utils/pathUtils'
+import type { TestState } from '../mocks/types'
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type BenchState = Record<string, unknown>
-type AnyChange = [string, unknown, GenericMeta]
+type AnyChange = ArrayOfChanges__internal[number]
 
 /** Legacy flat listener structure for backward-compat benchmarks */
 interface FlatListener {
@@ -90,17 +89,16 @@ const getRelevantChanges = (
 }
 
 const callListener = (
-  registration: ListenerRegistration<BenchState>,
+  registration: ListenerRegistration__internal<TestState>,
   relevantChanges: AnyChange[],
-  currentState: BenchState,
+  currentState: TestState,
 ): AnyChange[] => {
   if (relevantChanges.length === 0) return []
   const scope = (registration.scope as string) ?? ''
   const scopedState =
     scope === '' ? currentState : dot.get__unsafe(currentState, scope)
-  const result = registration.fn(relevantChanges, scopedState) as
-    | AnyChange[]
-    | undefined
+  const fn = registration.fn as unknown as ListenerFn
+  const result = fn(relevantChanges, scopedState)
   if (!result || result.length === 0) return []
   return result.map(([path, value, meta]) => [
     path,
@@ -113,7 +111,7 @@ const callFlatListener = (
   fn: ListenerFn,
   scope: string | null,
   relevantChanges: AnyChange[],
-  currentState: BenchState,
+  currentState: TestState,
 ): AnyChange[] => {
   if (relevantChanges.length === 0) return []
   const scopedState =
@@ -134,7 +132,7 @@ const callFlatListener = (
 const processListeners_flat = (
   changes: AnyChange[],
   flatListeners: FlatListener[],
-  currentState: BenchState,
+  currentState: TestState,
 ): AnyChange[] => {
   const allChanges = [...changes].sort(
     (a, b) => getPathDepth(b[0]) - getPathDepth(a[0]),
@@ -171,9 +169,9 @@ const processListeners_flat = (
 
 const processListeners_nested = (
   changes: AnyChange[],
-  listeners: Map<string, ListenerRegistration<BenchState>[]>,
+  listeners: Map<string, ListenerRegistration__internal<TestState>[]>,
   sortedListenerPaths: string[],
-  currentState: BenchState,
+  currentState: TestState,
 ): AnyChange[] => {
   const sortedChanges = [...changes].sort(
     (a, b) => getPathDepth(b[0]) - getPathDepth(a[0]),
@@ -292,39 +290,36 @@ const processListeners_reduceMut = (
 // Strategy E: graph-based (ListenerGraph with pre-computed edges)
 // ============================================================================
 
-const getRelevantChangesForMeta = (
-  changes: AnyChange[],
-  meta: GroupMeta,
-): AnyChange[] => {
-  const result: AnyChange[] = []
-  if (meta.isRoot) {
-    for (const change of changes) {
-      if (!change[0].includes('.')) {
-        result.push(change)
-      }
-    }
-    return result
-  }
-  for (const change of changes) {
-    if (change[0].startsWith(meta.prefix)) {
-      result.push([change[0].slice(meta.prefixLen), change[1], change[2]])
-    }
-  }
-  return result
-}
-
+/* eslint-disable sonarjs/elseif-without-else, sonarjs/cognitive-complexity */
 const processListeners_graph = (
   changes: AnyChange[],
   graph: ListenerGraph,
-  listenerFns: Map<string, ListenerFn>,
   currentState: BenchState,
 ): AnyChange[] => {
-  const allChanges = [...changes]
   const produced: AnyChange[] = []
 
-  // Local accumulator replaces mutable group.pending
+  // Seed: route each change to matching groups by walking up ancestors
   const pendingByGroup = new Map<string, AnyChange[]>()
-  for (const path of graph.order) pendingByGroup.set(path, [])
+  for (const groupPath of graph.order) pendingByGroup.set(groupPath, [])
+
+  for (const change of changes) {
+    const changePath = change[0]
+    let pos = changePath.length
+    while (pos > 0) {
+      pos = changePath.lastIndexOf('.', pos - 1)
+      if (pos === -1) break
+      const ancestor = changePath.slice(0, pos)
+      const pending = pendingByGroup.get(ancestor)
+      if (pending) {
+        const meta = graph.groupMeta.get(ancestor)!
+        pending.push([changePath.slice(meta.prefixLen), change[1], change[2]])
+      }
+    }
+    if (!changePath.includes('.')) {
+      const rootPending = pendingByGroup.get('')
+      if (rootPending) rootPending.push(change)
+    }
+  }
 
   for (const groupPath of graph.order) {
     const meta = graph.groupMeta.get(groupPath)!
@@ -332,12 +327,11 @@ const processListeners_graph = (
     const edges = graph.edges.get(groupPath)!
     const pending = pendingByGroup.get(groupPath)!
 
-    const relevant = getRelevantChangesForMeta(allChanges, meta)
-    const groupRelevant = [...relevant, ...pending]
-    if (groupRelevant.length === 0) continue
+    if (pending.length === 0) continue
+    const groupRelevant = pending
 
     for (const id of memberIds) {
-      const fn = listenerFns.get(id)
+      const fn = graph.fns.get(id)
       if (!fn) continue
       const node = graph.nodes.get(id)!
       const scopedState =
@@ -347,24 +341,27 @@ const processListeners_graph = (
       const result = fn(groupRelevant, scopedState)
       if (!result || result.length === 0) continue
 
-      const newChanges: AnyChange[] = result.map(([path, value, meta]) => [
-        path,
-        value,
-        { isListenerChange: true, ...meta },
-      ])
+      for (const [path, value, changeMeta] of result) {
+        const enrichedMeta = { isListenerChange: true, ...changeMeta }
+        const change: AnyChange = [path, value, enrichedMeta]
 
-      produced.push(...newChanges)
-      allChanges.push(...newChanges)
+        produced.push(change)
 
-      // Route to downstream groups via pre-computed edges
-      for (const change of newChanges) {
+        // Within-group accumulation
+        if (meta.depth === 0 && !path.includes('.')) {
+          groupRelevant.push([path, value, enrichedMeta])
+        } else if (path.startsWith(meta.prefix)) {
+          groupRelevant.push([path.slice(meta.prefixLen), value, enrichedMeta])
+        }
+
+        // Route to downstream groups via pre-computed edges
         for (const edge of edges) {
-          if (edge.isRoot && !change[0].includes('.')) {
-            pendingByGroup.get(edge.target)!.push(change)
-          } else if (change[0].startsWith(edge.prefix)) {
+          if (edge.depth === 0 && !path.includes('.')) {
+            pendingByGroup.get(edge.target)!.push([path, value, enrichedMeta])
+          } else if (path.startsWith(edge.prefix)) {
             pendingByGroup
               .get(edge.target)!
-              .push([change[0].slice(edge.prefixLen), change[1], change[2]])
+              .push([path.slice(edge.prefixLen), value, enrichedMeta])
           }
         }
       }
@@ -397,9 +394,11 @@ const createFixture = (config: {
   changeCount: number
 }) => {
   const state: BenchState = { root: {} }
-  const listeners = new Map<string, ListenerRegistration<BenchState>[]>()
+  const listeners = new Map<
+    string,
+    ListenerRegistration__internal<BenchState>[]
+  >()
   const flatListeners: FlatListener[] = []
-  const listenerFnMap = new Map<string, ListenerFn>()
 
   // Build the graph
   const graph: ListenerGraph = {
@@ -408,17 +407,18 @@ const createFixture = (config: {
     groupMembers: new Map(),
     nodes: new Map(),
     edges: new Map(),
+    fns: new Map(),
   }
 
   for (const path of config.listenerPaths) {
-    const regs: ListenerRegistration<BenchState>[] = []
-    const isRoot = path === ''
+    const regs: ListenerRegistration__internal<BenchState>[] = []
+    const depth = getPathDepth(path)
+    const isRoot = depth === 0
     const prefix = isRoot ? '' : path + '.'
     const prefixLen = isRoot ? 0 : path.length + 1
-    const depth = getPathDepth(path)
 
     // Set up group in graph
-    graph.groupMeta.set(path, { prefix, prefixLen, isRoot, depth })
+    graph.groupMeta.set(path, { prefix, prefixLen, depth })
     graph.groupMembers.set(path, [])
     graph.order.push(path)
 
@@ -427,13 +427,9 @@ const createFixture = (config: {
       const id = isRoot ? `__${fn.name}_${i}` : `${path}_${fn.name}_${i}`
 
       regs.push({
-        path: (path === ''
-          ? null
-          : path) as ListenerRegistration<BenchState>['path'],
-        scope: (path === ''
-          ? null
-          : path) as ListenerRegistration<BenchState>['scope'],
-        fn: fn as ListenerRegistration<BenchState>['fn'],
+        path: isRoot ? null : path,
+        scope: isRoot ? null : path,
+        fn,
       })
 
       flatListeners.push({
@@ -446,14 +442,13 @@ const createFixture = (config: {
         depth,
       })
 
-      listenerFnMap.set(id, fn)
-
       // Add to graph
       graph.nodes.set(id, {
         scope: isRoot ? null : path,
         groupPath: path,
       })
       graph.groupMembers.get(path)!.push(id)
+      graph.fns.set(id, fn)
     }
 
     listeners.set(path, regs)
@@ -484,7 +479,7 @@ const createFixture = (config: {
         target: targetPath,
         prefix: targetMeta.prefix,
         prefixLen: targetMeta.prefixLen,
-        isRoot: targetMeta.isRoot,
+        depth: targetMeta.depth,
       })
     }
     graph.edges.set(graph.order[i]!, routes)
@@ -505,7 +500,6 @@ const createFixture = (config: {
     sortedListenerPaths,
     flatListeners,
     graph,
-    listenerFnMap,
     changes,
   }
 }
@@ -558,12 +552,7 @@ describe('processListeners strategies', () => {
     })
 
     bench('graph (ListenerGraph)', () => {
-      processListeners_graph(
-        fixture.changes,
-        fixture.graph,
-        fixture.listenerFnMap,
-        fixture.state,
-      )
+      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
     })
   })
 
@@ -610,12 +599,7 @@ describe('processListeners strategies', () => {
     })
 
     bench('graph (ListenerGraph)', () => {
-      processListeners_graph(
-        fixture.changes,
-        fixture.graph,
-        fixture.listenerFnMap,
-        fixture.state,
-      )
+      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
     })
   })
 
@@ -673,12 +657,161 @@ describe('processListeners strategies', () => {
     })
 
     bench('graph (ListenerGraph)', () => {
-      processListeners_graph(
-        fixture.changes,
-        fixture.graph,
-        fixture.listenerFnMap,
-        fixture.state,
-      )
+      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
+    })
+  })
+
+  // --- Realistic: hashmap with 50 listeners, most not triggered ---
+  // Models: store.users.[userId].profile.settings.[settingId]
+  // 5 changes on one hashmap key, 15 triggered (5 nested + 10 root), 35 cold
+  describe('realistic: hashmap 50 listeners, 15 triggered, 35 cold', () => {
+    // Triggered paths: the subtree where changes land
+    const triggeredNested = [
+      'app.users.u1.profile.settings.s1', // deepest: exact match
+      'app.users.u1.profile.settings', // level 5
+      'app.users.u1.profile', // level 4
+      'app.users.u1', // level 3
+      'app.users', // level 2
+    ]
+    // Cold paths: other hashmap keys that won't match
+    const coldPaths = [
+      'app.users.u2.profile.settings.s1',
+      'app.users.u2.profile.settings',
+      'app.users.u2.profile',
+      'app.users.u2',
+      'app.users.u3.profile.settings.s2',
+      'app.users.u3.profile.settings',
+      'app.users.u3.profile',
+      'app.users.u3',
+      'app.users.u4.profile.settings.s3',
+      'app.users.u4.profile.settings',
+      'app.users.u4.profile',
+      'app.users.u4',
+      'app.products.p1.variants.v1',
+      'app.products.p1.variants',
+      'app.products.p1',
+      'app.products.p2.variants.v2',
+      'app.products.p2.variants',
+      'app.products.p2',
+      'app.products',
+      'app.cart.items.i1',
+      'app.cart.items.i2',
+      'app.cart.items',
+      'app.cart',
+      'app.settings.theme',
+      'app.settings',
+    ]
+
+    // Custom fixture: 5 nested (1 each) + root (10) + 25 cold (1 each)
+    const state: BenchState = {
+      app: { users: { u1: { profile: { settings: { s1: {} } } } } },
+    }
+    const listeners = new Map<
+      string,
+      ListenerRegistration__internal<BenchState>[]
+    >()
+    const flatListeners: FlatListener[] = []
+    const graph: ListenerGraph = {
+      order: [],
+      groupMeta: new Map(),
+      groupMembers: new Map(),
+      nodes: new Map(),
+      edges: new Map(),
+      fns: new Map(),
+    }
+
+    const allPaths = [...triggeredNested, '', ...coldPaths]
+    const listenersPerPathMap: Record<string, number> = { '': 10 }
+    for (const p of triggeredNested) listenersPerPathMap[p] = 1
+    for (const p of coldPaths) listenersPerPathMap[p] = 1
+
+    for (const path of allPaths) {
+      const isRoot = path === ''
+      const prefix = isRoot ? '' : path + '.'
+      const prefixLen = isRoot ? 0 : path.length + 1
+      const depth = getPathDepth(path)
+      const count = listenersPerPathMap[path] ?? 1
+
+      graph.groupMeta.set(path, { prefix, prefixLen, depth })
+      graph.groupMembers.set(path, [])
+      graph.order.push(path)
+
+      const regs: ListenerRegistration__internal<BenchState>[] = []
+      for (let i = 0; i < count; i++) {
+        const fn = createListenerFn(false, false)
+        const id = isRoot ? `__${fn.name}_${i}` : `${path}_${fn.name}_${i}`
+        regs.push({
+          path: isRoot ? null : path,
+          scope: isRoot ? null : path,
+          fn: fn,
+        })
+        flatListeners.push({
+          path,
+          prefix,
+          prefixLen,
+          isRoot,
+          scope: isRoot ? null : path,
+          fn,
+          depth,
+        })
+        graph.nodes.set(id, { scope: isRoot ? null : path, groupPath: path })
+        graph.fns.set(id, fn)
+        graph.groupMembers.get(path)!.push(id)
+      }
+      listeners.set(path, regs)
+    }
+
+    const sortedListenerPaths = Array.from(listeners.keys()).sort(
+      (a, b) => getPathDepth(b) - getPathDepth(a),
+    )
+    flatListeners.sort((a, b) => b.depth - a.depth)
+    graph.order.sort((a, b) => {
+      const metaA = graph.groupMeta.get(a)!
+      const metaB = graph.groupMeta.get(b)!
+      return metaB.depth - metaA.depth
+    })
+    for (let i = 0; i < graph.order.length; i++) {
+      const routes: ListenerRoute[] = []
+      for (let j = i + 1; j < graph.order.length; j++) {
+        const targetPath = graph.order[j]!
+        const targetMeta = graph.groupMeta.get(targetPath)!
+        routes.push({
+          target: targetPath,
+          prefix: targetMeta.prefix,
+          prefixLen: targetMeta.prefixLen,
+          depth: targetMeta.depth,
+        })
+      }
+      graph.edges.set(graph.order[i]!, routes)
+    }
+
+    // 5 changes all under the triggered subtree
+    const changes: AnyChange[] = [
+      ['app.users.u1.profile.settings.s1.name', 'Alice', {}],
+      ['app.users.u1.profile.settings.s1.value', 42, {}],
+      ['app.users.u1.profile.settings.s1.enabled', true, {}],
+      ['app.users.u1.profile.settings.s1.priority', 'high', {}],
+      ['app.users.u1.profile.settings.s1.updated', Date.now(), {}],
+    ]
+
+    bench('flat loop', () => {
+      processListeners_flat(changes, flatListeners, state)
+    })
+
+    bench('nested loop (old)', () => {
+      processListeners_nested(changes, listeners, sortedListenerPaths, state)
+    })
+
+    bench('reduce (immutable)', () => {
+      processListeners_reduce(changes, flatListeners, state)
+    })
+
+    bench('reduce (mutable acc)', () => {
+      processListeners_reduceMut(changes, flatListeners, state)
+    })
+
+    bench('graph (ListenerGraph)', () => {
+      processListeners_graph(changes, graph, state)
     })
   })
 
@@ -725,12 +858,7 @@ describe('processListeners strategies', () => {
     })
 
     bench('graph (ListenerGraph)', () => {
-      processListeners_graph(
-        fixture.changes,
-        fixture.graph,
-        fixture.listenerFnMap,
-        fixture.state,
-      )
+      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
     })
   })
 })

@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { createGenericStore } from '../../src'
 import type { TestState } from '../mocks'
 import { testStateFixtures } from '../mocks'
-import { createStore, flushEffects, renderWithStore } from '../utils/react'
+import { createStore, flush, renderWithStore } from '../utils/react'
 
 describe('Integration: withConcerns', () => {
   test('returns typed field store with selected concerns', async () => {
@@ -61,7 +61,7 @@ describe('Integration: withConcerns', () => {
 
     // 4. Assertions
     // Name 'A' is too short -> validationState should show isError: true. It takes a tick to evaluate.
-    await flushEffects()
+    await flush()
     expect(screen.getByTestId('valid')).toHaveTextContent('true')
     expect(screen.getByTestId('disabled')).toHaveTextContent('true')
     expect(screen.getByTestId('value')).toHaveTextContent('A')
@@ -150,7 +150,7 @@ describe('Integration: withConcerns', () => {
     )
 
     // Wait for initial concerns to evaluate
-    await flushEffects()
+    await flush()
     expect(screen.getByTestId('valid')).toHaveTextContent('true')
 
     // Reset count
@@ -170,7 +170,7 @@ describe('Integration: withConcerns', () => {
     const updateValBtn = screen.getByTestId('update-val')
     updateValBtn.click()
 
-    await flushEffects()
+    await flush()
     expect(screen.getByTestId('value')).toHaveTextContent('B')
 
     // Expect re-render

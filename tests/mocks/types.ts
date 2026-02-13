@@ -86,7 +86,7 @@ export interface TestState {
   displayName: string
 
   // Shared error storage
-  _errors: Record<string, any[]>
+  _errors: Record<string, string[]>
 }
 
 /**

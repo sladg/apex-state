@@ -10,12 +10,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { TestState } from '../mocks'
 import { testStateFixtures, typeHelpers } from '../mocks'
-import {
-  createStore,
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../utils/react'
+import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'
 
 describe('Integration: Bidirectional Field Sync', () => {
   let store: ReturnType<typeof createStore<TestState>>
@@ -51,7 +46,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'John' } })
 
-    await flushEffects()
+    await flush()
 
     expect(input.value).toBe('John')
   })
@@ -87,7 +82,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     const input = screen.getByTestId('lastName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'Doe' } })
 
-    await flushEffects()
+    await flush()
 
     expect(input.value).toBe('Doe')
   })
@@ -125,7 +120,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     const input = screen.getByTestId('displayName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'Jane' } })
 
-    await flushEffects()
+    await flush()
 
     expect(input.value).toBe('Jane')
   })
@@ -175,7 +170,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     // Change firstName - should sync to lastName but not create infinite loop
     fireEvent.change(firstInput, { target: { value: 'Jane' } })
 
-    await flushEffects()
+    await flush()
 
     expect(firstInput.value).toBe('Jane')
     // Verify no excessive re-renders (processing should be bounded)
@@ -213,7 +208,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     fireEvent.change(input, { target: { value: 'John' } })
     fireEvent.change(input, { target: { value: 'Johnny' } })
 
-    await flushEffects()
+    await flush()
 
     expect(input.value).toBe('Johnny')
   })
@@ -254,7 +249,7 @@ describe('Integration: Bidirectional Field Sync', () => {
     const input = screen.getByTestId('firstName-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'John' } })
 
-    await flushEffects()
+    await flush()
 
     expect(input.value).toBe('John')
     expect(executionLog.length).toBeGreaterThan(0)

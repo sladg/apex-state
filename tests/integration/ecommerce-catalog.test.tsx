@@ -1,16 +1,16 @@
 /**
  * Integration Tests: E-commerce Product Catalog Form
  *
- * Scenario: Deeply nested (15 levels) e-commerce catalog management form
+ * Scenario: Deeply nested (12+ levels) e-commerce catalog management form
  * with custom concerns, all built-in concerns, side effects (sync, flip,
  * listeners, aggregations), and complex BoolLogic conditions.
  *
  * Models a realistic e-commerce operations center where:
- * - Multiple product variants each contain analytics, pricing data, and promotion config
- * - Validation depends on product type, market conditions, and cross-variant relationships
+ * - Departments contain categories, products, and variants with pricing/inventory/shipping
+ * - Validation depends on product status, store mode, and cross-variant relationships
  * - Fields are conditionally visible/disabled/readonly based on deep state
- * - Listeners compute derived values (revenue, inventory adjustments) from variant changes
- * - Custom concerns handle domain-specific logic (budget check, spending limits)
+ * - Listeners compute derived values (revenue, inventory) from variant changes
+ * - Custom concerns handle domain-specific logic (budget check, stock alerts)
  */
 
 import { useLayoutEffect } from 'react'
@@ -29,113 +29,93 @@ import { useStoreContext } from '../../src/core/context'
 import { dot } from '../../src/utils/dot'
 import { _ } from '../../src/utils/hashKey'
 import { typeHelpers } from '../mocks'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flush, renderWithStore } from '../utils/react'
 
 // ---------------------------------------------------------------------------
-// 15-level deep type hierarchy
+// Type hierarchy (depth 12+ via departments.{}.categories.{}.products.{}.variants.{}.reviews.{}.metadata.helpfulVotes)
 // ---------------------------------------------------------------------------
 
-interface BarrierScheduleEntry {
-  date: string
-  level: number
-  observed: boolean
+interface ReviewMetadata {
+  helpfulVotes: number
+  reportCount: number
+  editedAt: string | null
 }
 
-interface BarrierConfig {
-  type: 'knockout' | 'knockin' | 'none'
-  direction: 'up' | 'down'
-  level: number
-  schedule: Record<string, BarrierScheduleEntry>
+interface Review {
+  rating: number
+  verified: boolean
+  sentiment: 'positive' | 'neutral' | 'negative'
+  metadata: ReviewMetadata
 }
 
-interface GreeksSnapshot {
-  delta: number
-  gamma: number
-  vega: number
-  theta: number
-  rho: number
+interface Dimensions {
+  length: number
+  width: number
+  height: number
 }
 
-interface VolSurface {
-  atmVol: number
-  skew: number
-  kurtosis: number
-  smile: Record<
-    string,
-    {
-      strike: number
-      vol: number
-      source: 'market' | 'model'
-    }
-  >
+interface ShippingConfig {
+  weight: number
+  dimensions: Dimensions
+  method: 'standard' | 'express' | 'freight'
 }
 
-interface MarketData {
-  spot: number
-  forward: number
-  domesticRate: number
-  foreignRate: number
-  volSurface: VolSurface
+interface InventoryData {
+  stock: number
+  reserved: number
+  warehouse: string
 }
 
-interface LegData {
-  direction: 'buy' | 'sell'
-  notional: number
-  strike: number
-  expiry: string
-  optionType: 'call' | 'put'
-  exerciseStyle: 'european' | 'american'
-  premium: number
-  premiumCurrency: 'USD' | 'EUR' | 'GBP' | 'JPY'
-  barrier: BarrierConfig
-  greeks: GreeksSnapshot
-  marketData: MarketData
-  isLocked: boolean
+interface PricingData {
+  base: number
+  sale: number
+  currency: 'USD' | 'EUR' | 'GBP' | 'JPY'
+  margin: number
 }
 
-interface LegGroup {
-  strategy: 'straddle' | 'strangle' | 'riskReversal' | 'butterfly' | 'vanilla'
-  legs: Record<string, LegData>
-  groupDelta: number
-  groupNotional: number
+interface Variant {
+  sku: string
+  color: string
+  size: string
+  isActive: boolean
+  pricing: PricingData
+  inventory: InventoryData
+  shipping: ShippingConfig
+  reviews: Record<string, Review>
 }
 
 interface Product {
-  ccyPair: string
-  valueDate: string
-  tradeDate: string
-  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'executed'
-  trader: string
-  counterparty: string
-  legGroups: Record<string, LegGroup>
+  name: string
+  status: 'draft' | 'active' | 'archived' | 'discontinued'
+  brand: string
+  variants: Record<string, Variant>
 }
 
-// Top-level: portfolio → books → products → legGroups → legs → barrier → schedule → entries
-// That gives us: portfolio.books.{id}.products.{id}.legGroups.{id}.legs.{id}.barrier.schedule.{id}.level
-// Count: portfolio(1).books(2).{id}(3).products(4).{id}(5).legGroups(6).{id}(7).legs(8).{id}(9).barrier(10).schedule(11).{id}(12).level(13)
-// Plus: ...legs.{id}.marketData(10).volSurface(11).smile(12).{id}(13).vol(14) → deeper still
-// And: ...greeks(10).delta(11), etc.
-// Total reachable depth: 15 via portfolio.books.b1.products.p1.legGroups.g1.legs.l1.marketData.volSurface.smile.s25.source
+interface Category {
+  name: string
+  slug: string
+  products: Record<string, Product>
+}
+
+interface Department {
+  name: string
+  manager: string
+  budget: number
+  categories: Record<string, Category>
+}
+
 interface EcommerceCatalog {
-  portfolio: {
-    books: Record<
-      string,
-      {
-        name: string
-        desk: string
-        riskLimit: number
-        products: Record<string, Product>
-      }
-    >
+  catalog: {
+    departments: Record<string, Department>
   }
-  globalMarket: {
-    regime: 'normal' | 'stressed' | 'crisis'
-    lastUpdate: number
+  storeConfig: {
+    mode: 'normal' | 'sale' | 'clearance'
+    lastSync: number
   }
-  aggregatedDelta: number
-  aggregatedGamma: number
-  isHedged: boolean
-  needsRebalance: boolean
+  totalRevenue: number
+  totalInventory: number
+  isStocked: boolean
+  needsReorder: boolean
   _errors: Record<string, string[]>
 }
 
@@ -143,148 +123,104 @@ interface EcommerceCatalog {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const defaultBarrierSchedule: Record<string, BarrierScheduleEntry> = {
-  'obs-1': { date: '2025-03-15', level: 1.12, observed: false },
-  'obs-2': { date: '2025-06-15', level: 1.13, observed: false },
-}
-
-const defaultGreeks: GreeksSnapshot = {
-  delta: 0.55,
-  gamma: 0.03,
-  vega: 0.12,
-  theta: -0.04,
-  rho: 0.01,
-}
-
-const defaultVolSurface: VolSurface = {
-  atmVol: 0.1,
-  skew: -0.02,
-  kurtosis: 0.005,
-  smile: {
-    s25p: { strike: 1.08, vol: 0.12, source: 'market' },
-    s25c: { strike: 1.15, vol: 0.11, source: 'market' },
-    atm: { strike: 1.1, vol: 0.1, source: 'model' },
+const makeVariant = (overrides: Partial<Variant> = {}): Variant => ({
+  sku: 'SKU-001',
+  color: 'black',
+  size: 'M',
+  isActive: true,
+  pricing: {
+    base: 999,
+    sale: 799,
+    currency: 'USD',
+    margin: 0.2,
   },
-}
-
-const defaultMarketData: MarketData = {
-  spot: 1.1,
-  forward: 1.105,
-  domesticRate: 0.05,
-  foreignRate: 0.03,
-  volSurface: defaultVolSurface,
-}
-
-const makeLeg = (overrides: Partial<LegData> = {}): LegData => ({
-  direction: 'buy',
-  notional: 1_000_000,
-  strike: 1.1,
-  expiry: '2025-12-31',
-  optionType: 'call',
-  exerciseStyle: 'european',
-  premium: 25000,
-  premiumCurrency: 'USD',
-  barrier: {
-    type: 'none',
-    direction: 'up',
-    level: 0,
-    schedule: {},
+  inventory: {
+    stock: 100,
+    reserved: 5,
+    warehouse: 'WH-EAST',
   },
-  greeks: { ...defaultGreeks },
-  marketData: {
-    ...defaultMarketData,
-    volSurface: { ...defaultVolSurface, smile: { ...defaultVolSurface.smile } },
+  shipping: {
+    weight: 0.5,
+    dimensions: { length: 15, width: 7.5, height: 1 },
+    method: 'standard',
   },
-  isLocked: false,
+  reviews: {
+    r1: {
+      rating: 5,
+      verified: true,
+      sentiment: 'positive',
+      metadata: { helpfulVotes: 42, reportCount: 0, editedAt: null },
+    },
+  },
   ...overrides,
 })
 
-const ecommerceFixtures = {
-  empty: {
-    portfolio: {
-      books: {
-        b1: {
-          name: 'Premium Electronics',
-          desk: 'NYC',
-          riskLimit: 50_000_000,
-          products: {
-            p1: {
-              ccyPair: 'EURUSD',
-              valueDate: '2025-12-31',
-              tradeDate: '2025-01-15',
-              status: 'draft',
-              trader: 'jsmith',
-              counterparty: 'ACME Corp',
-              legGroups: {
-                g1: {
-                  strategy: 'straddle',
-                  legs: {
-                    l1: makeLeg({
-                      direction: 'buy',
-                      optionType: 'call',
-                      strike: 1.1,
-                    }),
-                    l2: makeLeg({
-                      direction: 'buy',
-                      optionType: 'put',
-                      strike: 1.1,
-                      greeks: { ...defaultGreeks, delta: -0.45 },
-                    }),
-                  },
-                  groupDelta: 0.1,
-                  groupNotional: 2_000_000,
+const makeCatalogFixture = (): EcommerceCatalog => ({
+  catalog: {
+    departments: {
+      electronics: {
+        name: 'Electronics',
+        manager: 'Jane Smith',
+        budget: 500_000,
+        categories: {
+          phones: {
+            name: 'Smartphones',
+            slug: 'phones',
+            products: {
+              p1: {
+                name: 'ProPhone X',
+                status: 'active',
+                brand: 'TechCo',
+                variants: {
+                  v1: makeVariant({
+                    sku: 'PP-X-BLK-M',
+                    color: 'black',
+                    size: 'M',
+                  }),
+                  v2: makeVariant({
+                    sku: 'PP-X-WHT-L',
+                    color: 'white',
+                    size: 'L',
+                    pricing: {
+                      base: 1099,
+                      sale: 899,
+                      currency: 'USD',
+                      margin: 0.18,
+                    },
+                    inventory: {
+                      stock: 50,
+                      reserved: 3,
+                      warehouse: 'WH-WEST',
+                    },
+                  }),
                 },
               },
-            },
-            p2: {
-              ccyPair: 'USDJPY',
-              valueDate: '2025-09-30',
-              tradeDate: '2025-01-15',
-              status: 'pending',
-              trader: 'jsmith',
-              counterparty: 'Beta Fund',
-              legGroups: {
-                g1: {
-                  strategy: 'vanilla',
-                  legs: {
-                    l1: makeLeg({
-                      direction: 'sell',
-                      optionType: 'put',
-                      strike: 148.5,
-                      notional: 5_000_000,
-                      premium: 120000,
-                      barrier: {
-                        type: 'knockout',
-                        direction: 'down',
-                        level: 140,
-                        schedule: { ...defaultBarrierSchedule },
-                      },
-                      greeks: {
-                        delta: -0.35,
-                        gamma: 0.02,
-                        vega: 0.15,
-                        theta: -0.06,
-                        rho: 0.008,
-                      },
-                      marketData: {
-                        spot: 150.2,
-                        forward: 149.8,
-                        domesticRate: 0.05,
-                        foreignRate: 0.002,
-                        volSurface: {
-                          atmVol: 0.08,
-                          skew: -0.01,
-                          kurtosis: 0.003,
-                          smile: {
-                            s25p: { strike: 146, vol: 0.09, source: 'market' },
-                            atm: { strike: 150, vol: 0.08, source: 'model' },
-                          },
-                        },
-                      },
-                    }),
-                  },
-                  groupDelta: -0.35,
-                  groupNotional: 5_000_000,
+              p2: {
+                name: 'BudgetTab',
+                status: 'draft',
+                brand: 'GadgetInc',
+                variants: {
+                  v1: makeVariant({
+                    sku: 'BT-SLV-S',
+                    color: 'silver',
+                    size: 'S',
+                    pricing: {
+                      base: 299,
+                      sale: 249,
+                      currency: 'USD',
+                      margin: 0.15,
+                    },
+                    inventory: {
+                      stock: 8,
+                      reserved: 2,
+                      warehouse: 'WH-EAST',
+                    },
+                    shipping: {
+                      weight: 0.3,
+                      dimensions: { length: 10, width: 6, height: 0.8 },
+                      method: 'express',
+                    },
+                  }),
                 },
               },
             },
@@ -292,74 +228,67 @@ const ecommerceFixtures = {
         },
       },
     },
-    globalMarket: {
-      regime: 'normal',
-      lastUpdate: Date.now(),
-    },
-    aggregatedDelta: 0,
-    aggregatedGamma: 0,
-    isHedged: true,
-    needsRebalance: false,
-    _errors: {},
-  } satisfies EcommerceCatalog,
-}
+  },
+  storeConfig: {
+    mode: 'normal',
+    lastSync: Date.now(),
+  },
+  totalRevenue: 0,
+  totalInventory: 0,
+  isStocked: true,
+  needsReorder: false,
+  _errors: {},
+})
 
 // ---------------------------------------------------------------------------
 // Custom Concerns
 // ---------------------------------------------------------------------------
 
 /**
- * Custom concern: margin sufficiency check
- * Returns { sufficient: boolean, required: number, available: number }
+ * Custom concern: budget sufficiency check
+ * Checks if variant pricing x quantity stays within department budget
  */
-const marginCheck: ConcernType<
-  { riskLimitPath: string; notionalPath: string },
-  { sufficient: boolean; required: number; available: number }
+const budgetCheck: ConcernType<
+  { budgetPath: string; pricePath: string; quantityPath: string },
+  { sufficient: boolean; cost: number; budget: number }
 > = {
-  name: 'marginCheck',
-  description: 'Checks if notional is within risk limit',
+  name: 'budgetCheck',
+  description: 'Checks if pricing x quantity stays within department budget',
   evaluate: (props) => {
     const state = props.state
-
-    const riskLimit = Number(dot.get__unsafe(state, props.riskLimitPath)) || 0
-    const notional = Number(dot.get__unsafe(state, props.notionalPath)) || 0
+    const budget = Number(dot.get__unsafe(state, props.budgetPath)) || 0
+    const price = Number(dot.get__unsafe(state, props.pricePath)) || 0
+    const quantity = Number(dot.get__unsafe(state, props.quantityPath)) || 0
+    const cost = price * quantity
 
     return {
-      sufficient: notional <= riskLimit,
-      required: notional,
-      available: riskLimit,
+      sufficient: cost <= budget,
+      cost,
+      budget,
     }
   },
 }
 
 /**
- * Custom concern: barrier proximity warning
- * Returns { isNearBarrier: boolean, distance: number, distancePct: number }
+ * Custom concern: stock alert
+ * Warns when stock minus reserved is below a threshold
  */
-const barrierProximity: ConcernType<
-  { spotPath: string; barrierLevelPath: string; thresholdPct: number },
-  { isNearBarrier: boolean; distance: number; distancePct: number }
+const stockAlert: ConcernType<
+  { stockPath: string; reservedPath: string; threshold: number },
+  { isLowStock: boolean; available: number; threshold: number }
 > = {
-  name: 'barrierProximity',
-  description: 'Warns when spot is near barrier level',
+  name: 'stockAlert',
+  description: 'Warns when available stock is below threshold',
   evaluate: (props) => {
     const state = props.state
-
-    const spot = Number(dot.get__unsafe(state, props.spotPath)) || 0
-    const barrierLevel =
-      Number(dot.get__unsafe(state, props.barrierLevelPath)) || 0
-
-    if (barrierLevel === 0 || spot === 0) {
-      return { isNearBarrier: false, distance: 0, distancePct: 0 }
-    }
-
-    const distance = Math.abs(spot - barrierLevel)
-    const distancePct = (distance / spot) * 100
+    const stock = Number(dot.get__unsafe(state, props.stockPath)) || 0
+    const reserved = Number(dot.get__unsafe(state, props.reservedPath)) || 0
+    const available = stock - reserved
 
     return {
-      isNearBarrier: distancePct <= props.thresholdPct,
-      distance,
-      distancePct,
+      isLowStock: available < props.threshold,
+      available,
+      threshold: props.threshold,
     }
   },
 }
@@ -368,60 +297,51 @@ const barrierProximity: ConcernType<
 // Path Constants (with hash key notation)
 // ---------------------------------------------------------------------------
 
-// Book b1, Product p1, LegGroup g1, Leg l1 paths
-const STRIKE_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.strike` as const
-const NOTIONAL_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.notional` as const
+// Department electronics, category phones, product p1, variant v1
+const PRICE_BASE_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.pricing.base` as const
+const PRICE_SALE_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.pricing.sale` as const
+const STOCK_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.inventory.stock` as const
+const RESERVED_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.inventory.reserved` as const
 const STATUS_P1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.status` as const
-const MARKET_DATA_SPOT_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.marketData.spot` as const
-const MARKET_DATA_FORWARD_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.marketData.forward` as const
-const IS_LOCKED_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.isLocked` as const
-const CCY_PAIR_P1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.ccyPair` as const
-const STRATEGY_G1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.strategy` as const
-const VOL_SURFACE_ATM_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.marketData.volSurface.atmVol` as const
-const SMILE_VOL_S25P =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.marketData.volSurface.smile.${_('s25p')}.vol` as const
-const SMILE_SOURCE_S25P =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.marketData.volSurface.smile.${_('s25p')}.source` as const
-const GROUP_NOTIONAL_G1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.groupNotional` as const
-const RISK_LIMIT_B1 = `portfolio.books.${_('b1')}.riskLimit` as const
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.status` as const
+const BRAND_P1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.brand` as const
+const IS_ACTIVE_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.isActive` as const
+const SHIPPING_WEIGHT_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.shipping.weight` as const
+const SHIPPING_DIM_LENGTH_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.shipping.dimensions.length` as const
 
-// Book b1, Product p1, LegGroup g1, Leg l2 paths
-const STRIKE_L2 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l2')}.strike` as const
-const GREEKS_DELTA_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.greeks.delta` as const
-const GREEKS_DELTA_L2 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l2')}.greeks.delta` as const
-const GREEKS_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p1')}.legGroups.${_('g1')}.legs.${_('l1')}.greeks` as const
+// Variant v2 of product p1
+const PRICE_BASE_V2 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v2')}.pricing.base` as const
+const PRICING_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.pricing` as const
 
-// Book b1, Product p2, LegGroup g1, Leg l1 paths
-const BARRIER_TYPE_P2_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p2')}.legGroups.${_('g1')}.legs.${_('l1')}.barrier.type` as const
-const BARRIER_LEVEL_P2_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p2')}.legGroups.${_('g1')}.legs.${_('l1')}.barrier.level` as const
-const BARRIER_SCHEDULE_OBS1 =
-  `portfolio.books.${_('b1')}.products.${_('p2')}.legGroups.${_('g1')}.legs.${_('l1')}.barrier.schedule.${_('obs-1')}.level` as const
-const MARKET_DATA_SPOT_P2_L1 =
-  `portfolio.books.${_('b1')}.products.${_('p2')}.legGroups.${_('g1')}.legs.${_('l1')}.marketData.spot` as const
+// Review paths (deep nesting)
+const REVIEW_HELPFUL_VOTES =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.reviews.${_('r1')}.metadata.helpfulVotes` as const
+const REVIEW_EDITED_AT =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p1')}.variants.${_('v1')}.reviews.${_('r1')}.metadata.editedAt` as const
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// Product p2, variant v1 — low stock scenario
+const STOCK_P2_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p2')}.variants.${_('v1')}.inventory.stock` as const
+const RESERVED_P2_V1 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p2')}.variants.${_('v1')}.inventory.reserved` as const
+const STATUS_P2 =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.products.${_('p2')}.status` as const
 
-/** Deep clone fixture to prevent valtio proxy from mutating the original */
-const freshFixture = (): EcommerceCatalog =>
-  JSON.parse(JSON.stringify(ecommerceFixtures.empty))
+// Department-level
+const BUDGET_ELECTRONICS =
+  `catalog.departments.${_('electronics')}.budget` as const
+const CATEGORY_NAME =
+  `catalog.departments.${_('electronics')}.categories.${_('phones')}.name` as const
 
 // ---------------------------------------------------------------------------
 // Store factory
@@ -430,14 +350,10 @@ const freshFixture = (): EcommerceCatalog =>
 const createCatalogStore = () => createGenericStore<EcommerceCatalog>()
 
 // ---------------------------------------------------------------------------
-// Test component
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Coverage', () => {
+describe('Integration: E-commerce Catalog -- Deep Nesting & Full Feature Coverage', () => {
   let store: ReturnType<typeof createCatalogStore>
 
   beforeEach(() => {
@@ -445,211 +361,386 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
   })
 
   // =========================================================================
-  // 1. VALIDATION (validationState) on deeply nested paths
+  // 1. VALIDATION (headless)
   // =========================================================================
 
-  describe('Validation on deeply nested paths', () => {
-    it('validates strike price with Zod schema at depth 9', async () => {
-      function StrikeValidator() {
-        store.useConcerns('strike-validation', {
-          [STRIKE_L1]: {
+  describe('Validation on deeply nested paths (headless)', () => {
+    it('validates variant base price', async () => {
+      const rendered = renderWithStore(store, makeCatalogFixture(), {
+        concerns: {
+          [PRICE_BASE_V1]: {
             validationState: {
               schema: z
                 .number()
-                .positive('Strike must be positive')
-                .max(10, 'Strike too high for EURUSD'),
+                .positive('Price must be positive')
+                .max(10000, 'Price too high'),
             },
           },
-        })
-
-        const strikeField = store
-          .withConcerns({ validationState: true })
-          .useFieldStore(STRIKE_L1)
-
-        return (
-          <div>
-            <input
-              data-testid="strike-input"
-              type="number"
-              value={strikeField.value}
-              onChange={(e) => strikeField.setValue(parseFloat(e.target.value))}
-            />
-            {strikeField.validationState?.isError && (
-              <span data-testid="strike-error">
-                {strikeField.validationState.errors[0]?.message}
-              </span>
-            )}
-            <span data-testid="strike-valid">
-              {String(!strikeField.validationState?.isError)}
-            </span>
-          </div>
-        )
-      }
-
-      renderWithStore(<StrikeValidator />, store, freshFixture())
-
-      // Initial value 1.1 should be valid
-      await flushEffects()
-      expect(screen.getByTestId('strike-valid')).toHaveTextContent('true')
-
-      // Set strike to -5 → invalid
-      fireEvent.change(screen.getByTestId('strike-input'), {
-        target: { value: '-5' },
+        },
       })
-      await flushEffects()
-      expect(screen.getByTestId('strike-error')).toHaveTextContent(
-        'Strike must be positive',
-      )
+      await flush()
 
-      // Set strike to 15 → too high
-      fireEvent.change(screen.getByTestId('strike-input'), {
-        target: { value: '15' },
-      })
-      await flushEffects()
-      expect(screen.getByTestId('strike-error')).toHaveTextContent(
-        'Strike too high for EURUSD',
-      )
-
-      // Set strike to 1.25 → valid again
-      fireEvent.change(screen.getByTestId('strike-input'), {
-        target: { value: '1.25' },
-      })
-      await flushEffects()
-      expect(screen.getByTestId('strike-valid')).toHaveTextContent('true')
-    })
-
-    it('validates barrier schedule entry at depth 13', async () => {
-      function BarrierScheduleValidator() {
-        store.useConcerns('barrier-schedule-val', {
-          [BARRIER_SCHEDULE_OBS1]: {
-            validationState: {
-              schema: z.number().positive('Barrier level must be positive'),
-            },
-          },
-        })
-
-        const levelField = store
-          .withConcerns({ validationState: true })
-          .useFieldStore(BARRIER_SCHEDULE_OBS1)
-
-        return (
-          <div>
-            <input
-              data-testid="barrier-level"
-              type="number"
-              value={levelField.value}
-              onChange={(e) => levelField.setValue(parseFloat(e.target.value))}
-            />
-            {levelField.validationState?.isError && (
-              <span data-testid="barrier-level-error">
-                {levelField.validationState.errors[0]?.message}
-              </span>
-            )}
-          </div>
-        )
-      }
-
-      renderWithStore(<BarrierScheduleValidator />, store, freshFixture())
-      await flushEffects()
-
-      // Initial 1.12 is valid
+      // Initial value 999 should be valid
+      const concerns = rendered.storeInstance._concerns[PRICE_BASE_V1]
       expect(
-        screen.queryByTestId('barrier-level-error'),
-      ).not.toBeInTheDocument()
+        (concerns?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(false)
 
-      // Set to -1 → invalid
-      fireEvent.change(screen.getByTestId('barrier-level'), {
-        target: { value: '-1' },
-      })
-      await flushEffects()
-      expect(screen.getByTestId('barrier-level-error')).toHaveTextContent(
-        'Barrier level must be positive',
-      )
+      // Set invalid value
+      dot.set__unsafe(rendered.storeInstance.state, PRICE_BASE_V1, -5)
+      await flush()
+
+      const updated = rendered.storeInstance._concerns[PRICE_BASE_V1]
+      expect(
+        (updated?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(true)
     })
 
-    it('validates vol surface smile point at depth 15', async () => {
-      function SmileValidator() {
-        store.useConcerns('smile-val', {
-          [SMILE_VOL_S25P]: {
+    it('validates review helpfulVotes at deep nesting', async () => {
+      const rendered = renderWithStore(store, makeCatalogFixture(), {
+        concerns: {
+          [REVIEW_HELPFUL_VOTES]: {
             validationState: {
               schema: z
                 .number()
-                .min(0, 'Vol cannot be negative')
-                .max(2, 'Vol unreasonably high'),
+                .int('Must be integer')
+                .nonnegative('Votes cannot be negative'),
             },
           },
-        })
-
-        const volField = store
-          .withConcerns({ validationState: true })
-          .useFieldStore(SMILE_VOL_S25P)
-
-        return (
-          <div>
-            <input
-              data-testid="smile-vol"
-              type="number"
-              step="0.01"
-              value={volField.value}
-              onChange={(e) => volField.setValue(parseFloat(e.target.value))}
-            />
-            {volField.validationState?.isError && (
-              <span data-testid="smile-vol-error">
-                {volField.validationState.errors[0]?.message}
-              </span>
-            )}
-          </div>
-        )
-      }
-
-      renderWithStore(<SmileValidator />, store, freshFixture())
-      await flushEffects()
-
-      expect(screen.queryByTestId('smile-vol-error')).not.toBeInTheDocument()
-
-      fireEvent.change(screen.getByTestId('smile-vol'), {
-        target: { value: '-0.05' },
+        },
       })
-      await flushEffects()
-      expect(screen.getByTestId('smile-vol-error')).toHaveTextContent(
-        'Vol cannot be negative',
+      await flush()
+
+      // Initial 42 is valid
+      const concerns = rendered.storeInstance._concerns[REVIEW_HELPFUL_VOTES]
+      expect(
+        (concerns?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(false)
+
+      // Set to -1 -> invalid
+      dot.set__unsafe(rendered.storeInstance.state, REVIEW_HELPFUL_VOTES, -1)
+      await flush()
+
+      const updated = rendered.storeInstance._concerns[REVIEW_HELPFUL_VOTES]
+      expect(
+        (updated?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(true)
+    })
+
+    it('validates review metadata editedAt', async () => {
+      const rendered = renderWithStore(store, makeCatalogFixture(), {
+        concerns: {
+          [REVIEW_EDITED_AT]: {
+            validationState: {
+              schema: z
+                .string()
+                .datetime('Must be valid ISO datetime')
+                .nullable(),
+            },
+          },
+        },
+      })
+      await flush()
+
+      // Initial null is valid (nullable)
+      const concerns = rendered.storeInstance._concerns[REVIEW_EDITED_AT]
+      expect(
+        (concerns?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(false)
+
+      // Set to invalid date string
+      dot.set__unsafe(
+        rendered.storeInstance.state,
+        REVIEW_EDITED_AT,
+        'not-a-date',
       )
+      await flush()
+
+      const updated = rendered.storeInstance._concerns[REVIEW_EDITED_AT]
+      expect(
+        (updated?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(true)
     })
   })
 
   // =========================================================================
-  // 2. CONDITIONAL UI (disabledWhen, visibleWhen, readonlyWhen) with BoolLogic
+  // 2. DYNAMIC TEXT (headless)
+  // =========================================================================
+
+  describe('Dynamic text interpolation (headless)', () => {
+    it('interpolates dynamic tooltip from deeply nested pricing data', async () => {
+      const rendered = renderWithStore(store, makeCatalogFixture(), {
+        concerns: {
+          [PRICE_BASE_V1]: {
+            dynamicTooltip: {
+              template: `Base: {{${PRICE_BASE_V1}}} | Sale: {{${PRICE_SALE_V1}}}`,
+            },
+          },
+        },
+      })
+      await flush()
+
+      const concerns = rendered.storeInstance._concerns[PRICE_BASE_V1]
+      const tooltip = String(concerns?.['dynamicTooltip'] ?? '')
+      expect(tooltip).toBe('Base: 999 | Sale: 799')
+    })
+
+    it('interpolates dynamic label with brand and category', async () => {
+      const rendered = renderWithStore(store, makeCatalogFixture(), {
+        concerns: {
+          [STOCK_V1]: {
+            dynamicLabel: {
+              template: `Stock ({{${BRAND_P1}}} {{${CATEGORY_NAME}}})`,
+            },
+          },
+        },
+      })
+      await flush()
+
+      const concerns = rendered.storeInstance._concerns[STOCK_V1]
+      const label = String(concerns?.['dynamicLabel'] ?? '')
+      expect(label).toBe('Stock (TechCo Smartphones)')
+    })
+
+    it('interpolates dynamic placeholder with shipping data', async () => {
+      const rendered = renderWithStore(store, makeCatalogFixture(), {
+        concerns: {
+          [PRICE_BASE_V1]: {
+            dynamicPlaceholder: {
+              template: `Weight: {{${SHIPPING_WEIGHT_V1}}}kg`,
+            },
+          },
+        },
+      })
+      await flush()
+
+      const concerns = rendered.storeInstance._concerns[PRICE_BASE_V1]
+      const placeholder = String(concerns?.['dynamicPlaceholder'] ?? '')
+      expect(placeholder).toBe('Weight: 0.5kg')
+    })
+  })
+
+  // =========================================================================
+  // 3. CUSTOM CONCERNS (headless)
+  // =========================================================================
+
+  describe('Custom concerns (headless)', () => {
+    it('budgetCheck concern validates pricing against department budget', async () => {
+      function BudgetCheckWrapper() {
+        store.useConcerns(
+          'budget-check',
+          {
+            [PRICE_BASE_V1]: {
+              budgetCheck: {
+                budgetPath: BUDGET_ELECTRONICS,
+                pricePath: PRICE_BASE_V1,
+                quantityPath: STOCK_V1,
+              },
+            },
+          },
+          [...defaultConcerns, budgetCheck],
+        )
+        return <div data-testid="wrapper">budget</div>
+      }
+
+      const rendered = renderWithStore(
+        <BudgetCheckWrapper />,
+        store,
+        makeCatalogFixture(),
+      )
+      await flush()
+
+      // 999 * 100 = 99,900 vs 500,000 budget -> sufficient
+      const concerns = rendered.storeInstance._concerns[PRICE_BASE_V1]
+      const result = concerns?.['budgetCheck'] as {
+        sufficient: boolean
+        cost: number
+        budget: number
+      }
+      expect(result.sufficient).toBe(true)
+      expect(result.cost).toBe(99_900)
+
+      // Increase price to 6000 -> 6000 * 100 = 600,000 > 500,000 -> insufficient
+      dot.set__unsafe(rendered.storeInstance.state, PRICE_BASE_V1, 6000)
+      await flush()
+
+      const updated = rendered.storeInstance._concerns[PRICE_BASE_V1]
+      const updatedResult = updated?.['budgetCheck'] as {
+        sufficient: boolean
+        cost: number
+        budget: number
+      }
+      expect(updatedResult.sufficient).toBe(false)
+      expect(updatedResult.cost).toBe(600_000)
+    })
+
+    it('stockAlert concern warns when available stock is low', async () => {
+      function StockAlertWrapper() {
+        store.useConcerns(
+          'stock-alert',
+          {
+            [STOCK_P2_V1]: {
+              stockAlert: {
+                stockPath: STOCK_P2_V1,
+                reservedPath: RESERVED_P2_V1,
+                threshold: 10,
+              },
+            },
+          },
+          [stockAlert],
+        )
+        return <div data-testid="wrapper">stock</div>
+      }
+
+      const rendered = renderWithStore(
+        <StockAlertWrapper />,
+        store,
+        makeCatalogFixture(),
+      )
+      await flush()
+
+      // P2 v1: stock 8, reserved 2 -> available 6 < threshold 10 -> low stock
+      const concerns = rendered.storeInstance._concerns[STOCK_P2_V1]
+      const result = concerns?.['stockAlert'] as {
+        isLowStock: boolean
+        available: number
+      }
+      expect(result.isLowStock).toBe(true)
+      expect(result.available).toBe(6)
+
+      // Increase stock to 50 -> available 48 > 10 -> not low
+      dot.set__unsafe(rendered.storeInstance.state, STOCK_P2_V1, 50)
+      await flush()
+
+      const updated = rendered.storeInstance._concerns[STOCK_P2_V1]
+      const updatedResult = updated?.['stockAlert'] as {
+        isLowStock: boolean
+        available: number
+      }
+      expect(updatedResult.isLowStock).toBe(false)
+    })
+
+    it('custom concern combined with built-in concerns on same path', async () => {
+      function CombinedWrapper() {
+        store.useConcerns(
+          'combined',
+          {
+            [STOCK_V1]: {
+              validationState: {
+                schema: z.number().nonnegative('Stock cannot be negative'),
+              },
+              disabledWhen: {
+                condition: {
+                  IS_EQUAL: [STATUS_P1, 'discontinued'],
+                },
+              },
+              stockAlert: {
+                stockPath: STOCK_V1,
+                reservedPath: RESERVED_V1,
+                threshold: 10,
+              },
+            },
+          },
+          [...defaultConcerns, stockAlert],
+        )
+        return <div data-testid="wrapper">combined</div>
+      }
+
+      const rendered = renderWithStore(
+        <CombinedWrapper />,
+        store,
+        makeCatalogFixture(),
+      )
+      await flush()
+
+      // All healthy initially: stock=100, reserved=5, available=95, status=active
+      const concerns = rendered.storeInstance._concerns[STOCK_V1]
+      expect(
+        (concerns?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(false)
+      expect(concerns?.['disabledWhen']).toBe(false)
+      const alert = concerns?.['stockAlert'] as { isLowStock: boolean }
+      expect(alert.isLowStock).toBe(false)
+
+      // Set negative stock -> validation fails, stock alert still computes
+      dot.set__unsafe(rendered.storeInstance.state, STOCK_V1, -5)
+      await flush()
+
+      const updated = rendered.storeInstance._concerns[STOCK_V1]
+      expect(
+        (updated?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(true)
+    })
+  })
+
+  // =========================================================================
+  // 4. DIRECT STORE INSTANCE (headless)
+  // =========================================================================
+
+  describe('Direct store instance assertions (headless)', () => {
+    it('concern results accessible via _concerns proxy at deep paths', async () => {
+      const rendered = renderWithStore(store, makeCatalogFixture(), {
+        concerns: {
+          [STATUS_P1]: {
+            validationState: {
+              schema: z.string().min(1, 'Status required'),
+            },
+            disabledWhen: {
+              condition: {
+                IS_EQUAL: [STATUS_P1, 'archived'],
+              },
+            },
+          },
+        },
+      })
+      await flush()
+
+      // Access concern results directly
+      const statusConcerns = rendered.storeInstance._concerns[STATUS_P1]
+      expect(statusConcerns).toBeDefined()
+      expect(
+        (statusConcerns?.['validationState'] as { isError: boolean })?.isError,
+      ).toBe(false)
+      expect(statusConcerns?.['disabledWhen']).toBe(false)
+
+      // Mutate state directly and re-check
+      rendered.storeInstance.state.catalog.departments[
+        _('electronics')
+      ]!.categories[_('phones')]!.products[_('p1')]!.status = 'archived'
+      await flush()
+
+      const updatedConcerns = rendered.storeInstance._concerns[STATUS_P1]
+      expect(updatedConcerns?.['disabledWhen']).toBe(true)
+    })
+  })
+
+  // =========================================================================
+  // 5. CONDITIONAL UI (React rendering)
   // =========================================================================
 
   describe('Conditional UI with BoolLogic', () => {
-    it('disables strike editing when product status is approved (deep BoolLogic)', async () => {
-      function StrikeDisable() {
+    it('disables price editing when product status is archived', async () => {
+      function PriceDisable() {
         const statusField = store.useFieldStore(STATUS_P1)
 
-        store.useConcerns('strike-disabled', {
-          [STRIKE_L1]: {
+        store.useConcerns('price-disabled', {
+          [PRICE_BASE_V1]: {
             disabledWhen: {
               condition: {
                 OR: [
-                  {
-                    IS_EQUAL: [STATUS_P1, 'approved'],
-                  },
-                  {
-                    IS_EQUAL: [STATUS_P1, 'executed'],
-                  },
-                  {
-                    IS_EQUAL: [IS_LOCKED_L1, true],
-                  },
+                  { IS_EQUAL: [STATUS_P1, 'archived'] },
+                  { IS_EQUAL: [STATUS_P1, 'discontinued'] },
+                  { IS_EQUAL: [IS_ACTIVE_V1, false] },
                 ],
               },
             },
           },
         })
 
-        const strikeField = store
+        const priceField = store
           .withConcerns({ disabledWhen: true })
-          .useFieldStore(STRIKE_L1)
-        const isDisabled = strikeField.disabledWhen === true
+          .useFieldStore(PRICE_BASE_V1)
+        const isDisabled = priceField.disabledWhen === true
 
         return (
           <div>
@@ -660,93 +751,96 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
                 statusField.setValue(
                   e.target.value as
                     | 'draft'
-                    | 'pending'
-                    | 'approved'
-                    | 'rejected'
-                    | 'executed',
+                    | 'active'
+                    | 'archived'
+                    | 'discontinued',
                 )
               }
             >
               <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="executed">Executed</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="discontinued">Discontinued</option>
             </select>
             <input
-              data-testid="strike-input"
+              data-testid="price-input"
               type="number"
-              value={strikeField.value}
+              value={priceField.value}
               disabled={isDisabled}
-              onChange={(e) => strikeField.setValue(parseFloat(e.target.value))}
+              onChange={(e) => priceField.setValue(parseFloat(e.target.value))}
             />
             <span data-testid="disabled-state">{String(isDisabled)}</span>
           </div>
         )
       }
 
-      renderWithStore(<StrikeDisable />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<PriceDisable />, store, makeCatalogFixture())
+      await flush()
 
-      // Draft → not disabled
+      // Active -> not disabled
       expect(screen.getByTestId('disabled-state')).toHaveTextContent('false')
 
-      // Approved → disabled
+      // Archived -> disabled
       fireEvent.change(screen.getByTestId('status-select'), {
-        target: { value: 'approved' },
+        target: { value: 'archived' },
       })
-      await flushEffects()
+      await flush()
       expect(screen.getByTestId('disabled-state')).toHaveTextContent('true')
-      expect(screen.getByTestId('strike-input')).toBeDisabled()
+      expect(screen.getByTestId('price-input')).toBeDisabled()
 
-      // Back to draft → enabled
+      // Back to active -> enabled
       fireEvent.change(screen.getByTestId('status-select'), {
-        target: { value: 'draft' },
+        target: { value: 'active' },
       })
-      await flushEffects()
+      await flush()
       expect(screen.getByTestId('disabled-state')).toHaveTextContent('false')
     })
 
-    it('shows barrier config only when barrier type is not none (visibleWhen)', async () => {
-      function BarrierVisibility() {
-        const barrierTypeField = store.useFieldStore(BARRIER_TYPE_P2_L1)
+    it('shows restock config only when alertType is not none (visibleWhen)', async () => {
+      function RestockVisibility() {
+        const statusField = store.useFieldStore(STATUS_P2)
 
-        store.useConcerns('barrier-vis', {
-          [BARRIER_LEVEL_P2_L1]: {
+        store.useConcerns('restock-vis', {
+          [STOCK_P2_V1]: {
             visibleWhen: {
               condition: {
-                NOT: { IS_EQUAL: [BARRIER_TYPE_P2_L1, 'none'] },
+                NOT: { IS_EQUAL: [STATUS_P2, 'discontinued'] },
               },
             },
           },
         })
 
-        const barrierLevelField = store
+        const stockField = store
           .withConcerns({ visibleWhen: true })
-          .useFieldStore(BARRIER_LEVEL_P2_L1)
-        const showBarrierLevel = barrierLevelField.visibleWhen !== false
+          .useFieldStore(STOCK_P2_V1)
+        const showStock = stockField.visibleWhen !== false
 
         return (
           <div>
             <select
-              data-testid="barrier-type"
-              value={barrierTypeField.value}
+              data-testid="p2-status"
+              value={statusField.value}
               onChange={(e) =>
-                barrierTypeField.setValue(
-                  e.target.value as 'knockout' | 'knockin' | 'none',
+                statusField.setValue(
+                  e.target.value as
+                    | 'draft'
+                    | 'active'
+                    | 'archived'
+                    | 'discontinued',
                 )
               }
             >
-              <option value="none">None</option>
-              <option value="knockout">Knockout</option>
-              <option value="knockin">Knockin</option>
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+              <option value="discontinued">Discontinued</option>
             </select>
-            {showBarrierLevel && (
+            {showStock && (
               <input
-                data-testid="barrier-level-input"
+                data-testid="stock-input"
                 type="number"
-                value={barrierLevelField.value}
+                value={stockField.value}
                 onChange={(e) =>
-                  barrierLevelField.setValue(parseFloat(e.target.value))
+                  stockField.setValue(parseFloat(e.target.value))
                 }
               />
             )}
@@ -754,108 +848,106 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<BarrierVisibility />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<RestockVisibility />, store, makeCatalogFixture())
+      await flush()
 
-      // P2 leg1 has barrier type = knockout → visible
-      expect(screen.getByTestId('barrier-level-input')).toBeInTheDocument()
+      // P2 status = draft -> visible
+      expect(screen.getByTestId('stock-input')).toBeInTheDocument()
 
-      // Set to none → hidden
-      fireEvent.change(screen.getByTestId('barrier-type'), {
-        target: { value: 'none' },
+      // Set to discontinued -> hidden
+      fireEvent.change(screen.getByTestId('p2-status'), {
+        target: { value: 'discontinued' },
       })
-      await flushEffects()
-      expect(
-        screen.queryByTestId('barrier-level-input'),
-      ).not.toBeInTheDocument()
+      await flush()
+      expect(screen.queryByTestId('stock-input')).not.toBeInTheDocument()
 
-      // Set to knockin → visible again
-      fireEvent.change(screen.getByTestId('barrier-type'), {
-        target: { value: 'knockin' },
+      // Set to active -> visible again
+      fireEvent.change(screen.getByTestId('p2-status'), {
+        target: { value: 'active' },
       })
-      await flushEffects()
-      expect(screen.getByTestId('barrier-level-input')).toBeInTheDocument()
+      await flush()
+      expect(screen.getByTestId('stock-input')).toBeInTheDocument()
     })
 
-    it('makes fields readonly in crisis market regime (readonlyWhen)', async () => {
-      function CrisisReadonly() {
-        const regimeField = store.useFieldStore('globalMarket.regime' as const)
+    it('makes fields readonly in clearance mode (readonlyWhen)', async () => {
+      function ClearanceReadonly() {
+        const modeField = store.useFieldStore('storeConfig.mode' as const)
 
-        store.useConcerns('crisis-readonly', {
-          [STRIKE_L1]: {
+        store.useConcerns('clearance-readonly', {
+          [PRICE_BASE_V1]: {
             readonlyWhen: {
               condition: {
-                IS_EQUAL: ['globalMarket.regime' as const, 'crisis'],
+                IS_EQUAL: ['storeConfig.mode' as const, 'clearance'],
               },
             },
           },
         })
 
-        const strikeField = store
+        const priceField = store
           .withConcerns({ readonlyWhen: true })
-          .useFieldStore(STRIKE_L1)
-        const isReadonly = strikeField.readonlyWhen === true
+          .useFieldStore(PRICE_BASE_V1)
+        const isReadonly = priceField.readonlyWhen === true
 
         return (
           <div>
             <select
-              data-testid="regime-select"
-              value={regimeField.value}
+              data-testid="mode-select"
+              value={modeField.value}
               onChange={(e) =>
-                regimeField.setValue(
-                  e.target.value as 'normal' | 'stressed' | 'crisis',
+                modeField.setValue(
+                  e.target.value as 'normal' | 'sale' | 'clearance',
                 )
               }
             >
               <option value="normal">Normal</option>
-              <option value="stressed">Stressed</option>
-              <option value="crisis">Crisis</option>
+              <option value="sale">Sale</option>
+              <option value="clearance">Clearance</option>
             </select>
             <input
-              data-testid="strike-input"
+              data-testid="price-input"
               type="number"
-              value={strikeField.value}
+              value={priceField.value}
               readOnly={isReadonly}
-              onChange={(e) => strikeField.setValue(parseFloat(e.target.value))}
+              onChange={(e) => priceField.setValue(parseFloat(e.target.value))}
             />
           </div>
         )
       }
 
-      renderWithStore(<CrisisReadonly />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<ClearanceReadonly />, store, makeCatalogFixture())
+      await flush()
 
-      expect(screen.getByTestId('strike-input')).not.toHaveAttribute('readonly')
+      expect(screen.getByTestId('price-input')).not.toHaveAttribute('readonly')
 
-      fireEvent.change(screen.getByTestId('regime-select'), {
-        target: { value: 'crisis' },
+      fireEvent.change(screen.getByTestId('mode-select'), {
+        target: { value: 'clearance' },
       })
-      await flushEffects()
-      expect(screen.getByTestId('strike-input')).toHaveAttribute('readonly')
+      await flush()
+      expect(screen.getByTestId('price-input')).toHaveAttribute('readonly')
     })
 
     it('uses complex AND/OR/NOT BoolLogic for multi-condition disable', async () => {
       function ComplexConditions() {
         const statusField = store.useFieldStore(STATUS_P1)
-        const regimeField = store.useFieldStore('globalMarket.regime' as const)
+        const modeField = store.useFieldStore('storeConfig.mode' as const)
 
-        // Disable notional when: (status != draft) AND (regime = stressed OR regime = crisis)
+        // Disable stock when: (status != active) AND (mode = sale OR mode = clearance)
         store.useConcerns('complex-conditions', {
-          [NOTIONAL_L1]: {
+          [STOCK_V1]: {
             disabledWhen: {
               condition: {
                 AND: [
                   {
-                    NOT: {
-                      IS_EQUAL: [STATUS_P1, 'draft'],
-                    },
+                    NOT: { IS_EQUAL: [STATUS_P1, 'active'] },
                   },
                   {
                     OR: [
                       {
-                        IS_EQUAL: ['globalMarket.regime' as const, 'stressed'],
+                        IS_EQUAL: ['storeConfig.mode' as const, 'sale'],
                       },
-                      { IS_EQUAL: ['globalMarket.regime' as const, 'crisis'] },
+                      {
+                        IS_EQUAL: ['storeConfig.mode' as const, 'clearance'],
+                      },
                     ],
                   },
                 ],
@@ -864,10 +956,10 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
           },
         })
 
-        const notionalField = store
+        const stockField = store
           .withConcerns({ disabledWhen: true })
-          .useFieldStore(NOTIONAL_L1)
-        const isDisabled = notionalField.disabledWhen === true
+          .useFieldStore(STOCK_V1)
+        const isDisabled = stockField.disabledWhen === true
 
         return (
           <div>
@@ -878,477 +970,177 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
                 statusField.setValue(
                   e.target.value as
                     | 'draft'
-                    | 'pending'
-                    | 'approved'
-                    | 'rejected'
-                    | 'executed',
+                    | 'active'
+                    | 'archived'
+                    | 'discontinued',
                 )
               }
             >
               <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
             </select>
             <select
-              data-testid="regime"
-              value={regimeField.value}
+              data-testid="mode"
+              value={modeField.value}
               onChange={(e) =>
-                regimeField.setValue(
-                  e.target.value as 'normal' | 'stressed' | 'crisis',
+                modeField.setValue(
+                  e.target.value as 'normal' | 'sale' | 'clearance',
                 )
               }
             >
               <option value="normal">Normal</option>
-              <option value="stressed">Stressed</option>
-              <option value="crisis">Crisis</option>
+              <option value="sale">Sale</option>
+              <option value="clearance">Clearance</option>
             </select>
             <input
-              data-testid="notional"
+              data-testid="stock"
               type="number"
-              value={notionalField.value}
+              value={stockField.value}
               disabled={isDisabled}
-              onChange={(e) =>
-                notionalField.setValue(parseFloat(e.target.value))
-              }
+              onChange={(e) => stockField.setValue(parseFloat(e.target.value))}
             />
           </div>
         )
       }
 
-      renderWithStore(<ComplexConditions />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<ComplexConditions />, store, makeCatalogFixture())
+      await flush()
 
-      // draft + normal → enabled
-      expect(screen.getByTestId('notional')).not.toBeDisabled()
+      // active + normal -> enabled
+      expect(screen.getByTestId('stock')).not.toBeDisabled()
 
-      // draft + stressed → enabled (because status IS draft, AND fails)
-      fireEvent.change(screen.getByTestId('regime'), {
-        target: { value: 'stressed' },
+      // active + sale -> enabled (because status IS active, AND fails)
+      fireEvent.change(screen.getByTestId('mode'), {
+        target: { value: 'sale' },
       })
-      await flushEffects()
-      expect(screen.getByTestId('notional')).not.toBeDisabled()
+      await flush()
+      expect(screen.getByTestId('stock')).not.toBeDisabled()
 
-      // pending + stressed → disabled (status != draft AND regime = stressed)
+      // draft + sale -> disabled (status != active AND mode = sale)
       fireEvent.change(screen.getByTestId('status'), {
-        target: { value: 'pending' },
+        target: { value: 'draft' },
       })
-      await flushEffects()
-      expect(screen.getByTestId('notional')).toBeDisabled()
+      await flush()
+      expect(screen.getByTestId('stock')).toBeDisabled()
 
-      // pending + normal → enabled (regime condition fails)
-      fireEvent.change(screen.getByTestId('regime'), {
+      // draft + normal -> enabled (mode condition fails)
+      fireEvent.change(screen.getByTestId('mode'), {
         target: { value: 'normal' },
       })
-      await flushEffects()
-      expect(screen.getByTestId('notional')).not.toBeDisabled()
+      await flush()
+      expect(screen.getByTestId('stock')).not.toBeDisabled()
     })
   })
 
   // =========================================================================
-  // 3. DYNAMIC TEXT (dynamicLabel, dynamicTooltip, dynamicPlaceholder)
-  // =========================================================================
-
-  describe('Dynamic text interpolation', () => {
-    it('interpolates dynamic tooltip from deeply nested market data', async () => {
-      function DynamicTooltipComponent() {
-        store.useConcerns('tooltips', {
-          [STRIKE_L1]: {
-            dynamicTooltip: {
-              template: `Spot: {{${MARKET_DATA_SPOT_L1}}} | Fwd: {{${MARKET_DATA_FORWARD_L1}}}`,
-            },
-          },
-        })
-
-        const strikeField = store
-          .withConcerns({ dynamicTooltip: true })
-          .useFieldStore(STRIKE_L1)
-        const tooltip = String(strikeField.dynamicTooltip ?? '')
-
-        return (
-          <div>
-            <div data-testid="strike-tooltip" title={tooltip}>
-              <input
-                data-testid="strike"
-                type="number"
-                value={strikeField.value}
-                onChange={(e) =>
-                  strikeField.setValue(parseFloat(e.target.value))
-                }
-              />
-            </div>
-            <span data-testid="tooltip-text">{tooltip}</span>
-          </div>
-        )
-      }
-
-      renderWithStore(<DynamicTooltipComponent />, store, freshFixture())
-      await flushEffects()
-
-      expect(screen.getByTestId('tooltip-text')).toHaveTextContent(
-        'Spot: 1.1 | Fwd: 1.105',
-      )
-    })
-
-    it('interpolates dynamic label with ccyPair and strategy', async () => {
-      function DynamicLabelComponent() {
-        store.useConcerns('labels', {
-          [NOTIONAL_L1]: {
-            dynamicLabel: {
-              template: `Notional ({{${CCY_PAIR_P1}}} {{${STRATEGY_G1}}})`,
-            },
-          },
-        })
-
-        const notionalField = store
-          .withConcerns({ dynamicLabel: true })
-          .useFieldStore(NOTIONAL_L1)
-        const label = String(notionalField.dynamicLabel ?? '')
-
-        return <span data-testid="notional-label">{label}</span>
-      }
-
-      renderWithStore(<DynamicLabelComponent />, store, freshFixture())
-      await flushEffects()
-
-      expect(screen.getByTestId('notional-label')).toHaveTextContent(
-        'Notional (EURUSD straddle)',
-      )
-    })
-
-    it('interpolates dynamic placeholder with vol surface data at depth 14', async () => {
-      function DynamicPlaceholderComponent() {
-        store.useConcerns('placeholders', {
-          [STRIKE_L1]: {
-            dynamicPlaceholder: {
-              template: `ATM Vol: {{${VOL_SURFACE_ATM_L1}}}`,
-            },
-          },
-        })
-
-        const strikeField = store
-          .withConcerns({ dynamicPlaceholder: true })
-          .useFieldStore(STRIKE_L1)
-        const placeholder = String(strikeField.dynamicPlaceholder ?? '')
-
-        return (
-          <input
-            data-testid="strike"
-            placeholder={placeholder}
-            value=""
-            readOnly
-          />
-        )
-      }
-
-      renderWithStore(<DynamicPlaceholderComponent />, store, freshFixture())
-      await flushEffects()
-
-      expect(screen.getByTestId('strike')).toHaveAttribute(
-        'placeholder',
-        'ATM Vol: 0.1',
-      )
-    })
-  })
-
-  // =========================================================================
-  // 4. CUSTOM CONCERNS
-  // =========================================================================
-
-  describe('Custom concerns', () => {
-    it('marginCheck concern validates notional against risk limit', async () => {
-      function MarginCheckComponent() {
-        store.useConcerns(
-          'margin-check',
-          {
-            [GROUP_NOTIONAL_G1]: {
-              marginCheck: {
-                riskLimitPath: RISK_LIMIT_B1,
-                notionalPath: GROUP_NOTIONAL_G1,
-              },
-            },
-          },
-          [...defaultConcerns, marginCheck],
-        )
-
-        const notionalField = store
-          .withConcerns({ marginCheck: true })
-          .useFieldStore(GROUP_NOTIONAL_G1)
-        const margin = notionalField.marginCheck as
-          | { sufficient: boolean; required: number; available: number }
-          | undefined
-
-        return (
-          <div>
-            <input
-              data-testid="group-notional"
-              type="number"
-              value={notionalField.value}
-              onChange={(e) =>
-                notionalField.setValue(parseFloat(e.target.value))
-              }
-            />
-            <span data-testid="margin-sufficient">
-              {String(margin?.sufficient ?? 'unknown')}
-            </span>
-            <span data-testid="margin-required">
-              {String(margin?.required ?? 0)}
-            </span>
-          </div>
-        )
-      }
-
-      renderWithStore(<MarginCheckComponent />, store, freshFixture())
-      await flushEffects()
-
-      // 2M notional vs 50M limit → sufficient
-      expect(screen.getByTestId('margin-sufficient')).toHaveTextContent('true')
-
-      // Increase to 60M → breached
-      fireEvent.change(screen.getByTestId('group-notional'), {
-        target: { value: '60000000' },
-      })
-      await flushEffects()
-      expect(screen.getByTestId('margin-sufficient')).toHaveTextContent('false')
-      expect(screen.getByTestId('margin-required')).toHaveTextContent(
-        '60000000',
-      )
-    })
-
-    it('barrierProximity concern warns when spot is near barrier', async () => {
-      function BarrierProximityComponent() {
-        store.useConcerns(
-          'barrier-proximity',
-          {
-            [MARKET_DATA_SPOT_P2_L1]: {
-              barrierProximity: {
-                spotPath: MARKET_DATA_SPOT_P2_L1,
-                barrierLevelPath: BARRIER_LEVEL_P2_L1,
-                thresholdPct: 5,
-              },
-            },
-          },
-          [barrierProximity],
-        )
-
-        const spotField = store
-          .withConcerns({ barrierProximity: true })
-          .useFieldStore(MARKET_DATA_SPOT_P2_L1)
-        const proximity = spotField.barrierProximity as
-          | { isNearBarrier: boolean; distance: number; distancePct: number }
-          | undefined
-
-        return (
-          <div>
-            <input
-              data-testid="spot"
-              type="number"
-              step="0.1"
-              value={spotField.value}
-              onChange={(e) => spotField.setValue(parseFloat(e.target.value))}
-            />
-            <span data-testid="near-barrier">
-              {String(proximity?.isNearBarrier ?? false)}
-            </span>
-            <span data-testid="barrier-distance-pct">
-              {proximity?.distancePct?.toFixed(2) ?? '0'}
-            </span>
-          </div>
-        )
-      }
-
-      renderWithStore(<BarrierProximityComponent />, store, freshFixture())
-      await flushEffects()
-
-      // Spot 150.2, barrier 140 → distance ~6.8% → not near
-      expect(screen.getByTestId('near-barrier')).toHaveTextContent('false')
-
-      // Move spot to 142 → distance ~1.4% → near barrier
-      fireEvent.change(screen.getByTestId('spot'), { target: { value: '142' } })
-      await flushEffects()
-      expect(screen.getByTestId('near-barrier')).toHaveTextContent('true')
-    })
-
-    it('custom concern combined with built-in concerns on same path', async () => {
-      function CombinedConcerns() {
-        // Register built-in validationState + custom marginCheck on the SAME path
-        store.useConcerns(
-          'combined',
-          {
-            [NOTIONAL_L1]: {
-              validationState: {
-                schema: z.number().positive('Notional must be positive'),
-              },
-              disabledWhen: {
-                condition: {
-                  IS_EQUAL: [STATUS_P1, 'executed'],
-                },
-              },
-              marginCheck: {
-                riskLimitPath: RISK_LIMIT_B1,
-                notionalPath: NOTIONAL_L1,
-              },
-            },
-          },
-          [...defaultConcerns, marginCheck],
-        )
-
-        const notionalField = store
-          .withConcerns({
-            validationState: true,
-            disabledWhen: true,
-            marginCheck: true,
-          })
-          .useFieldStore(NOTIONAL_L1)
-        const validation = notionalField.validationState
-        const disabled = notionalField.disabledWhen
-        const margin = notionalField.marginCheck as
-          | { sufficient: boolean; required: number; available: number }
-          | undefined
-
-        return (
-          <div>
-            <input
-              data-testid="notional"
-              type="number"
-              value={notionalField.value}
-              disabled={disabled === true}
-              onChange={(e) =>
-                notionalField.setValue(parseFloat(e.target.value))
-              }
-            />
-            <span data-testid="valid">{String(!validation?.isError)}</span>
-            <span data-testid="disabled">{String(disabled)}</span>
-            <span data-testid="margin-ok">{String(margin?.sufficient)}</span>
-          </div>
-        )
-      }
-
-      renderWithStore(<CombinedConcerns />, store, freshFixture())
-      await flushEffects()
-
-      // All should be healthy initially
-      expect(screen.getByTestId('valid')).toHaveTextContent('true')
-      expect(screen.getByTestId('disabled')).toHaveTextContent('false')
-      expect(screen.getByTestId('margin-ok')).toHaveTextContent('true')
-
-      // Set negative notional → validation fails, margin still computes
-      fireEvent.change(screen.getByTestId('notional'), {
-        target: { value: '-100' },
-      })
-      await flushEffects()
-      expect(screen.getByTestId('valid')).toHaveTextContent('false')
-    })
-  })
-
-  // =========================================================================
-  // 5. SIDE EFFECTS (syncPaths, flipPaths, listeners)
+  // 6. SIDE EFFECTS (React rendering)
   // =========================================================================
 
   describe('Side effects on deep state', () => {
-    it('syncs strike across legs within a straddle', async () => {
-      function StrikeSync() {
-        const [strike1, setStrike1] = store.useStore(STRIKE_L1)
-        const [strike2] = store.useStore(STRIKE_L2)
+    it('syncs base price across variants', async () => {
+      function PriceSync() {
+        const [price1, setPrice1] = store.useStore(PRICE_BASE_V1)
+        const [price2] = store.useStore(PRICE_BASE_V2)
 
-        store.useSideEffects('straddle-sync', {
+        store.useSideEffects('variant-sync', {
           syncPaths: [
-            typeHelpers.syncPair<EcommerceCatalog>(STRIKE_L1, STRIKE_L2),
-          ],
-        })
-
-        return (
-          <div>
-            <input
-              data-testid="strike-l1"
-              type="number"
-              value={strike1}
-              onChange={(e) => setStrike1(parseFloat(e.target.value))}
-            />
-            <span data-testid="strike-l2">{String(strike2)}</span>
-          </div>
-        )
-      }
-
-      renderWithStore(<StrikeSync />, store, freshFixture())
-      await flushEffects()
-
-      // Read initial synced value (both legs start at 1.1)
-      const initialStrike = Number(screen.getByTestId('strike-l2').textContent)
-
-      // Change leg1 strike to a different value → leg2 should sync
-      const newStrike = initialStrike + 0.25
-      fireEvent.change(screen.getByTestId('strike-l1'), {
-        target: { value: String(newStrike) },
-      })
-      await flushEffects()
-      expect(Number(screen.getByTestId('strike-l2').textContent)).toBe(
-        newStrike,
-      )
-    })
-
-    it('flips isHedged/needsRebalance at top level', async () => {
-      function HedgeFlip() {
-        const [isHedged, setHedged] = store.useStore('isHedged')
-        const [needsRebalance] = store.useStore('needsRebalance')
-
-        store.useSideEffects('hedge-flip', {
-          flipPaths: [
-            typeHelpers.flipPair<EcommerceCatalog>(
-              'isHedged',
-              'needsRebalance',
+            typeHelpers.syncPair<EcommerceCatalog>(
+              PRICE_BASE_V1,
+              PRICE_BASE_V2,
             ),
           ],
         })
 
         return (
           <div>
-            <button data-testid="toggle-hedge" onClick={() => setHedged(false)}>
-              Unhedge
-            </button>
-            <span data-testid="hedged">{String(isHedged)}</span>
-            <span data-testid="rebalance">{String(needsRebalance)}</span>
+            <input
+              data-testid="price-v1"
+              type="number"
+              value={price1}
+              onChange={(e) => setPrice1(parseFloat(e.target.value))}
+            />
+            <span data-testid="price-v2">{String(price2)}</span>
           </div>
         )
       }
 
-      renderWithStore(<HedgeFlip />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<PriceSync />, store, makeCatalogFixture())
+      await flush()
 
-      // Initially hedged
-      expect(screen.getByTestId('hedged')).toHaveTextContent('true')
-      expect(screen.getByTestId('rebalance')).toHaveTextContent('false')
+      const initialPrice = Number(screen.getByTestId('price-v2').textContent)
 
-      // Toggle → flip
-      fireEvent.click(screen.getByTestId('toggle-hedge'))
-      await flushEffects()
-      expect(screen.getByTestId('hedged')).toHaveTextContent('false')
-      expect(screen.getByTestId('rebalance')).toHaveTextContent('true')
+      // Change v1 price -> v2 should sync
+      const newPrice = initialPrice + 100
+      fireEvent.change(screen.getByTestId('price-v1'), {
+        target: { value: String(newPrice) },
+      })
+      await flush()
+      expect(Number(screen.getByTestId('price-v2').textContent)).toBe(newPrice)
     })
 
-    it('listener computes aggregated delta from leg changes', async () => {
-      function DeltaListener() {
+    it('flips isStocked/needsReorder at top level', async () => {
+      function StockFlip() {
+        const [isStocked, setStocked] = store.useStore('isStocked')
+        const [needsReorder] = store.useStore('needsReorder')
+
+        store.useSideEffects('stock-flip', {
+          flipPaths: [
+            typeHelpers.flipPair<EcommerceCatalog>('isStocked', 'needsReorder'),
+          ],
+        })
+
+        return (
+          <div>
+            <button
+              data-testid="toggle-stock"
+              onClick={() => setStocked(false)}
+            >
+              Mark Unstocked
+            </button>
+            <span data-testid="stocked">{String(isStocked)}</span>
+            <span data-testid="reorder">{String(needsReorder)}</span>
+          </div>
+        )
+      }
+
+      renderWithStore(<StockFlip />, store, makeCatalogFixture())
+      await flush()
+
+      // Initially stocked
+      expect(screen.getByTestId('stocked')).toHaveTextContent('true')
+      expect(screen.getByTestId('reorder')).toHaveTextContent('false')
+
+      // Toggle -> flip
+      fireEvent.click(screen.getByTestId('toggle-stock'))
+      await flush()
+      expect(screen.getByTestId('stocked')).toHaveTextContent('false')
+      expect(screen.getByTestId('reorder')).toHaveTextContent('true')
+    })
+
+    it('listener computes total revenue from variant pricing changes', async () => {
+      function RevenueListener() {
         const storeInstance = useStoreContext<EcommerceCatalog>()
-        const [leg1Delta, setLeg1Delta] = store.useStore(GREEKS_DELTA_L1)
-        const [leg2Delta] = store.useStore(GREEKS_DELTA_L2)
-        const [aggDelta] = store.useStore('aggregatedDelta' as const)
+        const [basePrice, setBasePrice] = store.useStore(PRICE_BASE_V1)
+        const [totalRevenue] = store.useStore('totalRevenue' as const)
 
         useLayoutEffect(() => {
           const cleanup = registerListener(storeInstance, {
-            path: GREEKS_L1,
+            path: PRICING_V1,
             scope: null,
             fn: (changes, state) => {
-              // Changes have paths relative to watched path: ['delta', 0.7, {}]
               // State is full pre-change snapshot (scope: null)
-              const legs =
-                state?.portfolio?.books?.[_('b1')]?.products?.[_('p1')]
-                  ?.legGroups?.[_('g1')]?.legs
-              const l2d = legs?.[_('l2')]?.greeks?.delta ?? -0.45
-              let l1d = legs?.[_('l1')]?.greeks?.delta ?? 0.55
+              const variants =
+                state?.catalog?.departments?.[_('electronics')]?.categories?.[
+                  _('phones')
+                ]?.products?.[_('p1')]?.variants
+              const v2Base = variants?.[_('v2')]?.pricing?.base ?? 1099
+              let v1Base = variants?.[_('v1')]?.pricing?.base ?? 999
               for (const change of changes) {
-                if (change[0] === 'delta') l1d = Number(change[1])
+                if (change[0] === 'base') v1Base = Number(change[1])
               }
               return typeHelpers.changes<EcommerceCatalog>([
-                ['aggregatedDelta' as const, l1d + l2d],
+                ['totalRevenue' as const, v1Base + v2Base],
               ])
             },
           })
@@ -1358,53 +1150,51 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         return (
           <div>
             <input
-              data-testid="l1-delta"
+              data-testid="v1-price"
               type="number"
-              step="0.01"
-              value={leg1Delta}
-              onChange={(e) => setLeg1Delta(parseFloat(e.target.value))}
+              value={basePrice}
+              onChange={(e) => setBasePrice(parseFloat(e.target.value))}
             />
-            <span data-testid="l2-delta">{String(leg2Delta)}</span>
-            <span data-testid="agg-delta">{String(aggDelta)}</span>
+            <span data-testid="total-revenue">{String(totalRevenue)}</span>
           </div>
         )
       }
 
-      renderWithStore(<DeltaListener />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<RevenueListener />, store, makeCatalogFixture())
+      await flush()
 
-      // Change leg1 delta to 0.7
-      fireEvent.change(screen.getByTestId('l1-delta'), {
-        target: { value: '0.7' },
+      // Change v1 base price to 1500
+      fireEvent.change(screen.getByTestId('v1-price'), {
+        target: { value: '1500' },
       })
-      await flushEffects()
+      await flush()
 
-      // Aggregated delta should be 0.7 + (-0.45) = 0.25
-      const aggDelta = parseFloat(
-        screen.getByTestId('agg-delta').textContent || '0',
+      // Total revenue should be 1500 + 1099 = 2599
+      const totalRevenue = parseFloat(
+        screen.getByTestId('total-revenue').textContent || '0',
       )
-      expect(aggDelta).toBeCloseTo(0.25, 1)
+      expect(totalRevenue).toBeCloseTo(2599, 0)
     })
   })
 
   // =========================================================================
-  // 6. JIT STORE – Batch updates on deeply nested state
+  // 7. JIT STORE - Batch updates
   // =========================================================================
 
   describe('JitStore batch updates', () => {
     it('applies batch changes across multiple deeply nested paths', async () => {
       function BatchUpdater() {
         const { setChanges } = store.useJitStore()
-        const [strike] = store.useStore(STRIKE_L1)
-        const [notional] = store.useStore(NOTIONAL_L1)
+        const [price] = store.useStore(PRICE_BASE_V1)
+        const [stock] = store.useStore(STOCK_V1)
         const [status] = store.useStore(STATUS_P1)
 
         const handleBatchUpdate = () => {
           setChanges(
             typeHelpers.changes<EcommerceCatalog>([
-              [STRIKE_L1, 1.35],
-              [NOTIONAL_L1, 5_000_000],
-              [STATUS_P1, 'pending'],
+              [PRICE_BASE_V1, 1299],
+              [STOCK_V1, 200],
+              [STATUS_P1, 'draft'],
             ]),
           )
         }
@@ -1414,79 +1204,78 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
             <button data-testid="batch-update" onClick={handleBatchUpdate}>
               Batch
             </button>
-            <span data-testid="strike">{String(strike)}</span>
-            <span data-testid="notional">{String(notional)}</span>
+            <span data-testid="price">{String(price)}</span>
+            <span data-testid="stock">{String(stock)}</span>
             <span data-testid="status">{String(status)}</span>
           </div>
         )
       }
 
-      renderWithStore(<BatchUpdater />, store, freshFixture())
+      renderWithStore(<BatchUpdater />, store, makeCatalogFixture())
 
       fireEvent.click(screen.getByTestId('batch-update'))
-      await flushEffects()
+      await flush()
 
-      expect(screen.getByTestId('strike')).toHaveTextContent('1.35')
-      expect(screen.getByTestId('notional')).toHaveTextContent('5000000')
-      expect(screen.getByTestId('status')).toHaveTextContent('pending')
+      expect(screen.getByTestId('price')).toHaveTextContent('1299')
+      expect(screen.getByTestId('stock')).toHaveTextContent('200')
+      expect(screen.getByTestId('status')).toHaveTextContent('draft')
     })
   })
 
   // =========================================================================
-  // 7. COMBINED: concerns + side effects + deep nesting
+  // 8. COMBINED: concerns + side effects + deep nesting
   // =========================================================================
 
   describe('Combined concerns and side effects', () => {
-    it('validation + sync + conditional UI work together on straddle', async () => {
-      function StraddleForm() {
-        const [strike1, setStrike1] = store.useStore(STRIKE_L1)
-        const [strike2] = store.useStore(STRIKE_L2)
+    it('validation + sync + conditional UI work together on variants', async () => {
+      function VariantForm() {
+        const [price1, setPrice1] = store.useStore(PRICE_BASE_V1)
+        const [price2] = store.useStore(PRICE_BASE_V2)
         const statusField = store.useFieldStore(STATUS_P1)
 
-        // Sync strikes
-        store.useSideEffects('straddle-effects', {
+        // Sync prices
+        store.useSideEffects('variant-effects', {
           syncPaths: [
-            typeHelpers.syncPair<EcommerceCatalog>(STRIKE_L1, STRIKE_L2),
+            typeHelpers.syncPair<EcommerceCatalog>(
+              PRICE_BASE_V1,
+              PRICE_BASE_V2,
+            ),
           ],
         })
 
         // Validate + disable
-        store.useConcerns('straddle-concerns', {
-          [STRIKE_L1]: {
+        store.useConcerns('variant-concerns', {
+          [PRICE_BASE_V1]: {
             validationState: {
               schema: z
                 .number()
-                .positive('Strike must be positive')
-                .max(5, 'Strike unreasonable'),
+                .positive('Price must be positive')
+                .max(5000, 'Price unreasonable'),
             },
             disabledWhen: {
               condition: {
                 OR: [
-                  {
-                    IS_EQUAL: [STATUS_P1, 'approved'],
-                  },
-                  {
-                    IS_EQUAL: [STATUS_P1, 'executed'],
-                  },
+                  { IS_EQUAL: [STATUS_P1, 'archived'] },
+                  { IS_EQUAL: [STATUS_P1, 'discontinued'] },
                 ],
               },
             },
             dynamicTooltip: {
-              template: `Strike for {{${CCY_PAIR_P1}}} (spot: {{${MARKET_DATA_SPOT_L1}}})`,
+              template: `Price for {{${BRAND_P1}}} (weight: {{${SHIPPING_WEIGHT_V1}}}kg)`,
             },
           },
         })
 
-        const strikeField = store
+        const priceField = store
           .withConcerns({
             validationState: true,
             disabledWhen: true,
             dynamicTooltip: true,
           })
-          .useFieldStore(STRIKE_L1)
-        const validation = strikeField.validationState
-        const disabled = strikeField.disabledWhen === true
-        const tooltip = strikeField.dynamicTooltip ?? ''
+          .useFieldStore(PRICE_BASE_V1)
+        const validation = priceField.validationState
+        const disabled = priceField.disabledWhen === true
+        const tooltip = priceField.dynamicTooltip ?? ''
 
         return (
           <div>
@@ -1497,25 +1286,25 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
                 statusField.setValue(
                   e.target.value as
                     | 'draft'
-                    | 'pending'
-                    | 'approved'
-                    | 'rejected'
-                    | 'executed',
+                    | 'active'
+                    | 'archived'
+                    | 'discontinued',
                 )
               }
             >
               <option value="draft">Draft</option>
-              <option value="approved">Approved</option>
-              <option value="executed">Executed</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="discontinued">Discontinued</option>
             </select>
             <input
-              data-testid="strike-l1"
+              data-testid="price-v1"
               type="number"
-              value={strike1}
+              value={price1}
               disabled={disabled}
-              onChange={(e) => setStrike1(parseFloat(e.target.value))}
+              onChange={(e) => setPrice1(parseFloat(e.target.value))}
             />
-            <span data-testid="strike-l2">{String(strike2)}</span>
+            <span data-testid="price-v2">{String(price2)}</span>
             <span data-testid="tooltip">{tooltip}</span>
             {validation?.isError && (
               <span data-testid="validation-error">
@@ -1526,76 +1315,77 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<StraddleForm />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<VariantForm />, store, makeCatalogFixture())
+      await flush()
 
       // Initial: valid, enabled, synced, tooltip populated
       expect(screen.queryByTestId('validation-error')).not.toBeInTheDocument()
-      expect(screen.getByTestId('strike-l1')).not.toBeDisabled()
+      expect(screen.getByTestId('price-v1')).not.toBeDisabled()
       expect(screen.getByTestId('tooltip')).toHaveTextContent(
-        'Strike for EURUSD (spot: 1.1)',
+        'Price for TechCo (weight: 0.5kg)',
       )
 
-      // Change strike → syncs to leg2, validates
-      fireEvent.change(screen.getByTestId('strike-l1'), {
-        target: { value: '1.25' },
+      // Change price -> syncs to v2, validates
+      fireEvent.change(screen.getByTestId('price-v1'), {
+        target: { value: '1250' },
       })
-      await flushEffects()
-      expect(screen.getByTestId('strike-l2')).toHaveTextContent('1.25')
+      await flush()
+      expect(screen.getByTestId('price-v2')).toHaveTextContent('1250')
       expect(screen.queryByTestId('validation-error')).not.toBeInTheDocument()
 
-      // Set invalid strike → validation error, but still syncs
-      fireEvent.change(screen.getByTestId('strike-l1'), {
+      // Set invalid price -> validation error, but still syncs
+      fireEvent.change(screen.getByTestId('price-v1'), {
         target: { value: '-1' },
       })
-      await flushEffects()
+      await flush()
       expect(screen.getByTestId('validation-error')).toHaveTextContent(
-        'Strike must be positive',
+        'Price must be positive',
       )
-      expect(screen.getByTestId('strike-l2')).toHaveTextContent('-1')
+      expect(screen.getByTestId('price-v2')).toHaveTextContent('-1')
 
-      // Approve product → strike disabled
+      // Archive product -> price disabled
       fireEvent.change(screen.getByTestId('status'), {
-        target: { value: 'approved' },
+        target: { value: 'archived' },
       })
-      await flushEffects()
-      expect(screen.getByTestId('strike-l1')).toBeDisabled()
+      await flush()
+      expect(screen.getByTestId('price-v1')).toBeDisabled()
     })
 
     it('re-evaluates all concerns when deep state changes propagate', async () => {
       function PropagationTest() {
-        const spotField = store.useFieldStore(MARKET_DATA_SPOT_L1)
+        const shippingField = store.useFieldStore(SHIPPING_DIM_LENGTH_V1)
 
         store.useConcerns('propagation', {
-          [STRIKE_L1]: {
+          [PRICE_BASE_V1]: {
             dynamicTooltip: {
-              template: `Moneyness vs spot {{${MARKET_DATA_SPOT_L1}}}`,
+              template: `Ship length: {{${SHIPPING_DIM_LENGTH_V1}}}cm`,
             },
             disabledWhen: {
               condition: {
-                GT: [MARKET_DATA_SPOT_L1, 2],
+                GT: [SHIPPING_DIM_LENGTH_V1, 50],
               },
             },
           },
         })
 
-        const strikeField = store
+        const priceField = store
           .withConcerns({
             dynamicTooltip: true,
             disabledWhen: true,
           })
-          .useFieldStore(STRIKE_L1)
-        const tooltip = strikeField.dynamicTooltip ?? ''
-        const disabled = strikeField.disabledWhen === true
+          .useFieldStore(PRICE_BASE_V1)
+        const tooltip = priceField.dynamicTooltip ?? ''
+        const disabled = priceField.disabledWhen === true
 
         return (
           <div>
             <input
-              data-testid="spot"
+              data-testid="ship-length"
               type="number"
-              step="0.01"
-              value={spotField.value}
-              onChange={(e) => spotField.setValue(parseFloat(e.target.value))}
+              value={shippingField.value}
+              onChange={(e) =>
+                shippingField.setValue(parseFloat(e.target.value))
+              }
             />
             <span data-testid="tooltip">{tooltip}</span>
             <span data-testid="disabled">{String(disabled)}</span>
@@ -1603,91 +1393,38 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<PropagationTest />, store, freshFixture())
-      await flushEffects()
+      renderWithStore(<PropagationTest />, store, makeCatalogFixture())
+      await flush()
 
       expect(screen.getByTestId('tooltip')).toHaveTextContent(
-        'Moneyness vs spot 1.1',
+        'Ship length: 15cm',
       )
       expect(screen.getByTestId('disabled')).toHaveTextContent('false')
 
-      // Move spot above threshold
-      fireEvent.change(screen.getByTestId('spot'), { target: { value: '2.5' } })
-      await flushEffects()
+      // Move shipping length above threshold
+      fireEvent.change(screen.getByTestId('ship-length'), {
+        target: { value: '60' },
+      })
+      await flush()
 
       expect(screen.getByTestId('tooltip')).toHaveTextContent(
-        'Moneyness vs spot 2.5',
+        'Ship length: 60cm',
       )
       expect(screen.getByTestId('disabled')).toHaveTextContent('true')
     })
-  })
 
-  // =========================================================================
-  // 8. DIRECT STORE INSTANCE ASSERTIONS
-  // =========================================================================
-
-  describe('Direct store instance assertions', () => {
-    it('concern results accessible via _concerns proxy at deep paths', async () => {
-      function DirectConcernTest() {
-        const statusField = store.useFieldStore(STATUS_P1)
-
-        store.useConcerns('direct-test', {
-          [STATUS_P1]: {
-            validationState: {
-              schema: z.string().min(1, 'Status required'),
-            },
-            disabledWhen: {
-              condition: {
-                IS_EQUAL: [STATUS_P1, 'approved'],
-              },
-            },
-          },
-        })
-
-        return (
-          <div>
-            <span data-testid="status">{statusField.value}</span>
-          </div>
-        )
-      }
-
-      const result = renderWithStore(
-        <DirectConcernTest />,
-        store,
-        freshFixture(),
-      )
-      await flushEffects()
-
-      // Access concern results directly from store instance
-      const statusConcerns = result.storeInstance._concerns[STATUS_P1]
-      expect(statusConcerns).toBeDefined()
-      expect((statusConcerns?.['validationState'] as any)?.isError).toBe(false)
-      expect(statusConcerns?.['disabledWhen']).toBe(false)
-
-      // Mutate state directly and re-check
-      result.storeInstance.state.portfolio.books[_('b1')]!.products[
-        _('p1')
-      ]!.status = 'approved'
-      await flushEffects()
-
-      const updatedConcerns = result.storeInstance._concerns[STATUS_P1]
-      expect(updatedConcerns?.['disabledWhen']).toBe(true)
-    })
-
-    it('state mutations at depth 15 are tracked by valtio', async () => {
+    it('state mutations at deep level are tracked by valtio', async () => {
       function DeepMutationTracker() {
-        const sourceField = store.useFieldStore(SMILE_SOURCE_S25P)
+        const reviewField = store.useFieldStore(REVIEW_HELPFUL_VOTES)
 
         return (
           <div>
-            <span data-testid="source">{sourceField.value}</span>
+            <span data-testid="votes">{reviewField.value}</span>
             <button
-              data-testid="change-source"
-              onClick={() =>
-                sourceField.setValue('model' as 'market' | 'model')
-              }
+              data-testid="add-vote"
+              onClick={() => reviewField.setValue(43)}
             >
-              Switch to Model
+              Add Vote
             </button>
           </div>
         )
@@ -1696,22 +1433,22 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
       const result = renderWithStore(
         <DeepMutationTracker />,
         store,
-        freshFixture(),
+        makeCatalogFixture(),
       )
 
-      expect(screen.getByTestId('source')).toHaveTextContent('market')
+      expect(screen.getByTestId('votes')).toHaveTextContent('42')
 
-      fireEvent.click(screen.getByTestId('change-source'))
-      await flushEffects()
+      fireEvent.click(screen.getByTestId('add-vote'))
+      await flush()
 
-      expect(screen.getByTestId('source')).toHaveTextContent('model')
+      expect(screen.getByTestId('votes')).toHaveTextContent('43')
 
       // Verify state proxy reflects the change
-      const source =
-        result.storeInstance.state.portfolio.books[_('b1')]?.products?.[_('p1')]
-          ?.legGroups?.[_('g1')]?.legs?.[_('l1')]?.marketData?.volSurface
-          ?.smile?.[_('s25p')]?.source
-      expect(source).toBe('model')
+      const votes =
+        result.storeInstance.state.catalog.departments[_('electronics')]
+          ?.categories?.[_('phones')]?.products?.[_('p1')]?.variants?.[_('v1')]
+          ?.reviews?.[_('r1')]?.metadata?.helpfulVotes
+      expect(votes).toBe(43)
     })
   })
 })
