@@ -304,7 +304,7 @@ describe('tree traversal', () => {
 
     it('should detect circular references', () => {
       const obj: Record<string, unknown> = { value: 1 }
-      obj.self = obj // Circular reference
+      obj['self'] = obj // Circular reference
       const tree = createShadowTree(obj)
 
       const visited: string[] = []
@@ -972,7 +972,7 @@ describe('edge cases', () => {
   describe('circular references', () => {
     it('should handle circular object references', () => {
       const obj: Record<string, unknown> = { value: 1 }
-      obj.self = obj
+      obj['self'] = obj
 
       const tree = createShadowTree(obj)
       const paths = collectPaths(tree)
@@ -983,7 +983,7 @@ describe('edge cases', () => {
 
     it('should handle circular references in traversal', () => {
       const obj: Record<string, unknown> = { a: 1 }
-      obj.self = obj
+      obj['self'] = obj
 
       const tree = createShadowTree(obj)
       const visited: ShadowNode[] = []

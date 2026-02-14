@@ -117,7 +117,7 @@ describe('valtio integration', () => {
       expect(onUpdate).toHaveBeenCalled()
 
       // Should include affected paths
-      const [affectedPaths] = onUpdate.mock.calls[0]
+      const [affectedPaths] = onUpdate.mock.calls[0] ?? []
       expect(affectedPaths).toBeDefined()
       expect(Array.isArray(affectedPaths)).toBe(true)
 
@@ -199,7 +199,6 @@ describe('valtio integration', () => {
 
       const state = proxy<TestState>({
         nullable: null,
-        optional: undefined,
       })
 
       const { tree: originalTree, cleanup } = createShadowState(state)
@@ -350,7 +349,7 @@ describe('valtio integration', () => {
 
       expect(onUpdate).toHaveBeenCalled()
 
-      const [_affectedPaths, tree] = onUpdate.mock.calls[0]
+      const [_affectedPaths, tree] = onUpdate.mock.calls[0] ?? []
       expect(tree).toBeDefined()
       expect(tree.root).toBeDefined()
 
@@ -526,7 +525,7 @@ describe('valtio integration', () => {
       const { tree, cleanup } = createShadowState(state)
 
       // Add new property
-      state.newProp = 'new value'
+      state['newProp'] = 'new value'
 
       await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -545,7 +544,7 @@ describe('valtio integration', () => {
       const { tree, cleanup } = createShadowState(state)
 
       // Delete property
-      delete state.remove
+      delete state['remove']
 
       await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -631,7 +630,7 @@ describe('valtio integration', () => {
       const { tree, cleanup } = createShadowState(state)
 
       // Change nested array element
-      state.matrix[0][1] = 99
+      state.matrix[0]![1] = 99
 
       await new Promise((resolve) => setTimeout(resolve, 0))
 
