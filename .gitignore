@@ -30,3 +30,6 @@ out-of-git
 
 .hive
 coverage
+
+# Auto Claude data directory
+.auto-claude/
