@@ -33,7 +33,7 @@ pub fn intern(path: String) -> u32 {
 // Export resolve function for path resolution
 #[wasm_bindgen]
 pub fn resolve(id: u32) -> String {
-    intern::resolve_global(id).unwrap_or_else(|| String::new())
+    intern::resolve_global(id).unwrap_or_default()
 }
 
 // Export batch_intern for efficient bulk interning
@@ -107,8 +107,7 @@ pub fn shadow_update(path: String, value: JsValue) -> Result<(), JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Failed to parse value: {:?}", e)))?;
 
     // Update shadow state
-    shadow::shadow_set_global(path, value_repr)
-        .map_err(|e| JsValue::from_str(&e))
+    shadow::shadow_set_global(path, value_repr).map_err(|e| JsValue::from_str(&e))
 }
 
 // ============================================================================
@@ -143,6 +142,7 @@ pub fn shadow_update(path: String, value: JsValue) -> Result<(), JsValue> {
 /// // This would be called internally, not from JavaScript
 /// // assert!(internal_path_matches(path_id, prefix_id, suffix_id));
 /// ```
+#[cfg(test)]
 fn internal_path_matches(
     path_id: intern::PathID,
     prefix_id: intern::PathID,
@@ -170,6 +170,7 @@ fn internal_path_matches(
 ///
 /// # Example
 /// This is an internal function used by WASM operations, not called from JS.
+#[cfg(test)]
 fn internal_filter_paths(
     path_ids: Vec<intern::PathID>,
     pattern_id: intern::PathID,

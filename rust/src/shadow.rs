@@ -223,9 +223,9 @@ pub fn update_value(root: &mut ValueRepr, path: &[&str], value: ValueRepr) -> Re
                     map.insert(part.to_string(), ValueRepr::Object(HashMap::new()));
                 }
                 // Get mutable reference to continue traversal
-                current = map.get_mut(*part).ok_or_else(|| {
-                    format!("Failed to access key '{}' after insertion", part)
-                })?;
+                current = map
+                    .get_mut(*part)
+                    .ok_or_else(|| format!("Failed to access key '{}' after insertion", part))?;
             }
             ValueRepr::Array(arr) => {
                 // Array index access - parse part as usize
@@ -234,11 +234,7 @@ pub fn update_value(root: &mut ValueRepr, path: &[&str], value: ValueRepr) -> Re
                 })?;
                 let arr_len = arr.len(); // Capture length before mutable borrow
                 current = arr.get_mut(index).ok_or_else(|| {
-                    format!(
-                        "Array index {} out of bounds (length: {})",
-                        index,
-                        arr_len
-                    )
+                    format!("Array index {} out of bounds (length: {})", index, arr_len)
                 })?;
             }
             // Cannot traverse through primitive types
@@ -526,10 +522,7 @@ mod tests {
         let mut bob = HashMap::new();
         bob.insert("name".to_string(), ValueRepr::String("Bob".to_string()));
 
-        let users_array = ValueRepr::Array(vec![
-            ValueRepr::Object(alice),
-            ValueRepr::Object(bob),
-        ]);
+        let users_array = ValueRepr::Array(vec![ValueRepr::Object(alice), ValueRepr::Object(bob)]);
 
         let mut root = HashMap::new();
         root.insert("users".to_string(), users_array);
@@ -576,23 +569,25 @@ mod tests {
             deep = ValueRepr::Object(map);
         }
 
-        let path: Vec<&str> = (0..10).map(|i| {
-            // This is a hack to get around lifetime issues in tests
-            // In real code, path strings would have appropriate lifetimes
-            match i {
-                0 => "level0",
-                1 => "level1",
-                2 => "level2",
-                3 => "level3",
-                4 => "level4",
-                5 => "level5",
-                6 => "level6",
-                7 => "level7",
-                8 => "level8",
-                9 => "level9",
-                _ => unreachable!(),
-            }
-        }).collect();
+        let path: Vec<&str> = (0..10)
+            .map(|i| {
+                // This is a hack to get around lifetime issues in tests
+                // In real code, path strings would have appropriate lifetimes
+                match i {
+                    0 => "level0",
+                    1 => "level1",
+                    2 => "level2",
+                    3 => "level3",
+                    4 => "level4",
+                    5 => "level5",
+                    6 => "level6",
+                    7 => "level7",
+                    8 => "level8",
+                    9 => "level9",
+                    _ => unreachable!(),
+                }
+            })
+            .collect();
 
         let leaf = get_value(&deep, &path);
         assert!(matches!(leaf, Some(&ValueRepr::String(ref s)) if s == "leaf"));
@@ -608,7 +603,11 @@ mod tests {
 
         // Test 2: Leaf update - create new path
         let mut state = ValueRepr::Object(HashMap::new());
-        let result = update_value(&mut state, &["user", "name"], ValueRepr::String("Alice".to_string()));
+        let result = update_value(
+            &mut state,
+            &["user", "name"],
+            ValueRepr::String("Alice".to_string()),
+        );
         assert!(result.is_ok());
 
         // Verify the value was set
@@ -616,7 +615,11 @@ mod tests {
         assert!(matches!(name, Some(&ValueRepr::String(ref s)) if s == "Alice"));
 
         // Test 3: Leaf update - update existing value
-        let result = update_value(&mut state, &["user", "name"], ValueRepr::String("Bob".to_string()));
+        let result = update_value(
+            &mut state,
+            &["user", "name"],
+            ValueRepr::String("Bob".to_string()),
+        );
         assert!(result.is_ok());
 
         let name = get_value(&state, &["user", "name"]);
@@ -636,7 +639,10 @@ mod tests {
         // Test 5: Subtree update - replace entire object
         let mut new_user = HashMap::new();
         new_user.insert("name".to_string(), ValueRepr::String("Charlie".to_string()));
-        new_user.insert("email".to_string(), ValueRepr::String("charlie@example.com".to_string()));
+        new_user.insert(
+            "email".to_string(),
+            ValueRepr::String("charlie@example.com".to_string()),
+        );
 
         let result = update_value(&mut state, &["user"], ValueRepr::Object(new_user));
         assert!(result.is_ok());
@@ -695,7 +701,11 @@ mod tests {
         let mut state = ValueRepr::Object(HashMap::new());
         update_value(&mut state, &["value"], ValueRepr::Number(42.0)).unwrap();
 
-        let result = update_value(&mut state, &["value", "nested"], ValueRepr::String("fail".to_string()));
+        let result = update_value(
+            &mut state,
+            &["value", "nested"],
+            ValueRepr::String("fail".to_string()),
+        );
         assert!(result.is_err());
         let err_msg = result.unwrap_err();
         assert!(
@@ -721,14 +731,15 @@ mod tests {
         let mut user2 = HashMap::new();
         user2.insert("name".to_string(), ValueRepr::String("Bob".to_string()));
 
-        let arr = ValueRepr::Array(vec![
-            ValueRepr::Object(user1),
-            ValueRepr::Object(user2),
-        ]);
+        let arr = ValueRepr::Array(vec![ValueRepr::Object(user1), ValueRepr::Object(user2)]);
         update_value(&mut state, &["users"], arr).unwrap();
 
         // Update nested object property in array
-        let result = update_value(&mut state, &["users", "0", "name"], ValueRepr::String("Alice Updated".to_string()));
+        let result = update_value(
+            &mut state,
+            &["users", "0", "name"],
+            ValueRepr::String("Alice Updated".to_string()),
+        );
         assert!(result.is_ok());
 
         let name = get_value(&state, &["users", "0", "name"]);
@@ -746,7 +757,11 @@ mod tests {
         update_value(&mut state, &["data", "items"], items).unwrap();
 
         // Update the nested value
-        let result = update_value(&mut state, &["data", "items", "0", "value"], ValueRepr::Number(20.0));
+        let result = update_value(
+            &mut state,
+            &["data", "items", "0", "value"],
+            ValueRepr::Number(20.0),
+        );
         assert!(result.is_ok());
 
         let value = get_value(&state, &["data", "items", "0", "value"]);
@@ -879,14 +894,24 @@ mod tests {
     fn test_unicode_handling() {
         // Test Unicode in keys
         let mut state = ValueRepr::Object(HashMap::new());
-        update_value(&mut state, &["用户", "名字"], ValueRepr::String("Alice".to_string())).unwrap();
+        update_value(
+            &mut state,
+            &["用户", "名字"],
+            ValueRepr::String("Alice".to_string()),
+        )
+        .unwrap();
 
         let value = get_value(&state, &["用户", "名字"]);
         assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice"));
 
         // Test Unicode in values
         let mut state = ValueRepr::Object(HashMap::new());
-        update_value(&mut state, &["user", "name"], ValueRepr::String("Alice 🎉".to_string())).unwrap();
+        update_value(
+            &mut state,
+            &["user", "name"],
+            ValueRepr::String("Alice 🎉".to_string()),
+        )
+        .unwrap();
 
         let value = get_value(&state, &["user", "name"]);
         assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice 🎉"));
@@ -910,7 +935,12 @@ mod tests {
 
         // Test path with multiple empty strings
         let mut state = ValueRepr::Object(HashMap::new());
-        update_value(&mut state, &["", ""], ValueRepr::String("nested".to_string())).unwrap();
+        update_value(
+            &mut state,
+            &["", ""],
+            ValueRepr::String("nested".to_string()),
+        )
+        .unwrap();
 
         let value = get_value(&state, &["", ""]);
         assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "nested"));
@@ -920,7 +950,10 @@ mod tests {
     fn test_special_characters_in_keys() {
         // Test keys with dots (should be treated as literal, not path separator)
         let mut obj = HashMap::new();
-        obj.insert("user.name".to_string(), ValueRepr::String("Alice".to_string()));
+        obj.insert(
+            "user.name".to_string(),
+            ValueRepr::String("Alice".to_string()),
+        );
 
         let state = ValueRepr::Object(obj);
 
@@ -930,27 +963,31 @@ mod tests {
 
         // Test keys with special characters
         let mut state = ValueRepr::Object(HashMap::new());
-        let special_keys = vec!["key-with-dash", "key_with_underscore", "key@with@at", "key#with#hash"];
+        let special_keys = vec![
+            "key-with-dash",
+            "key_with_underscore",
+            "key@with@at",
+            "key#with#hash",
+        ];
 
         for key in special_keys {
             update_value(&mut state, &[key], ValueRepr::Bool(true)).unwrap();
             let value = get_value(&state, &[key]);
-            assert!(matches!(value, Some(&ValueRepr::Bool(true))), "Failed for key: {}", key);
+            assert!(
+                matches!(value, Some(&ValueRepr::Bool(true))),
+                "Failed for key: {}",
+                key
+            );
         }
     }
 
     #[test]
     fn test_deeply_nested_arrays() {
         // Test arrays nested in arrays
-        let inner_array = ValueRepr::Array(vec![
-            ValueRepr::Number(1.0),
-            ValueRepr::Number(2.0),
-        ]);
+        let inner_array = ValueRepr::Array(vec![ValueRepr::Number(1.0), ValueRepr::Number(2.0)]);
 
-        let outer_array = ValueRepr::Array(vec![
-            ValueRepr::String("first".to_string()),
-            inner_array,
-        ]);
+        let outer_array =
+            ValueRepr::Array(vec![ValueRepr::String("first".to_string()), inner_array]);
 
         let mut root = HashMap::new();
         root.insert("nested_arrays".to_string(), outer_array);
@@ -973,29 +1010,48 @@ mod tests {
         update_value(&mut state, &["null_val"], ValueRepr::Null).unwrap();
         update_value(&mut state, &["bool_val"], ValueRepr::Bool(true)).unwrap();
         update_value(&mut state, &["num_val"], ValueRepr::Number(42.5)).unwrap();
-        update_value(&mut state, &["str_val"], ValueRepr::String("test".to_string())).unwrap();
+        update_value(
+            &mut state,
+            &["str_val"],
+            ValueRepr::String("test".to_string()),
+        )
+        .unwrap();
 
         // Verify each type
-        assert!(matches!(get_value(&state, &["null_val"]), Some(&ValueRepr::Null)));
-        assert!(matches!(get_value(&state, &["bool_val"]), Some(&ValueRepr::Bool(true))));
-        assert!(matches!(get_value(&state, &["num_val"]), Some(&ValueRepr::Number(n)) if n == 42.5));
-        assert!(matches!(get_value(&state, &["str_val"]), Some(&ValueRepr::String(ref s)) if s == "test"));
+        assert!(matches!(
+            get_value(&state, &["null_val"]),
+            Some(&ValueRepr::Null)
+        ));
+        assert!(matches!(
+            get_value(&state, &["bool_val"]),
+            Some(&ValueRepr::Bool(true))
+        ));
+        assert!(
+            matches!(get_value(&state, &["num_val"]), Some(&ValueRepr::Number(n)) if n == 42.5)
+        );
+        assert!(
+            matches!(get_value(&state, &["str_val"]), Some(&ValueRepr::String(ref s)) if s == "test")
+        );
     }
 
     #[test]
     fn test_large_arrays() {
         // Test array with many elements
-        let large_array: Vec<ValueRepr> = (0..100)
-            .map(|i| ValueRepr::Number(i as f64))
-            .collect();
+        let large_array: Vec<ValueRepr> = (0..100).map(|i| ValueRepr::Number(i as f64)).collect();
 
         let mut state = ValueRepr::Object(HashMap::new());
         update_value(&mut state, &["large"], ValueRepr::Array(large_array)).unwrap();
 
         // Access first, middle, and last elements
-        assert!(matches!(get_value(&state, &["large", "0"]), Some(&ValueRepr::Number(n)) if n == 0.0));
-        assert!(matches!(get_value(&state, &["large", "50"]), Some(&ValueRepr::Number(n)) if n == 50.0));
-        assert!(matches!(get_value(&state, &["large", "99"]), Some(&ValueRepr::Number(n)) if n == 99.0));
+        assert!(
+            matches!(get_value(&state, &["large", "0"]), Some(&ValueRepr::Number(n)) if n == 0.0)
+        );
+        assert!(
+            matches!(get_value(&state, &["large", "50"]), Some(&ValueRepr::Number(n)) if n == 50.0)
+        );
+        assert!(
+            matches!(get_value(&state, &["large", "99"]), Some(&ValueRepr::Number(n)) if n == 99.0)
+        );
 
         // Out of bounds should return None
         assert!(get_value(&state, &["large", "100"]).is_none());
@@ -1040,8 +1096,16 @@ mod tests {
         let mut state = ValueRepr::Object(HashMap::new());
 
         // Start with a string
-        update_value(&mut state, &["field"], ValueRepr::String("text".to_string())).unwrap();
-        assert!(matches!(get_value(&state, &["field"]), Some(&ValueRepr::String(_))));
+        update_value(
+            &mut state,
+            &["field"],
+            ValueRepr::String("text".to_string()),
+        )
+        .unwrap();
+        assert!(matches!(
+            get_value(&state, &["field"]),
+            Some(&ValueRepr::String(_))
+        ));
 
         // Replace with a number
         update_value(&mut state, &["field"], ValueRepr::Number(123.0)).unwrap();
@@ -1051,11 +1115,17 @@ mod tests {
         let mut obj = HashMap::new();
         obj.insert("nested".to_string(), ValueRepr::Bool(true));
         update_value(&mut state, &["field"], ValueRepr::Object(obj)).unwrap();
-        assert!(matches!(get_value(&state, &["field"]), Some(&ValueRepr::Object(_))));
+        assert!(matches!(
+            get_value(&state, &["field"]),
+            Some(&ValueRepr::Object(_))
+        ));
 
         // Replace with null
         update_value(&mut state, &["field"], ValueRepr::Null).unwrap();
-        assert!(matches!(get_value(&state, &["field"]), Some(&ValueRepr::Null)));
+        assert!(matches!(
+            get_value(&state, &["field"]),
+            Some(&ValueRepr::Null)
+        ));
     }
 
     #[test]
@@ -1065,7 +1135,12 @@ mod tests {
 
         // Positive and negative infinity
         update_value(&mut state, &["pos_inf"], ValueRepr::Number(f64::INFINITY)).unwrap();
-        update_value(&mut state, &["neg_inf"], ValueRepr::Number(f64::NEG_INFINITY)).unwrap();
+        update_value(
+            &mut state,
+            &["neg_inf"],
+            ValueRepr::Number(f64::NEG_INFINITY),
+        )
+        .unwrap();
 
         // Zero and negative zero
         update_value(&mut state, &["zero"], ValueRepr::Number(0.0)).unwrap();
@@ -1076,11 +1151,19 @@ mod tests {
         update_value(&mut state, &["small"], ValueRepr::Number(f64::MIN_POSITIVE)).unwrap();
 
         // Verify all values
-        assert!(matches!(get_value(&state, &["pos_inf"]), Some(&ValueRepr::Number(n)) if n.is_infinite() && n.is_sign_positive()));
-        assert!(matches!(get_value(&state, &["neg_inf"]), Some(&ValueRepr::Number(n)) if n.is_infinite() && n.is_sign_negative()));
+        assert!(
+            matches!(get_value(&state, &["pos_inf"]), Some(&ValueRepr::Number(n)) if n.is_infinite() && n.is_sign_positive())
+        );
+        assert!(
+            matches!(get_value(&state, &["neg_inf"]), Some(&ValueRepr::Number(n)) if n.is_infinite() && n.is_sign_negative())
+        );
         assert!(matches!(get_value(&state, &["zero"]), Some(&ValueRepr::Number(n)) if n == 0.0));
-        assert!(matches!(get_value(&state, &["large"]), Some(&ValueRepr::Number(n)) if n == f64::MAX));
-        assert!(matches!(get_value(&state, &["small"]), Some(&ValueRepr::Number(n)) if n == f64::MIN_POSITIVE));
+        assert!(
+            matches!(get_value(&state, &["large"]), Some(&ValueRepr::Number(n)) if n == f64::MAX)
+        );
+        assert!(
+            matches!(get_value(&state, &["small"]), Some(&ValueRepr::Number(n)) if n == f64::MIN_POSITIVE)
+        );
     }
 
     #[test]

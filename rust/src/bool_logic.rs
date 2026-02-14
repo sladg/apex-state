@@ -91,9 +91,7 @@ fn value_repr_to_json(value: &ValueRepr) -> Value {
                 .unwrap_or(Value::Null)
         }
         ValueRepr::String(s) => Value::String(s.clone()),
-        ValueRepr::Array(arr) => {
-            Value::Array(arr.iter().map(value_repr_to_json).collect())
-        }
+        ValueRepr::Array(arr) => Value::Array(arr.iter().map(value_repr_to_json).collect()),
         ValueRepr::Object(obj) => {
             let map = obj
                 .iter()
@@ -762,7 +760,10 @@ mod tests {
     fn test_evaluate_exists_present() {
         use std::collections::HashMap;
         let mut user = HashMap::new();
-        user.insert("email".to_string(), ValueRepr::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
         let state = ValueRepr::Object(root);
@@ -838,7 +839,10 @@ mod tests {
         let mut user = HashMap::new();
         user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
         user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert("email".to_string(), ValueRepr::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
         let state = ValueRepr::Object(root);
@@ -856,7 +860,10 @@ mod tests {
         let mut user = HashMap::new();
         user.insert("role".to_string(), ValueRepr::String("user".to_string()));
         user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert("email".to_string(), ValueRepr::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
         let state = ValueRepr::Object(root);
@@ -903,7 +910,10 @@ mod tests {
         let mut user = HashMap::new();
         user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
         user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert("email".to_string(), ValueRepr::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
         user.insert("verified".to_string(), ValueRepr::Bool(true));
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
@@ -925,7 +935,10 @@ mod tests {
         let mut user = HashMap::new();
         user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
         user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert("email".to_string(), ValueRepr::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
         user.insert("verified".to_string(), ValueRepr::Bool(false));
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
@@ -954,7 +967,10 @@ mod tests {
         user.insert("id".to_string(), ValueRepr::Number(123.0));
         user.insert("role".to_string(), ValueRepr::String("editor".to_string()));
         user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert("email".to_string(), ValueRepr::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
         user.insert("profile".to_string(), ValueRepr::Object(profile));
 
         let mut document = HashMap::new();
@@ -1345,7 +1361,10 @@ mod tests {
     fn test_evaluate_is_empty_non_empty_string() {
         use std::collections::HashMap;
         let mut user = HashMap::new();
-        user.insert("email".to_string(), ValueRepr::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
         let state = ValueRepr::Object(root);
@@ -1357,7 +1376,10 @@ mod tests {
     fn test_evaluate_is_empty_non_empty_array() {
         use std::collections::HashMap;
         let mut user = HashMap::new();
-        user.insert("tags".to_string(), ValueRepr::Array(vec![ValueRepr::String("admin".to_string())]));
+        user.insert(
+            "tags".to_string(),
+            ValueRepr::Array(vec![ValueRepr::String("admin".to_string())]),
+        );
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
         let state = ValueRepr::Object(root);
@@ -1672,7 +1694,10 @@ mod tests {
         user.insert("role".to_string(), ValueRepr::String("editor".to_string()));
         user.insert("age".to_string(), ValueRepr::Number(25.0));
         user.insert("score".to_string(), ValueRepr::Number(150.0));
-        user.insert("tags".to_string(), ValueRepr::Array(vec![ValueRepr::String("premium".to_string())]));
+        user.insert(
+            "tags".to_string(),
+            ValueRepr::Array(vec![ValueRepr::String("premium".to_string())]),
+        );
         user.insert("bio".to_string(), ValueRepr::String("".to_string()));
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
