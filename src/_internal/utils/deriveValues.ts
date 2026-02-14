@@ -5,7 +5,7 @@
  * valtio's proxyWithComputed pattern.
  */
 
-import { is } from './is'
+import { is } from '~/utils/is'
 
 /**
  * Detects getter properties in an object (including nested objects)

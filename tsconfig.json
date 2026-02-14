@@ -4,19 +4,21 @@
   "compilerOptions": {
 
     "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
     "declaration": true,
     "declarationMap": true,
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [ "ES2022", "DOM", "DOM.Iterable" ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    "paths": { "~": [ "./src" ], "~/*": [ "./src/*" ] },
     "resolveJsonModule": true,
 
     "target": "ES2022",
-    "types": ["vitest/globals", "@testing-library/jest-dom"]
+    "types": [ "vitest/globals", "@testing-library/jest-dom" ]
   },
-  "include": ["src/**/*", "tests/**/*"],
-  "exclude": ["node_modules", "dist", "out-of-git", "scripts", "public"]
+  "include": [ "src/**/*", "tests/**/*" ],
+  "exclude": [ "node_modules", "dist", "out-of-git", "scripts", "public" ]
 }

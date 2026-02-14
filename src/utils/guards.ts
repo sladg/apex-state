@@ -13,10 +13,12 @@
  * - typeof check prevents ReferenceError in edge runtimes
  * - Evaluates to `false` in production → dead-code eliminated
  */
+declare const process: { env: Record<string, string | undefined> } | undefined
+
 export const __DEV__ =
   typeof process !== 'undefined' &&
   typeof process.env !== 'undefined' &&
-  process.env.NODE_ENV !== 'production'
+  process.env['NODE_ENV'] !== 'production'
 
 /**
  * Centralized guard object — always call, internally decides whether to act.

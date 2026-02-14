@@ -8,10 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  extractPlaceholders,
-  interpolateTemplate,
-} from '../../src/utils/interpolation'
+import { extractPlaceholders, interpolateTemplate } from '~/utils/interpolation'
 
 interface TestState {
   user: {

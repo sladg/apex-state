@@ -17,11 +17,12 @@
  * ```
  */
 
-import type { BoolLogic } from '../../types'
-import { evaluateBoolLogic } from '../../utils/boolLogic'
+import type { BoolLogic } from '~/types'
+import { evaluateBoolLogic } from '~/utils/boolLogic'
+
 import type { BaseConcernProps, ConcernType } from '../types'
 
-interface ReadonlyWhenInput<SUB_STATE> {
+export interface ReadonlyWhenInput<SUB_STATE> {
   condition: BoolLogic<SUB_STATE>
 }
 

@@ -1,12 +1,6 @@
-import {
-  addEdge,
-  getPathDegree,
-  hasEdge,
-  hasPath,
-  removeEdge,
-} from '../../core/pathGroups'
-import type { StoreInstance } from '../../core/types'
-import type { GenericMeta } from '../../types'
+import type { StoreInstance } from '~/core/types'
+import type { GenericMeta } from '~/types'
+import { addEdge, getDegree, hasEdge, hasNode, removeEdge } from '~/utils/graph'
 
 export const registerFlipPair = <
   DATA extends object,
@@ -28,10 +22,10 @@ export const registerFlipPair = <
     }
     // Note: removeEdge handles isolated node cleanup automatically
     // But we check explicitly for paths that might have other connections
-    if (hasPath(flip, path1) && getPathDegree(flip, path1) === 0) {
+    if (hasNode(flip, path1) && getDegree(flip, path1) === 0) {
       removeEdge(flip, path1, path1) // This is a no-op but keeps the pattern
     }
-    if (hasPath(flip, path2) && getPathDegree(flip, path2) === 0) {
+    if (hasNode(flip, path2) && getDegree(flip, path2) === 0) {
       removeEdge(flip, path2, path2) // This is a no-op but keeps the pattern
     }
   }

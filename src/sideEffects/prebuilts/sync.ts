@@ -1,17 +1,18 @@
-import type { PathGroups } from '../../core/pathGroups'
+import type { ChangeTuple } from '~/_internal'
+import { _internal } from '~/_internal'
+import type { StoreInstance } from '~/core/types'
+import type { GenericMeta } from '~/types'
+import { dot } from '~/utils/dot'
+import type { Graph } from '~/utils/graph'
 import {
   addEdge,
-  getGroupPaths,
-  getPathDegree,
+  getComponent,
+  getDegree,
   hasEdge,
-  hasPath,
+  hasNode,
   removeEdge,
-} from '../../core/pathGroups'
-import type { StoreInstance } from '../../core/types'
-import { processChanges } from '../../pipeline/processChanges'
-import type { ArrayOfChanges, GenericMeta } from '../../types'
-import { dot } from '../../utils/dot'
-import { is } from '../../utils/is'
+} from '~/utils/graph'
+import { is } from '~/utils/is'
 
 /**
  * Collects sync changes needed to align a group of paths to the most common value.
@@ -23,7 +24,7 @@ const collectGroupSyncChanges = <
 >(
   store: StoreInstance<DATA, META>,
   component: string[],
-): ArrayOfChanges<DATA, META> => {
+): ChangeTuple => {
   // Count value occurrences (excluding null/undefined)
   const valueCounts = new Map<unknown, number>()
   for (const path of component) {
@@ -45,16 +46,12 @@ const collectGroupSyncChanges = <
   }
 
   // Collect divergent changes
-  const changes: ArrayOfChanges<DATA, META> = []
+  const changes: ChangeTuple = []
   if (is.not.undefined(mostCommonValue)) {
     for (const path of component) {
       const currentValue = dot.get__unsafe(store.state, path)
       if (currentValue !== mostCommonValue) {
-        changes.push([
-          path,
-          mostCommonValue,
-          { isSyncPathChange: true },
-        ] as ArrayOfChanges<DATA, META>[number])
+        changes.push([path, mostCommonValue, { isSyncPathChange: true }])
       }
     }
   }
@@ -66,15 +63,15 @@ const collectGroupSyncChanges = <
  * Creates an edge cleanup function for a sync pair.
  */
 const makeSyncEdgeCleanup =
-  (sync: PathGroups, path1: string, path2: string): (() => void) =>
+  (sync: Graph, path1: string, path2: string): (() => void) =>
   () => {
     if (hasEdge(sync, path1, path2)) {
       removeEdge(sync, path1, path2)
     }
-    if (hasPath(sync, path1) && getPathDegree(sync, path1) === 0) {
+    if (hasNode(sync, path1) && getDegree(sync, path1) === 0) {
       removeEdge(sync, path1, path1)
     }
-    if (hasPath(sync, path2) && getPathDegree(sync, path2) === 0) {
+    if (hasNode(sync, path2) && getDegree(sync, path2) === 0) {
       removeEdge(sync, path2, path2)
     }
   }
@@ -102,21 +99,21 @@ export const registerSyncPairsBatch = <
 
   // Phase 2: Iterate final groups (deduplicate via pathToGroup)
   const processedGroups = new Set<number>()
-  const allChanges: ArrayOfChanges<DATA, META> = []
+  const allChanges: ChangeTuple = []
 
   for (const [path1] of pairs) {
-    const groupId = sync.pathToGroup.get(path1)
+    const groupId = sync.nodeToComponent.get(path1)
     if (groupId === undefined || processedGroups.has(groupId)) continue
     processedGroups.add(groupId)
 
-    const component = getGroupPaths(sync, path1)
+    const component = getComponent(sync, path1)
     const changes = collectGroupSyncChanges(store, component)
     allChanges.push(...changes)
   }
 
   // Phase 3: Single processChanges call with all accumulated changes
   if (allChanges.length > 0) {
-    processChanges(store, allChanges)
+    _internal.processChanges(store, allChanges)
   }
 
   return () => edgeCleanups.forEach((fn) => fn())
@@ -136,10 +133,10 @@ export const registerSyncPair = <
   addEdge(sync, path1, path2)
 
   // Find all paths in this sync group and apply sync changes
-  const component = getGroupPaths(sync, path1)
+  const component = getComponent(sync, path1)
   const changes = collectGroupSyncChanges(store, component)
   if (changes.length > 0) {
-    processChanges(store, changes)
+    _internal.processChanges(store, changes)
   }
 
   return makeSyncEdgeCleanup(sync, path1, path2)

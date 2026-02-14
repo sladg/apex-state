@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { getPathDepth } from '../../src/utils/pathUtils'
+import { getPathDepth } from '~/_internal/utils/pathUtils'
 
 describe('getPathDepth', () => {
   it('should return 0 for empty string', () => {

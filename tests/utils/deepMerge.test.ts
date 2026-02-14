@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deepMerge } from '../../src/utils/deepMerge'
+import { deepMerge } from '~/_internal/utils/deepMerge'
 
 describe('deepMerge', () => {
   it('should return target when source is undefined', () => {

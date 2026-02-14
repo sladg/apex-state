@@ -16,8 +16,8 @@ import {
   readonlyWhen,
   validationState,
   visibleWhen,
-} from '../../src/concerns/prebuilts'
-import type { BoolLogic, DeepKey, DeepValue } from '../../src/types'
+} from '~/concerns/prebuilts'
+import type { BoolLogic, DeepKey, DeepValue } from '~/types'
 
 // ============================================================================
 // Type Test State

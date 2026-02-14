@@ -47,7 +47,7 @@ export interface Timing {
   reportBatch: (type: TimingType) => void
 }
 
-interface TimingConfig {
+export interface TimingConfig {
   timing: boolean
   timingThreshold: number
   onSlowOperation?: OnSlowOperation

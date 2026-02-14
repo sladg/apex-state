@@ -12,20 +12,22 @@
  *     item3.checked = true
  */
 
-import type { Aggregation, StoreInstance } from '../../core/types'
-import type { ArrayOfChanges, GenericMeta } from '../../types'
+import type { Aggregation, StoreInstance } from '~/core/types'
+import type { GenericMeta } from '~/types'
+
+import type { ChangeTuple } from '../../types/changes'
 import { queueChange } from '../queue'
 
 /**
  * Distribute a change to all source paths in the aggregation
  */
-const distributeToSources = <DATA extends object, META extends GenericMeta>(
+const distributeToSources = (
   aggregation: Aggregation,
   targetPath: string,
   changePath: string,
   value: unknown,
   meta: GenericMeta,
-  queue: ArrayOfChanges<DATA, META>,
+  queue: ChangeTuple,
 ): void => {
   const isExactMatch = changePath === targetPath
 
@@ -48,7 +50,7 @@ export const processAggregationWrites = <
   DATA extends object,
   META extends GenericMeta,
 >(
-  changes: ArrayOfChanges<DATA, META>,
+  changes: ChangeTuple,
   store: StoreInstance<DATA, META>,
 ): void => {
   const { aggregations } = store._internal.registrations

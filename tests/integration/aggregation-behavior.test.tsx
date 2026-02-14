@@ -10,7 +10,8 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src/store/createStore'
+import { createGenericStore } from '~/store/createStore'
+
 import { flush, renderWithStore } from '../utils/react'
 
 // Use symbol-based enum for clearer test semantics and type safety

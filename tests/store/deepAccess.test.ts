@@ -7,9 +7,9 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { dot } from '../../src/utils/dot'
-import { guard } from '../../src/utils/guards'
-import { _ } from '../../src/utils/hashKey'
+import { dot } from '~/utils/dot'
+import { guard } from '~/utils/guards'
+import { _ } from '~/utils/hashKey'
 
 describe('Deep Access Utilities', () => {
   describe('dot.get', () => {

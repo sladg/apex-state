@@ -7,9 +7,10 @@
 import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src/store/createStore'
-import type { GenericMeta } from '../../src/types'
-import { renderWithStore } from '../../tests/utils/react'
+import { createGenericStore } from '~/store/createStore'
+import type { GenericMeta } from '~/types'
+
+import { renderWithStore } from '../utils/react'
 
 describe('createGenericStore', () => {
   it('should create a store with Provider', () => {

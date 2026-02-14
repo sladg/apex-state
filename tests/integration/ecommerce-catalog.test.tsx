@@ -19,15 +19,12 @@ import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import {
-  createGenericStore,
-  defaultConcerns,
-  registerListener,
-} from '../../src'
-import type { ConcernType } from '../../src/concerns/types'
-import { useStoreContext } from '../../src/core/context'
-import { dot } from '../../src/utils/dot'
-import { _ } from '../../src/utils/hashKey'
+import { createGenericStore, defaultConcerns, registerListener } from '~'
+import type { ConcernType } from '~/concerns/types'
+import { useStoreContext } from '~/core/context'
+import { dot } from '~/utils/dot'
+import { _ } from '~/utils/hashKey'
+
 import { typeHelpers } from '../mocks'
 import { fireEvent, flush, renderWithStore } from '../utils/react'
 

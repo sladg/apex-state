@@ -18,8 +18,8 @@
 
 import { bench, describe } from 'vitest'
 
-import type { BoolLogic } from '../../src/types'
-import { evaluateBoolLogic } from '../../src/utils/boolLogic'
+import type { BoolLogic } from '~/types'
+import { evaluateBoolLogic } from '~/utils/boolLogic'
 
 // =============================================================================
 // Mock State Fixtures

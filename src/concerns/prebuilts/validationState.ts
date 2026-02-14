@@ -1,7 +1,8 @@
 import { z } from 'zod'
 
-import type { DeepKey, DeepValue } from '../../types'
-import { dot } from '../../utils/dot'
+import type { DeepKey, DeepValue } from '~/types'
+import { dot } from '~/utils/dot'
+
 import type { BaseConcernProps } from '../types'
 
 export interface ValidationError {

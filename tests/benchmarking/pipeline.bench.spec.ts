@@ -16,12 +16,13 @@
 import { proxy } from 'valtio/vanilla'
 import { bench, describe } from 'vitest'
 
-import { addEdge, createPathGroups } from '../../src/core/pathGroups'
-import type { StoreInstance } from '../../src/core/types'
-import { normalizeChangesForGroups } from '../../src/pipeline/normalizeChanges'
-import { processChanges } from '../../src/pipeline/processChanges'
-import type { GenericMeta } from '../../src/types'
-import { createTiming } from '../../src/utils/timing'
+import { normalizeChangesForGroups } from '~/_internal/pipeline/normalizeChanges'
+import { processChanges } from '~/_internal/pipeline/processChanges'
+import { createTiming } from '~/_internal/utils/timing'
+import type { StoreInstance } from '~/core/types'
+import type { GenericMeta } from '~/types'
+import { addEdge, createGraph } from '~/utils/graph'
+
 import { typeHelpers } from '../mocks/helpers'
 
 /** Benchmark state type - represents dynamic nested paths used in benchmarks */
@@ -35,8 +36,8 @@ const createMockStore = (
   syncPaths: [string, string][] = [],
   flipPaths: [string, string][] = [],
 ): StoreInstance<BenchmarkState, GenericMeta> => {
-  const syncGraph = createPathGroups()
-  const flipGraph = createPathGroups()
+  const syncGraph = createGraph()
+  const flipGraph = createGraph()
 
   for (const [path1, path2] of syncPaths) {
     addEdge(syncGraph, path1, path2)
@@ -53,13 +54,13 @@ const createMockStore = (
       graphs: {
         sync: syncGraph,
         flip: flipGraph,
-        listenerGraph: {
-          order: [],
-          groupMeta: new Map(),
-          groupMembers: new Map(),
-          nodes: new Map(),
-          edges: new Map(),
-          fns: new Map(),
+        topicRouter: {
+          topics: [],
+          topicMeta: new Map(),
+          subscribers: new Map(),
+          subscriberMeta: new Map(),
+          routes: new Map(),
+          handlers: new Map(),
         },
       },
       registrations: {

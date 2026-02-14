@@ -11,9 +11,10 @@
 import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src/store/createStore'
-import type { GenericMeta } from '../../src/types'
-import { fireEvent, flush, renderWithStore } from '../../tests/utils/react'
+import { createGenericStore } from '~/store/createStore'
+import type { GenericMeta } from '~/types'
+
+import { fireEvent, flush, renderWithStore } from '../utils/react'
 
 const initialTestState = {
   count: 0,

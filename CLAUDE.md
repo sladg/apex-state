@@ -188,7 +188,7 @@ src/
 
 1. **Write/edit code** - Make the requested changes
 2. **Format code** - Run `npm run code:fix` (don't read output)
-3. **Verify** - Check that files are properly formatted
+3. **Verify** - Run `npm run code:check` (ESLint + TypeScript type check)
 4. **Done** - Code is ready
 
 ## When in Doubt

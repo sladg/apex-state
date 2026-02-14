@@ -1,38 +1,36 @@
+import type { ListenerRegistrationInternal } from '~/_internal'
+import type { StoreInstance } from '~/core/types'
+import type { GenericMeta } from '~/types'
+import { generateListenerId, guard } from '~/utils/guards'
+import type { HandlerFn } from '~/utils/topicRouter'
 import {
-  addGroup,
-  addGroups,
-  addNode,
-  removeGroup,
-  removeNode,
-} from '../../core/listenerGraph'
-import type {
-  ListenerRegistration__internal,
-  StoreInstance,
-} from '../../core/types'
-import type { ListenerFn } from '../../pipeline/processors/listeners.types'
-import type { GenericMeta } from '../../types'
-import { generateListenerId, guard } from '../../utils/guards'
+  addSubscriber,
+  addTopic,
+  addTopics,
+  removeSubscriber,
+  removeTopic,
+} from '~/utils/topicRouter'
 
 /**
  * Internal registration logic shared by both single and batch variants.
- * Works with ListenerRegistration__internal to avoid DeepKey resolution overhead.
+ * Works with ListenerRegistrationInternal to avoid DeepKey resolution overhead.
  */
 const prepareRegistration = (
   store: StoreInstance<object>,
-  registration: ListenerRegistration__internal,
-  graph: { fns: Map<string, ListenerFn> },
+  registration: ListenerRegistrationInternal,
+  router: { handlers: Map<string, HandlerFn> },
 ): {
   path: string
   id: string
-  wrappedFn: ListenerFn
+  wrappedFn: HandlerFn
   scope: string | null
 } => {
   guard.listenerScope(registration.path, registration.scope)
 
   const path = registration.path ?? ''
-  const id = generateListenerId(path, registration.fn, graph.fns)
+  const id = generateListenerId(path, registration.fn, router.handlers)
 
-  const wrappedFn: ListenerFn = (changes, state) =>
+  const wrappedFn: HandlerFn = (changes, state) =>
     store._internal.timing.run(
       'listeners',
       () => registration.fn(changes, state),
@@ -46,48 +44,48 @@ const prepareRegistration = (
 }
 
 /**
- * Batch version of registerListener. Adds all groups first (single sort + edge
- * recomputation), then registers all nodes. Returns a single combined cleanup.
+ * Batch version of registerListener. Adds all topics first (single sort + route
+ * recomputation), then registers all subscribers. Returns a single combined cleanup.
  *
- * PERF: For N listeners sharing M unique groups, this does O(M log M) work once
- * instead of O(M × M log M) from N individual addGroup calls.
+ * PERF: For N listeners sharing M unique topics, this does O(M log M) work once
+ * instead of O(M × M log M) from N individual addTopic calls.
  */
 export const registerListenersBatch = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
 >(
   store: StoreInstance<DATA, META>,
-  registrations: ListenerRegistration__internal<DATA, META>[],
+  registrations: ListenerRegistrationInternal<DATA, META>[],
 ): (() => void) => {
-  const graph = store._internal.graphs.listenerGraph
+  const router = store._internal.graphs.topicRouter
 
-  // Phase 1: Validate all registrations and collect group paths
-  const groupPaths: string[] = []
+  // Phase 1: Validate all registrations and collect topic paths
+  const topicPaths: string[] = []
   const prepared: ReturnType<typeof prepareRegistration>[] = []
 
   for (const registration of registrations) {
-    const entry = prepareRegistration(store, registration, graph)
-    groupPaths.push(entry.path)
+    const entry = prepareRegistration(store, registration, router)
+    topicPaths.push(entry.path)
     prepared.push(entry)
   }
 
-  // Phase 2: Add all groups at once (single sort + edge recomputation)
-  addGroups(graph, groupPaths)
+  // Phase 2: Add all topics at once (single sort + route recomputation)
+  addTopics(router, topicPaths)
 
-  // Phase 3: Register all nodes and fns
+  // Phase 3: Register all subscribers and handlers
   const cleanupEntries: { id: string; path: string }[] = []
   for (const { path, id, wrappedFn, scope } of prepared) {
-    graph.fns.set(id, wrappedFn)
-    addNode(graph, id, scope, path)
+    router.handlers.set(id, wrappedFn)
+    addSubscriber(router, id, scope, path)
     cleanupEntries.push({ id, path })
   }
 
   // Return combined cleanup
   return () => {
     for (const { id, path } of cleanupEntries) {
-      const isEmpty = removeNode(graph, id, path)
-      if (isEmpty) removeGroup(graph, path)
-      graph.fns.delete(id)
+      const isEmpty = removeSubscriber(router, id, path)
+      if (isEmpty) removeTopic(router, path)
+      router.handlers.delete(id)
     }
   }
 }
@@ -97,26 +95,26 @@ export const registerListener = <
   META extends GenericMeta = GenericMeta,
 >(
   store: StoreInstance<DATA, META>,
-  registration: ListenerRegistration__internal<DATA, META>,
+  registration: ListenerRegistrationInternal<DATA, META>,
 ): (() => void) => {
-  const graph = store._internal.graphs.listenerGraph
+  const router = store._internal.graphs.topicRouter
   const { path, id, wrappedFn, scope } = prepareRegistration(
     store,
     registration,
-    graph,
+    router,
   )
 
-  // Ensure group exists for this path
-  addGroup(graph, path)
+  // Ensure topic exists for this path
+  addTopic(router, path)
 
-  // Store wrapped fn and node metadata
-  graph.fns.set(id, wrappedFn)
-  addNode(graph, id, scope, path)
+  // Store wrapped handler and subscriber metadata
+  router.handlers.set(id, wrappedFn)
+  addSubscriber(router, id, scope, path)
 
   // Return cleanup function
   return () => {
-    const isEmpty = removeNode(graph, id, path)
-    if (isEmpty) removeGroup(graph, path)
-    graph.fns.delete(id)
+    const isEmpty = removeSubscriber(router, id, path)
+    if (isEmpty) removeTopic(router, path)
+    router.handlers.delete(id)
   }
 }

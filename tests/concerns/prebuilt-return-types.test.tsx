@@ -16,9 +16,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createGenericStore } from '../../src'
-import type { ValidationStateResult } from '../../src/concerns/prebuilts'
-import type { StoreInstance } from '../../src/core/types'
+import { createGenericStore } from '~'
+import type { ValidationStateResult } from '~/concerns/prebuilts'
+import type { StoreInstance } from '~/core/types'
+
 import { flush, renderWithStore } from '../utils/react'
 
 interface TestState {

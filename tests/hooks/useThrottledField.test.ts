@@ -12,7 +12,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useThrottledField } from '../../src/hooks/useThrottledField'
+import { useThrottledField } from '~/hooks/useThrottledField'
 
 describe('useThrottledField', () => {
   beforeEach(() => {

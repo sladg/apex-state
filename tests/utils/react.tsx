@@ -17,11 +17,11 @@ import { useSnapshot } from 'valtio'
 import { proxy } from 'valtio/vanilla'
 import { effect } from 'valtio-reactive'
 
-import { useStoreContext } from '../../src/core/context'
-import type { StoreInstance } from '../../src/core/types'
-import { createGenericStore } from '../../src/store/createStore'
-import type { DeepKey, GenericMeta } from '../../src/types'
-import { dot } from '../../src/utils/dot'
+import { useStoreContext } from '~/core/context'
+import type { StoreInstance } from '~/core/types'
+import { createGenericStore } from '~/store/createStore'
+import type { DeepKey, GenericMeta } from '~/types'
+import { dot } from '~/utils/dot'
 
 // Type helpers for store
 type GenericStore<

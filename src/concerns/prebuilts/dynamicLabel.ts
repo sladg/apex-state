@@ -17,7 +17,8 @@
  * ```
  */
 
-import { interpolateTemplate } from '../../utils/interpolation'
+import { interpolateTemplate } from '~/utils/interpolation'
+
 import type { ConcernType } from '../types'
 
 export const dynamicLabel: ConcernType<{ template: string }, string> = {

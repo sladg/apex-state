@@ -9,9 +9,10 @@ import { useContext } from 'react'
 import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { StoreContext } from '../../src/core/context'
-import { createGenericStore } from '../../src/store/createStore'
-import { renderWithStore } from '../../tests/utils/react'
+import { StoreContext } from '~/core/context'
+import { createGenericStore } from '~/store/createStore'
+
+import { renderWithStore } from '../utils/react'
 
 describe('Provider Component', () => {
   it('should provide store instance via context', () => {

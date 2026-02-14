@@ -7,7 +7,7 @@
 
 import { describe, expectTypeOf, it } from 'vitest'
 
-import type { DeepValue } from '../../src/types/deepValue'
+import type { DeepValue } from '~/types/deepValue'
 
 // Test types
 interface User {

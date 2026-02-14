@@ -7,18 +7,9 @@
 
 import type { ReactNode } from 'react'
 
-import type { ConcernType } from '../concerns/types'
-import type { ListenerGraph } from '../pipeline/processors/listeners.types'
-import type {
-  ArrayOfChanges,
-  DeepKey,
-  DeepRequired,
-  DeepValue,
-  GenericMeta,
-} from '../types'
+import type { ConcernValues, InternalState } from '../_internal'
+import type { ArrayOfChanges, DeepKey, DeepValue, GenericMeta } from '../types'
 import type { SideEffects } from '../types/sideEffects'
-import type { Timing } from '../utils/timing'
-import type { FlipGraph, SyncGraph } from './graphTypes'
 
 /**
  * Debug configuration for development tooling
@@ -158,67 +149,6 @@ export type ListenerRegistration<
   | PathOnly<DATA, META>
   | RootListener<DATA, META>
 
-/**
- * Internal listener registration with plain strings.
- * Structurally compatible with ListenerRegistration<DATA, META> to allow
- * passing type-safe registrations to internal functions without casting.
- *
- * Key design:
- * - path: string | null (accepts both string literals from DeepKey and plain strings)
- * - scope: optional string | null | undefined (accepts all scope variants)
- * - fn: (...args: any[]) => any (accepts any function signature)
- *
- * This allows:
- * ```ts
- * const typeSafe: ListenerRegistration<DATA, META> = { ... }
- * const internal: ListenerRegistration__internal = typeSafe // ✓ works
- * ```
- */
-
-export interface ListenerRegistration__internal<
-  _DATA extends object = object,
-  _META extends GenericMeta = GenericMeta,
-> {
-  path: string | null
-  scope?: string | null | undefined
-  fn: (...args: any[]) => any
-}
-
-export interface SideEffectGraphs<
-  _DATA extends object = object,
-  _META extends GenericMeta = GenericMeta,
-> {
-  sync: SyncGraph
-  flip: FlipGraph
-  listenerGraph: ListenerGraph
-}
-
-export interface Registrations {
-  concerns: Map<string, ConcernType[]>
-  effectCleanups: Set<() => void>
-  sideEffectCleanups: Map<string, () => void>
-  aggregations: Map<string, Aggregation[]>
-}
-
-export interface ProcessingState<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
-> {
-  queue: ArrayOfChanges<DATA, META>
-}
-
-/** Internal store state (NOT tracked - wrapped in ref()) */
-export interface InternalState<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
-> {
-  graphs: SideEffectGraphs<DATA, META>
-  registrations: Registrations
-  processing: ProcessingState<DATA, META>
-  timing: Timing
-  config: DeepRequired<StoreConfig>
-}
-
 /** Extract the Listener type from a store created by createGenericStore */
 export type InferListener<T> = T extends {
   useSideEffects: (
@@ -230,8 +160,6 @@ export type InferListener<T> = T extends {
     ? ListenerRegistration<DATA, META>
     : never
   : never
-
-export type ConcernValues = Record<string, Record<string, unknown>>
 
 /** Two-proxy pattern: state and _concerns are independent to prevent infinite loops */
 export interface StoreInstance<

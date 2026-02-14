@@ -5,22 +5,23 @@
  * Uses normalizeChangesForGroups to handle exact, parent, and child changes.
  */
 
-import { getAllGroups } from '../../core/pathGroups'
-import type { StoreInstance } from '../../core/types'
-import type { GenericMeta } from '../../types'
-import type { ArrayOfChanges__internal } from '../../types/changes'
+import type { StoreInstance } from '~/core/types'
+import type { GenericMeta } from '~/types'
+import { getAllComponents } from '~/utils/graph'
+
+import type { ChangeTuple } from '../../types/changes'
 import { normalizeChangesForGroups } from '../normalizeChanges'
 import { queueChange } from '../queue'
 
 export const processSyncPaths = <DATA extends object, META extends GenericMeta>(
-  changes: ArrayOfChanges__internal<DATA, META>,
+  changes: ChangeTuple<DATA, META>,
   store: StoreInstance<DATA, META>,
 ): void => {
   const { sync } = store._internal.graphs
   const { queue } = store._internal.processing
 
-  // Get connected components (groups of synced paths) - O(1) with PathGroups
-  const pathGroups = getAllGroups(sync)
+  // Get connected components (groups of synced paths) - O(1) with Graph
+  const pathGroups = getAllComponents(sync)
   if (pathGroups.length === 0) return
 
   // Normalize changes for grouped paths

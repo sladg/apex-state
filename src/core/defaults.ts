@@ -1,5 +1,5 @@
-import type { DeepRequired } from '../types'
-import type { StoreConfig } from './types'
+import type { StoreConfig } from '~/core/types'
+import type { DeepRequired } from '~/types'
 
 export const DEFAULT_STORE_CONFIG: DeepRequired<StoreConfig> = {
   errorStorePath: '_errors',

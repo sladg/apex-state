@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { detectGetters, extractGetters } from '../../src/utils/deriveValues'
+import { detectGetters, extractGetters } from '~/_internal/utils/deriveValues'
 
 describe('detectGetters', () => {
   it('should return empty object for object without getters', () => {

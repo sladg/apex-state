@@ -6,7 +6,7 @@
 
 import { describe, expectTypeOf, test } from 'vitest'
 
-import type { DeepKeyFiltered } from '../../src/types'
+import type { DeepKeyFiltered } from '~/types'
 
 describe('DeepKeyFiltered type utility', () => {
   interface TestData {

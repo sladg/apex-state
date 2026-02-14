@@ -7,8 +7,10 @@
 
 import { snapshot } from 'valtio'
 
-import type { StoreInstance } from '../core/types'
-import type { ArrayOfChanges, GenericMeta } from '../types'
+import type { StoreInstance } from '~/core/types'
+import type { GenericMeta } from '~/types'
+
+import type { ChangeTuple } from '../types/changes'
 import { applyBatch } from './applyBatch'
 import {
   processAggregationWrites,
@@ -22,7 +24,7 @@ export const processChanges = <
   META extends GenericMeta = GenericMeta,
 >(
   store: StoreInstance<DATA, META>,
-  initialChanges: ArrayOfChanges<DATA, META>,
+  initialChanges: ChangeTuple,
 ): void => {
   const { processing } = store._internal
 
@@ -50,6 +52,6 @@ export const processChanges = <
     // Apply all accumulated changes to state once
     applyBatch(processing.queue, store.state)
   } catch {
-    //
+    // @TODO: Add logging/error
   }
 }

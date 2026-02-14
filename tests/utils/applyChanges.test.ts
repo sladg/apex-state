@@ -6,8 +6,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { ArrayOfChanges } from '../../src/types'
-import { applyChangesToObject } from '../../src/utils/applyChanges'
+import type { ArrayOfChanges } from '~/types'
+import { applyChangesToObject } from '~/utils/applyChanges'
 
 describe('applyChangesToObject', () => {
   it('should apply single change and return new object', () => {

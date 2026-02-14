@@ -40,8 +40,8 @@ const registerSideEffectsImpl = <
   }
 
   // Register listeners: { path, scope, fn }
-  // PERF: Uses registerListenersBatch (1 sort + edge recomputation) instead of per-listener loop.
-  // Do NOT revert to a loop over registerListener — causes N × addGroup redundant sorts.
+  // PERF: Uses registerListenersBatch (1 sort + route recomputation) instead of per-listener loop.
+  // Do NOT revert to a loop over registerListener — causes N × addTopic redundant sorts.
   if (effects.listeners) {
     const cleanup = registerListenersBatch(store, effects.listeners)
     cleanups.push(cleanup)

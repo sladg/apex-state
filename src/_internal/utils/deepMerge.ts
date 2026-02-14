@@ -1,5 +1,5 @@
-import type { DeepPartial } from '../types'
-import { is } from './is'
+import type { DeepPartial } from '~/types'
+import { is } from '~/utils/is'
 
 /**
  * Deep merge two objects, with source values overriding target values.

@@ -1,7 +1,7 @@
 import { bench, describe } from 'vitest'
 
-import { dot } from '../../src/utils/dot'
-import { is } from '../../src/utils/is'
+import { dot } from '~/utils/dot'
+import { is } from '~/utils/is'
 
 // =============================================================================
 // Test Data

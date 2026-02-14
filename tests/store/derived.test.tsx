@@ -10,11 +10,12 @@ import { screen } from '@testing-library/react'
 import { useSnapshot } from 'valtio'
 import { describe, expect, it } from 'vitest'
 
-import { StoreContext } from '../../src/core/context'
-import { createGenericStore } from '../../src/store/createStore'
-import { detectGetters, extractGetters } from '../../src/utils/deriveValues'
-import { fireEvent, flush, renderWithStore } from '../../tests/utils/react'
+import { detectGetters, extractGetters } from '~/_internal/utils/deriveValues'
+import { StoreContext } from '~/core/context'
+import { createGenericStore } from '~/store/createStore'
+
 import { typeHelpers } from '../mocks'
+import { fireEvent, flush, renderWithStore } from '../utils/react'
 
 /**
  * Type helpers for derived state with getters.

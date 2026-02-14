@@ -2,19 +2,14 @@ import { useMemo } from 'react'
 
 import { proxy, ref } from 'valtio'
 
+import type { InternalState } from '../_internal'
+import { _internal } from '../_internal'
 import { StoreContext } from '../core/context'
 import { DEFAULT_STORE_CONFIG } from '../core/defaults'
-import { createListenerGraph } from '../core/listenerGraph'
-import { createPathGroups } from '../core/pathGroups'
-import type {
-  InternalState,
-  ProviderProps,
-  StoreConfig,
-  StoreInstance,
-} from '../core/types'
+import type { ProviderProps, StoreConfig, StoreInstance } from '../core/types'
 import type { DeepRequired, GenericMeta } from '../types'
-import { deepMerge } from '../utils/deepMerge'
-import { createTiming } from '../utils/timing'
+import { createGraph } from '../utils/graph'
+import { createTopicRouter } from '../utils/topicRouter'
 
 const createInternalState = <
   DATA extends object,
@@ -23,9 +18,9 @@ const createInternalState = <
   config: DeepRequired<StoreConfig>,
 ): InternalState<DATA, META> => ({
   graphs: {
-    sync: createPathGroups(),
-    flip: createPathGroups(),
-    listenerGraph: createListenerGraph(),
+    sync: createGraph(),
+    flip: createGraph(),
+    topicRouter: createTopicRouter(),
   },
   registrations: {
     concerns: new Map(),
@@ -36,7 +31,7 @@ const createInternalState = <
   processing: {
     queue: [],
   },
-  timing: createTiming(config.debug),
+  timing: _internal.createTiming(config.debug),
   config,
 })
 
@@ -47,7 +42,7 @@ export const createProvider = <
   storeConfig?: StoreConfig,
 ) => {
   // Resolve config with defaults at factory time
-  const resolvedConfig = deepMerge(DEFAULT_STORE_CONFIG, storeConfig)
+  const resolvedConfig = _internal.deepMerge(DEFAULT_STORE_CONFIG, storeConfig)
 
   const Provider = ({ initialState, children }: ProviderProps<DATA>) => {
     const store = useMemo<StoreInstance<DATA, META>>(() => {

@@ -14,8 +14,8 @@ import type {
   FlipPair,
   PathsWithSameValueAs,
   SyncPair,
-} from '../../src/types/pathsOfSameValue'
-import type { SideEffects } from '../../src/types/sideEffects'
+} from '~/types/pathsOfSameValue'
+import type { SideEffects } from '~/types/sideEffects'
 
 // ============================================================================
 // Test State Definitions

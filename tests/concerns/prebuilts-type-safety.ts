@@ -7,7 +7,7 @@
  * Run with: npm run type-check
  */
 
-import type { BoolLogic } from '../../src/types'
+import type { BoolLogic } from '~/types'
 
 // ============================================================================
 // Test State Type

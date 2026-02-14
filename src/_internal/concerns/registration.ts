@@ -1,10 +1,10 @@
 import { effect } from 'valtio-reactive'
 
-import type { StoreInstance } from '../core/types'
-import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
-import { dot } from '../utils/dot'
-import { findConcern } from './registry'
-import type { BaseConcernProps, ConcernType } from './types'
+import { findConcern } from '~/concerns/registry'
+import type { BaseConcernProps, ConcernType } from '~/concerns/types'
+import type { StoreInstance } from '~/core/types'
+import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '~/types'
+import { dot } from '~/utils/dot'
 
 const registerConcernEffectsImpl = <
   DATA extends object,

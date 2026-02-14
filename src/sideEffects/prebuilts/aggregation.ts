@@ -1,8 +1,8 @@
 import { effect } from 'valtio-reactive'
 
-import type { Aggregation, StoreInstance } from '../../core/types'
-import type { AggregationPair, GenericMeta } from '../../types'
-import { dot } from '../../utils/dot'
+import type { Aggregation, StoreInstance } from '~/core/types'
+import type { AggregationPair, GenericMeta } from '~/types'
+import { dot } from '~/utils/dot'
 
 /**
  * Register multiple aggregations together (follows concerns pattern)

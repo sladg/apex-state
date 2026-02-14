@@ -7,8 +7,9 @@
  * - Child change: change path is descendant of registered path (preserves relative path)
  */
 
-import { dot } from '../utils/dot'
-import { is } from '../utils/is'
+import { dot } from '~/utils/dot'
+import { is } from '~/utils/is'
+
 import type {
   NormalizeChangeArgs,
   NormalizeChangesGroupedArgs,

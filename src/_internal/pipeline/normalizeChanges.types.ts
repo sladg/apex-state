@@ -2,8 +2,9 @@
  * Types for Change Normalization
  */
 
-import type { GenericMeta } from '../types'
-import type { ArrayOfChanges__internal } from '../types/changes'
+import type { GenericMeta } from '~/types'
+
+import type { ChangeTuple } from '../types/changes'
 
 // =============================================================================
 // Normalization Types
@@ -17,7 +18,7 @@ import type { ArrayOfChanges__internal } from '../types/changes'
 export type MatchMode = 'all' | 'children-only'
 
 export interface NormalizeChangesGroupedArgs {
-  changes: ArrayOfChanges__internal
+  changes: ChangeTuple
   /** Groups of connected paths - each group is processed as a unit */
   pathGroups: string[][]
   /** Default: 'all' */

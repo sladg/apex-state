@@ -12,8 +12,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { BoolLogic } from '../../src/types/boolLogic'
-import { evaluateBoolLogic } from '../../src/utils/boolLogic'
+import type { BoolLogic } from '~/types/boolLogic'
+import { evaluateBoolLogic } from '~/utils/boolLogic'
 
 interface TestState {
   user: {

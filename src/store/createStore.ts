@@ -2,11 +2,11 @@ import { useCallback, useLayoutEffect } from 'react'
 
 import { snapshot, useSnapshot } from 'valtio'
 
+import { _internal } from '../_internal'
 import type { ConcernType } from '../concerns'
-import { defaultConcerns, registerConcernEffects } from '../concerns'
+import { defaultConcerns } from '../concerns'
 import { useStoreContext } from '../core/context'
 import type { StoreConfig } from '../core/types'
-import { processChanges } from '../pipeline/processChanges'
 import { registerSideEffects } from '../sideEffects'
 import type {
   ArrayOfChanges,
@@ -37,10 +37,7 @@ export const createGenericStore = <
 
     const setValue = useCallback(
       (newValue: DeepValue<DATA, P>, meta?: META) => {
-        const changes: ArrayOfChanges<DATA, META> = [
-          [path, newValue, (meta || {}) as META],
-        ]
-        processChanges(store, changes)
+        _internal.processChanges(store, [[path, newValue, meta || {}]])
       },
       [store, path],
     )
@@ -75,7 +72,7 @@ export const createGenericStore = <
 
     const setChanges = useCallback(
       (changes: ArrayOfChanges<DATA, META>) => {
-        processChanges(store, changes)
+        _internal.processChanges(store, changes)
       },
       [store],
     )
@@ -107,7 +104,7 @@ export const createGenericStore = <
       defaultConcerns) as readonly ConcernType<any, any>[]
 
     useLayoutEffect(() => {
-      return registerConcernEffects(store, registration, concerns)
+      return _internal.registerConcernEffects(store, registration, concerns)
     }, [store, id, registration, customConcerns])
   }
 

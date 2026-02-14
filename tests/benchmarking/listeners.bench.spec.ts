@@ -6,27 +6,24 @@
  * 2. Old nested loop: Map + sortedListenerPaths, nested loop, queue tracking
  * 3. Reduce (immutable): reduce with spread accumulator
  * 4. Reduce (mutable acc): reduce with push accumulator
- * 5. Graph-based: ListenerGraph with pre-computed edges and local pendingByGroup
+ * 5. Graph-based: TopicRouter with pre-computed routes and local pendingByTopic
  */
 
 import { bench, describe } from 'vitest'
 
-import type { ListenerRegistration__internal } from '../../src/core/types'
-import type {
-  ListenerFn,
-  ListenerGraph,
-  ListenerRoute,
-} from '../../src/pipeline/processors/listeners.types'
-import type { ArrayOfChanges__internal } from '../../src/types/changes'
-import { dot } from '../../src/utils/dot'
-import { getPathDepth } from '../../src/utils/pathUtils'
+import type { ListenerRegistrationInternal } from '~/_internal/core/types'
+import type { ChangeTuple } from '~/_internal/types/changes'
+import { getPathDepth } from '~/_internal/utils/pathUtils'
+import { dot } from '~/utils/dot'
+import type { HandlerFn, Route, TopicRouter } from '~/utils/topicRouter'
+
 import type { TestState } from '../mocks/types'
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type AnyChange = ArrayOfChanges__internal[number]
+type AnyChange = ChangeTuple[number]
 
 /** Legacy flat listener structure for backward-compat benchmarks */
 interface FlatListener {
@@ -35,7 +32,7 @@ interface FlatListener {
   prefixLen: number
   isRoot: boolean
   scope: string | null
-  fn: ListenerFn
+  fn: HandlerFn
   depth: number
 }
 
@@ -89,7 +86,7 @@ const getRelevantChanges = (
 }
 
 const callListener = (
-  registration: ListenerRegistration__internal<TestState>,
+  registration: ListenerRegistrationInternal<TestState>,
   relevantChanges: AnyChange[],
   currentState: TestState,
 ): AnyChange[] => {
@@ -97,7 +94,7 @@ const callListener = (
   const scope = (registration.scope as string) ?? ''
   const scopedState =
     scope === '' ? currentState : dot.get__unsafe(currentState, scope)
-  const fn = registration.fn as unknown as ListenerFn
+  const fn = registration.fn as unknown as HandlerFn
   const result = fn(relevantChanges, scopedState)
   if (!result || result.length === 0) return []
   return result.map(([path, value, meta]) => [
@@ -108,7 +105,7 @@ const callListener = (
 }
 
 const callFlatListener = (
-  fn: ListenerFn,
+  fn: HandlerFn,
   scope: string | null,
   relevantChanges: AnyChange[],
   currentState: TestState,
@@ -169,7 +166,7 @@ const processListeners_flat = (
 
 const processListeners_nested = (
   changes: AnyChange[],
-  listeners: Map<string, ListenerRegistration__internal<TestState>[]>,
+  listeners: Map<string, ListenerRegistrationInternal<TestState>[]>,
   sortedListenerPaths: string[],
   currentState: TestState,
 ): AnyChange[] => {
@@ -287,20 +284,20 @@ const processListeners_reduceMut = (
 }
 
 // ============================================================================
-// Strategy E: graph-based (ListenerGraph with pre-computed edges)
+// Strategy E: router-based (TopicRouter with pre-computed routes)
 // ============================================================================
 
 /* eslint-disable sonarjs/elseif-without-else, sonarjs/cognitive-complexity */
 const processListeners_graph = (
   changes: AnyChange[],
-  graph: ListenerGraph,
+  router: TopicRouter,
   currentState: BenchState,
 ): AnyChange[] => {
   const produced: AnyChange[] = []
 
-  // Seed: route each change to matching groups by walking up ancestors
-  const pendingByGroup = new Map<string, AnyChange[]>()
-  for (const groupPath of graph.order) pendingByGroup.set(groupPath, [])
+  // Seed: route each change to matching topics by walking up ancestors
+  const pendingByTopic = new Map<string, AnyChange[]>()
+  for (const topic of router.topics) pendingByTopic.set(topic, [])
 
   for (const change of changes) {
     const changePath = change[0]
@@ -309,36 +306,36 @@ const processListeners_graph = (
       pos = changePath.lastIndexOf('.', pos - 1)
       if (pos === -1) break
       const ancestor = changePath.slice(0, pos)
-      const pending = pendingByGroup.get(ancestor)
+      const pending = pendingByTopic.get(ancestor)
       if (pending) {
-        const meta = graph.groupMeta.get(ancestor)!
+        const meta = router.topicMeta.get(ancestor)!
         pending.push([changePath.slice(meta.prefixLen), change[1], change[2]])
       }
     }
     if (!changePath.includes('.')) {
-      const rootPending = pendingByGroup.get('')
+      const rootPending = pendingByTopic.get('')
       if (rootPending) rootPending.push(change)
     }
   }
 
-  for (const groupPath of graph.order) {
-    const meta = graph.groupMeta.get(groupPath)!
-    const memberIds = graph.groupMembers.get(groupPath)!
-    const edges = graph.edges.get(groupPath)!
-    const pending = pendingByGroup.get(groupPath)!
+  for (const topic of router.topics) {
+    const meta = router.topicMeta.get(topic)!
+    const subscriberIds = router.subscribers.get(topic)!
+    const topicRoutes = router.routes.get(topic)!
+    const pending = pendingByTopic.get(topic)!
 
     if (pending.length === 0) continue
-    const groupRelevant = pending
+    const topicRelevant = pending
 
-    for (const id of memberIds) {
-      const fn = graph.fns.get(id)
+    for (const id of subscriberIds) {
+      const fn = router.handlers.get(id)
       if (!fn) continue
-      const node = graph.nodes.get(id)!
+      const subscriber = router.subscriberMeta.get(id)!
       const scopedState =
-        node.scope === null
+        subscriber.scope === null
           ? currentState
-          : dot.get__unsafe(currentState, node.scope)
-      const result = fn(groupRelevant, scopedState)
+          : dot.get__unsafe(currentState, subscriber.scope)
+      const result = fn(topicRelevant, scopedState)
       if (!result || result.length === 0) continue
 
       for (const [path, value, changeMeta] of result) {
@@ -347,21 +344,21 @@ const processListeners_graph = (
 
         produced.push(change)
 
-        // Within-group accumulation
+        // Within-topic accumulation
         if (meta.depth === 0 && !path.includes('.')) {
-          groupRelevant.push([path, value, enrichedMeta])
+          topicRelevant.push([path, value, enrichedMeta])
         } else if (path.startsWith(meta.prefix)) {
-          groupRelevant.push([path.slice(meta.prefixLen), value, enrichedMeta])
+          topicRelevant.push([path.slice(meta.prefixLen), value, enrichedMeta])
         }
 
-        // Route to downstream groups via pre-computed edges
-        for (const edge of edges) {
-          if (edge.depth === 0 && !path.includes('.')) {
-            pendingByGroup.get(edge.target)!.push([path, value, enrichedMeta])
-          } else if (path.startsWith(edge.prefix)) {
-            pendingByGroup
-              .get(edge.target)!
-              .push([path.slice(edge.prefixLen), value, enrichedMeta])
+        // Route to downstream topics via pre-computed routes
+        for (const route of topicRoutes) {
+          if (route.depth === 0 && !path.includes('.')) {
+            pendingByTopic.get(route.target)!.push([path, value, enrichedMeta])
+          } else if (path.startsWith(route.prefix)) {
+            pendingByTopic
+              .get(route.target)!
+              .push([path.slice(route.prefixLen), value, enrichedMeta])
           }
         }
       }
@@ -378,13 +375,13 @@ const processListeners_graph = (
 const createListenerFn = (
   producesChanges: boolean,
   isFirst: boolean,
-): ListenerFn =>
+): HandlerFn =>
   function listenerFn(_changes: AnyChange[]) {
     if (producesChanges && isFirst) {
       return [['_marker', Date.now(), {}] as AnyChange]
     }
     return undefined
-  } as ListenerFn
+  } as HandlerFn
 
 /* eslint-disable sonarjs/cognitive-complexity */
 const createFixture = (config: {
@@ -396,31 +393,31 @@ const createFixture = (config: {
   const state: BenchState = { root: {} }
   const listeners = new Map<
     string,
-    ListenerRegistration__internal<BenchState>[]
+    ListenerRegistrationInternal<BenchState>[]
   >()
   const flatListeners: FlatListener[] = []
 
-  // Build the graph
-  const graph: ListenerGraph = {
-    order: [],
-    groupMeta: new Map(),
-    groupMembers: new Map(),
-    nodes: new Map(),
-    edges: new Map(),
-    fns: new Map(),
+  // Build the router
+  const router: TopicRouter = {
+    topics: [],
+    topicMeta: new Map(),
+    subscribers: new Map(),
+    subscriberMeta: new Map(),
+    routes: new Map(),
+    handlers: new Map(),
   }
 
   for (const path of config.listenerPaths) {
-    const regs: ListenerRegistration__internal<BenchState>[] = []
+    const regs: ListenerRegistrationInternal<BenchState>[] = []
     const depth = getPathDepth(path)
     const isRoot = depth === 0
     const prefix = isRoot ? '' : path + '.'
     const prefixLen = isRoot ? 0 : path.length + 1
 
-    // Set up group in graph
-    graph.groupMeta.set(path, { prefix, prefixLen, depth })
-    graph.groupMembers.set(path, [])
-    graph.order.push(path)
+    // Set up topic in router
+    router.topicMeta.set(path, { prefix, prefixLen, depth })
+    router.subscribers.set(path, [])
+    router.topics.push(path)
 
     for (let i = 0; i < config.listenersPerPath; i++) {
       const fn = createListenerFn(config.producesChanges, i === 0)
@@ -442,13 +439,13 @@ const createFixture = (config: {
         depth,
       })
 
-      // Add to graph
-      graph.nodes.set(id, {
+      // Add to router
+      router.subscriberMeta.set(id, {
         scope: isRoot ? null : path,
-        groupPath: path,
+        topic: path,
       })
-      graph.groupMembers.get(path)!.push(id)
-      graph.fns.set(id, fn)
+      router.subscribers.get(path)!.push(id)
+      router.handlers.set(id, fn)
     }
 
     listeners.set(path, regs)
@@ -462,27 +459,27 @@ const createFixture = (config: {
   // Sort flatListeners the same way
   flatListeners.sort((a, b) => b.depth - a.depth)
 
-  // Sort graph order and compute edges
-  graph.order.sort((a, b) => {
-    const metaA = graph.groupMeta.get(a)!
-    const metaB = graph.groupMeta.get(b)!
+  // Sort router topics and compute routes
+  router.topics.sort((a, b) => {
+    const metaA = router.topicMeta.get(a)!
+    const metaB = router.topicMeta.get(b)!
     return metaB.depth - metaA.depth
   })
 
-  // Compute edges
-  for (let i = 0; i < graph.order.length; i++) {
-    const routes: ListenerRoute[] = []
-    for (let j = i + 1; j < graph.order.length; j++) {
-      const targetPath = graph.order[j]!
-      const targetMeta = graph.groupMeta.get(targetPath)!
-      routes.push({
+  // Compute routes
+  for (let i = 0; i < router.topics.length; i++) {
+    const downstream: Route[] = []
+    for (let j = i + 1; j < router.topics.length; j++) {
+      const targetPath = router.topics[j]!
+      const targetMeta = router.topicMeta.get(targetPath)!
+      downstream.push({
         target: targetPath,
         prefix: targetMeta.prefix,
         prefixLen: targetMeta.prefixLen,
         depth: targetMeta.depth,
       })
     }
-    graph.edges.set(graph.order[i]!, routes)
+    router.routes.set(router.topics[i]!, downstream)
   }
 
   const changes: AnyChange[] = Array.from(
@@ -499,7 +496,7 @@ const createFixture = (config: {
     listeners,
     sortedListenerPaths,
     flatListeners,
-    graph,
+    router,
     changes,
   }
 }
@@ -551,8 +548,8 @@ describe('processListeners strategies', () => {
       )
     })
 
-    bench('graph (ListenerGraph)', () => {
-      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
+    bench('graph (TopicRouter)', () => {
+      processListeners_graph(fixture.changes, fixture.router, fixture.state)
     })
   })
 
@@ -598,8 +595,8 @@ describe('processListeners strategies', () => {
       )
     })
 
-    bench('graph (ListenerGraph)', () => {
-      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
+    bench('graph (TopicRouter)', () => {
+      processListeners_graph(fixture.changes, fixture.router, fixture.state)
     })
   })
 
@@ -656,8 +653,8 @@ describe('processListeners strategies', () => {
       )
     })
 
-    bench('graph (ListenerGraph)', () => {
-      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
+    bench('graph (TopicRouter)', () => {
+      processListeners_graph(fixture.changes, fixture.router, fixture.state)
     })
   })
 
@@ -708,16 +705,16 @@ describe('processListeners strategies', () => {
     }
     const listeners = new Map<
       string,
-      ListenerRegistration__internal<BenchState>[]
+      ListenerRegistrationInternal<BenchState>[]
     >()
     const flatListeners: FlatListener[] = []
-    const graph: ListenerGraph = {
-      order: [],
-      groupMeta: new Map(),
-      groupMembers: new Map(),
-      nodes: new Map(),
-      edges: new Map(),
-      fns: new Map(),
+    const router: TopicRouter = {
+      topics: [],
+      topicMeta: new Map(),
+      subscribers: new Map(),
+      subscriberMeta: new Map(),
+      routes: new Map(),
+      handlers: new Map(),
     }
 
     const allPaths = [...triggeredNested, '', ...coldPaths]
@@ -732,11 +729,11 @@ describe('processListeners strategies', () => {
       const depth = getPathDepth(path)
       const count = listenersPerPathMap[path] ?? 1
 
-      graph.groupMeta.set(path, { prefix, prefixLen, depth })
-      graph.groupMembers.set(path, [])
-      graph.order.push(path)
+      router.topicMeta.set(path, { prefix, prefixLen, depth })
+      router.subscribers.set(path, [])
+      router.topics.push(path)
 
-      const regs: ListenerRegistration__internal<BenchState>[] = []
+      const regs: ListenerRegistrationInternal<BenchState>[] = []
       for (let i = 0; i < count; i++) {
         const fn = createListenerFn(false, false)
         const id = isRoot ? `__${fn.name}_${i}` : `${path}_${fn.name}_${i}`
@@ -754,9 +751,12 @@ describe('processListeners strategies', () => {
           fn,
           depth,
         })
-        graph.nodes.set(id, { scope: isRoot ? null : path, groupPath: path })
-        graph.fns.set(id, fn)
-        graph.groupMembers.get(path)!.push(id)
+        router.subscriberMeta.set(id, {
+          scope: isRoot ? null : path,
+          topic: path,
+        })
+        router.handlers.set(id, fn)
+        router.subscribers.get(path)!.push(id)
       }
       listeners.set(path, regs)
     }
@@ -765,24 +765,24 @@ describe('processListeners strategies', () => {
       (a, b) => getPathDepth(b) - getPathDepth(a),
     )
     flatListeners.sort((a, b) => b.depth - a.depth)
-    graph.order.sort((a, b) => {
-      const metaA = graph.groupMeta.get(a)!
-      const metaB = graph.groupMeta.get(b)!
+    router.topics.sort((a, b) => {
+      const metaA = router.topicMeta.get(a)!
+      const metaB = router.topicMeta.get(b)!
       return metaB.depth - metaA.depth
     })
-    for (let i = 0; i < graph.order.length; i++) {
-      const routes: ListenerRoute[] = []
-      for (let j = i + 1; j < graph.order.length; j++) {
-        const targetPath = graph.order[j]!
-        const targetMeta = graph.groupMeta.get(targetPath)!
-        routes.push({
+    for (let i = 0; i < router.topics.length; i++) {
+      const downstream: Route[] = []
+      for (let j = i + 1; j < router.topics.length; j++) {
+        const targetPath = router.topics[j]!
+        const targetMeta = router.topicMeta.get(targetPath)!
+        downstream.push({
           target: targetPath,
           prefix: targetMeta.prefix,
           prefixLen: targetMeta.prefixLen,
           depth: targetMeta.depth,
         })
       }
-      graph.edges.set(graph.order[i]!, routes)
+      router.routes.set(router.topics[i]!, downstream)
     }
 
     // 5 changes all under the triggered subtree
@@ -810,8 +810,8 @@ describe('processListeners strategies', () => {
       processListeners_reduceMut(changes, flatListeners, state)
     })
 
-    bench('graph (ListenerGraph)', () => {
-      processListeners_graph(changes, graph, state)
+    bench('graph (TopicRouter)', () => {
+      processListeners_graph(changes, router, state)
     })
   })
 
@@ -857,8 +857,8 @@ describe('processListeners strategies', () => {
       )
     })
 
-    bench('graph (ListenerGraph)', () => {
-      processListeners_graph(fixture.changes, fixture.graph, fixture.state)
+    bench('graph (TopicRouter)', () => {
+      processListeners_graph(fixture.changes, fixture.router, fixture.state)
     })
   })
 })

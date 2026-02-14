@@ -10,8 +10,9 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ListenerRegistration } from '../../src/core/types'
-import { registerListener } from '../../src/sideEffects/prebuilts/listeners'
+import type { ListenerRegistration } from '~/core/types'
+import { registerListener } from '~/sideEffects/prebuilts/listeners'
+
 import type { TestState } from '../mocks'
 import { testStateFixtures } from '../mocks'
 import { createStore, fireEvent, flush, renderWithStore } from '../utils/react'

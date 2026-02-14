@@ -9,8 +9,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createGenericStore } from '../../src'
-import type { StoreInstance } from '../../src/core/types'
+import { createGenericStore } from '~'
+import type { StoreInstance } from '~/core/types'
+
 import { flush, renderWithStore } from '../utils/react'
 
 interface AppState {
