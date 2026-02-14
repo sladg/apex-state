@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "spec": "003-wasm-003-shadow-state-as-nested-tree",
+  "state": "building",
+  "subtasks": {
+    "completed": 4,
+    "total": 16,
+    "in_progress": 1,
+    "failed": 0
+  },
+  "phase": {
+    "current": "Path Traversal & Operations",
+    "id": null,
+    "total": 5
+  },
+  "workers": {
+    "active": 0,
+    "max": 1
+  },
+  "session": {
+    "number": 5,
+    "started_at": "2026-02-14T17:06:27.367606"
+  },
+  "last_update": "2026-02-14T17:19:39.794705"
+}
