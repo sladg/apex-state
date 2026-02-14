@@ -90,6 +90,27 @@ pub fn shadow_get(path: String) -> JsValue {
     }
 }
 
+// Export shadow_dump function for retrieving entire shadow state
+#[wasm_bindgen]
+pub fn shadow_dump() -> JsValue {
+    // Get entire shadow state
+    let state = shadow::shadow_dump_global();
+    // Serialize the ValueRepr to JsValue
+    serde_wasm_bindgen::to_value(&state).unwrap_or(JsValue::NULL)
+}
+
+// Export shadow_update function for updating shadow state
+#[wasm_bindgen]
+pub fn shadow_update(path: String, value: JsValue) -> Result<(), JsValue> {
+    // Convert JsValue to ValueRepr using serde-wasm-bindgen
+    let value_repr: shadow::ValueRepr = serde_wasm_bindgen::from_value(value)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse value: {:?}", e)))?;
+
+    // Update shadow state
+    shadow::shadow_set_global(path, value_repr)
+        .map_err(|e| JsValue::from_str(&e))
+}
+
 // ============================================================================
 // Internal Path Lookup Functions (PathID-based)
 // ============================================================================
