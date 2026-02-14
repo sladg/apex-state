@@ -28,6 +28,12 @@ pub fn intern(path: String) -> u32 {
     intern::intern_global(path)
 }
 
+// Export resolve function for path resolution
+#[wasm_bindgen]
+pub fn resolve(id: u32) -> String {
+    intern::resolve_global(id).unwrap_or_else(|| String::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
