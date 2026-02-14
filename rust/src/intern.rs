@@ -102,6 +102,177 @@ pub fn batch_intern_global(paths: Vec<String>) -> Vec<PathID> {
     })
 }
 
+// ============================================================================
+// Internal Path Operation Utilities
+// ============================================================================
+//
+// These utilities demonstrate how to perform common path operations using
+// PathID instead of strings. They provide the foundation for efficient
+// internal WASM operations while maintaining string-based external APIs.
+
+/// Compare two paths by their PathID
+///
+/// This is more efficient than string comparison for internal operations.
+/// O(1) numeric comparison instead of O(n) string comparison.
+///
+/// # Arguments
+/// * `id1` - First PathID
+/// * `id2` - Second PathID
+///
+/// # Returns
+/// true if the PathIDs are equal (represent the same path)
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::{intern_global, paths_equal};
+///
+/// let id1 = intern_global("user.name".to_string());
+/// let id2 = intern_global("user.name".to_string());
+/// let id3 = intern_global("user.email".to_string());
+///
+/// assert!(paths_equal(id1, id2)); // Same path
+/// assert!(!paths_equal(id1, id3)); // Different paths
+/// ```
+pub fn paths_equal(id1: PathID, id2: PathID) -> bool {
+    id1 == id2
+}
+
+/// Check if one path starts with another path (prefix check)
+///
+/// Uses PathID for efficient internal operations, resolving to strings
+/// only when necessary.
+///
+/// # Arguments
+/// * `path_id` - The PathID to check
+/// * `prefix_id` - The PathID of the potential prefix
+///
+/// # Returns
+/// Some(true) if path starts with prefix, Some(false) if not, None if either ID is invalid
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::{intern_global, path_starts_with};
+///
+/// let path = intern_global("user.profile.name".to_string());
+/// let prefix = intern_global("user.profile".to_string());
+/// let other = intern_global("admin".to_string());
+///
+/// assert_eq!(path_starts_with(path, prefix), Some(true));
+/// assert_eq!(path_starts_with(path, other), Some(false));
+/// ```
+pub fn path_starts_with(path_id: PathID, prefix_id: PathID) -> Option<bool> {
+    // Fast path: if IDs are equal, path starts with itself
+    if path_id == prefix_id {
+        return Some(true);
+    }
+
+    INTERN_TABLE.with(|table| {
+        let borrowed = table.borrow();
+        let path = borrowed.resolve(path_id)?;
+        let prefix = borrowed.resolve(prefix_id)?;
+        Some(path.starts_with(prefix))
+    })
+}
+
+/// Check if one path ends with another path (suffix check)
+///
+/// Uses PathID for efficient internal operations, resolving to strings
+/// only when necessary.
+///
+/// # Arguments
+/// * `path_id` - The PathID to check
+/// * `suffix_id` - The PathID of the potential suffix
+///
+/// # Returns
+/// Some(true) if path ends with suffix, Some(false) if not, None if either ID is invalid
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::{intern_global, path_ends_with};
+///
+/// let path = intern_global("user.profile.name".to_string());
+/// let suffix = intern_global("profile.name".to_string());
+/// let other = intern_global("email".to_string());
+///
+/// assert_eq!(path_ends_with(path, suffix), Some(true));
+/// assert_eq!(path_ends_with(path, other), Some(false));
+/// ```
+pub fn path_ends_with(path_id: PathID, suffix_id: PathID) -> Option<bool> {
+    // Fast path: if IDs are equal, path ends with itself
+    if path_id == suffix_id {
+        return Some(true);
+    }
+
+    INTERN_TABLE.with(|table| {
+        let borrowed = table.borrow();
+        let path = borrowed.resolve(path_id)?;
+        let suffix = borrowed.resolve(suffix_id)?;
+        Some(path.ends_with(suffix))
+    })
+}
+
+/// Check if a path contains a substring
+///
+/// Uses PathID for efficient internal operations, resolving to strings
+/// only when necessary.
+///
+/// # Arguments
+/// * `path_id` - The PathID to check
+/// * `substring_id` - The PathID of the substring to search for
+///
+/// # Returns
+/// Some(true) if path contains the substring, Some(false) if not, None if either ID is invalid
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::{intern_global, path_contains};
+///
+/// let path = intern_global("user.profile.name".to_string());
+/// let substring = intern_global("profile".to_string());
+/// let other = intern_global("admin".to_string());
+///
+/// assert_eq!(path_contains(path, substring), Some(true));
+/// assert_eq!(path_contains(path, other), Some(false));
+/// ```
+pub fn path_contains(path_id: PathID, substring_id: PathID) -> Option<bool> {
+    // Fast path: if IDs are equal, path contains itself
+    if path_id == substring_id {
+        return Some(true);
+    }
+
+    INTERN_TABLE.with(|table| {
+        let borrowed = table.borrow();
+        let path = borrowed.resolve(path_id)?;
+        let substring = borrowed.resolve(substring_id)?;
+        Some(path.contains(substring))
+    })
+}
+
+/// Get the length of a path string
+///
+/// Returns the length of the path without needing to resolve it to JavaScript.
+/// Useful for internal WASM operations.
+///
+/// # Arguments
+/// * `path_id` - The PathID to get the length of
+///
+/// # Returns
+/// Some(length) if the ID is valid, None if invalid
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::{intern_global, path_length};
+///
+/// let path = intern_global("user.name".to_string());
+/// assert_eq!(path_length(path), Some(9));
+/// ```
+pub fn path_length(path_id: PathID) -> Option<usize> {
+    INTERN_TABLE.with(|table| {
+        let borrowed = table.borrow();
+        borrowed.resolve(path_id).map(|s| s.len())
+    })
+}
+
 /// Bidirectional string interning table for efficient path operations
 ///
 /// Maintains both forward (string → ID) and reverse (ID → string) lookups
@@ -438,6 +609,139 @@ mod tests {
         }
 
         // Clean up
+        global_clear();
+    }
+
+    // Path operations tests
+    #[test]
+    fn test_path_operations_equality() {
+        global_clear();
+
+        let id1 = intern_global("user.name".to_string());
+        let id2 = intern_global("user.name".to_string());
+        let id3 = intern_global("user.email".to_string());
+
+        // Same path IDs are equal
+        assert!(paths_equal(id1, id2));
+
+        // Different path IDs are not equal
+        assert!(!paths_equal(id1, id3));
+
+        global_clear();
+    }
+
+    #[test]
+    fn test_path_operations_starts_with() {
+        global_clear();
+
+        let path = intern_global("user.profile.name".to_string());
+        let prefix = intern_global("user.profile".to_string());
+        let other = intern_global("admin".to_string());
+        let self_path = intern_global("user.profile.name".to_string());
+
+        // Path starts with prefix
+        assert_eq!(path_starts_with(path, prefix), Some(true));
+
+        // Path doesn't start with unrelated path
+        assert_eq!(path_starts_with(path, other), Some(false));
+
+        // Path starts with itself (fast path)
+        assert_eq!(path_starts_with(path, self_path), Some(true));
+
+        // Invalid ID returns None
+        assert_eq!(path_starts_with(999, prefix), None);
+        assert_eq!(path_starts_with(path, 999), None);
+
+        global_clear();
+    }
+
+    #[test]
+    fn test_path_operations_ends_with() {
+        global_clear();
+
+        let path = intern_global("user.profile.name".to_string());
+        let suffix = intern_global("profile.name".to_string());
+        let other = intern_global("email".to_string());
+        let self_path = intern_global("user.profile.name".to_string());
+
+        // Path ends with suffix
+        assert_eq!(path_ends_with(path, suffix), Some(true));
+
+        // Path doesn't end with unrelated path
+        assert_eq!(path_ends_with(path, other), Some(false));
+
+        // Path ends with itself (fast path)
+        assert_eq!(path_ends_with(path, self_path), Some(true));
+
+        // Invalid ID returns None
+        assert_eq!(path_ends_with(999, suffix), None);
+        assert_eq!(path_ends_with(path, 999), None);
+
+        global_clear();
+    }
+
+    #[test]
+    fn test_path_operations_contains() {
+        global_clear();
+
+        let path = intern_global("user.profile.name".to_string());
+        let substring = intern_global("profile".to_string());
+        let other = intern_global("admin".to_string());
+        let self_path = intern_global("user.profile.name".to_string());
+
+        // Path contains substring
+        assert_eq!(path_contains(path, substring), Some(true));
+
+        // Path doesn't contain unrelated string
+        assert_eq!(path_contains(path, other), Some(false));
+
+        // Path contains itself (fast path)
+        assert_eq!(path_contains(path, self_path), Some(true));
+
+        // Invalid ID returns None
+        assert_eq!(path_contains(999, substring), None);
+        assert_eq!(path_contains(path, 999), None);
+
+        global_clear();
+    }
+
+    #[test]
+    fn test_path_operations_length() {
+        global_clear();
+
+        let path1 = intern_global("user.name".to_string());
+        let path2 = intern_global("a".to_string());
+        let path3 = intern_global("".to_string());
+
+        // Various path lengths
+        assert_eq!(path_length(path1), Some(9)); // "user.name"
+        assert_eq!(path_length(path2), Some(1)); // "a"
+        assert_eq!(path_length(path3), Some(0)); // ""
+
+        // Invalid ID returns None
+        assert_eq!(path_length(999), None);
+
+        global_clear();
+    }
+
+    #[test]
+    fn test_path_operations_efficiency() {
+        global_clear();
+
+        // Intern the same paths multiple times
+        let id1 = intern_global("user.profile.settings.theme".to_string());
+        let id2 = intern_global("user.profile.settings.theme".to_string());
+        let id3 = intern_global("user.profile".to_string());
+
+        // PathID comparison is O(1) - just numeric comparison
+        assert!(paths_equal(id1, id2));
+
+        // Prefix check with PathID is efficient
+        assert_eq!(path_starts_with(id1, id3), Some(true));
+
+        // Verify that deduplication happened (same ID for same string)
+        assert_eq!(id1, id2);
+
         global_clear();
     }
 }
