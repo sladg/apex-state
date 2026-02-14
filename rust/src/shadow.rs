@@ -161,6 +161,127 @@ pub fn get_value<'a>(root: &'a ValueRepr, path: &[&str]) -> Option<&'a ValueRepr
     Some(current)
 }
 
+/// Update a value at a given path in the ValueRepr tree
+///
+/// Modifies the shadow state at the specified path. Supports three types of updates:
+/// - **Leaf update**: Update a single value at a specific path
+/// - **Subtree update**: Replace an entire object/array at a path
+/// - **Root update**: Replace the entire state tree (empty path)
+///
+/// If intermediate nodes in the path don't exist, they will be created as empty Objects.
+/// For array updates, the array must already exist and the index must be valid.
+///
+/// # Arguments
+///
+/// * `root` - Mutable reference to the root ValueRepr
+/// * `path` - Path to the value to update (empty for root replacement)
+/// * `value` - New value to set at the path
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success, or `Err(String)` with an error message if the update fails.
+///
+/// # Examples
+///
+/// ```
+/// use apex_state_wasm::shadow::{ValueRepr, update_value};
+/// use std::collections::HashMap;
+///
+/// let mut state = ValueRepr::Object(HashMap::new());
+///
+/// // Create nested path and set value
+/// update_value(&mut state, &["user", "name"], ValueRepr::String("Alice".to_string())).unwrap();
+///
+/// // Update existing value
+/// update_value(&mut state, &["user", "name"], ValueRepr::String("Bob".to_string())).unwrap();
+///
+/// // Replace entire subtree
+/// let mut new_user = HashMap::new();
+/// new_user.insert("name".to_string(), ValueRepr::String("Charlie".to_string()));
+/// new_user.insert("age".to_string(), ValueRepr::Number(30.0));
+/// update_value(&mut state, &["user"], ValueRepr::Object(new_user)).unwrap();
+/// ```
+pub fn update_value(root: &mut ValueRepr, path: &[&str], value: ValueRepr) -> Result<(), String> {
+    // Empty path means replace root entirely
+    if path.is_empty() {
+        *root = value;
+        return Ok(());
+    }
+
+    // For non-empty paths, we need to traverse to the parent and update the final key
+    let (parent_path, final_key) = path.split_at(path.len() - 1);
+    let final_key = final_key[0];
+
+    // Traverse/create path to parent
+    let mut current = root;
+    for part in parent_path {
+        match current {
+            ValueRepr::Object(map) => {
+                // If key doesn't exist, create an empty object
+                if !map.contains_key(*part) {
+                    map.insert(part.to_string(), ValueRepr::Object(HashMap::new()));
+                }
+                // Get mutable reference to continue traversal
+                current = map.get_mut(*part).ok_or_else(|| {
+                    format!("Failed to access key '{}' after insertion", part)
+                })?;
+            }
+            ValueRepr::Array(arr) => {
+                // Array index access - parse part as usize
+                let index: usize = part.parse().map_err(|_| {
+                    format!("Invalid array index '{}': must be a valid number", part)
+                })?;
+                let arr_len = arr.len(); // Capture length before mutable borrow
+                current = arr.get_mut(index).ok_or_else(|| {
+                    format!(
+                        "Array index {} out of bounds (length: {})",
+                        index,
+                        arr_len
+                    )
+                })?;
+            }
+            // Cannot traverse through primitive types
+            _ => {
+                return Err(format!(
+                    "Cannot traverse through non-object/array type at path segment '{}'",
+                    part
+                ))
+            }
+        }
+    }
+
+    // Now update the final key/index
+    match current {
+        ValueRepr::Object(map) => {
+            map.insert(final_key.to_string(), value);
+            Ok(())
+        }
+        ValueRepr::Array(arr) => {
+            let index: usize = final_key.parse().map_err(|_| {
+                format!(
+                    "Invalid array index '{}': must be a valid number",
+                    final_key
+                )
+            })?;
+
+            if index >= arr.len() {
+                return Err(format!(
+                    "Array index {} out of bounds (length: {})",
+                    index,
+                    arr.len()
+                ));
+            }
+
+            arr[index] = value;
+            Ok(())
+        }
+        _ => Err(format!(
+            "Cannot set property '{}' on non-object/array type",
+            final_key
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +404,160 @@ mod tests {
 
         let leaf = get_value(&deep, &path);
         assert!(matches!(leaf, Some(&ValueRepr::String(ref s)) if s == "leaf"));
+    }
+
+    #[test]
+    fn test_updates() {
+        // Test 1: Root update (empty path)
+        let mut state = ValueRepr::Object(HashMap::new());
+        let new_root = ValueRepr::String("replaced".to_string());
+        assert!(update_value(&mut state, &[], new_root.clone()).is_ok());
+        assert!(matches!(state, ValueRepr::String(ref s) if s == "replaced"));
+
+        // Test 2: Leaf update - create new path
+        let mut state = ValueRepr::Object(HashMap::new());
+        let result = update_value(&mut state, &["user", "name"], ValueRepr::String("Alice".to_string()));
+        assert!(result.is_ok());
+
+        // Verify the value was set
+        let name = get_value(&state, &["user", "name"]);
+        assert!(matches!(name, Some(&ValueRepr::String(ref s)) if s == "Alice"));
+
+        // Test 3: Leaf update - update existing value
+        let result = update_value(&mut state, &["user", "name"], ValueRepr::String("Bob".to_string()));
+        assert!(result.is_ok());
+
+        let name = get_value(&state, &["user", "name"]);
+        assert!(matches!(name, Some(&ValueRepr::String(ref s)) if s == "Bob"));
+
+        // Test 4: Add another field to existing object
+        let result = update_value(&mut state, &["user", "age"], ValueRepr::Number(30.0));
+        assert!(result.is_ok());
+
+        let age = get_value(&state, &["user", "age"]);
+        assert!(matches!(age, Some(&ValueRepr::Number(n)) if n == 30.0));
+
+        // Verify first field still exists
+        let name = get_value(&state, &["user", "name"]);
+        assert!(matches!(name, Some(&ValueRepr::String(ref s)) if s == "Bob"));
+
+        // Test 5: Subtree update - replace entire object
+        let mut new_user = HashMap::new();
+        new_user.insert("name".to_string(), ValueRepr::String("Charlie".to_string()));
+        new_user.insert("email".to_string(), ValueRepr::String("charlie@example.com".to_string()));
+
+        let result = update_value(&mut state, &["user"], ValueRepr::Object(new_user));
+        assert!(result.is_ok());
+
+        // Verify new fields exist
+        let name = get_value(&state, &["user", "name"]);
+        assert!(matches!(name, Some(&ValueRepr::String(ref s)) if s == "Charlie"));
+
+        let email = get_value(&state, &["user", "email"]);
+        assert!(matches!(email, Some(&ValueRepr::String(ref s)) if s == "charlie@example.com"));
+
+        // Verify old field (age) is gone
+        let age = get_value(&state, &["user", "age"]);
+        assert!(age.is_none());
+
+        // Test 6: Deep nested path creation
+        let mut state = ValueRepr::Object(HashMap::new());
+        let result = update_value(
+            &mut state,
+            &["a", "b", "c", "d"],
+            ValueRepr::String("deep".to_string()),
+        );
+        assert!(result.is_ok());
+
+        let deep = get_value(&state, &["a", "b", "c", "d"]);
+        assert!(matches!(deep, Some(&ValueRepr::String(ref s)) if s == "deep"));
+
+        // Test 7: Array update - update existing array element
+        let mut state = ValueRepr::Object(HashMap::new());
+        let arr = ValueRepr::Array(vec![
+            ValueRepr::Number(1.0),
+            ValueRepr::Number(2.0),
+            ValueRepr::Number(3.0),
+        ]);
+
+        // First set the array
+        update_value(&mut state, &["numbers"], arr).unwrap();
+
+        // Now update an element
+        let result = update_value(&mut state, &["numbers", "1"], ValueRepr::Number(99.0));
+        assert!(result.is_ok());
+
+        let updated = get_value(&state, &["numbers", "1"]);
+        assert!(matches!(updated, Some(&ValueRepr::Number(n)) if n == 99.0));
+
+        // Verify other elements unchanged
+        let first = get_value(&state, &["numbers", "0"]);
+        assert!(matches!(first, Some(&ValueRepr::Number(n)) if n == 1.0));
+
+        // Test 8: Array update - out of bounds should fail
+        let result = update_value(&mut state, &["numbers", "10"], ValueRepr::Number(100.0));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("out of bounds"));
+
+        // Test 9: Error - cannot traverse through primitive
+        let mut state = ValueRepr::Object(HashMap::new());
+        update_value(&mut state, &["value"], ValueRepr::Number(42.0)).unwrap();
+
+        let result = update_value(&mut state, &["value", "nested"], ValueRepr::String("fail".to_string()));
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(
+            err_msg.contains("Cannot traverse through") || err_msg.contains("Cannot set property"),
+            "Unexpected error message: {}",
+            err_msg
+        );
+
+        // Test 10: Error - invalid array index (not a number)
+        let mut state = ValueRepr::Object(HashMap::new());
+        let arr = ValueRepr::Array(vec![ValueRepr::Number(1.0)]);
+        update_value(&mut state, &["arr"], arr).unwrap();
+
+        let result = update_value(&mut state, &["arr", "invalid"], ValueRepr::Number(2.0));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid array index"));
+
+        // Test 11: Nested object in array
+        let mut state = ValueRepr::Object(HashMap::new());
+        let mut user1 = HashMap::new();
+        user1.insert("name".to_string(), ValueRepr::String("Alice".to_string()));
+
+        let mut user2 = HashMap::new();
+        user2.insert("name".to_string(), ValueRepr::String("Bob".to_string()));
+
+        let arr = ValueRepr::Array(vec![
+            ValueRepr::Object(user1),
+            ValueRepr::Object(user2),
+        ]);
+        update_value(&mut state, &["users"], arr).unwrap();
+
+        // Update nested object property in array
+        let result = update_value(&mut state, &["users", "0", "name"], ValueRepr::String("Alice Updated".to_string()));
+        assert!(result.is_ok());
+
+        let name = get_value(&state, &["users", "0", "name"]);
+        assert!(matches!(name, Some(&ValueRepr::String(ref s)) if s == "Alice Updated"));
+
+        // Test 12: Multiple levels of nesting with mixed objects and arrays
+        let mut state = ValueRepr::Object(HashMap::new());
+
+        // Create: { "data": { "items": [{ "value": 10 }] } }
+        let mut item = HashMap::new();
+        item.insert("value".to_string(), ValueRepr::Number(10.0));
+        let items = ValueRepr::Array(vec![ValueRepr::Object(item)]);
+
+        update_value(&mut state, &["data"], ValueRepr::Object(HashMap::new())).unwrap();
+        update_value(&mut state, &["data", "items"], items).unwrap();
+
+        // Update the nested value
+        let result = update_value(&mut state, &["data", "items", "0", "value"], ValueRepr::Number(20.0));
+        assert!(result.is_ok());
+
+        let value = get_value(&state, &["data", "items", "0", "value"]);
+        assert!(matches!(value, Some(&ValueRepr::Number(n)) if n == 20.0));
     }
 }
