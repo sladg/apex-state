@@ -7,6 +7,23 @@
  * - Type-safe function signatures
  * - Error handling at the JS/WASM boundary
  *
+ * ## String Interning Overview
+ *
+ * String interning is a memory optimization technique where identical strings
+ * are stored only once and referenced by numeric IDs. This provides:
+ *
+ * - **Deduplication**: "user.name" stored once, referenced many times
+ * - **Memory efficiency**: Numeric PathIDs (u32) use less memory than strings
+ * - **Fast comparison**: Compare PathIDs (number equality) vs string comparison
+ * - **Cross-boundary optimization**: Passing numbers between JS/WASM is faster
+ *
+ * ## String ↔ ID Conversion Pattern
+ *
+ * The core interning pattern is:
+ * 1. **intern(path)**: Convert string → PathID (deduplicates automatically)
+ * 2. **resolve(id)**: Convert PathID → original string (lookup)
+ * 3. Same string always gets same PathID (identity guarantee)
+ *
  * @module wasm/bridge
  */
 
@@ -26,15 +43,25 @@ export interface ApexStateWasm {
   /**
    * Intern a string path, returning its numeric PathID
    *
-   * Same string always returns the same PathID (deduplication).
+   * **Interning Behavior:**
+   * - First call with a string: stores it and returns a new PathID
+   * - Subsequent calls with same string: returns the existing PathID (deduplication)
+   * - PathIDs are stable for the lifetime of the interning table
+   * - Example: intern('user.name') always returns the same ID (e.g., 42)
+   *
+   * **Use Case:**
+   * Convert strings to compact numeric IDs for efficient storage and comparison.
+   * Critical for performance when tracking many paths in dependency graphs.
    *
    * @param path - The string path to intern
-   * @returns PathID for the interned string
+   * @returns PathID for the interned string (stable identity)
    *
    * @example
    * ```typescript
    * const wasm = await loadWasm()
-   * const id = wasm.intern('user.name')
+   * const id1 = wasm.intern('user.name') // e.g., 42 (new)
+   * const id2 = wasm.intern('user.name') // 42 (reused - deduplication)
+   * const id3 = wasm.intern('user.email') // 43 (new)
    * ```
    */
   intern: (path: string) => PathID
@@ -42,7 +69,15 @@ export interface ApexStateWasm {
   /**
    * Resolve a PathID back to its original string
    *
-   * Returns empty string if PathID is invalid.
+   * **Interning Behavior:**
+   * - Reverse lookup: PathID → original string
+   * - Returns the exact string that was interned with this ID
+   * - Returns empty string if PathID is invalid (never interned)
+   * - Fast O(1) lookup in the interning table
+   *
+   * **Use Case:**
+   * Convert compact PathIDs back to human-readable strings for logging,
+   * debugging, or when crossing the WASM→JS boundary.
    *
    * @param id - The PathID to resolve
    * @returns Original string path, or empty string if invalid
@@ -50,8 +85,9 @@ export interface ApexStateWasm {
    * @example
    * ```typescript
    * const wasm = await loadWasm()
-   * const id = wasm.intern('user.name')
-   * const path = wasm.resolve(id) // 'user.name'
+   * const id = wasm.intern('user.name') // PathID: 42
+   * const path = wasm.resolve(id) // 'user.name' (exact match)
+   * const invalid = wasm.resolve(9999) // '' (not found)
    * ```
    */
   resolve: (id: PathID) => string
@@ -59,8 +95,17 @@ export interface ApexStateWasm {
   /**
    * Batch intern multiple paths efficiently
    *
-   * More efficient than calling intern() repeatedly as it
-   * minimizes boundary crossings and table lookups.
+   * **Interning Behavior:**
+   * - Interns multiple strings in a single WASM call (reduces overhead)
+   * - Each path follows same deduplication rules as intern()
+   * - Returns PathIDs in same order as input paths
+   * - Duplicate paths in input array will get same PathID
+   *
+   * **Performance:**
+   * More efficient than calling intern() repeatedly because:
+   * - Single JS→WASM boundary crossing (vs N crossings)
+   * - Batch table operations in Rust (better cache locality)
+   * - Reduced serialization/deserialization overhead
    *
    * @param paths - Array of string paths to intern
    * @returns Array of PathIDs corresponding to each input path
@@ -68,7 +113,8 @@ export interface ApexStateWasm {
    * @example
    * ```typescript
    * const wasm = await loadWasm()
-   * const ids = wasm.batch_intern(['user.name', 'user.email', 'user.age'])
+   * const ids = wasm.batch_intern(['user.name', 'user.email', 'user.name'])
+   * // [42, 43, 42] - note: 'user.name' gets same ID both times
    * ```
    */
   batch_intern: (paths: string[]) => PathID[]
@@ -76,7 +122,14 @@ export interface ApexStateWasm {
   /**
    * Get the number of unique interned strings
    *
-   * Useful for debugging and monitoring memory usage.
+   * **Interning Behavior:**
+   * - Returns count of unique strings in the interning table
+   * - Duplicate interned strings only count once (shows deduplication)
+   * - Useful for monitoring memory usage and verifying deduplication
+   *
+   * **Use Case:**
+   * Debug and verify interning behavior - if count is lower than
+   * total intern() calls, deduplication is working.
    *
    * @returns Count of unique interned strings
    *
@@ -84,8 +137,9 @@ export interface ApexStateWasm {
    * ```typescript
    * const wasm = await loadWasm()
    * wasm.intern('user.name')
+   * wasm.intern('user.name') // duplicate
    * wasm.intern('user.email')
-   * console.log(wasm.intern_count()) // 2
+   * console.log(wasm.intern_count()) // 2 (not 3 - deduplication worked)
    * ```
    */
   intern_count: () => number
@@ -93,15 +147,24 @@ export interface ApexStateWasm {
   /**
    * Clear the interning table
    *
-   * Resets the global interning table to empty state.
-   * Primarily useful for testing.
+   * **Interning Behavior:**
+   * - Removes all interned strings from the table
+   * - Resets PathID counter to 0
+   * - After clearing, previously valid PathIDs become invalid
+   * - Subsequent intern() calls will reuse PathIDs (e.g., 0, 1, 2...)
+   *
+   * **Warning:**
+   * Invalidates all existing PathIDs! Only use in tests or when
+   * you're sure no code is holding PathID references.
    *
    * @example
    * ```typescript
    * const wasm = await loadWasm()
-   * wasm.intern('user.name')
+   * const id = wasm.intern('user.name') // PathID: 0
    * wasm.intern_clear()
    * console.log(wasm.intern_count()) // 0
+   * wasm.resolve(id) // '' (PathID 0 no longer valid)
+   * const newId = wasm.intern('user.name') // PathID: 0 (reused)
    * ```
    */
   intern_clear: () => void
@@ -232,6 +295,15 @@ export const resetWasm = (): void => {
  * These convenience functions automatically load WASM and handle
  * string-to-PathID conversion, hiding the manual loadWasm() calls.
  * They demonstrate the auto-interning pattern used throughout the library.
+ *
+ * **Interning Pattern:**
+ * - Auto-load: WASM loads on first call, cached for subsequent calls
+ * - Auto-intern: Strings automatically convert to PathIDs internally
+ * - Transparent: Consumers don't need to know about WASM loading or PathIDs
+ *
+ * **Use Case:**
+ * Use these wrappers when you want the simplest API - just pass strings,
+ * get results, without managing WASM lifecycle or PathID conversion.
  */
 
 /**
@@ -240,13 +312,20 @@ export const resetWasm = (): void => {
  * Convenience wrapper that automatically loads WASM if needed,
  * then interns the provided path string to a PathID.
  *
+ * **Interning Behavior:**
+ * - Auto-loads WASM on first call (cached thereafter)
+ * - Interns string → PathID with deduplication
+ * - Returns stable PathID (same string always gets same ID)
+ *
  * @param path - The string path to intern
  * @returns Promise resolving to the PathID for the interned string
  *
  * @example
  * ```typescript
  * // No need to manually call loadWasm()
- * const id = await internPath('user.name')
+ * const id1 = await internPath('user.name') // WASM loads + intern
+ * const id2 = await internPath('user.name') // Cached + deduplicated
+ * console.log(id1 === id2) // true (same PathID)
  * ```
  */
 export const internPath = async (path: string): Promise<PathID> => {
@@ -260,12 +339,18 @@ export const internPath = async (path: string): Promise<PathID> => {
  * Convenience wrapper that automatically loads WASM if needed,
  * then resolves the provided PathID back to its original string.
  *
+ * **Interning Behavior:**
+ * - Auto-loads WASM if needed
+ * - Resolves PathID → original string (reverse lookup)
+ * - Returns empty string if PathID is invalid
+ *
  * @param id - The PathID to resolve
  * @returns Promise resolving to the original string path
  *
  * @example
  * ```typescript
- * const path = await resolvePath(42)
+ * const id = await internPath('user.name')
+ * const path = await resolvePath(id) // 'user.name'
  * ```
  */
 export const resolvePath = async (id: PathID): Promise<string> => {
@@ -357,6 +442,11 @@ export const clearInternTable = async (): Promise<void> => {
  * 2. Intern string path to PathID
  * 3. Resolve PathID back to string
  *
+ * **Interning Behavior:**
+ * - Verifies string → PathID → string is an identity operation
+ * - Tests both interning (deduplication) and resolution (lookup)
+ * - Useful for validating interning table integrity
+ *
  * Primarily useful for testing and demonstrating the interning pattern.
  *
  * @param path - The string path to roundtrip
@@ -365,7 +455,7 @@ export const clearInternTable = async (): Promise<void> => {
  * @example
  * ```typescript
  * const result = await roundtripPath('user.name')
- * console.log(result) // 'user.name'
+ * console.log(result === 'user.name') // true (identity preserved)
  * ```
  */
 export const roundtripPath = async (path: string): Promise<string> => {
@@ -381,6 +471,15 @@ export const roundtripPath = async (path: string): Promise<string> => {
  * WASM operations that return PathIDs and automatically resolve
  * those IDs back to strings. This ensures JavaScript consumers
  * never need to work with PathIDs directly.
+ *
+ * **Interning Pattern:**
+ * - String → intern → PathID (internal, hidden from JS)
+ * - PathID → resolve → String (automatic, transparent)
+ * - JS only sees strings on both input and output
+ *
+ * **Use Case:**
+ * Ideal for testing and verification - ensures data roundtrips correctly
+ * through the interning system (string → ID → string should be identity).
  */
 
 /**
@@ -390,6 +489,12 @@ export const roundtripPath = async (path: string): Promise<string> => {
  * 1. Intern the path string to get a PathID
  * 2. Automatically resolve the PathID back to string
  * 3. Return the resolved string to JavaScript
+ *
+ * **Interning Behavior:**
+ * - PathID is created but never exposed to JavaScript
+ * - String → PathID → String conversion is transparent
+ * - Verifies interning table correctly stores and retrieves strings
+ * - JS consumers only see strings (PathIDs are internal implementation)
  *
  * This ensures JavaScript never sees the PathID - it only works
  * with strings on both input and output.
@@ -401,6 +506,7 @@ export const roundtripPath = async (path: string): Promise<string> => {
  * ```typescript
  * const result = await internAndResolve('user.name')
  * console.log(result) // 'user.name' - verified from WASM storage
+ * // PathID was used internally but never exposed
  * ```
  */
 export const internAndResolve = async (path: string): Promise<string> => {
@@ -417,6 +523,13 @@ export const internAndResolve = async (path: string): Promise<string> => {
  * 2. Automatically resolve all PathIDs back to strings
  * 3. Return the resolved strings to JavaScript
  *
+ * **Interning Behavior:**
+ * - Batch interns all strings efficiently (single WASM call)
+ * - PathIDs are created but never exposed to JavaScript
+ * - All PathIDs automatically resolved back to strings
+ * - Verifies batch interning correctly handles deduplication
+ * - Duplicate input strings will resolve to same value (verifies dedup)
+ *
  * This ensures JavaScript never sees PathIDs - it only works
  * with string arrays on both input and output.
  *
@@ -425,8 +538,10 @@ export const internAndResolve = async (path: string): Promise<string> => {
  *
  * @example
  * ```typescript
- * const results = await batchInternAndResolve(['user.name', 'user.email'])
- * console.log(results) // ['user.name', 'user.email'] - verified from WASM
+ * const results = await batchInternAndResolve(['user.name', 'user.email', 'user.name'])
+ * console.log(results) // ['user.name', 'user.email', 'user.name']
+ * // All PathIDs were used internally but never exposed
+ * // Note: duplicate 'user.name' got same PathID internally (deduplication)
  * ```
  */
 export const batchInternAndResolve = async (
