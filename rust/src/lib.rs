@@ -34,6 +34,12 @@ pub fn resolve(id: u32) -> String {
     intern::resolve_global(id).unwrap_or_else(|| String::new())
 }
 
+// Export batch_intern for efficient bulk interning
+#[wasm_bindgen]
+pub fn batch_intern(paths: Vec<String>) -> Vec<u32> {
+    intern::batch_intern_global(paths)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

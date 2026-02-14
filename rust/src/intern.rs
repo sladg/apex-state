@@ -71,6 +71,37 @@ pub fn global_clear() {
     INTERN_TABLE.with(|table| table.borrow_mut().clear())
 }
 
+/// Batch intern multiple strings using the global interning table
+///
+/// More efficient than calling intern_global repeatedly as it
+/// only borrows the global table once.
+///
+/// # Arguments
+/// * `paths` - Vector of strings to intern
+///
+/// # Returns
+/// Vector of PathIDs corresponding to each input string
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::batch_intern_global;
+///
+/// let paths = vec![
+///     "user.name".to_string(),
+///     "user.email".to_string(),
+///     "user.name".to_string(), // Duplicate
+/// ];
+/// let ids = batch_intern_global(paths);
+/// assert_eq!(ids.len(), 3);
+/// assert_eq!(ids[0], ids[2]); // Same ID for duplicates
+/// ```
+pub fn batch_intern_global(paths: Vec<String>) -> Vec<PathID> {
+    INTERN_TABLE.with(|table| {
+        let mut borrowed = table.borrow_mut();
+        paths.into_iter().map(|path| borrowed.intern(path)).collect()
+    })
+}
+
 /// Bidirectional string interning table for efficient path operations
 ///
 /// Maintains both forward (string → ID) and reverse (ID → string) lookups
@@ -319,6 +350,91 @@ mod tests {
         // Verify all resolve correctly
         for (i, path) in paths.iter().enumerate() {
             assert_eq!(resolve_global(ids[i]), Some(path.to_string()));
+        }
+
+        // Clean up
+        global_clear();
+    }
+
+    #[test]
+    fn test_batch_intern_global() {
+        // Clear any previous state
+        global_clear();
+
+        // Batch intern multiple paths
+        let paths = vec![
+            "user.name".to_string(),
+            "user.email".to_string(),
+            "user.age".to_string(),
+        ];
+        let ids = batch_intern_global(paths);
+
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids[0], 0);
+        assert_eq!(ids[1], 1);
+        assert_eq!(ids[2], 2);
+        assert_eq!(global_count(), 3);
+
+        // Clean up
+        global_clear();
+    }
+
+    #[test]
+    fn test_batch_intern_global_with_duplicates() {
+        // Clear any previous state
+        global_clear();
+
+        // Batch intern with duplicates
+        let paths = vec![
+            "user.name".to_string(),
+            "user.email".to_string(),
+            "user.name".to_string(), // Duplicate
+        ];
+        let ids = batch_intern_global(paths);
+
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids[0], ids[2]); // Same ID for duplicates
+        assert_eq!(ids[0], 0);
+        assert_eq!(ids[1], 1);
+        assert_eq!(global_count(), 2); // Only 2 unique strings
+
+        // Clean up
+        global_clear();
+    }
+
+    #[test]
+    fn test_batch_intern_global_empty() {
+        // Clear any previous state
+        global_clear();
+
+        // Batch intern empty vector
+        let paths: Vec<String> = vec![];
+        let ids = batch_intern_global(paths);
+
+        assert_eq!(ids.len(), 0);
+        assert_eq!(global_count(), 0);
+
+        // Clean up
+        global_clear();
+    }
+
+    #[test]
+    fn test_batch_intern_global_resolve() {
+        // Clear any previous state
+        global_clear();
+
+        // Batch intern and verify resolution
+        let paths = vec![
+            "a.b.c".to_string(),
+            "x.y.z".to_string(),
+            "foo.bar".to_string(),
+        ];
+        let paths_clone = paths.clone();
+        let ids = batch_intern_global(paths);
+
+        // Verify all resolve correctly
+        for (i, expected) in paths_clone.iter().enumerate() {
+            assert_eq!(resolve_global(ids[i]), Some(expected.clone()));
         }
 
         // Clean up
