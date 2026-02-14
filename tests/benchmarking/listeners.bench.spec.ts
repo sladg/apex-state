@@ -25,6 +25,9 @@ import type { TestState } from '../mocks/types'
 
 type AnyChange = ChangeTuple[number]
 
+/** Benchmark state type (flexible generic object for benchmarking) */
+type BenchState = Record<string, unknown>
+
 /** Legacy flat listener structure for backward-compat benchmarks */
 interface FlatListener {
   path: string
@@ -88,7 +91,7 @@ const getRelevantChanges = (
 const callListener = (
   registration: ListenerRegistrationInternal<TestState>,
   relevantChanges: AnyChange[],
-  currentState: TestState,
+  currentState: Record<string, unknown>,
 ): AnyChange[] => {
   if (relevantChanges.length === 0) return []
   const scope = (registration.scope as string) ?? ''
@@ -108,7 +111,7 @@ const callFlatListener = (
   fn: HandlerFn,
   scope: string | null,
   relevantChanges: AnyChange[],
-  currentState: TestState,
+  currentState: Record<string, unknown>,
 ): AnyChange[] => {
   if (relevantChanges.length === 0) return []
   const scopedState =
@@ -129,7 +132,7 @@ const callFlatListener = (
 const processListeners_flat = (
   changes: AnyChange[],
   flatListeners: FlatListener[],
-  currentState: TestState,
+  currentState: Record<string, unknown>,
 ): AnyChange[] => {
   const allChanges = [...changes].sort(
     (a, b) => getPathDepth(b[0]) - getPathDepth(a[0]),
@@ -168,7 +171,7 @@ const processListeners_nested = (
   changes: AnyChange[],
   listeners: Map<string, ListenerRegistrationInternal<TestState>[]>,
   sortedListenerPaths: string[],
-  currentState: TestState,
+  currentState: Record<string, unknown>,
 ): AnyChange[] => {
   const sortedChanges = [...changes].sort(
     (a, b) => getPathDepth(b[0]) - getPathDepth(a[0]),

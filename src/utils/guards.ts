@@ -127,12 +127,27 @@ export const guard = {
     }
   },
 
+  /**
+   * Rejects paths with hash key bracket notation [*] or [${string}].
+   *
+   * Always active — bracket notation is a type-level marker, never valid at runtime.
+   *
+   * @param path - The path to validate
+   * @throws Error if path contains bracket notation
+   *
+   * @example
+   * ```typescript
+   * guard.dynamicPath('users.u1.posts.p1') // OK
+   * guard.dynamicPath('users.[*].posts') // throws
+   * guard.dynamicPath('users.[u1].posts') // throws (brackets are type-level only)
+   * ```
+   */
   dynamicPath: <P extends string>(path: P): void => {
     const parts = path.split('.')
     for (const part of parts) {
-      if (part === '[*]') {
+      if (part.startsWith('[') && part.endsWith(']')) {
         throw new Error(
-          `Path contains [*] hash key which is not allowed in store operations. Use concrete paths only.`,
+          `Path contains bracket notation '${part}' which is not allowed in store operations. Use concrete paths only (e.g., use _() helper for template strings).`,
         )
       }
     }

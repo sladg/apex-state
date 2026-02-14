@@ -35,13 +35,13 @@
   "scripts": {
     "bench": "vitest bench --run",
     "bench:watch": "vitest bench",
-    "build": "tsup",
+    "build": "npm run build:wasm && tsup",
+    "build:wasm": "cd rust && wasm-pack build --target bundler --release",
     "code:check": "eslint . && npm run type-check",
     "code:fix": "eslint . --fix",
     "code:unused": "knip",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:perf": "VITEST_PERF=true vitest run",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit"
   },
@@ -57,6 +57,7 @@
     "@types/react": "^18.3.12",
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.0.18",
+    "esbuild-plugin-wasm": "^1.1.0",
     "eslint": "^9.0.0",
     "jsdom": "^27.4.0",
     "knip": "^5.82.1",
@@ -64,8 +65,8 @@
     "tsup": "^8.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
-    "vitest": "^4.0.18",
-    "zod": "^3.24.1"
+    "vite-plugin-wasm": "^3.5.0",
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "react": "^18.0.0",

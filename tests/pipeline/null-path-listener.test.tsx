@@ -55,7 +55,7 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
 
     const rootListener: ListenerRegistration<TestState> = {
       path: null,
-      scope: null,
+      scope: undefined,
       fn: rootListenerFn,
     }
 
@@ -118,7 +118,7 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
 
     const rootListener: ListenerRegistration<TestState> = {
       path: null,
-      scope: null,
+      scope: undefined,
       fn: nestedPathFilterListener,
     }
 
@@ -130,7 +130,7 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
     // Root listener filters to top-level only (no dots in path)
     // So 'personalInfo.firstName' should be excluded, 'username' included
     expect(receivedPaths).toHaveBeenCalled()
-    const paths = receivedPaths.mock.calls[0][0] as string[]
+    const paths = receivedPaths.mock.calls[0]?.[0] as string[]
     expect(paths).toContain('username')
     expect(paths).not.toContain('personalInfo.firstName')
   })
@@ -160,7 +160,8 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
     // Root listener A produces a 'bio' change
     const accumulatedListenerA = (
       changes: readonly [string, unknown, object][],
-    ) => {
+      _state: unknown,
+    ): [string, unknown, object][] | undefined => {
       spyA(changes.map((c) => c[0]))
       const usernameChange = changes.find((c) => c[0] === 'username')
       if (usernameChange) {
@@ -180,13 +181,13 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
 
     const rootListenerA: ListenerRegistration<TestState> = {
       path: null,
-      scope: null,
+      scope: undefined,
       fn: accumulatedListenerA,
     }
 
     const rootListenerB: ListenerRegistration<TestState> = {
       path: null,
-      scope: null,
+      scope: undefined,
       fn: accumulatedListenerB,
     }
 
@@ -200,13 +201,13 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
 
     // Listener A sees only the original change
     expect(spyA).toHaveBeenCalled()
-    const pathsA = spyA.mock.calls[0][0] as string[]
+    const pathsA = spyA.mock.calls[0]?.[0] as string[]
     expect(pathsA).toContain('username')
     expect(pathsA).not.toContain('bio')
 
     // Listener B sees accumulated: original + listener A's output
     expect(spyB).toHaveBeenCalled()
-    const pathsB = spyB.mock.calls[0][0] as string[]
+    const pathsB = spyB.mock.calls[0]?.[0] as string[]
     expect(pathsB).toContain('username')
     expect(pathsB).toContain('bio')
 
@@ -235,7 +236,8 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
 
     const displayNameAutoSetListener = (
       changes: readonly [string, unknown, object][],
-    ) => {
+      _state: unknown,
+    ): [string, unknown, object][] | undefined => {
       // When username changes, auto-set displayName
       const usernameChange = changes.find((c) => c[0] === 'username')
       if (usernameChange) {
@@ -246,7 +248,7 @@ describe('Pipeline: Null-Path (Root) Listener', () => {
 
     const rootListener: ListenerRegistration<TestState> = {
       path: null,
-      scope: null,
+      scope: undefined,
       fn: displayNameAutoSetListener,
     }
 

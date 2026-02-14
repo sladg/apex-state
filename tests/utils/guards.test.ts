@@ -137,21 +137,26 @@ describe('guard.listenerScope', () => {
 })
 
 describe('guard.dynamicPath', () => {
-  it('should throw for path containing [*]', () => {
+  it('should throw for path containing bracket notation', () => {
     expect(() => guard.dynamicPath('users.[*].posts')).toThrow(
-      /contains \[\*\] hash key/,
+      /bracket notation/,
     )
-    expect(() => guard.dynamicPath('[*].name')).toThrow(
-      /contains \[\*\] hash key/,
+    expect(() => guard.dynamicPath('[*].name')).toThrow(/bracket notation/)
+    expect(() => guard.dynamicPath('data.[*]')).toThrow(/bracket notation/)
+    expect(() => guard.dynamicPath('users.[u1].posts')).toThrow(
+      /bracket notation/,
     )
-    expect(() => guard.dynamicPath('data.[*]')).toThrow(
-      /contains \[\*\] hash key/,
+    expect(() => guard.dynamicPath('users.[active].posts')).toThrow(
+      /bracket notation/,
     )
   })
 
-  it('should throw for paths with multiple [*]', () => {
+  it('should throw for paths with multiple bracket segments', () => {
     expect(() => guard.dynamicPath('users.[*].posts.[*].comments')).toThrow(
-      /contains \[\*\] hash key/,
+      /bracket notation/,
+    )
+    expect(() => guard.dynamicPath('regions.[us].items.[active]')).toThrow(
+      /bracket notation/,
     )
   })
 
@@ -171,16 +176,15 @@ describe('guard.dynamicPath', () => {
 
   it('should NOT throw for paths containing asterisk in other forms', () => {
     expect(() => guard.dynamicPath('users.*.posts')).not.toThrow()
-    expect(() => guard.dynamicPath('users.[star].posts')).not.toThrow()
   })
 
-  it('should NOT throw for paths with concrete IDs in brackets', () => {
-    expect(() => guard.dynamicPath('users.[u1].posts')).not.toThrow()
-    expect(() => guard.dynamicPath('users.[123].posts')).not.toThrow()
-  })
-
-  it('should mention [*] in error message', () => {
-    expect(() => guard.dynamicPath('users.[*].name')).toThrow(/\[\*\]/)
+  it('should mention bracket notation in error message', () => {
+    expect(() => guard.dynamicPath('users.[*].name')).toThrow(
+      /bracket notation '\[\*\]'/,
+    )
+    expect(() => guard.dynamicPath('users.[u1].name')).toThrow(
+      /bracket notation '\[u1\]'/,
+    )
   })
 })
 
@@ -277,7 +281,6 @@ describe('Type Guards: StrictType Constraints', () => {
   describe('StrictType REJECTS any at top level', () => {
     it('rejects top-level any', () => {
       // ❌ Should fail TypeScript compilation
-      // @ts-expect-error Type 'any' does not satisfy constraint
       // const _store = createGenericStore<any>()
 
       expect(true).toBe(true)
@@ -285,7 +288,6 @@ describe('Type Guards: StrictType Constraints', () => {
 
     it('rejects bare object without constraint', () => {
       // ❌ If we pass a type parameter that is just any
-      // @ts-expect-error Type 'any' does not satisfy constraint
       // type _BadStore = typeof createGenericStore<any>
 
       expect(true).toBe(true)

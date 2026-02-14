@@ -36,26 +36,31 @@ interface TestState {
 // ============================================================================
 
 // Valid: IS_EQUAL with correct path and value type
+
 type _ValidIsEqual = BoolLogic<TestState> & {
   IS_EQUAL: ['user.id', number]
 }
 
 // Valid: IS_EQUAL with string path
+
 type _ValidIsEqualString = BoolLogic<TestState> & {
   IS_EQUAL: ['product.status', 'active' | 'inactive']
 }
 
 // Valid: EXISTS with valid path
+
 type _ValidExists = BoolLogic<TestState> & {
   EXISTS: 'user.email'
 }
 
 // Valid: GT with numeric path
+
 type _ValidGT = BoolLogic<TestState> & {
   GT: ['product.price', number]
 }
 
 // Valid: AND combinator
+
 type _ValidAnd = BoolLogic<TestState> & {
   AND: [
     { IS_EQUAL: ['user.isAdmin', boolean] },
@@ -64,16 +69,19 @@ type _ValidAnd = BoolLogic<TestState> & {
 }
 
 // Valid: OR combinator
+
 type _ValidOr = BoolLogic<TestState> & {
   OR: [{ IS_EQUAL: ['user.isAdmin', true] }, { EXISTS: 'product.sku' }]
 }
 
 // Valid: NOT negation
+
 type _ValidNot = BoolLogic<TestState> & {
   NOT: { IS_EQUAL: ['product.inStock', false] }
 }
 
 // Valid: IN operator with matching value array
+
 type _ValidIn = BoolLogic<TestState> & {
   IN: ['product.status', ('active' | 'inactive')[]]
 }
@@ -151,3 +159,20 @@ type _InvalidLTE = BoolLogic<TestState> & {
 type _InvalidIsEmpty = BoolLogic<TestState> & {
   IS_EMPTY: 'this.does.not.exist'
 }
+
+// ============================================================================
+// Type Assertion to Reference Valid Types (prevents TS6196 unused errors)
+// ============================================================================
+
+type _AllValidTypes =
+  | _ValidIsEqual
+  | _ValidIsEqualString
+  | _ValidExists
+  | _ValidGT
+  | _ValidAnd
+  | _ValidOr
+  | _ValidNot
+  | _ValidIn
+
+// Ensure the type is actually used
+export type { _AllValidTypes }

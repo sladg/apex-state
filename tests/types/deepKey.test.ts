@@ -160,11 +160,11 @@ describe('DeepKey', () => {
     expectTypeOf<IsWrongSeparator>().toEqualTypeOf<false>()
   })
 
-  describe('Record support with [*] wildcard', () => {
+  describe('Record support with [${string}] pattern', () => {
     it('handles simple Record<string, T>', () => {
       type Users = Record<string, { name: string; age: number }>
       type Keys = DeepKey<Users>
-      type Expected = '[*]' | '[*].name' | '[*].age'
+      type Expected = `[${string}]` | `[${string}].name` | `[${string}].age`
 
       expectTypeOf<Keys>().toMatchTypeOf<Expected>()
       expectTypeOf<Expected>().toMatchTypeOf<Keys>()
@@ -247,7 +247,7 @@ describe('DeepKey', () => {
     it('handles Record<string, T> with primitive value', () => {
       type StringMap = Record<string, string>
       type Keys = DeepKey<StringMap>
-      type Expected = '[*]'
+      type Expected = `[${string}]`
 
       expectTypeOf<Keys>().toMatchTypeOf<Expected>()
       expectTypeOf<Expected>().toMatchTypeOf<Keys>()
@@ -256,7 +256,7 @@ describe('DeepKey', () => {
     it('handles Record<string, number>', () => {
       type NumberMap = Record<string, number>
       type Keys = DeepKey<NumberMap>
-      type Expected = '[*]'
+      type Expected = `[${string}]`
 
       expectTypeOf<Keys>().toMatchTypeOf<Expected>()
       expectTypeOf<Expected>().toMatchTypeOf<Keys>()

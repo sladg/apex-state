@@ -202,9 +202,9 @@ describe('Deep Access Utilities', () => {
   })
 
   describe('guard.dynamicPath (dynamic key validation)', () => {
-    it('throws error when [*] is passed to guard.dynamicPath', () => {
+    it('throws error when bracket notation is passed to guard.dynamicPath', () => {
       expect(() => guard.dynamicPath('nested.[*].value')).toThrow(
-        /contains \[\*\] hash key/,
+        /bracket notation/,
       )
     })
 

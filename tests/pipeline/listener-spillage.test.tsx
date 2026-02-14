@@ -114,7 +114,10 @@ describe('Pipeline: Listener Spillage', () => {
     const rendered = renderWithStore(<TestComponent />, store)
 
     // Deep listener on personalInfo — produces a top-level 'bio' change
-    const deepListenerFn = () => {
+    const deepListenerFn = (
+      _changes: readonly [string, unknown, object][],
+      _state: unknown,
+    ): [string, unknown, object][] => {
       return [['bio', 'updated-by-deep-listener', {}]]
     }
 
@@ -132,7 +135,7 @@ describe('Pipeline: Listener Spillage', () => {
     // Root listener (null) — should see the 'bio' change produced by the deeper listener
     const rootListener: ListenerRegistration<TestState> = {
       path: null,
-      scope: null,
+      scope: undefined,
       fn: rootListenerFn,
     }
 
@@ -144,7 +147,7 @@ describe('Pipeline: Listener Spillage', () => {
 
     // Root listener should have received the 'bio' change produced by the deeper listener
     expect(shallowSpy).toHaveBeenCalled()
-    const receivedChanges = shallowSpy.mock.calls[0][0] as [string, unknown][]
+    const receivedChanges = shallowSpy.mock.calls[0]?.[0] as [string, unknown][]
     const paths = receivedChanges.map((c) => c[0])
     expect(paths).toContain('bio')
 
@@ -181,7 +184,10 @@ describe('Pipeline: Listener Spillage', () => {
     const rendered = renderWithStore(<TestComponent />, store)
 
     // Listener A on personalInfo — produces a change to personalInfo.lastName
-    const accumulateListenerA = () => {
+    const accumulateListenerA = (
+      _changes: readonly [string, unknown, object][],
+      _state: unknown,
+    ): [string, unknown, object][] => {
       return [['personalInfo.lastName', 'Smith', {}]]
     }
 
@@ -215,7 +221,7 @@ describe('Pipeline: Listener Spillage', () => {
     // Listener B should see both the original firstName change AND the lastName
     // change produced by listener A (accumulated)
     expect(listenerBSpy).toHaveBeenCalled()
-    const receivedPaths = listenerBSpy.mock.calls[0][0] as string[]
+    const receivedPaths = listenerBSpy.mock.calls[0]?.[0] as string[]
     expect(receivedPaths).toContain('firstName')
     expect(receivedPaths).toContain('lastName')
   })
@@ -292,7 +298,10 @@ describe('Pipeline: Listener Spillage', () => {
     const rendered = renderWithStore(<TestComponent />, store)
 
     // Listener A watches personalInfo and returns a change to 'email' (top-level)
-    const emailAutoGenerateListener = () => {
+    const emailAutoGenerateListener = (
+      _changes: readonly [string, unknown, object][],
+      _state: unknown,
+    ): [string, unknown, object][] => {
       return [['email', 'auto@generated.com', {}]]
     }
 
@@ -305,7 +314,7 @@ describe('Pipeline: Listener Spillage', () => {
 
     const listenerA: ListenerRegistration<TestState> = {
       path: 'personalInfo',
-      scope: null,
+      scope: undefined,
       fn: emailAutoGenerateListener,
     }
 

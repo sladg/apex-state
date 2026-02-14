@@ -24,47 +24,104 @@
  * ```
  */
 
-import type { HASH_KEY } from './hashKey'
-
 type Primitive = string | number | boolean | bigint | symbol | null | undefined
 
 type IsAny<T> = 0 extends 1 & T ? true : false
 
-// Main DeepKey implementation with depth limit to prevent infinite recursion
+/** Detects if T is a union type (distributes, returns true if T has 2+ members) */
+type IsUnion<T, U = T> = [T] extends [never]
+  ? false
+  : T extends unknown
+    ? [U] extends [T]
+      ? false
+      : true
+    : never
+
+/**
+ * Detects if T is a homogeneous record (enum-keyed) that should use `[${string}]` patterns.
+ *
+ * Returns true when:
+ * 1. Not already Record<string, V> (handled by `string extends keyof T` branch)
+ * 2. Has multiple string keys (single-key objects are structural)
+ * 3. All values are the SAME type (inferred V is not a union)
+ * 4. Value type is non-primitive and non-array
+ */
+type IsHomogeneousRecord<T> =
+  IsAny<T> extends true
+    ? false
+    : string extends keyof T
+      ? false
+      : keyof T extends string
+        ? true extends IsUnion<keyof T & string>
+          ? T extends Record<keyof T, infer V>
+            ? true extends IsUnion<V>
+              ? false
+              : [V] extends [Primitive]
+                ? false
+                : [V] extends [readonly unknown[]]
+                  ? false
+                  : true
+            : false
+          : false
+        : false
+
+/**
+ * Main DeepKey implementation with depth limit to prevent infinite recursion.
+ *
+ * 3 branches:
+ * 1. `string extends keyof T`    → Record<string, V>  → `[${string}]` patterns
+ * 2. `IsHomogeneousRecord<T>`    → Record<Enum, V>    → `[${string}]` patterns (collapsed)
+ * 3. else                        → structural object   → bare keys
+ */
 export type DeepKey<T, Depth extends number = 20> = Depth extends 0
   ? never
   : IsAny<T> extends true
     ? never
     : T extends Primitive
       ? never
-      : T extends readonly any[]
+      : T extends readonly unknown[]
         ? never
         : string extends keyof T
-          ? // T is a Record<string, V> — emit HASH_KEY and recurse into T[string]
-              | HASH_KEY
+          ? // T is a Record<string, V> — emit [${string}] and recurse into T[string]
+              | `[${string}]`
               | (T[string] extends Primitive
                   ? never
-                  : T[string] extends readonly any[]
+                  : T[string] extends readonly unknown[]
                     ? never
                     : DeepKey<T[string], Prev<Depth>> extends infer DK
                       ? DK extends string
-                        ? `${HASH_KEY}.${DK}`
+                        ? `[${string}].${DK}`
                         : never
                       : never)
-          : // T has concrete keys only
-            {
-              [K in keyof T & (string | number)]:
-                | `${K & string}`
-                | (T[K] extends Primitive
+          : IsHomogeneousRecord<T> extends true
+            ? // T is Record<Enum, V> — collapse to [${string}] (prevents union explosion)
+                | `[${string}]`
+                | (T[keyof T & string] extends Primitive
                     ? never
-                    : T[K] extends readonly any[]
+                    : T[keyof T & string] extends readonly unknown[]
                       ? never
-                      : DeepKey<T[K], Prev<Depth>> extends infer DK
+                      : DeepKey<
+                            T[keyof T & string],
+                            Prev<Depth>
+                          > extends infer DK
                         ? DK extends string
-                          ? `${K & string}.${DK}`
+                          ? `[${string}].${DK}`
                           : never
                         : never)
-            }[keyof T & (string | number)]
+            : // T has concrete keys — emit bare keys
+              {
+                [K in keyof T & (string | number)]:
+                  | `${K & string}`
+                  | (T[K] extends Primitive
+                      ? never
+                      : T[K] extends readonly unknown[]
+                        ? never
+                        : DeepKey<T[K], Prev<Depth>> extends infer DK
+                          ? DK extends string
+                            ? `${K & string}.${DK}`
+                            : never
+                          : never)
+              }[keyof T & (string | number)]
 
 // Depth counter helper types (supports up to depth 20)
 type Prev<N extends number> = N extends 20

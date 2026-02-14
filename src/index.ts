@@ -168,3 +168,8 @@ export { is } from './utils/is'
  * ```
  */
 export { applyChangesToObject } from './utils/applyChanges'
+
+// NOTE: WASM functions are available via src/wasm/index.ts but not exported
+// from the main entry point. They will be used internally in WASM-005.
+// The esbuild-plugin-wasm is configured in tsup.config.ts with mode: 'embedded'
+// to inline the WASM binary when WASM functions are imported.
