@@ -53,6 +53,21 @@ pub fn intern_clear() {
     intern::global_clear()
 }
 
+// Export evaluate_bool_logic function for WASM
+#[wasm_bindgen]
+pub fn evaluate_bool_logic(logic: JsValue, state: JsValue) -> Result<bool, JsValue> {
+    // Convert JsValue to BoolLogic using serde-wasm-bindgen
+    let logic: bool_logic::BoolLogic = serde_wasm_bindgen::from_value(logic)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse BoolLogic: {:?}", e)))?;
+
+    // Convert JsValue to serde_json::Value for state
+    let state: serde_json::Value = serde_wasm_bindgen::from_value(state)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse state: {:?}", e)))?;
+
+    // Evaluate and return the result
+    Ok(bool_logic::evaluate(&logic, &state))
+}
+
 // ============================================================================
 // Internal Path Lookup Functions (PathID-based)
 // ============================================================================
