@@ -37,7 +37,6 @@ coverage
 # Rust/WASM build artifacts
 rust/target/
 rust/pkg/
-Cargo.lock
 
 # Auto Claude generated files
 .auto-claude-security.json
