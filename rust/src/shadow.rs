@@ -744,4 +744,270 @@ mod tests {
         assert_eq!(affected.len(), 1);
         assert_eq!(affected[0], "");
     }
+
+    #[test]
+    fn test_value_repr_clone() {
+        // Test that ValueRepr can be cloned properly
+        let original = ValueRepr::String("test".to_string());
+        let cloned = original.clone();
+
+        assert!(matches!(cloned, ValueRepr::String(ref s) if s == "test"));
+
+        // Test complex nested structure clone
+        let mut inner = HashMap::new();
+        inner.insert("key".to_string(), ValueRepr::Number(42.0));
+
+        let mut outer = HashMap::new();
+        outer.insert("nested".to_string(), ValueRepr::Object(inner));
+
+        let original = ValueRepr::Object(outer);
+        let cloned = original.clone();
+
+        // Verify cloned structure
+        let value = get_value(&cloned, &["nested", "key"]);
+        assert!(matches!(value, Some(&ValueRepr::Number(n)) if n == 42.0));
+    }
+
+    #[test]
+    fn test_unicode_handling() {
+        // Test Unicode in keys
+        let mut state = ValueRepr::Object(HashMap::new());
+        update_value(&mut state, &["用户", "名字"], ValueRepr::String("Alice".to_string())).unwrap();
+
+        let value = get_value(&state, &["用户", "名字"]);
+        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice"));
+
+        // Test Unicode in values
+        let mut state = ValueRepr::Object(HashMap::new());
+        update_value(&mut state, &["user", "name"], ValueRepr::String("Alice 🎉".to_string())).unwrap();
+
+        let value = get_value(&state, &["user", "name"]);
+        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice 🎉"));
+
+        // Test emoji in keys
+        let mut state = ValueRepr::Object(HashMap::new());
+        update_value(&mut state, &["🚀", "test"], ValueRepr::Bool(true)).unwrap();
+
+        let value = get_value(&state, &["🚀", "test"]);
+        assert!(matches!(value, Some(&ValueRepr::Bool(true))));
+    }
+
+    #[test]
+    fn test_empty_string_keys() {
+        // Test empty string as key
+        let mut state = ValueRepr::Object(HashMap::new());
+        update_value(&mut state, &["", "value"], ValueRepr::Number(123.0)).unwrap();
+
+        let value = get_value(&state, &["", "value"]);
+        assert!(matches!(value, Some(&ValueRepr::Number(n)) if n == 123.0));
+
+        // Test path with multiple empty strings
+        let mut state = ValueRepr::Object(HashMap::new());
+        update_value(&mut state, &["", ""], ValueRepr::String("nested".to_string())).unwrap();
+
+        let value = get_value(&state, &["", ""]);
+        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "nested"));
+    }
+
+    #[test]
+    fn test_special_characters_in_keys() {
+        // Test keys with dots (should be treated as literal, not path separator)
+        let mut obj = HashMap::new();
+        obj.insert("user.name".to_string(), ValueRepr::String("Alice".to_string()));
+
+        let state = ValueRepr::Object(obj);
+
+        // Access using single-segment path with dot in the key
+        let value = get_value(&state, &["user.name"]);
+        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice"));
+
+        // Test keys with special characters
+        let mut state = ValueRepr::Object(HashMap::new());
+        let special_keys = vec!["key-with-dash", "key_with_underscore", "key@with@at", "key#with#hash"];
+
+        for key in special_keys {
+            update_value(&mut state, &[key], ValueRepr::Bool(true)).unwrap();
+            let value = get_value(&state, &[key]);
+            assert!(matches!(value, Some(&ValueRepr::Bool(true))), "Failed for key: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_deeply_nested_arrays() {
+        // Test arrays nested in arrays
+        let inner_array = ValueRepr::Array(vec![
+            ValueRepr::Number(1.0),
+            ValueRepr::Number(2.0),
+        ]);
+
+        let outer_array = ValueRepr::Array(vec![
+            ValueRepr::String("first".to_string()),
+            inner_array,
+        ]);
+
+        let mut root = HashMap::new();
+        root.insert("nested_arrays".to_string(), outer_array);
+
+        let state = ValueRepr::Object(root);
+
+        // Access nested array element
+        let value = get_value(&state, &["nested_arrays", "1", "0"]);
+        assert!(matches!(value, Some(&ValueRepr::Number(n)) if n == 1.0));
+
+        let value = get_value(&state, &["nested_arrays", "1", "1"]);
+        assert!(matches!(value, Some(&ValueRepr::Number(n)) if n == 2.0));
+    }
+
+    #[test]
+    fn test_mixed_primitive_types() {
+        // Test object with all primitive types
+        let mut state = ValueRepr::Object(HashMap::new());
+
+        update_value(&mut state, &["null_val"], ValueRepr::Null).unwrap();
+        update_value(&mut state, &["bool_val"], ValueRepr::Bool(true)).unwrap();
+        update_value(&mut state, &["num_val"], ValueRepr::Number(42.5)).unwrap();
+        update_value(&mut state, &["str_val"], ValueRepr::String("test".to_string())).unwrap();
+
+        // Verify each type
+        assert!(matches!(get_value(&state, &["null_val"]), Some(&ValueRepr::Null)));
+        assert!(matches!(get_value(&state, &["bool_val"]), Some(&ValueRepr::Bool(true))));
+        assert!(matches!(get_value(&state, &["num_val"]), Some(&ValueRepr::Number(n)) if n == 42.5));
+        assert!(matches!(get_value(&state, &["str_val"]), Some(&ValueRepr::String(ref s)) if s == "test"));
+    }
+
+    #[test]
+    fn test_large_arrays() {
+        // Test array with many elements
+        let large_array: Vec<ValueRepr> = (0..100)
+            .map(|i| ValueRepr::Number(i as f64))
+            .collect();
+
+        let mut state = ValueRepr::Object(HashMap::new());
+        update_value(&mut state, &["large"], ValueRepr::Array(large_array)).unwrap();
+
+        // Access first, middle, and last elements
+        assert!(matches!(get_value(&state, &["large", "0"]), Some(&ValueRepr::Number(n)) if n == 0.0));
+        assert!(matches!(get_value(&state, &["large", "50"]), Some(&ValueRepr::Number(n)) if n == 50.0));
+        assert!(matches!(get_value(&state, &["large", "99"]), Some(&ValueRepr::Number(n)) if n == 99.0));
+
+        // Out of bounds should return None
+        assert!(get_value(&state, &["large", "100"]).is_none());
+        assert!(get_value(&state, &["large", "1000"]).is_none());
+    }
+
+    #[test]
+    fn test_affected_paths_with_null_values() {
+        // Test that null values are properly included in affected paths
+        let mut obj = HashMap::new();
+        obj.insert("null_field".to_string(), ValueRepr::Null);
+        obj.insert("bool_field".to_string(), ValueRepr::Bool(false));
+
+        let mut root = HashMap::new();
+        root.insert("data".to_string(), ValueRepr::Object(obj));
+
+        let state = ValueRepr::Object(root);
+
+        let mut affected = get_affected_paths(&state, &["data"]);
+        affected.sort();
+
+        assert_eq!(affected.len(), 2);
+        assert!(affected.contains(&"data.bool_field".to_string()));
+        assert!(affected.contains(&"data.null_field".to_string()));
+    }
+
+    #[test]
+    fn test_affected_paths_empty_arrays() {
+        // Test that empty arrays have no affected paths
+        let mut root = HashMap::new();
+        root.insert("empty_array".to_string(), ValueRepr::Array(vec![]));
+
+        let state = ValueRepr::Object(root);
+
+        let affected = get_affected_paths(&state, &["empty_array"]);
+        assert_eq!(affected.len(), 0);
+    }
+
+    #[test]
+    fn test_update_replaces_type() {
+        // Test that updating a value can change its type
+        let mut state = ValueRepr::Object(HashMap::new());
+
+        // Start with a string
+        update_value(&mut state, &["field"], ValueRepr::String("text".to_string())).unwrap();
+        assert!(matches!(get_value(&state, &["field"]), Some(&ValueRepr::String(_))));
+
+        // Replace with a number
+        update_value(&mut state, &["field"], ValueRepr::Number(123.0)).unwrap();
+        assert!(matches!(get_value(&state, &["field"]), Some(&ValueRepr::Number(n)) if n == 123.0));
+
+        // Replace with an object
+        let mut obj = HashMap::new();
+        obj.insert("nested".to_string(), ValueRepr::Bool(true));
+        update_value(&mut state, &["field"], ValueRepr::Object(obj)).unwrap();
+        assert!(matches!(get_value(&state, &["field"]), Some(&ValueRepr::Object(_))));
+
+        // Replace with null
+        update_value(&mut state, &["field"], ValueRepr::Null).unwrap();
+        assert!(matches!(get_value(&state, &["field"]), Some(&ValueRepr::Null)));
+    }
+
+    #[test]
+    fn test_number_edge_cases() {
+        // Test special number values
+        let mut state = ValueRepr::Object(HashMap::new());
+
+        // Positive and negative infinity
+        update_value(&mut state, &["pos_inf"], ValueRepr::Number(f64::INFINITY)).unwrap();
+        update_value(&mut state, &["neg_inf"], ValueRepr::Number(f64::NEG_INFINITY)).unwrap();
+
+        // Zero and negative zero
+        update_value(&mut state, &["zero"], ValueRepr::Number(0.0)).unwrap();
+        update_value(&mut state, &["neg_zero"], ValueRepr::Number(-0.0)).unwrap();
+
+        // Very large and very small numbers
+        update_value(&mut state, &["large"], ValueRepr::Number(f64::MAX)).unwrap();
+        update_value(&mut state, &["small"], ValueRepr::Number(f64::MIN_POSITIVE)).unwrap();
+
+        // Verify all values
+        assert!(matches!(get_value(&state, &["pos_inf"]), Some(&ValueRepr::Number(n)) if n.is_infinite() && n.is_sign_positive()));
+        assert!(matches!(get_value(&state, &["neg_inf"]), Some(&ValueRepr::Number(n)) if n.is_infinite() && n.is_sign_negative()));
+        assert!(matches!(get_value(&state, &["zero"]), Some(&ValueRepr::Number(n)) if n == 0.0));
+        assert!(matches!(get_value(&state, &["large"]), Some(&ValueRepr::Number(n)) if n == f64::MAX));
+        assert!(matches!(get_value(&state, &["small"]), Some(&ValueRepr::Number(n)) if n == f64::MIN_POSITIVE));
+    }
+
+    #[test]
+    fn test_complex_affected_paths_scenario() {
+        // Test a complex nested structure with mixed types
+        let mut settings = HashMap::new();
+        settings.insert("theme".to_string(), ValueRepr::String("dark".to_string()));
+        settings.insert("notifications".to_string(), ValueRepr::Bool(true));
+
+        let permissions = vec![
+            ValueRepr::String("read".to_string()),
+            ValueRepr::String("write".to_string()),
+        ];
+
+        let mut profile = HashMap::new();
+        profile.insert("settings".to_string(), ValueRepr::Object(settings));
+        profile.insert("permissions".to_string(), ValueRepr::Array(permissions));
+        profile.insert("score".to_string(), ValueRepr::Number(100.0));
+
+        let mut root = HashMap::new();
+        root.insert("profile".to_string(), ValueRepr::Object(profile));
+
+        let state = ValueRepr::Object(root);
+
+        // Get all affected paths for profile
+        let mut affected = get_affected_paths(&state, &["profile"]);
+        affected.sort();
+
+        // Should include all leaf paths
+        assert_eq!(affected.len(), 5);
+        assert!(affected.contains(&"profile.permissions.0".to_string()));
+        assert!(affected.contains(&"profile.permissions.1".to_string()));
+        assert!(affected.contains(&"profile.score".to_string()));
+        assert!(affected.contains(&"profile.settings.notifications".to_string()));
+        assert!(affected.contains(&"profile.settings.theme".to_string()));
+    }
 }
