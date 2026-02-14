@@ -369,7 +369,7 @@ export const removeNode = (tree: ShadowTree, path: string[]): number => {
   const countNodes = (node: ShadowNode): number => {
     let count = 1
     if (node.children) {
-      for (const child of node.children.values()) {
+      for (const child of Array.from(node.children.values())) {
         count += countNodes(child)
       }
     }
@@ -387,7 +387,7 @@ export const removeNode = (tree: ShadowTree, path: string[]): number => {
     const calculateDepth = (node: ShadowNode): number => {
       let maxDepth = node.path.length
       if (node.children) {
-        for (const child of node.children.values()) {
+        for (const child of Array.from(node.children.values())) {
           const childDepth = calculateDepth(child)
           if (childDepth > maxDepth) {
             maxDepth = childDepth
