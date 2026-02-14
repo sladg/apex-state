@@ -1,5 +1,8 @@
 use wasm_bindgen::prelude::*;
 
+// Module declarations
+pub mod intern;
+
 // Optional: Better panic messages in browser console
 #[cfg(feature = "console_error_panic_hook")]
 pub fn set_panic_hook() {
