@@ -1,8 +1,75 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// Type alias for path identifiers
 /// Using u32 to balance range (4B unique paths) with memory efficiency
 pub type PathID = u32;
+
+// Global interning table using thread-local storage
+// WASM is single-threaded, so thread_local acts as a singleton
+thread_local! {
+    static INTERN_TABLE: RefCell<InternTable> = RefCell::new(InternTable::new());
+}
+
+/// Intern a string using the global interning table
+///
+/// This is the primary function for interning paths in WASM.
+/// It uses a thread-local global table to ensure consistent
+/// PathID assignments across all WASM calls.
+///
+/// # Arguments
+/// * `path` - The string to intern
+///
+/// # Returns
+/// The PathID for this string (existing or newly allocated)
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::intern_global;
+///
+/// let id1 = intern_global("user.name".to_string());
+/// let id2 = intern_global("user.name".to_string());
+/// assert_eq!(id1, id2); // Same ID returned for same string
+/// ```
+pub fn intern_global(path: String) -> PathID {
+    INTERN_TABLE.with(|table| table.borrow_mut().intern(path))
+}
+
+/// Resolve a PathID using the global interning table
+///
+/// # Arguments
+/// * `id` - The PathID to resolve
+///
+/// # Returns
+/// Some(String) if the ID is valid, None if out of bounds
+///
+/// # Example
+/// ```
+/// use apex_state_wasm::intern::{intern_global, resolve_global};
+///
+/// let id = intern_global("user.name".to_string());
+/// let path = resolve_global(id);
+/// assert_eq!(path, Some("user.name".to_string()));
+/// ```
+pub fn resolve_global(id: PathID) -> Option<String> {
+    INTERN_TABLE.with(|table| {
+        table.borrow().resolve(id).map(|s| s.to_string())
+    })
+}
+
+/// Get the number of interned strings in the global table
+///
+/// Useful for debugging and testing
+pub fn global_count() -> usize {
+    INTERN_TABLE.with(|table| table.borrow().count())
+}
+
+/// Clear the global interning table
+///
+/// Useful for testing or resetting state between WASM calls
+pub fn global_clear() {
+    INTERN_TABLE.with(|table| table.borrow_mut().clear())
+}
 
 /// Bidirectional string interning table for efficient path operations
 ///
@@ -182,5 +249,79 @@ mod tests {
         let mut table = InternTable::new();
         let id = table.intern("".to_string());
         assert_eq!(table.resolve(id), Some(""));
+    }
+
+    // Global interning table tests
+    #[test]
+    fn test_global_intern_table() {
+        // Clear any previous state
+        global_clear();
+
+        // Test basic interning
+        let id1 = intern_global("user.name".to_string());
+        assert_eq!(id1, 0);
+        assert_eq!(global_count(), 1);
+
+        // Test deduplication
+        let id2 = intern_global("user.name".to_string());
+        assert_eq!(id1, id2);
+        assert_eq!(global_count(), 1);
+
+        // Test multiple unique strings
+        let id3 = intern_global("user.email".to_string());
+        assert_eq!(id3, 1);
+        assert_eq!(global_count(), 2);
+
+        // Test resolution
+        assert_eq!(resolve_global(id1), Some("user.name".to_string()));
+        assert_eq!(resolve_global(id3), Some("user.email".to_string()));
+        assert_eq!(resolve_global(999), None);
+
+        // Test clear
+        global_clear();
+        assert_eq!(global_count(), 0);
+    }
+
+    #[test]
+    fn test_global_intern_table_persistence() {
+        // Clear any previous state
+        global_clear();
+
+        // Intern in one "call"
+        let id1 = intern_global("path1".to_string());
+
+        // Intern in another "call" - should persist
+        let id2 = intern_global("path2".to_string());
+        let id1_again = intern_global("path1".to_string());
+
+        // Verify persistence across calls
+        assert_eq!(id1, id1_again);
+        assert_eq!(id1, 0);
+        assert_eq!(id2, 1);
+        assert_eq!(global_count(), 2);
+
+        // Clean up
+        global_clear();
+    }
+
+    #[test]
+    fn test_global_intern_table_resolve_all() {
+        // Clear any previous state
+        global_clear();
+
+        // Intern multiple paths
+        let paths = vec!["a.b.c", "x.y.z", "foo.bar"];
+        let ids: Vec<PathID> = paths
+            .iter()
+            .map(|p| intern_global(p.to_string()))
+            .collect();
+
+        // Verify all resolve correctly
+        for (i, path) in paths.iter().enumerate() {
+            assert_eq!(resolve_global(ids[i]), Some(path.to_string()));
+        }
+
+        // Clean up
+        global_clear();
     }
 }
