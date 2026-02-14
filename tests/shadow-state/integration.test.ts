@@ -205,7 +205,7 @@ describe('valtio integration', () => {
 
       // Initial values
       expect(getValue(originalTree, 'nullable')).toBe(null)
-      expect(hasPath(originalTree, 'optional')).toBe(true)
+      expect(hasPath(originalTree, 'optional')).toBe(false) // optional is not initialized, so it doesn't exist
 
       // Update to non-null
       state.nullable = 'value'
