@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   dumpShadowState,
+  evaluateBoolLogic,
   getShadowValue,
   initShadowState,
   isWasmLoaded,
@@ -1427,6 +1428,566 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
       // Verify old paths are gone
       expect(await getShadowValue(['data'])).toBeUndefined()
       expect(await getShadowValue(['different', 'structure', 'value'])).toBe(2)
+    })
+  })
+
+  describe('BoolLogic Integration with Nested Shadow State', () => {
+    it('should evaluate IS_EQUAL with nested shadow state paths', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          profile: {
+            personal: {
+              name: 'Alice',
+              age: 30,
+            },
+            settings: {
+              theme: 'dark',
+            },
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['user.profile.personal.name', 'Alice'] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['user.profile.personal.age', 30] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['user.profile.settings.theme', 'dark'] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['user.profile.personal.name', 'Bob'] },
+          state,
+        ),
+      ).toBe(false)
+    })
+
+    it('should evaluate EXISTS with nested shadow state paths', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          profile: {
+            personal: {
+              name: 'Alice',
+              email: null,
+            },
+            settings: {
+              theme: 'dark',
+            },
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'user.profile.personal.name' }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { EXISTS: 'user.profile.settings.theme' },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'user.profile.personal.email' }, state),
+      ).toBe(false)
+
+      expect(
+        await evaluateBoolLogic(
+          { EXISTS: 'user.profile.personal.missing' },
+          state,
+        ),
+      ).toBe(false)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'user.missing.path' }, state),
+      ).toBe(false)
+    })
+
+    it('should evaluate IS_EMPTY with nested shadow state paths', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        product: {
+          info: {
+            description: '',
+            title: 'Widget',
+          },
+          tags: [],
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EMPTY: 'product.info.description' },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ IS_EMPTY: 'product.info.title' }, state),
+      ).toBe(false)
+
+      expect(
+        await evaluateBoolLogic({ IS_EMPTY: 'product.tags' }, state),
+      ).toBe(true)
+    })
+
+    it('should evaluate AND operator with nested shadow state', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          profile: {
+            role: 'admin',
+            status: 'active',
+          },
+          permissions: {
+            canEdit: true,
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            AND: [
+              { IS_EQUAL: ['user.profile.role', 'admin'] },
+              { IS_EQUAL: ['user.profile.status', 'active'] },
+            ],
+          },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            AND: [
+              { IS_EQUAL: ['user.profile.role', 'admin'] },
+              { IS_EQUAL: ['user.permissions.canEdit', true] },
+            ],
+          },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            AND: [
+              { IS_EQUAL: ['user.profile.role', 'admin'] },
+              { IS_EQUAL: ['user.profile.status', 'inactive'] },
+            ],
+          },
+          state,
+        ),
+      ).toBe(false)
+    })
+
+    it('should evaluate OR operator with nested shadow state', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          profile: {
+            role: 'editor',
+            status: 'active',
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            OR: [
+              { IS_EQUAL: ['user.profile.role', 'admin'] },
+              { IS_EQUAL: ['user.profile.role', 'editor'] },
+            ],
+          },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            OR: [
+              { IS_EQUAL: ['user.profile.status', 'inactive'] },
+              { IS_EQUAL: ['user.profile.status', 'active'] },
+            ],
+          },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            OR: [
+              { IS_EQUAL: ['user.profile.role', 'admin'] },
+              { IS_EQUAL: ['user.profile.status', 'inactive'] },
+            ],
+          },
+          state,
+        ),
+      ).toBe(false)
+    })
+
+    it('should evaluate NOT operator with nested shadow state', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          profile: {
+            role: 'editor',
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            NOT: { IS_EQUAL: ['user.profile.role', 'admin'] },
+          },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            NOT: { IS_EQUAL: ['user.profile.role', 'editor'] },
+          },
+          state,
+        ),
+      ).toBe(false)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            NOT: { EXISTS: 'user.profile.missing' },
+          },
+          state,
+        ),
+      ).toBe(true)
+    })
+
+    it('should evaluate complex nested BoolLogic with shadow state', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          profile: {
+            role: 'admin',
+            status: 'active',
+          },
+          permissions: {
+            canEdit: true,
+            canDelete: false,
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            AND: [
+              { IS_EQUAL: ['user.profile.role', 'admin'] },
+              {
+                OR: [
+                  { IS_EQUAL: ['user.permissions.canEdit', true] },
+                  { IS_EQUAL: ['user.permissions.canDelete', true] },
+                ],
+              },
+            ],
+          },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            AND: [
+              { IS_EQUAL: ['user.profile.status', 'active'] },
+              {
+                NOT: {
+                  IS_EQUAL: ['user.profile.role', 'guest'],
+                },
+              },
+            ],
+          },
+          state,
+        ),
+      ).toBe(true)
+    })
+
+    it('should evaluate BoolLogic with array paths in shadow state', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        users: [
+          {
+            name: 'Alice',
+            role: 'admin',
+          },
+          {
+            name: 'Bob',
+            role: 'editor',
+          },
+        ],
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['users.0.name', 'Alice'] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ IS_EQUAL: ['users.0.role', 'admin'] }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ IS_EQUAL: ['users.1.name', 'Bob'] }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'users.0.name' }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'users.2.name' }, state),
+      ).toBe(false)
+    })
+
+    it('should evaluate BoolLogic after shadow state updates', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          profile: {
+            role: 'editor',
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['user.profile.role', 'editor'] },
+          state,
+        ),
+      ).toBe(true)
+
+      // Update shadow state
+      await updateShadowValue(['user', 'profile', 'role'], 'admin')
+
+      // Get updated state
+      const updatedState = await dumpShadowState()
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['user.profile.role', 'admin'] },
+          updatedState,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['user.profile.role', 'editor'] },
+          updatedState,
+        ),
+      ).toBe(false)
+    })
+
+    it('should evaluate BoolLogic with deeply nested shadow state', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        level1: {
+          level2: {
+            level3: {
+              level4: {
+                level5: {
+                  value: 'deep',
+                  count: 42,
+                },
+              },
+            },
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['level1.level2.level3.level4.level5.value', 'deep'] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['level1.level2.level3.level4.level5.count', 42] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { EXISTS: 'level1.level2.level3.level4.level5.value' },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { EXISTS: 'level1.level2.level3.level4.level5.missing' },
+          state,
+        ),
+      ).toBe(false)
+    })
+
+    it('should evaluate BoolLogic with mixed array and object nesting', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        users: [
+          {
+            name: 'Alice',
+            profile: {
+              settings: {
+                theme: 'dark',
+              },
+            },
+          },
+          {
+            name: 'Bob',
+            profile: {
+              settings: {
+                theme: 'light',
+              },
+            },
+          },
+        ],
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['users.0.profile.settings.theme', 'dark'] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EQUAL: ['users.1.profile.settings.theme', 'light'] },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic(
+          {
+            AND: [
+              { IS_EQUAL: ['users.0.name', 'Alice'] },
+              { IS_EQUAL: ['users.0.profile.settings.theme', 'dark'] },
+            ],
+          },
+          state,
+        ),
+      ).toBe(true)
+    })
+
+    it('should handle BoolLogic evaluation with special values in shadow state', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        values: {
+          emptyString: '',
+          zero: 0,
+          false: false,
+          null: null,
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(
+        await evaluateBoolLogic(
+          { IS_EMPTY: 'values.emptyString' },
+          state,
+        ),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ IS_EQUAL: ['values.zero', 0] }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ IS_EQUAL: ['values.false', false] }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ IS_EQUAL: ['values.null', null] }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'values.emptyString' }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'values.zero' }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'values.false' }, state),
+      ).toBe(true)
+
+      expect(
+        await evaluateBoolLogic({ EXISTS: 'values.null' }, state),
+      ).toBe(false)
     })
   })
 })
