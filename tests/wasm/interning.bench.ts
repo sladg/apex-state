@@ -1,4 +1,4 @@
-import { bench, describe, beforeAll } from 'vitest'
+import { beforeAll, bench, describe } from 'vitest'
 
 import type { ApexStateWasm, PathID } from '../../src/wasm/bridge'
 import { loadWasm } from '../../src/wasm/bridge'
@@ -152,10 +152,7 @@ describe('Interning Operations', () => {
   })
 
   describe('batch interning', () => {
-    const batchPaths = Array.from(
-      { length: 100 },
-      (_, i) => `path.${i}.value`,
-    )
+    const batchPaths = Array.from({ length: 100 }, (_, i) => `path.${i}.value`)
 
     bench(
       'batch intern 100 unique paths',

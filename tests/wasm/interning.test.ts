@@ -1,19 +1,18 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { ApexStateWasm, PathID } from '../../src/wasm/bridge'
+import type { PathID } from '../../src/wasm/bridge'
 import {
-  loadWasm,
-  isWasmLoaded,
-  resetWasm,
-  internPath,
-  resolvePath,
-  batchInternPaths,
-  batchResolvePaths,
-  getInternCount,
-  clearInternTable,
-  roundtripPath,
-  internAndResolve,
   batchInternAndResolve,
+  batchInternPaths,
+  clearInternTable,
+  getInternCount,
+  internAndResolve,
+  internPath,
+  isWasmLoaded,
+  loadWasm,
+  resetWasm,
+  resolvePath,
+  roundtripPath,
 } from '../../src/wasm/bridge'
 
 // Check if WASM module is available for testing
@@ -286,7 +285,7 @@ describe('WASM String Interning - Boundary Conversion', () => {
       if (!wasmAvailable) return
 
       const wasm = await loadWasm()
-      const id1 = wasm.intern('user.name')
+      wasm.intern('user.name')
 
       wasm.intern_clear()
 
@@ -315,7 +314,7 @@ describe('WASM String Interning - Boundary Conversion', () => {
       if (!wasmAvailable) return
 
       resetWasm()
-      const id = await internPath('user.name')
+      await internPath('user.name')
 
       resetWasm()
       expect(isWasmLoaded()).toBe(false)
