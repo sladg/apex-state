@@ -27,6 +27,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// Represents a value in the shadow state tree
@@ -365,6 +366,112 @@ pub fn get_affected_paths(root: &ValueRepr, path: &[&str]) -> Vec<String> {
     let base_path = path.join(".");
     collect_leaves(value, &base_path, &mut affected);
     affected
+}
+
+// Global shadow state using thread-local storage
+// WASM is single-threaded, so thread_local acts as a singleton
+thread_local! {
+    static SHADOW_STATE: RefCell<ValueRepr> = RefCell::new(ValueRepr::Object(HashMap::new()));
+}
+
+/// Get a value from the global shadow state
+///
+/// Retrieves a value at the specified path from the global shadow state.
+/// The path is split by '.' to traverse the nested structure.
+///
+/// # Arguments
+///
+/// * `path` - Dot-separated path string (e.g., "user.profile.email")
+///
+/// # Returns
+///
+/// Returns Some(ValueRepr) if the path exists, None otherwise.
+///
+/// # Examples
+///
+/// ```
+/// use apex_state_wasm::shadow::shadow_get_global;
+///
+/// let value = shadow_get_global("user.name".to_string());
+/// // Returns Some(ValueRepr) if "user.name" exists, None otherwise
+/// ```
+pub fn shadow_get_global(path: String) -> Option<ValueRepr> {
+    SHADOW_STATE.with(|state| {
+        let borrowed = state.borrow();
+
+        // Split path by '.' to get segments
+        let segments: Vec<&str> = if path.is_empty() {
+            vec![]
+        } else {
+            path.split('.').collect()
+        };
+
+        // Get value at path and clone it
+        get_value(&borrowed, &segments).cloned()
+    })
+}
+
+/// Update a value in the global shadow state
+///
+/// Sets a value at the specified path in the global shadow state.
+/// Creates intermediate objects if they don't exist.
+///
+/// # Arguments
+///
+/// * `path` - Dot-separated path string (e.g., "user.profile.email")
+/// * `value` - The value to set at that path
+///
+/// # Returns
+///
+/// Returns Ok(()) on success, or Err(String) with an error message if the update fails.
+///
+/// # Examples
+///
+/// ```
+/// use apex_state_wasm::shadow::{shadow_set_global, ValueRepr};
+///
+/// shadow_set_global("user.name".to_string(), ValueRepr::String("Alice".to_string())).unwrap();
+/// ```
+pub fn shadow_set_global(path: String, value: ValueRepr) -> Result<(), String> {
+    SHADOW_STATE.with(|state| {
+        let mut borrowed = state.borrow_mut();
+
+        // Split path by '.' to get segments
+        let segments: Vec<&str> = if path.is_empty() {
+            vec![]
+        } else {
+            path.split('.').collect()
+        };
+
+        update_value(&mut borrowed, &segments, value)
+    })
+}
+
+/// Get the entire global shadow state
+///
+/// Returns a clone of the entire shadow state tree.
+/// Useful for debugging or full state dumps.
+///
+/// # Examples
+///
+/// ```
+/// use apex_state_wasm::shadow::shadow_dump_global;
+///
+/// let full_state = shadow_dump_global();
+/// // Returns the entire shadow state as ValueRepr
+/// ```
+pub fn shadow_dump_global() -> ValueRepr {
+    SHADOW_STATE.with(|state| state.borrow().clone())
+}
+
+/// Clear the global shadow state
+///
+/// Resets the shadow state to an empty object.
+/// Useful for testing or resetting state between WASM calls.
+pub fn shadow_clear_global() {
+    SHADOW_STATE.with(|state| {
+        *state.borrow_mut() = ValueRepr::Object(HashMap::new());
+    })
 }
 
 #[cfg(test)]

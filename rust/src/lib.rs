@@ -77,6 +77,19 @@ pub fn shadow_init() {
     // Future: May initialize global shadow state if needed
 }
 
+// Export shadow_get function for retrieving values from shadow state
+#[wasm_bindgen]
+pub fn shadow_get(path: String) -> JsValue {
+    // Get value from global shadow state
+    match shadow::shadow_get_global(path) {
+        Some(value) => {
+            // Serialize the ValueRepr to JsValue
+            serde_wasm_bindgen::to_value(&value).unwrap_or(JsValue::NULL)
+        }
+        None => JsValue::NULL,
+    }
+}
+
 // ============================================================================
 // Internal Path Lookup Functions (PathID-based)
 // ============================================================================
