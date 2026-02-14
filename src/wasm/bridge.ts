@@ -176,6 +176,45 @@ export interface ApexStateWasm {
    * @returns Greeting message
    */
   greet: (name: string) => string
+
+  /**
+   * Evaluate a BoolLogic expression against a state object
+   *
+   * **BoolLogic Evaluation:**
+   * - Accepts JavaScript BoolLogic expressions in the format `{ "OPERATOR": [args] }`
+   * - No transformation needed - JS objects deserialize directly via serde
+   * - Supports all 11 operators: IS_EQUAL, EXISTS, IS_EMPTY, AND, OR, NOT, GT, LT, GTE, LTE, IN
+   * - Recursive evaluation for AND/OR/NOT operators with nested expressions
+   * - Returns boolean result of the evaluation
+   *
+   * **Use Case:**
+   * High-performance reactive condition checking in WASM. Used for evaluating
+   * complex boolean logic expressions against state objects without serialization overhead.
+   *
+   * @param logic - BoolLogic expression object (e.g., `{ "IS_EQUAL": ["user.role", "admin"] }`)
+   * @param state - State object to evaluate against (arbitrary JSON structure)
+   * @returns Boolean result of the evaluation
+   * @throws Error if logic or state cannot be deserialized
+   *
+   * @example
+   * ```typescript
+   * const wasm = await loadWasm()
+   * const logic = { "IS_EQUAL": ["user.role", "admin"] }
+   * const state = { user: { role: "admin" } }
+   * const result = wasm.evaluate_bool_logic(logic, state) // true
+   *
+   * // Complex nested expression
+   * const complexLogic = {
+   *   "AND": [
+   *     { "GT": ["age", 18] },
+   *     { "EXISTS": "email" }
+   *   ]
+   * }
+   * const complexState = { age: 25, email: "test@example.com" }
+   * const complexResult = wasm.evaluate_bool_logic(complexLogic, complexState) // true
+   * ```
+   */
+  evaluate_bool_logic: (logic: unknown, state: unknown) => boolean
 }
 
 /**
@@ -227,6 +266,12 @@ export const loadWasm = async (): Promise<ApexStateWasm> => {
         /* @vite-ignore */
         '../../rust/pkg/apex_state_wasm.js'
       )
+
+      // Initialize the WASM module by calling the default export
+      // This sets up the internal wasm instance required for all functions
+      if (typeof wasmModule.default === 'function') {
+        await wasmModule.default()
+      }
 
       // Cache the instance
       wasmInstance = wasmModule as ApexStateWasm
@@ -550,4 +595,66 @@ export const batchInternAndResolve = async (
   const wasm = await loadWasm()
   const ids = wasm.batch_intern(paths)
   return ids.map((id) => wasm.resolve(id))
+}
+
+/**
+ * BoolLogic Evaluation Wrapper Functions
+ *
+ * These convenience functions automatically load WASM and handle
+ * BoolLogic evaluation, hiding the manual loadWasm() calls.
+ *
+ * **BoolLogic Pattern:**
+ * - Auto-load: WASM loads on first call, cached for subsequent calls
+ * - Direct format: JS objects in `{ "OPERATOR": [args] }` format pass through directly
+ * - Type-safe: TypeScript types ensure BoolLogic expressions are well-formed
+ * - Error handling: Deserialization errors are thrown as descriptive messages
+ *
+ * **Use Case:**
+ * Use these wrappers for the simplest API - just pass BoolLogic expressions and state,
+ * get boolean results, without managing WASM lifecycle or serialization.
+ */
+
+/**
+ * Evaluate a BoolLogic expression with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then evaluates the provided BoolLogic expression against the state.
+ *
+ * **BoolLogic Evaluation:**
+ * - Auto-loads WASM on first call (cached thereafter)
+ * - Accepts BoolLogic expressions in the format `{ "OPERATOR": [args] }`
+ * - Evaluates against provided state object
+ * - Returns boolean result of the evaluation
+ * - Throws error if logic or state cannot be deserialized
+ *
+ * @param logic - BoolLogic expression object
+ * @param state - State object to evaluate against
+ * @returns Promise resolving to the boolean evaluation result
+ *
+ * @example
+ * ```typescript
+ * // Simple equality check
+ * const result1 = await evaluateBoolLogic(
+ *   { "IS_EQUAL": ["user.role", "admin"] },
+ *   { user: { role: "admin" } }
+ * ) // true
+ *
+ * // Complex nested expression
+ * const result2 = await evaluateBoolLogic(
+ *   {
+ *     "AND": [
+ *       { "GT": ["age", 18] },
+ *       { "EXISTS": "email" }
+ *     ]
+ *   },
+ *   { age: 25, email: "test@example.com" }
+ * ) // true
+ * ```
+ */
+export const evaluateBoolLogic = async (
+  logic: unknown,
+  state: unknown,
+): Promise<boolean> => {
+  const wasm = await loadWasm()
+  return wasm.evaluate_bool_logic(logic, state)
 }
