@@ -151,7 +151,7 @@ export const traversePath = (
 
     // Recursively traverse children
     if (currentNode.children) {
-      for (const child of currentNode.children.values()) {
+      for (const child of Array.from(currentNode.children.values())) {
         traverse(child, depth + 1)
       }
     }
@@ -434,7 +434,7 @@ const recalculateTreeDepth = (tree: ShadowTree): void => {
   const calculateDepth = (n: ShadowNode): number => {
     let maxDepth = n.path.length
     if (n.children) {
-      for (const child of n.children.values()) {
+      for (const child of Array.from(n.children.values())) {
         const childDepth = calculateDepth(child)
         if (childDepth > maxDepth) {
           maxDepth = childDepth
@@ -634,4 +634,167 @@ export const setValue = <T = unknown>(
   value: T,
 ): void => {
   updateNode(tree, path, value)
+}
+
+/**
+ * Replaces an entire subtree at a given path with a new subtree built from a value.
+ *
+ * This is similar to updateNode but more explicit about replacing the entire branch.
+ * Removes the old node and all its descendants, then creates a new subtree from the
+ * provided value. Maintains parent-child links and updates tree metadata.
+ *
+ * @param tree - The shadow tree to modify
+ * @param path - Dot or bracket notation path string to the node to replace
+ * @param value - New value to build the subtree from
+ * @param options - Optional configuration for building the new subtree
+ * @returns Update result with affected paths and updated metadata
+ *
+ * @example
+ * ```typescript
+ * const tree = createShadowTree({ user: { name: 'Alice', age: 30 } })
+ * const result = replaceSubtree(tree, 'user', { name: 'Bob', email: 'bob@example.com', age: 25 })
+ * // result.affectedPaths includes 'user', 'user.name', 'user.age', 'user.email'
+ * // The entire user subtree was replaced, old 'age' node removed, new 'email' node added
+ * ```
+ *
+ * @example
+ * ```typescript
+ * const tree = createShadowTree({ todos: ['Task 1', 'Task 2'] })
+ * const result = replaceSubtree(tree, 'todos', ['New Task 1', 'New Task 2', 'New Task 3'])
+ * // result.affectedPaths includes 'todos', 'todos[0]', 'todos[1]', 'todos[2]'
+ * // Entire array subtree replaced with new array
+ * ```
+ */
+export const replaceSubtree = <T = unknown>(
+  tree: ShadowTree,
+  path: string,
+  value: T,
+  options?: {
+    maxDepth?: number
+    includeArrays?: boolean
+    detectCircular?: boolean
+  },
+): import('./types').UpdateResult => {
+  const opts = {
+    maxDepth: options?.maxDepth ?? Infinity,
+    includeArrays: options?.includeArrays ?? true,
+    detectCircular: options?.detectCircular ?? true,
+  }
+
+  const segments = parsePath(path)
+  const node = getNodeBySegments(tree, segments)
+
+  if (!node) {
+    throw new Error(`Cannot replace subtree at non-existent path: ${path}`)
+  }
+
+  // Collect all affected paths from the old subtree before replacing
+  const affectedPaths: string[] = []
+  traversePath(node, (n) => {
+    affectedPaths.push(n.path.join('.'))
+  })
+
+  // Count old subtree size
+  const oldSubtreeSize = countDescendants(node)
+
+  // Build the new subtree
+  const visited = opts.detectCircular ? new WeakSet<object>() : null
+  let addedNodeCount = 0
+  let maxChildDepth = node.path.length
+
+  const buildNode = (
+    currentValue: unknown,
+    currentPath: string[],
+    parent?: ShadowNode,
+  ): ShadowNode => {
+    addedNodeCount++
+    const depth = currentPath.length
+    if (depth > maxChildDepth) {
+      maxChildDepth = depth
+    }
+
+    const newNode: ShadowNode = {
+      value: currentValue,
+      path: currentPath,
+      ...(parent && { parent }),
+    }
+
+    // Check depth limit
+    if (depth >= opts.maxDepth) {
+      return newNode
+    }
+
+    // Handle circular references
+    if (visited && is.not.primitive(currentValue) && is.not.nil(currentValue)) {
+      if (visited.has(currentValue as object)) {
+        return newNode
+      }
+      visited.add(currentValue as object)
+    }
+
+    // Build children based on value type
+    if (is.object(currentValue)) {
+      const obj = currentValue as Record<string, unknown>
+      const result = buildObjectChildren(obj, currentPath, newNode, buildNode)
+      addedNodeCount += result.count
+      if (result.children.size > 0) {
+        newNode.children = result.children
+      }
+      return newNode
+    }
+
+    if (is.array(currentValue) && opts.includeArrays) {
+      const arr = currentValue as unknown[]
+      const result = buildArrayChildren(arr, currentPath, newNode, buildNode)
+      addedNodeCount += result.count
+      if (result.children.size > 0) {
+        newNode.children = result.children
+      }
+      return newNode
+    }
+
+    // Primitive value - no children
+    return newNode
+  }
+
+  // Build the new subtree (starting from the current node's path and parent)
+  const newSubtree = buildNode(value, node.path, node.parent)
+
+  // Replace the node in its parent's children map
+  if (node.parent && node.parent.children) {
+    const key = node.path[node.path.length - 1]!
+    // Try to determine the correct key type
+    const numericKey = Number(key)
+    const actualKey = isNaN(numericKey) ? key : numericKey
+    node.parent.children.set(actualKey, newSubtree)
+  } else {
+    // Replacing the root node
+    tree.root = newSubtree
+  }
+
+  // Collect affected paths from the new subtree
+  // (in case new subtree has different structure)
+  const newAffectedPaths = new Set(affectedPaths)
+  traversePath(newSubtree, (n) => {
+    newAffectedPaths.add(n.path.join('.'))
+  })
+
+  // Update tree metadata
+  tree.nodeCount = tree.nodeCount - oldSubtreeSize + addedNodeCount
+
+  // Recalculate tree depth if necessary
+  if (
+    maxChildDepth > tree.depth ||
+    (node.path.length <= tree.depth &&
+      oldSubtreeSize > 0 &&
+      addedNodeCount === 0)
+  ) {
+    recalculateTreeDepth(tree)
+  }
+
+  return {
+    affectedPaths: Array.from(newAffectedPaths),
+    nodeCount: tree.nodeCount,
+    depth: tree.depth,
+  }
 }
