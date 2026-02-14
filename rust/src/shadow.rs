@@ -282,6 +282,91 @@ pub fn update_value(root: &mut ValueRepr, path: &[&str], value: ValueRepr) -> Re
     }
 }
 
+/// Get all affected leaf paths under a given path
+///
+/// When updating a subtree (object or array), this function calculates all
+/// leaf paths that will be affected by the update. This is used for cascading
+/// updates and listener notifications.
+///
+/// A "leaf" is defined as any value that is not an Object or Array
+/// (i.e., Null, Bool, Number, or String).
+///
+/// # Arguments
+///
+/// * `root` - The root ValueRepr to search in
+/// * `path` - Path to the subtree to analyze
+///
+/// # Returns
+///
+/// Returns a Vec<String> of all leaf paths under the given path,
+/// formatted with dot notation (e.g., "user.profile.email").
+/// Returns an empty Vec if the path doesn't exist.
+///
+/// # Examples
+///
+/// ```
+/// use apex_state_wasm::shadow::{ValueRepr, get_affected_paths};
+/// use std::collections::HashMap;
+///
+/// let mut profile = HashMap::new();
+/// profile.insert("email".to_string(), ValueRepr::String("test@example.com".to_string()));
+/// profile.insert("name".to_string(), ValueRepr::String("Alice".to_string()));
+///
+/// let mut user = HashMap::new();
+/// user.insert("profile".to_string(), ValueRepr::Object(profile));
+///
+/// let mut root = HashMap::new();
+/// root.insert("user".to_string(), ValueRepr::Object(user));
+///
+/// let state = ValueRepr::Object(root);
+/// let affected = get_affected_paths(&state, &["user", "profile"]);
+/// // Returns: ["user.profile.email", "user.profile.name"]
+/// ```
+pub fn get_affected_paths(root: &ValueRepr, path: &[&str]) -> Vec<String> {
+    // Get the value at the given path
+    let value = match get_value(root, path) {
+        Some(v) => v,
+        None => return vec![], // Path doesn't exist, no affected paths
+    };
+
+    // Helper function to recursively collect leaf paths
+    fn collect_leaves(value: &ValueRepr, current_path: &str, result: &mut Vec<String>) {
+        match value {
+            ValueRepr::Object(map) => {
+                // For objects, recurse into each property
+                for (key, child_value) in map {
+                    let child_path = if current_path.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{}.{}", current_path, key)
+                    };
+                    collect_leaves(child_value, &child_path, result);
+                }
+            }
+            ValueRepr::Array(arr) => {
+                // For arrays, recurse into each element
+                for (index, child_value) in arr.iter().enumerate() {
+                    let child_path = if current_path.is_empty() {
+                        index.to_string()
+                    } else {
+                        format!("{}.{}", current_path, index)
+                    };
+                    collect_leaves(child_value, &child_path, result);
+                }
+            }
+            // For leaf values (Null, Bool, Number, String), add to result
+            _ => {
+                result.push(current_path.to_string());
+            }
+        }
+    }
+
+    let mut affected = Vec::new();
+    let base_path = path.join(".");
+    collect_leaves(value, &base_path, &mut affected);
+    affected
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,5 +644,104 @@ mod tests {
 
         let value = get_value(&state, &["data", "items", "0", "value"]);
         assert!(matches!(value, Some(&ValueRepr::Number(n)) if n == 20.0));
+    }
+
+    #[test]
+    fn test_affected_paths() {
+        // Test 1: Simple nested object
+        let mut profile = HashMap::new();
+        profile.insert(
+            "email".to_string(),
+            ValueRepr::String("test@example.com".to_string()),
+        );
+        profile.insert("name".to_string(), ValueRepr::String("Alice".to_string()));
+        profile.insert("age".to_string(), ValueRepr::Number(30.0));
+
+        let mut user = HashMap::new();
+        user.insert("profile".to_string(), ValueRepr::Object(profile));
+        user.insert("id".to_string(), ValueRepr::Number(123.0));
+
+        let mut root = HashMap::new();
+        root.insert("user".to_string(), ValueRepr::Object(user));
+
+        let state = ValueRepr::Object(root);
+
+        // Get affected paths for user.profile
+        let mut affected = get_affected_paths(&state, &["user", "profile"]);
+        affected.sort();
+
+        assert_eq!(affected.len(), 3);
+        assert!(affected.contains(&"user.profile.age".to_string()));
+        assert!(affected.contains(&"user.profile.email".to_string()));
+        assert!(affected.contains(&"user.profile.name".to_string()));
+
+        // Test 2: Get affected paths for entire user object
+        let mut affected = get_affected_paths(&state, &["user"]);
+        affected.sort();
+
+        assert_eq!(affected.len(), 4);
+        assert!(affected.contains(&"user.id".to_string()));
+        assert!(affected.contains(&"user.profile.age".to_string()));
+        assert!(affected.contains(&"user.profile.email".to_string()));
+        assert!(affected.contains(&"user.profile.name".to_string()));
+
+        // Test 3: Leaf path returns just that path
+        let affected = get_affected_paths(&state, &["user", "id"]);
+        assert_eq!(affected.len(), 1);
+        assert_eq!(affected[0], "user.id");
+
+        // Test 4: Arrays with objects
+        let mut item1 = HashMap::new();
+        item1.insert("value".to_string(), ValueRepr::Number(10.0));
+        item1.insert("label".to_string(), ValueRepr::String("Item 1".to_string()));
+
+        let mut item2 = HashMap::new();
+        item2.insert("value".to_string(), ValueRepr::Number(20.0));
+        item2.insert("label".to_string(), ValueRepr::String("Item 2".to_string()));
+
+        let items = ValueRepr::Array(vec![ValueRepr::Object(item1), ValueRepr::Object(item2)]);
+
+        let mut root = HashMap::new();
+        root.insert("items".to_string(), items);
+
+        let state = ValueRepr::Object(root);
+
+        let mut affected = get_affected_paths(&state, &["items"]);
+        affected.sort();
+
+        assert_eq!(affected.len(), 4);
+        assert!(affected.contains(&"items.0.label".to_string()));
+        assert!(affected.contains(&"items.0.value".to_string()));
+        assert!(affected.contains(&"items.1.label".to_string()));
+        assert!(affected.contains(&"items.1.value".to_string()));
+
+        // Test 5: Non-existent path returns empty vec
+        let affected = get_affected_paths(&state, &["nonexistent"]);
+        assert_eq!(affected.len(), 0);
+
+        // Test 6: Root path
+        let mut simple = HashMap::new();
+        simple.insert("a".to_string(), ValueRepr::Number(1.0));
+        simple.insert("b".to_string(), ValueRepr::Number(2.0));
+
+        let state = ValueRepr::Object(simple);
+
+        let mut affected = get_affected_paths(&state, &[]);
+        affected.sort();
+
+        assert_eq!(affected.len(), 2);
+        assert!(affected.contains(&"a".to_string()));
+        assert!(affected.contains(&"b".to_string()));
+
+        // Test 7: Empty object
+        let state = ValueRepr::Object(HashMap::new());
+        let affected = get_affected_paths(&state, &[]);
+        assert_eq!(affected.len(), 0);
+
+        // Test 8: Primitive at root
+        let state = ValueRepr::String("test".to_string());
+        let affected = get_affected_paths(&state, &[]);
+        assert_eq!(affected.len(), 1);
+        assert_eq!(affected[0], "");
     }
 }
