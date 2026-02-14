@@ -744,4 +744,386 @@ mod tests {
 
         global_clear();
     }
+
+    // ============================================================================
+    // Additional comprehensive tests for deduplication, bounds, and edge cases
+    // ============================================================================
+
+    // Deduplication tests
+    #[test]
+    fn test_deduplication_unicode_strings() {
+        let mut table = InternTable::new();
+
+        // Test unicode emoji deduplication
+        let id1 = table.intern("user.🎨.theme".to_string());
+        let id2 = table.intern("user.🎨.theme".to_string());
+        assert_eq!(id1, id2);
+        assert_eq!(table.count(), 1);
+
+        // Test unicode characters from different languages
+        let id3 = table.intern("用户.名称".to_string());
+        let id4 = table.intern("用户.名称".to_string());
+        assert_eq!(id3, id4);
+        assert_eq!(table.count(), 2);
+
+        // Verify resolution works correctly
+        assert_eq!(table.resolve(id1), Some("user.🎨.theme"));
+        assert_eq!(table.resolve(id3), Some("用户.名称"));
+    }
+
+    #[test]
+    fn test_deduplication_special_characters() {
+        let mut table = InternTable::new();
+
+        // Test paths with special characters
+        let id1 = table.intern("user.name[0]".to_string());
+        let id2 = table.intern("user.name[0]".to_string());
+        assert_eq!(id1, id2);
+        assert_eq!(table.count(), 1);
+
+        // Test paths with dots, slashes, and other special chars
+        let id3 = table.intern("config/settings.json".to_string());
+        let id4 = table.intern("config/settings.json".to_string());
+        assert_eq!(id3, id4);
+        assert_eq!(table.count(), 2);
+
+        // Test paths with spaces
+        let id5 = table.intern("user name".to_string());
+        let id6 = table.intern("user name".to_string());
+        assert_eq!(id5, id6);
+        assert_eq!(table.count(), 3);
+    }
+
+    #[test]
+    fn test_deduplication_very_long_strings() {
+        let mut table = InternTable::new();
+
+        // Create a very long path string
+        let long_path = "a.".repeat(500) + "b";
+        let id1 = table.intern(long_path.clone());
+        let id2 = table.intern(long_path.clone());
+
+        // Should deduplicate even for long strings
+        assert_eq!(id1, id2);
+        assert_eq!(table.count(), 1);
+        assert_eq!(table.resolve(id1), Some(long_path.as_str()));
+    }
+
+    #[test]
+    fn test_deduplication_whitespace_variations() {
+        let mut table = InternTable::new();
+
+        // Strings with different whitespace are treated as different
+        let id1 = table.intern("user.name".to_string());
+        let id2 = table.intern("user. name".to_string());
+        let id3 = table.intern("user .name".to_string());
+
+        // Each variation gets a unique ID
+        assert_ne!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_ne!(id2, id3);
+        assert_eq!(table.count(), 3);
+
+        // But duplicates of each variation are deduplicated
+        let id1_dup = table.intern("user.name".to_string());
+        let id2_dup = table.intern("user. name".to_string());
+        assert_eq!(id1, id1_dup);
+        assert_eq!(id2, id2_dup);
+        assert_eq!(table.count(), 3);
+    }
+
+    // Bounds tests
+    #[test]
+    fn test_bounds_empty_table_resolve() {
+        let table = InternTable::new();
+
+        // Resolving any ID on empty table should return None
+        assert_eq!(table.resolve(0), None);
+        assert_eq!(table.resolve(1), None);
+        assert_eq!(table.resolve(100), None);
+        assert_eq!(table.resolve(u32::MAX), None);
+    }
+
+    #[test]
+    fn test_bounds_valid_id_boundary() {
+        let mut table = InternTable::new();
+
+        // Intern a few strings
+        let id0 = table.intern("path0".to_string());
+        let id1 = table.intern("path1".to_string());
+        let id2 = table.intern("path2".to_string());
+
+        // Verify IDs are sequential
+        assert_eq!(id0, 0);
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+
+        // Resolve valid IDs at boundaries
+        assert_eq!(table.resolve(0), Some("path0"));
+        assert_eq!(table.resolve(2), Some("path2"));
+
+        // Resolve just beyond valid range
+        assert_eq!(table.resolve(3), None);
+        assert_eq!(table.resolve(100), None);
+    }
+
+    #[test]
+    fn test_bounds_after_clear() {
+        let mut table = InternTable::new();
+
+        // Intern some strings
+        let id1 = table.intern("path1".to_string());
+        assert_eq!(table.resolve(id1), Some("path1"));
+
+        // Clear the table
+        table.clear();
+
+        // Previously valid IDs are now invalid
+        assert_eq!(table.resolve(id1), None);
+        assert_eq!(table.resolve(0), None);
+
+        // New strings start from ID 0 again
+        let new_id = table.intern("new_path".to_string());
+        assert_eq!(new_id, 0);
+        assert_eq!(table.resolve(new_id), Some("new_path"));
+    }
+
+    #[test]
+    fn test_bounds_large_id_values() {
+        let table = InternTable::new();
+
+        // Test with large ID values that are definitely out of bounds
+        assert_eq!(table.resolve(1000), None);
+        assert_eq!(table.resolve(1_000_000), None);
+        assert_eq!(table.resolve(u32::MAX), None);
+        assert_eq!(table.resolve(u32::MAX - 1), None);
+    }
+
+    // Edge case tests
+    #[test]
+    fn test_edge_case_empty_string() {
+        let mut table = InternTable::new();
+
+        // Empty strings should be interned normally
+        let id1 = table.intern("".to_string());
+        let id2 = table.intern("".to_string());
+
+        assert_eq!(id1, id2);
+        assert_eq!(table.count(), 1);
+        assert_eq!(table.resolve(id1), Some(""));
+    }
+
+    #[test]
+    fn test_edge_case_single_character() {
+        let mut table = InternTable::new();
+
+        let id = table.intern("a".to_string());
+        assert_eq!(table.resolve(id), Some("a"));
+        assert_eq!(table.count(), 1);
+
+        // Single unicode character
+        let id_unicode = table.intern("😀".to_string());
+        assert_eq!(table.resolve(id_unicode), Some("😀"));
+        assert_eq!(table.count(), 2);
+    }
+
+    #[test]
+    fn test_edge_case_only_special_characters() {
+        let mut table = InternTable::new();
+
+        let id1 = table.intern("...".to_string());
+        let id2 = table.intern("///".to_string());
+        let id3 = table.intern("---".to_string());
+        let id4 = table.intern("___".to_string());
+
+        assert_eq!(table.count(), 4);
+        assert_eq!(table.resolve(id1), Some("..."));
+        assert_eq!(table.resolve(id2), Some("///"));
+        assert_eq!(table.resolve(id3), Some("---"));
+        assert_eq!(table.resolve(id4), Some("___"));
+    }
+
+    #[test]
+    fn test_edge_case_whitespace_only() {
+        let mut table = InternTable::new();
+
+        // Various whitespace-only strings
+        let id1 = table.intern(" ".to_string());
+        let id2 = table.intern("  ".to_string());
+        let id3 = table.intern("\t".to_string());
+        let id4 = table.intern("\n".to_string());
+
+        assert_eq!(table.count(), 4);
+        assert_eq!(table.resolve(id1), Some(" "));
+        assert_eq!(table.resolve(id2), Some("  "));
+        assert_eq!(table.resolve(id3), Some("\t"));
+        assert_eq!(table.resolve(id4), Some("\n"));
+    }
+
+    #[test]
+    fn test_edge_case_mixed_unicode() {
+        let mut table = InternTable::new();
+
+        // Mix of ASCII, emoji, and multi-byte characters
+        let mixed = "user.👤.profile.名前.settings.🎨";
+        let id = table.intern(mixed.to_string());
+
+        assert_eq!(table.resolve(id), Some(mixed));
+        assert_eq!(table.count(), 1);
+
+        // Verify deduplication works
+        let id2 = table.intern(mixed.to_string());
+        assert_eq!(id, id2);
+        assert_eq!(table.count(), 1);
+    }
+
+    #[test]
+    fn test_edge_case_similar_strings() {
+        let mut table = InternTable::new();
+
+        // Strings that differ by only one character
+        let id1 = table.intern("user.name".to_string());
+        let id2 = table.intern("user.names".to_string());
+        let id3 = table.intern("user.nam".to_string());
+        let id4 = table.intern("users.name".to_string());
+
+        // Each should get a unique ID
+        assert_ne!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_ne!(id1, id4);
+        assert_ne!(id2, id3);
+        assert_ne!(id2, id4);
+        assert_ne!(id3, id4);
+        assert_eq!(table.count(), 4);
+
+        // Verify each resolves correctly
+        assert_eq!(table.resolve(id1), Some("user.name"));
+        assert_eq!(table.resolve(id2), Some("user.names"));
+        assert_eq!(table.resolve(id3), Some("user.nam"));
+        assert_eq!(table.resolve(id4), Some("users.name"));
+    }
+
+    #[test]
+    fn test_edge_case_paths_with_newlines() {
+        let mut table = InternTable::new();
+
+        let id1 = table.intern("line1\nline2".to_string());
+        let id2 = table.intern("line1\r\nline2".to_string());
+
+        // Different newline styles are different strings
+        assert_ne!(id1, id2);
+        assert_eq!(table.count(), 2);
+
+        assert_eq!(table.resolve(id1), Some("line1\nline2"));
+        assert_eq!(table.resolve(id2), Some("line1\r\nline2"));
+    }
+
+    #[test]
+    fn test_stress_many_unique_strings() {
+        let mut table = InternTable::new();
+
+        // Intern many unique strings
+        let count = 1000;
+        let mut ids = Vec::new();
+
+        for i in 0..count {
+            let path = format!("path.{}", i);
+            let id = table.intern(path);
+            ids.push(id);
+        }
+
+        // Verify count
+        assert_eq!(table.count(), count);
+
+        // Verify all IDs are unique and sequential
+        for (i, &id) in ids.iter().enumerate() {
+            assert_eq!(id as usize, i);
+        }
+
+        // Verify all resolve correctly
+        for (i, &id) in ids.iter().enumerate() {
+            assert_eq!(table.resolve(id), Some(format!("path.{}", i).as_str()));
+        }
+
+        // Verify deduplication still works
+        let dup_id = table.intern("path.500".to_string());
+        assert_eq!(dup_id, ids[500]);
+        assert_eq!(table.count(), count); // No new entry
+    }
+
+    #[test]
+    fn test_stress_many_duplicate_strings() {
+        let mut table = InternTable::new();
+
+        // Intern the same string many times
+        let path = "user.profile.name";
+        let count = 1000;
+        let mut ids = Vec::new();
+
+        for _ in 0..count {
+            let id = table.intern(path.to_string());
+            ids.push(id);
+        }
+
+        // Should only have one entry despite many interns
+        assert_eq!(table.count(), 1);
+
+        // All IDs should be the same
+        let first_id = ids[0];
+        for &id in &ids {
+            assert_eq!(id, first_id);
+        }
+
+        // Should resolve correctly
+        assert_eq!(table.resolve(first_id), Some(path));
+    }
+
+    #[test]
+    fn test_default_trait_implementation() {
+        let table: InternTable = Default::default();
+        assert_eq!(table.count(), 0);
+    }
+
+    #[test]
+    fn test_interleaved_intern_and_resolve() {
+        let mut table = InternTable::new();
+
+        // Interleave intern and resolve operations
+        let id1 = table.intern("path1".to_string());
+        assert_eq!(table.resolve(id1), Some("path1"));
+
+        let id2 = table.intern("path2".to_string());
+        assert_eq!(table.resolve(id1), Some("path1"));
+        assert_eq!(table.resolve(id2), Some("path2"));
+
+        let id1_dup = table.intern("path1".to_string());
+        assert_eq!(id1, id1_dup);
+        assert_eq!(table.resolve(id1), Some("path1"));
+
+        let id3 = table.intern("path3".to_string());
+        assert_eq!(table.resolve(id1), Some("path1"));
+        assert_eq!(table.resolve(id2), Some("path2"));
+        assert_eq!(table.resolve(id3), Some("path3"));
+
+        assert_eq!(table.count(), 3);
+    }
+
+    #[test]
+    fn test_case_sensitivity() {
+        let mut table = InternTable::new();
+
+        // Different cases should be treated as different strings
+        let id1 = table.intern("User.Name".to_string());
+        let id2 = table.intern("user.name".to_string());
+        let id3 = table.intern("USER.NAME".to_string());
+
+        assert_ne!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_ne!(id2, id3);
+        assert_eq!(table.count(), 3);
+
+        assert_eq!(table.resolve(id1), Some("User.Name"));
+        assert_eq!(table.resolve(id2), Some("user.name"));
+        assert_eq!(table.resolve(id3), Some("USER.NAME"));
+    }
 }

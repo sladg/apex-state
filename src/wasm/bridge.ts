@@ -287,9 +287,7 @@ export const resolvePath = async (id: PathID): Promise<string> => {
  * const ids = await batchInternPaths(['user.name', 'user.email', 'user.age'])
  * ```
  */
-export const batchInternPaths = async (
-  paths: string[],
-): Promise<PathID[]> => {
+export const batchInternPaths = async (paths: string[]): Promise<PathID[]> => {
   const wasm = await loadWasm()
   return wasm.batch_intern(paths)
 }
@@ -309,9 +307,7 @@ export const batchInternPaths = async (
  * // ['user.name', 'user.email', 'user.age']
  * ```
  */
-export const batchResolvePaths = async (
-  ids: PathID[],
-): Promise<string[]> => {
+export const batchResolvePaths = async (ids: PathID[]): Promise<string[]> => {
   const wasm = await loadWasm()
   return ids.map((id) => wasm.resolve(id))
 }
