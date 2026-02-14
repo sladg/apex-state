@@ -295,6 +295,28 @@ export const batchInternPaths = async (
 }
 
 /**
+ * Batch resolve multiple PathIDs with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then resolves multiple PathIDs back to their original strings.
+ *
+ * @param ids - Array of PathIDs to resolve
+ * @returns Promise resolving to array of string paths
+ *
+ * @example
+ * ```typescript
+ * const paths = await batchResolvePaths([0, 1, 2])
+ * // ['user.name', 'user.email', 'user.age']
+ * ```
+ */
+export const batchResolvePaths = async (
+  ids: PathID[],
+): Promise<string[]> => {
+  const wasm = await loadWasm()
+  return ids.map((id) => wasm.resolve(id))
+}
+
+/**
  * Get interned string count with auto-loading
  *
  * Convenience wrapper that automatically loads WASM if needed,
@@ -354,4 +376,67 @@ export const roundtripPath = async (path: string): Promise<string> => {
   const wasm = await loadWasm()
   const id = wasm.intern(path)
   return wasm.resolve(id)
+}
+
+/**
+ * Auto-Resolve Wrapper Functions
+ *
+ * These wrappers demonstrate the auto-resolve pattern: they wrap
+ * WASM operations that return PathIDs and automatically resolve
+ * those IDs back to strings. This ensures JavaScript consumers
+ * never need to work with PathIDs directly.
+ */
+
+/**
+ * Intern a path and auto-resolve to verify storage (demonstration)
+ *
+ * This wrapper demonstrates the auto-resolve pattern:
+ * 1. Intern the path string to get a PathID
+ * 2. Automatically resolve the PathID back to string
+ * 3. Return the resolved string to JavaScript
+ *
+ * This ensures JavaScript never sees the PathID - it only works
+ * with strings on both input and output.
+ *
+ * @param path - The string path to intern
+ * @returns Promise resolving to the resolved string (verifies storage)
+ *
+ * @example
+ * ```typescript
+ * const result = await internAndResolve('user.name')
+ * console.log(result) // 'user.name' - verified from WASM storage
+ * ```
+ */
+export const internAndResolve = async (path: string): Promise<string> => {
+  const wasm = await loadWasm()
+  const id = wasm.intern(path)
+  return wasm.resolve(id)
+}
+
+/**
+ * Batch intern paths and auto-resolve to verify storage (demonstration)
+ *
+ * This wrapper demonstrates the auto-resolve pattern for batch operations:
+ * 1. Batch intern multiple path strings to get PathIDs
+ * 2. Automatically resolve all PathIDs back to strings
+ * 3. Return the resolved strings to JavaScript
+ *
+ * This ensures JavaScript never sees PathIDs - it only works
+ * with string arrays on both input and output.
+ *
+ * @param paths - Array of string paths to intern
+ * @returns Promise resolving to array of resolved strings (verifies storage)
+ *
+ * @example
+ * ```typescript
+ * const results = await batchInternAndResolve(['user.name', 'user.email'])
+ * console.log(results) // ['user.name', 'user.email'] - verified from WASM
+ * ```
+ */
+export const batchInternAndResolve = async (
+  paths: string[],
+): Promise<string[]> => {
+  const wasm = await loadWasm()
+  const ids = wasm.batch_intern(paths)
+  return ids.map((id) => wasm.resolve(id))
 }
