@@ -3,23 +3,23 @@
   "spec": "003-wasm-003-shadow-state-as-nested-tree",
   "state": "building",
   "subtasks": {
-    "completed": 9,
+    "completed": 12,
     "total": 16,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Valtio Integration",
+    "current": "Unit Tests",
     "id": null,
-    "total": 2
+    "total": 3
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 3,
+    "number": 6,
     "started_at": "2026-02-14T20:33:19.373768"
   },
-  "last_update": "2026-02-14T20:40:21.500707"
+  "last_update": "2026-02-14T20:53:32.271388"
 }
