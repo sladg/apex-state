@@ -356,6 +356,108 @@ const newState = applyChangesToObject(state, [
 const disabled = evaluateBoolLogic({ IS_EQUAL: ["status", "submitted"] }, state)
 ```
 
+## WASM Development
+
+This project includes Rust-to-WebAssembly compilation for performance-critical features.
+
+### Prerequisites
+
+1. **Rust Toolchain** (≥1.93.0):
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+2. **WASM Target**:
+   ```bash
+   rustup target add wasm32-unknown-unknown
+   ```
+
+3. **wasm-pack** (≥0.11.0):
+   ```bash
+   cargo install wasm-pack
+   # OR on macOS:
+   brew install wasm-pack
+   ```
+
+### Build Workflow
+
+```bash
+# Navigate to Rust project
+cd rust
+
+# Development build (fast, includes debug info)
+wasm-pack build --target bundler --dev
+
+# Production build (optimized)
+wasm-pack build --target bundler --release
+
+# Run Rust tests
+cargo test
+```
+
+Build output goes to `pkg/` directory with:
+- `*.wasm` - WebAssembly binary
+- `*.js` - JavaScript bindings
+- `*.d.ts` - TypeScript definitions
+- `package.json` - Package metadata
+
+### Development Cycle
+
+1. **Write Rust Code** (`rust/src/lib.rs`):
+   ```rust
+   use wasm_bindgen::prelude::*;
+
+   #[wasm_bindgen]
+   pub fn my_function(input: &str) -> String {
+       format!("Processed: {}", input)
+   }
+   ```
+
+2. **Build WASM Module**:
+   ```bash
+   cd rust && wasm-pack build --target bundler --dev
+   ```
+
+3. **Import in TypeScript**:
+   ```typescript
+   import init, { my_function } from '../rust/pkg/apex_state_wasm';
+
+   // Initialize WASM module
+   await init();
+
+   // Call exported functions
+   const result = my_function('hello');
+   ```
+
+4. **Test in Browser**:
+   ```bash
+   npm run dev
+   ```
+
+### Troubleshooting
+
+**Version Mismatch Errors**:
+- Use wasm-pack (not manual wasm-bindgen CLI) to ensure version alignment
+
+**Slow Builds on Linux**:
+- wasm-opt can be slow. Use development builds without optimization:
+  ```bash
+  wasm-pack build --target bundler -- --no-opt
+  ```
+
+**Missing LLD Linker**:
+- Install Rust via rustup (not package managers) to ensure wasm-ld is available
+
+**Large WASM Files**:
+- Development builds include debug symbols. Use `--release` for production:
+  ```bash
+  wasm-pack build --target bundler --release
+  ```
+
+**TypeScript Import Errors**:
+- Ensure `pkg/` is generated before importing
+- Check that Vite config supports WASM imports (already configured via `esbuild-plugin-wasm`)
+
 ## Documentation
 
 See `docs/README.md` for a full index. Key guides:
