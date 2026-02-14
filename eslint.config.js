@@ -5,7 +5,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   nodeConfig,
   jsonConfig,
-  globalIgnores(['out-of-git', 'node_modules']),
+  globalIgnores(['out-of-git', 'node_modules', 'rust/target']),
   {
     rules: {
       'sonarjs/no-duplicate-string': 'off',
