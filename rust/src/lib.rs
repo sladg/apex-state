@@ -22,6 +22,12 @@ pub fn greet(name: &str) -> String {
     format!("Hello, {}!", name)
 }
 
+// Export intern function for path interning
+#[wasm_bindgen]
+pub fn intern(path: String) -> u32 {
+    intern::intern_global(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
