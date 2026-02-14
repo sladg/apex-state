@@ -69,6 +69,14 @@ pub fn evaluate_bool_logic(logic: JsValue, state: JsValue) -> Result<bool, JsVal
     Ok(bool_logic::evaluate(&logic, &state))
 }
 
+// Export shadow_init function for initializing shadow state management
+#[wasm_bindgen]
+pub fn shadow_init() {
+    // Initialize shadow state system
+    // Currently a no-op as shadow module uses direct ValueRepr operations
+    // Future: May initialize global shadow state if needed
+}
+
 // ============================================================================
 // Internal Path Lookup Functions (PathID-based)
 // ============================================================================
