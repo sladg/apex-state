@@ -1,0 +1,22 @@
+[package]
+name = "apex-state-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+
+# Optional but recommended for development
+[dependencies.console_error_panic_hook]
+version = "0.1.1"
+optional = true
+
+[dependencies.wee_alloc]
+version = "0.4.2"
+optional = true
+
+[features]
+default = ["console_error_panic_hook"]

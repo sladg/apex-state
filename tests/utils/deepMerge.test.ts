@@ -116,16 +116,18 @@ describe('deepMerge', () => {
 
   it('should merge when target has plain object and source replaces with primitive', () => {
     const target = { value: { nested: true } as unknown }
-    const result = deepMerge(target, { value: 'string' as unknown })
+
+    const result = deepMerge(target, { value: 'string' } as any)
 
     expect(result.value).toBe('string')
   })
 
   it('should merge when target has primitive and source provides object', () => {
     const target = { value: 'string' as unknown }
+
     const result = deepMerge(target, {
-      value: { nested: true } as unknown,
-    })
+      value: { nested: true },
+    } as any)
 
     expect(result.value).toEqual({ nested: true })
   })

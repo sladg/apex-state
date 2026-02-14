@@ -30,3 +30,18 @@ out-of-git
 
 .hive
 coverage
+
+# Auto Claude data directory
+.auto-claude/
+
+# Rust/WASM build artifacts
+rust/target/
+rust/pkg/
+
+# Auto Claude generated files
+.auto-claude-security.json
+.auto-claude-status
+.claude_settings.json
+.worktrees/
+.security-key
+logs/security/
