@@ -52,9 +52,7 @@ pub fn intern_global(path: String) -> PathID {
 /// assert_eq!(path, Some("user.name".to_string()));
 /// ```
 pub fn resolve_global(id: PathID) -> Option<String> {
-    INTERN_TABLE.with(|table| {
-        table.borrow().resolve(id).map(|s| s.to_string())
-    })
+    INTERN_TABLE.with(|table| table.borrow().resolve(id).map(|s| s.to_string()))
 }
 
 /// Get the number of interned strings in the global table
@@ -98,7 +96,10 @@ pub fn global_clear() {
 pub fn batch_intern_global(paths: Vec<String>) -> Vec<PathID> {
     INTERN_TABLE.with(|table| {
         let mut borrowed = table.borrow_mut();
-        paths.into_iter().map(|path| borrowed.intern(path)).collect()
+        paths
+            .into_iter()
+            .map(|path| borrowed.intern(path))
+            .collect()
     })
 }
 
@@ -305,6 +306,17 @@ pub struct InternTable {
 
 impl InternTable {
     /// Create a new empty interning table
+    ///
+    /// Initializes an empty table with no interned strings.
+    /// The first interned string will receive PathID 0.
+    ///
+    /// # Example
+    /// ```
+    /// use apex_state_wasm::intern::InternTable;
+    ///
+    /// let table = InternTable::new();
+    /// assert_eq!(table.count(), 0);
+    /// ```
     pub fn new() -> Self {
         Self {
             string_to_id: HashMap::new(),
@@ -352,13 +364,61 @@ impl InternTable {
     }
 
     /// Get the number of unique interned strings
+    ///
+    /// Returns the total count of unique strings stored in this table.
+    /// Duplicates are not counted - each unique string is counted once.
+    ///
+    /// # Returns
+    /// The number of unique strings in the table
+    ///
+    /// # Example
+    /// ```
+    /// use apex_state_wasm::intern::InternTable;
+    ///
+    /// let mut table = InternTable::new();
+    /// assert_eq!(table.count(), 0);
+    ///
+    /// table.intern("user.name".to_string());
+    /// assert_eq!(table.count(), 1);
+    ///
+    /// table.intern("user.name".to_string()); // Duplicate
+    /// assert_eq!(table.count(), 1); // Still 1
+    ///
+    /// table.intern("user.email".to_string());
+    /// assert_eq!(table.count(), 2);
+    /// ```
     pub fn count(&self) -> usize {
         self.id_to_string.len()
     }
 
     /// Clear all interned strings
     ///
-    /// Useful for testing or resetting state
+    /// Removes all interned strings from the table and resets the ID counter.
+    /// After clearing, the next interned string will receive PathID 0.
+    ///
+    /// **Warning**: This invalidates all previously issued PathIDs. Attempting
+    /// to resolve old PathIDs after clearing will return None.
+    ///
+    /// Useful for testing or resetting state between operations.
+    ///
+    /// # Example
+    /// ```
+    /// use apex_state_wasm::intern::InternTable;
+    ///
+    /// let mut table = InternTable::new();
+    /// let old_id = table.intern("user.name".to_string());
+    /// assert_eq!(table.count(), 1);
+    ///
+    /// table.clear();
+    /// assert_eq!(table.count(), 0);
+    ///
+    /// // Old ID is now invalid
+    /// assert_eq!(table.resolve(old_id), None);
+    ///
+    /// // New string starts from ID 0 again
+    /// let new_id = table.intern("new.path".to_string());
+    /// assert_eq!(new_id, 0);
+    /// ```
     pub fn clear(&mut self) {
         self.string_to_id.clear();
         self.id_to_string.clear();
@@ -367,6 +427,15 @@ impl InternTable {
 }
 
 impl Default for InternTable {
+    /// Creates an empty InternTable (same as `InternTable::new()`)
+    ///
+    /// # Example
+    /// ```
+    /// use apex_state_wasm::intern::InternTable;
+    ///
+    /// let table: InternTable = Default::default();
+    /// assert_eq!(table.count(), 0);
+    /// ```
     fn default() -> Self {
         Self::new()
     }
@@ -513,10 +582,7 @@ mod tests {
 
         // Intern multiple paths
         let paths = vec!["a.b.c", "x.y.z", "foo.bar"];
-        let ids: Vec<PathID> = paths
-            .iter()
-            .map(|p| intern_global(p.to_string()))
-            .collect();
+        let ids: Vec<PathID> = paths.iter().map(|p| intern_global(p.to_string())).collect();
 
         // Verify all resolve correctly
         for (i, path) in paths.iter().enumerate() {

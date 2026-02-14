@@ -211,9 +211,7 @@ mod tests {
         let user_prefix = intern::intern_global("user".to_string());
         let user_paths: Vec<_> = paths
             .iter()
-            .filter(|&&path_id| {
-                intern::path_starts_with(path_id, user_prefix).unwrap_or(false)
-            })
+            .filter(|&&path_id| intern::path_starts_with(path_id, user_prefix).unwrap_or(false))
             .collect();
 
         // Should find 3 paths starting with "user"
