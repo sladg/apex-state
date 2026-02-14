@@ -754,4 +754,679 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
       expect(value).toBe('deep')
     })
   })
+
+  describe('Nested Operations - Arrays', () => {
+    it('should handle array of arrays', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        matrix: [
+          [1, 2, 3],
+          [4, 5, 6],
+          [7, 8, 9],
+        ],
+      }
+
+      await initShadowState(state)
+
+      const matrix = await getShadowValue(['matrix'])
+      const row0 = await getShadowValue(['matrix', '0'])
+      const cell = await getShadowValue(['matrix', '1', '2'])
+
+      expect(matrix).toEqual([
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ])
+      expect(row0).toEqual([1, 2, 3])
+      expect(cell).toBe(6)
+    })
+
+    it('should update nested array element', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        matrix: [
+          [1, 2, 3],
+          [4, 5, 6],
+        ],
+      })
+
+      await updateShadowValue(['matrix', '0', '1'], 99)
+
+      const row0 = await getShadowValue(['matrix', '0'])
+      expect(row0).toEqual([1, 99, 3])
+    })
+
+    it('should update entire nested array row', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        matrix: [
+          [1, 2, 3],
+          [4, 5, 6],
+        ],
+      })
+
+      await updateShadowValue(['matrix', '1'], [10, 20, 30])
+
+      const matrix = await getShadowValue(['matrix'])
+      expect(matrix).toEqual([
+        [1, 2, 3],
+        [10, 20, 30],
+      ])
+    })
+
+    it('should handle array of objects with deep nesting', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        users: [
+          {
+            name: 'Alice',
+            profile: {
+              settings: {
+                theme: 'dark',
+              },
+            },
+          },
+          {
+            name: 'Bob',
+            profile: {
+              settings: {
+                theme: 'light',
+              },
+            },
+          },
+        ],
+      }
+
+      await initShadowState(state)
+
+      const theme0 = await getShadowValue([
+        'users',
+        '0',
+        'profile',
+        'settings',
+        'theme',
+      ])
+      const theme1 = await getShadowValue([
+        'users',
+        '1',
+        'profile',
+        'settings',
+        'theme',
+      ])
+
+      expect(theme0).toBe('dark')
+      expect(theme1).toBe('light')
+    })
+
+    it('should update deeply nested array element property', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        users: [
+          {
+            name: 'Alice',
+            profile: {
+              settings: {
+                theme: 'dark',
+              },
+            },
+          },
+        ],
+      })
+
+      await updateShadowValue(
+        ['users', '0', 'profile', 'settings', 'theme'],
+        'light',
+      )
+
+      const theme = await getShadowValue([
+        'users',
+        '0',
+        'profile',
+        'settings',
+        'theme',
+      ])
+      expect(theme).toBe('light')
+    })
+
+    it('should handle empty arrays', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        emptyArray: [],
+        nested: {
+          alsoEmpty: [],
+        },
+      }
+
+      await initShadowState(state)
+
+      const empty1 = await getShadowValue(['emptyArray'])
+      const empty2 = await getShadowValue(['nested', 'alsoEmpty'])
+
+      expect(empty1).toEqual([])
+      expect(empty2).toEqual([])
+    })
+
+    it('should handle mixed array types', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        mixed: ['string', 42, true, null, { key: 'value' }, [1, 2, 3]],
+      }
+
+      await initShadowState(state)
+
+      expect(await getShadowValue(['mixed', '0'])).toBe('string')
+      expect(await getShadowValue(['mixed', '1'])).toBe(42)
+      expect(await getShadowValue(['mixed', '2'])).toBe(true)
+      expect(await getShadowValue(['mixed', '3'])).toBe(null)
+      expect(await getShadowValue(['mixed', '4'])).toEqual({ key: 'value' })
+      expect(await getShadowValue(['mixed', '5'])).toEqual([1, 2, 3])
+    })
+  })
+
+  describe('Nested Operations - Complex Structures', () => {
+    it('should handle deeply nested mixed structures', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        level1: {
+          array1: [
+            {
+              level2: {
+                array2: [
+                  {
+                    level3: {
+                      value: 'deep',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }
+
+      await initShadowState(state)
+
+      const value = await getShadowValue([
+        'level1',
+        'array1',
+        '0',
+        'level2',
+        'array2',
+        '0',
+        'level3',
+        'value',
+      ])
+
+      expect(value).toBe('deep')
+    })
+
+    it('should handle multiple parallel nested structures', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        branch1: {
+          nested: {
+            value: 'a',
+          },
+        },
+        branch2: {
+          nested: {
+            value: 'b',
+          },
+        },
+        branch3: {
+          nested: {
+            value: 'c',
+          },
+        },
+      }
+
+      await initShadowState(state)
+
+      expect(await getShadowValue(['branch1', 'nested', 'value'])).toBe('a')
+      expect(await getShadowValue(['branch2', 'nested', 'value'])).toBe('b')
+      expect(await getShadowValue(['branch3', 'nested', 'value'])).toBe('c')
+    })
+
+    it('should update one branch without affecting others', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        branch1: {
+          nested: {
+            value: 'a',
+          },
+        },
+        branch2: {
+          nested: {
+            value: 'b',
+          },
+        },
+      })
+
+      await updateShadowValue(['branch1', 'nested', 'value'], 'updated')
+
+      expect(await getShadowValue(['branch1', 'nested', 'value'])).toBe(
+        'updated',
+      )
+      expect(await getShadowValue(['branch2', 'nested', 'value'])).toBe('b')
+    })
+  })
+
+  describe('Edge Cases - Sequential Updates', () => {
+    it('should handle multiple sequential leaf updates', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        counter: 0,
+      })
+
+      await updateShadowValue(['counter'], 1)
+      await updateShadowValue(['counter'], 2)
+      await updateShadowValue(['counter'], 3)
+
+      const counter = await getShadowValue(['counter'])
+      expect(counter).toBe(3)
+    })
+
+    it('should handle sequential updates to different paths', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        user: {
+          name: 'Alice',
+          age: 30,
+          email: 'alice@example.com',
+        },
+      })
+
+      await updateShadowValue(['user', 'name'], 'Bob')
+      await updateShadowValue(['user', 'age'], 25)
+      await updateShadowValue(['user', 'email'], 'bob@example.com')
+
+      const user = await getShadowValue(['user'])
+      expect(user).toEqual({
+        name: 'Bob',
+        age: 25,
+        email: 'bob@example.com',
+      })
+    })
+
+    it('should handle sequential subtree updates', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        config: {
+          theme: 'dark',
+        },
+      })
+
+      await updateShadowValue(['config'], {
+        theme: 'light',
+        language: 'en',
+      })
+
+      await updateShadowValue(['config'], {
+        theme: 'dark',
+        language: 'fr',
+        timezone: 'UTC',
+      })
+
+      const config = await getShadowValue(['config'])
+      expect(config).toEqual({
+        theme: 'dark',
+        language: 'fr',
+        timezone: 'UTC',
+      })
+    })
+  })
+
+  describe('Edge Cases - Type Changes', () => {
+    it('should handle type change from primitive to object', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        field: 'string value',
+      })
+
+      await updateShadowValue(['field'], {
+        nested: 'object value',
+      })
+
+      const field = await getShadowValue(['field'])
+      expect(field).toEqual({
+        nested: 'object value',
+      })
+    })
+
+    it('should handle type change from object to primitive', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        field: {
+          nested: 'object value',
+        },
+      })
+
+      await updateShadowValue(['field'], 'string value')
+
+      const field = await getShadowValue(['field'])
+      expect(field).toBe('string value')
+    })
+
+    it('should handle type change from array to object', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        field: [1, 2, 3],
+      })
+
+      await updateShadowValue(['field'], {
+        key: 'value',
+      })
+
+      const field = await getShadowValue(['field'])
+      expect(field).toEqual({
+        key: 'value',
+      })
+    })
+
+    it('should handle type change from object to array', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        field: {
+          key: 'value',
+        },
+      })
+
+      await updateShadowValue(['field'], [1, 2, 3])
+
+      const field = await getShadowValue(['field'])
+      expect(field).toEqual([1, 2, 3])
+    })
+  })
+
+  describe('Edge Cases - Special Values', () => {
+    it('should handle empty string values correctly', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        emptyString: '',
+        normalString: 'hello',
+      })
+
+      expect(await getShadowValue(['emptyString'])).toBe('')
+      expect(await getShadowValue(['normalString'])).toBe('hello')
+    })
+
+    it('should distinguish between null, undefined, and empty string', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        nullValue: null,
+        emptyString: '',
+      })
+
+      expect(await getShadowValue(['nullValue'])).toBe(null)
+      expect(await getShadowValue(['emptyString'])).toBe('')
+      expect(await getShadowValue(['nonExistent'])).toBeUndefined()
+    })
+
+    it('should handle zero and false as valid values', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        zero: 0,
+        false: false,
+        emptyString: '',
+      })
+
+      expect(await getShadowValue(['zero'])).toBe(0)
+      expect(await getShadowValue(['false'])).toBe(false)
+      expect(await getShadowValue(['emptyString'])).toBe('')
+    })
+
+    it('should handle large numbers', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        large: 9007199254740991, // Number.MAX_SAFE_INTEGER
+        negative: -9007199254740991,
+      })
+
+      expect(await getShadowValue(['large'])).toBe(9007199254740991)
+      expect(await getShadowValue(['negative'])).toBe(-9007199254740991)
+    })
+
+    it('should handle special string characters', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        newline: 'hello\nworld',
+        tab: 'hello\tworld',
+        quote: "hello'world",
+        doubleQuote: 'hello"world',
+        backslash: 'hello\\world',
+      })
+
+      expect(await getShadowValue(['newline'])).toBe('hello\nworld')
+      expect(await getShadowValue(['tab'])).toBe('hello\tworld')
+      expect(await getShadowValue(['quote'])).toBe("hello'world")
+      expect(await getShadowValue(['doubleQuote'])).toBe('hello"world')
+      expect(await getShadowValue(['backslash'])).toBe('hello\\world')
+    })
+
+    it('should handle unicode strings', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        chinese: '你好世界',
+        emoji: '👋🌍',
+        mixed: 'Hello 世界 👋',
+      })
+
+      expect(await getShadowValue(['chinese'])).toBe('你好世界')
+      expect(await getShadowValue(['emoji'])).toBe('👋🌍')
+      expect(await getShadowValue(['mixed'])).toBe('Hello 世界 👋')
+    })
+  })
+
+  describe('Edge Cases - Path Operations', () => {
+    it('should handle empty path for root access', async () => {
+      if (!wasmAvailable) return
+
+      const state = {
+        user: {
+          name: 'Alice',
+        },
+      }
+
+      await initShadowState(state)
+
+      const root = await getShadowValue([])
+      expect(root).toEqual(state)
+    })
+
+    it('should handle single-segment paths', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        name: 'Alice',
+        age: 30,
+      })
+
+      expect(await getShadowValue(['name'])).toBe('Alice')
+      expect(await getShadowValue(['age'])).toBe(30)
+    })
+
+    it('should handle very deep paths', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({})
+
+      // Create a path 10 levels deep
+      await updateShadowValue(
+        ['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9', 'l10'],
+        'deep value',
+      )
+
+      const value = await getShadowValue([
+        'l1',
+        'l2',
+        'l3',
+        'l4',
+        'l5',
+        'l6',
+        'l7',
+        'l8',
+        'l9',
+        'l10',
+      ])
+
+      expect(value).toBe('deep value')
+    })
+  })
+
+  describe('Edge Cases - Complex Updates', () => {
+    it('should handle update that creates new branch alongside existing data', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        existing: {
+          data: 'value',
+        },
+      })
+
+      await updateShadowValue(['new', 'branch', 'value'], 'new data')
+
+      const existing = await getShadowValue(['existing', 'data'])
+      const newBranch = await getShadowValue(['new', 'branch', 'value'])
+
+      expect(existing).toBe('value')
+      expect(newBranch).toBe('new data')
+    })
+
+    it('should handle updating parent of existing nested structure', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        parent: {
+          child: {
+            grandchild: {
+              value: 'deep',
+            },
+          },
+        },
+      })
+
+      // Update parent, which should replace entire subtree
+      await updateShadowValue(['parent'], {
+        newChild: 'replaced',
+      })
+
+      const parent = await getShadowValue(['parent'])
+      const oldChild = await getShadowValue(['parent', 'child'])
+
+      expect(parent).toEqual({
+        newChild: 'replaced',
+      })
+      expect(oldChild).toBeUndefined()
+    })
+
+    it('should handle creating intermediate arrays', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({})
+
+      await updateShadowValue(['users', '0', 'name'], 'Alice')
+
+      const name = await getShadowValue(['users', '0', 'name'])
+      expect(name).toBe('Alice')
+    })
+
+    it('should handle sparse array creation', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        items: [],
+      })
+
+      await updateShadowValue(['items', '5'], 'value')
+
+      const item5 = await getShadowValue(['items', '5'])
+      expect(item5).toBe('value')
+    })
+  })
+
+  describe('Edge Cases - State Consistency', () => {
+    it('should maintain state consistency after multiple mixed operations', async () => {
+      if (!wasmAvailable) return
+
+      await initShadowState({
+        users: [{ name: 'Alice' }],
+        config: { theme: 'dark' },
+      })
+
+      // Mixed operations
+      await updateShadowValue(['users', '0', 'age'], 30)
+      await updateShadowValue(['config', 'language'], 'en')
+      await updateShadowValue(['users', '1'], { name: 'Bob', age: 25 })
+      await updateShadowValue(['stats', 'count'], 100)
+
+      const state = await dumpShadowState()
+
+      expect(state).toEqual({
+        users: [
+          { name: 'Alice', age: 30 },
+          { name: 'Bob', age: 25 },
+        ],
+        config: {
+          theme: 'dark',
+          language: 'en',
+        },
+        stats: {
+          count: 100,
+        },
+      })
+    })
+
+    it('should handle complete state replacement and verification', async () => {
+      if (!wasmAvailable) return
+
+      const state1 = {
+        data: {
+          nested: {
+            value: 1,
+          },
+        },
+      }
+
+      const state2 = {
+        different: {
+          structure: {
+            value: 2,
+          },
+        },
+      }
+
+      await initShadowState(state1)
+      expect(await dumpShadowState()).toEqual(state1)
+
+      await updateShadowValue([], state2)
+      expect(await dumpShadowState()).toEqual(state2)
+
+      // Verify old paths are gone
+      expect(await getShadowValue(['data'])).toBeUndefined()
+      expect(await getShadowValue(['different', 'structure', 'value'])).toBe(2)
+    })
+  })
 })
