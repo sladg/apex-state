@@ -7,6 +7,7 @@
  * @module shadow-state/operations
  */
 
+import { is } from '../utils/is'
 import { parsePath } from './pathParser'
 import type { ShadowNode, ShadowTree } from './types'
 
@@ -376,4 +377,261 @@ export const isLeaf = (node: ShadowNode): boolean => {
  */
 export const isRoot = (node: ShadowNode): boolean => {
   return node.path.length === 0
+}
+
+/**
+ * Helper to build children for an object value
+ */
+const buildObjectChildren = (
+  obj: Record<string, unknown>,
+  parentPath: string[],
+  parent: ShadowNode,
+  buildFn: (value: unknown, path: string[], parent?: ShadowNode) => ShadowNode,
+): { children: Map<string | number, ShadowNode>; count: number } => {
+  const children = new Map<string | number, ShadowNode>()
+  let count = 0
+
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const childPath = [...parentPath, key]
+      const childValue = obj[key]
+      const childNode = buildFn(childValue, childPath, parent)
+      children.set(key, childNode)
+      count++
+    }
+  }
+
+  return { children, count }
+}
+
+/**
+ * Helper to build children for an array value
+ */
+const buildArrayChildren = (
+  arr: unknown[],
+  parentPath: string[],
+  parent: ShadowNode,
+  buildFn: (value: unknown, path: string[], parent?: ShadowNode) => ShadowNode,
+): { children: Map<string | number, ShadowNode>; count: number } => {
+  const children = new Map<string | number, ShadowNode>()
+  let count = 0
+
+  for (let i = 0; i < arr.length; i++) {
+    const childPath = [...parentPath, String(i)]
+    const childValue = arr[i]
+    const childNode = buildFn(childValue, childPath, parent)
+    children.set(i, childNode)
+    count++
+  }
+
+  return { children, count }
+}
+
+/**
+ * Helper to recalculate tree depth
+ */
+const recalculateTreeDepth = (tree: ShadowTree): void => {
+  const calculateDepth = (n: ShadowNode): number => {
+    let maxDepth = n.path.length
+    if (n.children) {
+      for (const child of n.children.values()) {
+        const childDepth = calculateDepth(child)
+        if (childDepth > maxDepth) {
+          maxDepth = childDepth
+        }
+      }
+    }
+    return maxDepth
+  }
+  tree.depth = calculateDepth(tree.root)
+}
+
+/**
+ * Updates a node's value and rebuilds its children if the value is an object/array.
+ *
+ * This is a partial update operation that modifies only the target node and its descendants
+ * without recreating unaffected parts of the tree. Returns the affected paths for tracking changes.
+ *
+ * @param tree - The shadow tree to modify
+ * @param path - Dot or bracket notation path string to the node to update
+ * @param value - New value to set at the node
+ * @param options - Optional configuration for rebuilding children
+ * @returns Update result with affected paths and updated metadata
+ *
+ * @example
+ * ```typescript
+ * const tree = createShadowTree({ user: { name: 'Alice', age: 30 } })
+ * const result = updateNode(tree, 'user.name', 'Bob')
+ * // result.affectedPaths === ['user.name']
+ * // Only the name node was updated, age node was not recreated
+ * ```
+ *
+ * @example
+ * ```typescript
+ * const tree = createShadowTree({ user: { name: 'Alice' } })
+ * const result = updateNode(tree, 'user', { name: 'Bob', email: 'bob@example.com' })
+ * // result.affectedPaths === ['user', 'user.name', 'user.email']
+ * // User node and its children were rebuilt, but other tree parts unchanged
+ * ```
+ */
+export const updateNode = <T = unknown>(
+  tree: ShadowTree,
+  path: string,
+  value: T,
+  options?: {
+    maxDepth?: number
+    includeArrays?: boolean
+    detectCircular?: boolean
+  },
+): import('./types').UpdateResult => {
+  const opts = {
+    maxDepth: options?.maxDepth ?? Infinity,
+    includeArrays: options?.includeArrays ?? true,
+    detectCircular: options?.detectCircular ?? true,
+  }
+
+  const segments = parsePath(path)
+  const node = getNodeBySegments(tree, segments)
+
+  if (!node) {
+    throw new Error(`Cannot update non-existent path: ${path}`)
+  }
+
+  // Track old subtree size to update tree metadata
+  const oldSubtreeSize = countDescendants(node)
+
+  // Collect affected paths before rebuilding
+  const affectedPaths: string[] = []
+  traversePath(node, (n) => {
+    affectedPaths.push(n.path.join('.'))
+  })
+
+  // Update node value
+  node.value = value
+
+  // Remove old children (if any)
+  const oldChildren = node.children
+  if (node.children) {
+    delete node.children
+  }
+
+  // Build new children if value is object/array
+  const visited = opts.detectCircular ? new WeakSet<object>() : null
+  let addedNodeCount = 1 // Count the updated node itself
+  let maxChildDepth = node.path.length
+
+  const buildNode = (
+    currentValue: unknown,
+    currentPath: string[],
+    parent?: ShadowNode,
+  ): ShadowNode => {
+    const depth = currentPath.length
+    if (depth > maxChildDepth) {
+      maxChildDepth = depth
+    }
+
+    const newNode: ShadowNode = {
+      value: currentValue,
+      path: currentPath,
+      ...(parent && { parent }),
+    }
+
+    // Check depth limit
+    if (depth >= opts.maxDepth) {
+      return newNode
+    }
+
+    // Handle circular references
+    if (visited && is.not.primitive(currentValue) && is.not.nil(currentValue)) {
+      if (visited.has(currentValue as object)) {
+        return newNode
+      }
+      visited.add(currentValue as object)
+    }
+
+    // Build children based on value type
+    if (is.object(currentValue)) {
+      const obj = currentValue as Record<string, unknown>
+      const result = buildObjectChildren(obj, currentPath, newNode, buildNode)
+      addedNodeCount += result.count
+      if (result.children.size > 0) {
+        newNode.children = result.children
+      }
+      return newNode
+    }
+
+    if (is.array(currentValue) && opts.includeArrays) {
+      const arr = currentValue as unknown[]
+      const result = buildArrayChildren(arr, currentPath, newNode, buildNode)
+      addedNodeCount += result.count
+      if (result.children.size > 0) {
+        newNode.children = result.children
+      }
+      return newNode
+    }
+
+    // Primitive value - no children
+    return newNode
+  }
+
+  // If the new value is an object or array, rebuild children
+  if (is.object(value)) {
+    const obj = value as Record<string, unknown>
+    const result = buildObjectChildren(obj, node.path, node, buildNode)
+    addedNodeCount += result.count
+    if (result.children.size > 0) {
+      node.children = result.children
+    }
+  } else if (is.array(value) && opts.includeArrays) {
+    const arr = value as unknown[]
+    const result = buildArrayChildren(arr, node.path, node, buildNode)
+    addedNodeCount += result.count
+    if (result.children.size > 0) {
+      node.children = result.children
+    }
+  } else {
+    // Primitive value - no children to rebuild
+  }
+
+  // Update tree metadata
+  tree.nodeCount = tree.nodeCount - oldSubtreeSize + addedNodeCount
+
+  // Recalculate tree depth if the update might have changed it
+  if (
+    maxChildDepth > tree.depth ||
+    (oldChildren && node.path.length === tree.depth)
+  ) {
+    recalculateTreeDepth(tree)
+  }
+
+  return {
+    affectedPaths,
+    nodeCount: tree.nodeCount,
+    depth: tree.depth,
+  }
+}
+
+/**
+ * Sets a value at a path in the shadow tree (convenience wrapper for updateNode).
+ *
+ * Provides a simpler API for updating values when you don't need the full update result.
+ * If the path doesn't exist, throws an error.
+ *
+ * @param tree - The shadow tree to modify
+ * @param path - Dot or bracket notation path string
+ * @param value - New value to set
+ *
+ * @example
+ * ```typescript
+ * const tree = createShadowTree({ user: { name: 'Alice' } })
+ * setValue(tree, 'user.name', 'Bob')
+ * getValue(tree, 'user.name')  // 'Bob'
+ * ```
+ */
+export const setValue = <T = unknown>(
+  tree: ShadowTree,
+  path: string,
+  value: T,
+): void => {
+  updateNode(tree, path, value)
 }
