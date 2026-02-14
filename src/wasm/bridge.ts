@@ -225,3 +225,133 @@ export const resetWasm = (): void => {
   wasmInstance = null
   loadingPromise = null
 }
+
+/**
+ * Auto-Interning Wrapper Functions
+ *
+ * These convenience functions automatically load WASM and handle
+ * string-to-PathID conversion, hiding the manual loadWasm() calls.
+ * They demonstrate the auto-interning pattern used throughout the library.
+ */
+
+/**
+ * Intern a path string with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then interns the provided path string to a PathID.
+ *
+ * @param path - The string path to intern
+ * @returns Promise resolving to the PathID for the interned string
+ *
+ * @example
+ * ```typescript
+ * // No need to manually call loadWasm()
+ * const id = await internPath('user.name')
+ * ```
+ */
+export const internPath = async (path: string): Promise<PathID> => {
+  const wasm = await loadWasm()
+  return wasm.intern(path)
+}
+
+/**
+ * Resolve a PathID with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then resolves the provided PathID back to its original string.
+ *
+ * @param id - The PathID to resolve
+ * @returns Promise resolving to the original string path
+ *
+ * @example
+ * ```typescript
+ * const path = await resolvePath(42)
+ * ```
+ */
+export const resolvePath = async (id: PathID): Promise<string> => {
+  const wasm = await loadWasm()
+  return wasm.resolve(id)
+}
+
+/**
+ * Batch intern multiple paths with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then batch interns multiple path strings efficiently.
+ *
+ * @param paths - Array of string paths to intern
+ * @returns Promise resolving to array of PathIDs
+ *
+ * @example
+ * ```typescript
+ * const ids = await batchInternPaths(['user.name', 'user.email', 'user.age'])
+ * ```
+ */
+export const batchInternPaths = async (
+  paths: string[],
+): Promise<PathID[]> => {
+  const wasm = await loadWasm()
+  return wasm.batch_intern(paths)
+}
+
+/**
+ * Get interned string count with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then returns the number of unique interned strings.
+ *
+ * @returns Promise resolving to the count of interned strings
+ *
+ * @example
+ * ```typescript
+ * const count = await getInternCount()
+ * console.log(`${count} unique paths interned`)
+ * ```
+ */
+export const getInternCount = async (): Promise<number> => {
+  const wasm = await loadWasm()
+  return wasm.intern_count()
+}
+
+/**
+ * Clear the interning table with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then clears all interned strings. Primarily useful for testing.
+ *
+ * @returns Promise that resolves when clearing is complete
+ *
+ * @example
+ * ```typescript
+ * await clearInternTable()
+ * ```
+ */
+export const clearInternTable = async (): Promise<void> => {
+  const wasm = await loadWasm()
+  wasm.intern_clear()
+}
+
+/**
+ * Roundtrip a path through intern/resolve cycle (demonstration)
+ *
+ * This function demonstrates the complete auto-interning workflow:
+ * 1. Auto-load WASM
+ * 2. Intern string path to PathID
+ * 3. Resolve PathID back to string
+ *
+ * Primarily useful for testing and demonstrating the interning pattern.
+ *
+ * @param path - The string path to roundtrip
+ * @returns Promise resolving to the resolved path (should match input)
+ *
+ * @example
+ * ```typescript
+ * const result = await roundtripPath('user.name')
+ * console.log(result) // 'user.name'
+ * ```
+ */
+export const roundtripPath = async (path: string): Promise<string> => {
+  const wasm = await loadWasm()
+  const id = wasm.intern(path)
+  return wasm.resolve(id)
+}
