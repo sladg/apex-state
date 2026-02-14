@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 // Module declarations
 pub mod bool_logic;
 pub mod intern;
+pub mod shadow;
 
 // Optional: Better panic messages in browser console
 #[cfg(feature = "console_error_panic_hook")]
