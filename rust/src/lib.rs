@@ -40,6 +40,18 @@ pub fn batch_intern(paths: Vec<String>) -> Vec<u32> {
     intern::batch_intern_global(paths)
 }
 
+// Export utility function to get interning table count (for debugging)
+#[wasm_bindgen]
+pub fn intern_count() -> usize {
+    intern::global_count()
+}
+
+// Export utility function to clear interning table (for debugging/testing)
+#[wasm_bindgen]
+pub fn intern_clear() {
+    intern::global_clear()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
