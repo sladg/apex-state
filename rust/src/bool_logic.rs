@@ -28,6 +28,76 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+/// Resolve a dot-notation path in a JSON value
+///
+/// Returns the value at the specified path, or None if the path doesn't exist.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+/// use apex_state_wasm::bool_logic::get_path_value;
+///
+/// let state = json!({ "user": { "role": "admin" } });
+/// let value = get_path_value(&state, "user.role");
+/// assert_eq!(value, Some(&json!("admin")));
+/// ```
+pub fn get_path_value<'a>(state: &'a Value, path: &str) -> Option<&'a Value> {
+    let parts: Vec<&str> = path.split('.').collect();
+    let mut current = state;
+
+    for part in parts {
+        match current {
+            Value::Object(map) => {
+                current = map.get(part)?;
+            }
+            _ => return None,
+        }
+    }
+
+    Some(current)
+}
+
+/// Evaluate a BoolLogic expression against a state object
+///
+/// Returns `true` if the condition is satisfied, `false` otherwise.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+/// use apex_state_wasm::bool_logic::{BoolLogic, evaluate};
+///
+/// let state = json!({ "user": { "role": "admin" } });
+/// let logic = BoolLogic::IsEqual("user.role".to_string(), json!("admin"));
+/// assert_eq!(evaluate(&logic, &state), true);
+/// ```
+pub fn evaluate(logic: &BoolLogic, state: &Value) -> bool {
+    match logic {
+        BoolLogic::IsEqual(path, expected) => {
+            // Get value at path and compare to expected
+            match get_path_value(state, path) {
+                Some(value) => value == expected,
+                None => expected.is_null(), // Missing path equals null
+            }
+        }
+        BoolLogic::Exists(path) => {
+            // Check if path exists and is not null
+            match get_path_value(state, path) {
+                Some(value) => !value.is_null(),
+                None => false,
+            }
+        }
+        BoolLogic::And(conditions) => {
+            // All conditions must be true (short-circuit on first false)
+            conditions
+                .iter()
+                .all(|condition| evaluate(condition, state))
+        }
+    }
+}
 
 /// Boolean logic DSL for conditional expressions
 ///
@@ -122,10 +192,7 @@ mod tests {
         });
 
         let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(
-            logic,
-            BoolLogic::IsEqual("user.age".to_string(), json!(25))
-        );
+        assert_eq!(logic, BoolLogic::IsEqual("user.age".to_string(), json!(25)));
     }
 
     #[test]
@@ -298,5 +365,277 @@ mod tests {
 
         let result: Result<BoolLogic, _> = serde_json::from_value(json);
         assert!(result.is_err());
+    }
+
+    // === Path Resolution Tests ===
+
+    #[test]
+    fn test_get_path_value_simple() {
+        let state = json!({ "role": "admin" });
+        let value = super::get_path_value(&state, "role");
+        assert_eq!(value, Some(&json!("admin")));
+    }
+
+    #[test]
+    fn test_get_path_value_nested() {
+        let state = json!({
+            "user": {
+                "profile": {
+                    "name": "Alice"
+                }
+            }
+        });
+        let value = super::get_path_value(&state, "user.profile.name");
+        assert_eq!(value, Some(&json!("Alice")));
+    }
+
+    #[test]
+    fn test_get_path_value_missing() {
+        let state = json!({ "user": { "role": "admin" } });
+        let value = super::get_path_value(&state, "user.missing");
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn test_get_path_value_missing_intermediate() {
+        let state = json!({ "user": { "role": "admin" } });
+        let value = super::get_path_value(&state, "missing.path.here");
+        assert_eq!(value, None);
+    }
+
+    // === Evaluation Tests - IS_EQUAL ===
+
+    #[test]
+    fn test_evaluate_is_equal_string_match() {
+        let state = json!({ "user": { "role": "admin" } });
+        let logic = BoolLogic::IsEqual("user.role".to_string(), json!("admin"));
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_is_equal_string_no_match() {
+        let state = json!({ "user": { "role": "user" } });
+        let logic = BoolLogic::IsEqual("user.role".to_string(), json!("admin"));
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    #[test]
+    fn test_evaluate_is_equal_number_match() {
+        let state = json!({ "user": { "age": 25 } });
+        let logic = BoolLogic::IsEqual("user.age".to_string(), json!(25));
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_is_equal_number_no_match() {
+        let state = json!({ "user": { "age": 30 } });
+        let logic = BoolLogic::IsEqual("user.age".to_string(), json!(25));
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    #[test]
+    fn test_evaluate_is_equal_boolean_match() {
+        let state = json!({ "user": { "active": true } });
+        let logic = BoolLogic::IsEqual("user.active".to_string(), json!(true));
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_is_equal_null_match() {
+        let state = json!({ "user": { "deleted": null } });
+        let logic = BoolLogic::IsEqual("user.deleted".to_string(), json!(null));
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_is_equal_missing_path_equals_null() {
+        let state = json!({ "user": { "role": "admin" } });
+        let logic = BoolLogic::IsEqual("user.missing".to_string(), json!(null));
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_is_equal_missing_path_not_equals_value() {
+        let state = json!({ "user": { "role": "admin" } });
+        let logic = BoolLogic::IsEqual("user.missing".to_string(), json!("admin"));
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    // === Evaluation Tests - EXISTS ===
+
+    #[test]
+    fn test_evaluate_exists_present() {
+        let state = json!({ "user": { "email": "alice@example.com" } });
+        let logic = BoolLogic::Exists("user.email".to_string());
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_exists_missing() {
+        let state = json!({ "user": { "role": "admin" } });
+        let logic = BoolLogic::Exists("user.email".to_string());
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    #[test]
+    fn test_evaluate_exists_null() {
+        let state = json!({ "user": { "email": null } });
+        let logic = BoolLogic::Exists("user.email".to_string());
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    #[test]
+    fn test_evaluate_exists_empty_string() {
+        let state = json!({ "user": { "email": "" } });
+        let logic = BoolLogic::Exists("user.email".to_string());
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_exists_zero() {
+        let state = json!({ "user": { "count": 0 } });
+        let logic = BoolLogic::Exists("user.count".to_string());
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_exists_false() {
+        let state = json!({ "user": { "active": false } });
+        let logic = BoolLogic::Exists("user.active".to_string());
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    // === Evaluation Tests - AND ===
+
+    #[test]
+    fn test_evaluate_and_all_true() {
+        let state = json!({
+            "user": {
+                "role": "admin",
+                "active": true,
+                "email": "alice@example.com"
+            }
+        });
+        let logic = BoolLogic::And(vec![
+            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
+            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
+            BoolLogic::Exists("user.email".to_string()),
+        ]);
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_and_one_false() {
+        let state = json!({
+            "user": {
+                "role": "user",
+                "active": true,
+                "email": "alice@example.com"
+            }
+        });
+        let logic = BoolLogic::And(vec![
+            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
+            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
+            BoolLogic::Exists("user.email".to_string()),
+        ]);
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    #[test]
+    fn test_evaluate_and_all_false() {
+        let state = json!({
+            "user": {
+                "role": "user",
+                "active": false
+            }
+        });
+        let logic = BoolLogic::And(vec![
+            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
+            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
+            BoolLogic::Exists("user.email".to_string()),
+        ]);
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    #[test]
+    fn test_evaluate_and_empty() {
+        let state = json!({ "user": { "role": "admin" } });
+        let logic = BoolLogic::And(vec![]);
+        assert_eq!(super::evaluate(&logic, &state), true); // Empty AND is true (vacuous truth)
+    }
+
+    #[test]
+    fn test_evaluate_and_nested() {
+        let state = json!({
+            "user": {
+                "role": "admin",
+                "active": true,
+                "email": "alice@example.com",
+                "verified": true
+            }
+        });
+        let logic = BoolLogic::And(vec![
+            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
+            BoolLogic::And(vec![
+                BoolLogic::IsEqual("user.active".to_string(), json!(true)),
+                BoolLogic::IsEqual("user.verified".to_string(), json!(true)),
+            ]),
+            BoolLogic::Exists("user.email".to_string()),
+        ]);
+        assert_eq!(super::evaluate(&logic, &state), true);
+    }
+
+    #[test]
+    fn test_evaluate_and_nested_inner_false() {
+        let state = json!({
+            "user": {
+                "role": "admin",
+                "active": true,
+                "email": "alice@example.com",
+                "verified": false
+            }
+        });
+        let logic = BoolLogic::And(vec![
+            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
+            BoolLogic::And(vec![
+                BoolLogic::IsEqual("user.active".to_string(), json!(true)),
+                BoolLogic::IsEqual("user.verified".to_string(), json!(true)),
+            ]),
+            BoolLogic::Exists("user.email".to_string()),
+        ]);
+        assert_eq!(super::evaluate(&logic, &state), false);
+    }
+
+    // === Complex Integration Tests ===
+
+    #[test]
+    fn test_evaluate_complex_real_world_scenario() {
+        let state = json!({
+            "user": {
+                "id": 123,
+                "role": "editor",
+                "active": true,
+                "email": "alice@example.com",
+                "profile": {
+                    "verified": true,
+                    "name": "Alice"
+                }
+            },
+            "document": {
+                "id": "doc-456",
+                "status": "draft"
+            }
+        });
+
+        let logic = BoolLogic::And(vec![
+            BoolLogic::IsEqual("user.role".to_string(), json!("editor")),
+            BoolLogic::Exists("document.id".to_string()),
+            BoolLogic::And(vec![
+                BoolLogic::IsEqual("user.active".to_string(), json!(true)),
+                BoolLogic::IsEqual("user.profile.verified".to_string(), json!(true)),
+            ]),
+        ]);
+
+        assert_eq!(super::evaluate(&logic, &state), true);
     }
 }
