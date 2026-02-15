@@ -3,11 +3,7 @@ import { effect } from 'valtio-reactive'
 import type { StoreInstance } from '../core/types'
 import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
-import {
-  isWasmLoaded,
-  registerBoolLogic,
-  unregisterBoolLogic,
-} from '../wasm/bridge'
+import { isWasmLoaded, wasm } from '../wasm/bridge'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
@@ -63,10 +59,10 @@ const registerConcernEffectsImpl = <
       // Evaluation happens in processChanges(), not here.
       if (isWasmLoaded() && isBoolLogicConfig(config)) {
         const outputPath = `_concerns.${path}.${concernName}`
-        const logicId = registerBoolLogic(outputPath, config.condition)
+        const logicId = wasm.registerBoolLogic(outputPath, config.condition)
 
         disposeCallbacks.push(() => {
-          unregisterBoolLogic(logicId)
+          wasm.unregisterBoolLogic(logicId)
         })
         return
       }

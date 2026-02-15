@@ -8,24 +8,17 @@
 import { beforeAll, bench, describe } from 'vitest'
 
 import type { Change } from '../../src/wasm/bridge'
-import {
-  initWasm,
-  pipelineReset,
-  processChanges,
-  registerBoolLogic,
-  shadowInit,
-} from '../../src/wasm/bridge'
+import { initWasm } from '../../src/wasm/bridge'
 
 let wasmAvailable = false
 let wasmModule: Record<string, unknown> | null = null
 
 beforeAll(async () => {
   try {
-    wasmModule =
-      (await import('../../rust/pkg-node/apex_state_wasm.js')) as Record<
-        string,
-        unknown
-      >
+    wasmModule = (await import('../../rust/pkg/apex_state_wasm.js')) as Record<
+      string,
+      unknown
+    >
     initWasm(wasmModule)
     wasmAvailable = true
   } catch {
@@ -38,12 +31,12 @@ beforeAll(async () => {
 // ---------------------------------------------------------------------------
 
 const setupState = (fieldCount: number) => {
-  pipelineReset()
+  wasm.pipelineReset()
   const state: Record<string, number> = {}
   for (let i = 0; i < fieldCount; i++) {
     state[`field${i}`] = 0
   }
-  shadowInit(state)
+  wasm.shadowInit(state)
 }
 
 const setupStateWithBoolLogic = (
@@ -52,7 +45,7 @@ const setupStateWithBoolLogic = (
 ) => {
   setupState(fieldCount)
   for (let i = 0; i < boolLogicCount; i++) {
-    registerBoolLogic(`_concerns.field${i}.active`, {
+    wasm.registerBoolLogic(`_concerns.field${i}.active`, {
       GTE: [`field${i}`, 50],
     })
   }
@@ -73,7 +66,7 @@ describe('WASM processChanges Throughput', () => {
     '5 changes, no BoolLogic',
     () => {
       setupState(20)
-      processChanges(makeChanges(5))
+      wasm.processChanges(makeChanges(5))
     },
     { skip: !wasmAvailable },
   )
@@ -82,7 +75,7 @@ describe('WASM processChanges Throughput', () => {
     '50 changes, no BoolLogic',
     () => {
       setupState(100)
-      processChanges(makeChanges(50))
+      wasm.processChanges(makeChanges(50))
     },
     { skip: !wasmAvailable },
   )
@@ -91,7 +84,7 @@ describe('WASM processChanges Throughput', () => {
     '200 changes, no BoolLogic',
     () => {
       setupState(300)
-      processChanges(makeChanges(200))
+      wasm.processChanges(makeChanges(200))
     },
     { skip: !wasmAvailable },
   )
@@ -102,7 +95,7 @@ describe('WASM processChanges + BoolLogic', () => {
     '5 changes, 5 BoolLogics',
     () => {
       setupStateWithBoolLogic(20, 5)
-      processChanges(makeChanges(5))
+      wasm.processChanges(makeChanges(5))
     },
     { skip: !wasmAvailable },
   )
@@ -111,7 +104,7 @@ describe('WASM processChanges + BoolLogic', () => {
     '50 changes, 10 BoolLogics',
     () => {
       setupStateWithBoolLogic(100, 10)
-      processChanges(makeChanges(50))
+      wasm.processChanges(makeChanges(50))
     },
     { skip: !wasmAvailable },
   )
@@ -120,7 +113,7 @@ describe('WASM processChanges + BoolLogic', () => {
     '200 changes, 20 BoolLogics',
     () => {
       setupStateWithBoolLogic(300, 20)
-      processChanges(makeChanges(200))
+      wasm.processChanges(makeChanges(200))
     },
     { skip: !wasmAvailable },
   )

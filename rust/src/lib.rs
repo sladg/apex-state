@@ -7,8 +7,10 @@ mod graphs;
 mod intern;
 mod normalization;
 mod pipeline;
+mod rev_index;
 mod router;
 mod shadow;
+mod validator;
 
 use pipeline::{Change, ProcessingPipeline};
 
@@ -152,6 +154,32 @@ pub fn unregister_flip_batch(pairs_json: &str) -> Result<(), JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
             .unregister_flip_batch(pairs_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Register a batch of validators.
+///
+/// Input: JSON array of `{ "validator_id": N, "output_path": "...", "dependency_paths": [...] }`
+/// Example: `[{ "validator_id": 1, "output_path": "_concerns.user.email.validationState", "dependency_paths": ["user.email"] }]`
+#[wasm_bindgen]
+pub fn register_validators_batch(validators_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .register_validators_batch(validators_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Unregister a batch of validators by validator IDs.
+///
+/// Input: JSON array of validator IDs
+/// Example: `[1, 2, 3]`
+#[wasm_bindgen]
+pub fn unregister_validators_batch(validator_ids_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .unregister_validators_batch(validator_ids_json)
             .map_err(|e| JsValue::from_str(&e))
     })
 }

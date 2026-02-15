@@ -12,23 +12,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   initWasm,
   pipelineReset,
-  processChanges,
-  registerAggregationBatch,
-  registerBoolLogic,
-  registerFlipBatch,
-  registerSyncBatch,
   resetWasm,
   shadowDump,
   shadowGet,
-  shadowInit,
   unregisterAggregationBatch,
-  unregisterBoolLogic,
   unregisterFlipBatch,
   unregisterSyncBatch,
+  wasm,
 } from '../../src/wasm/bridge'
 
 beforeEach(async () => {
-  const wasmModule = await import('../../rust/pkg-node/apex_state_wasm.js')
+  const wasmModule = await import('../../rust/pkg/apex_state_wasm.js')
   initWasm(wasmModule)
 })
 
@@ -43,15 +37,15 @@ afterEach(() => {
 describe('EP2 Pipeline — processChanges + BoolLogic', () => {
   describe('basic processChanges', () => {
     it('should return empty array for empty input', () => {
-      shadowInit({ a: 1 })
-      const result = processChanges([])
+      wasm.shadowInit({ a: 1 })
+      const result = wasm.processChanges([])
       expect(result.changes).toHaveLength(0)
     })
 
     it('should echo single change and update shadow', () => {
-      shadowInit({ user: { name: 'Alice' } })
+      wasm.shadowInit({ user: { name: 'Alice' } })
 
-      const result = processChanges([{ path: 'user.name', value: 'Bob' }])
+      const result = wasm.processChanges([{ path: 'user.name', value: 'Bob' }])
 
       expect(result.changes).toHaveLength(1)
       expect(result.changes[0]).toEqual({ path: 'user.name', value: 'Bob' })
@@ -59,9 +53,9 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should process multiple changes in one batch', () => {
-      shadowInit({ x: 0, y: 0, z: 0 })
+      wasm.shadowInit({ x: 0, y: 0, z: 0 })
 
-      const result = processChanges([
+      const result = wasm.processChanges([
         { path: 'x', value: 10 },
         { path: 'y', value: 20 },
         { path: 'z', value: 30 },
@@ -74,9 +68,9 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should handle nested object replacement', () => {
-      shadowInit({ user: { profile: { name: 'Old', age: 20 } } })
+      wasm.shadowInit({ user: { profile: { name: 'Old', age: 20 } } })
 
-      processChanges([
+      wasm.processChanges([
         { path: 'user.profile', value: { name: 'New', age: 30 } },
       ])
 
@@ -85,26 +79,26 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should handle null values', () => {
-      shadowInit({ field: 'value' })
+      wasm.shadowInit({ field: 'value' })
 
-      const result = processChanges([{ path: 'field', value: null }])
+      const result = wasm.processChanges([{ path: 'field', value: null }])
 
       expect(result.changes[0].value).toBeNull()
       expect(shadowGet('field')).toBeNull()
     })
 
     it('should handle boolean values', () => {
-      shadowInit({ flag: false })
+      wasm.shadowInit({ flag: false })
 
-      processChanges([{ path: 'flag', value: true }])
+      wasm.processChanges([{ path: 'flag', value: true }])
 
       expect(shadowGet('flag')).toBe(true)
     })
 
     it('should handle array values', () => {
-      shadowInit({ items: [] })
+      wasm.shadowInit({ items: [] })
 
-      processChanges([{ path: 'items', value: [1, 2, 3] }])
+      wasm.processChanges([{ path: 'items', value: [1, 2, 3] }])
 
       expect(shadowGet('items')).toEqual([1, 2, 3])
     })
@@ -112,12 +106,14 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
 
   describe('BoolLogic evaluation through pipeline', () => {
     it('should evaluate IS_EQUAL to true when condition matches', () => {
-      shadowInit({ user: { role: 'guest' } })
-      registerBoolLogic('_concerns.user.role.disabledWhen', {
+      wasm.shadowInit({ user: { role: 'guest' } })
+      wasm.registerBoolLogic('_concerns.user.role.disabledWhen', {
         IS_EQUAL: ['user.role', 'admin'],
       })
 
-      const result = processChanges([{ path: 'user.role', value: 'admin' }])
+      const result = wasm.processChanges([
+        { path: 'user.role', value: 'admin' },
+      ])
 
       const bl = result.concern_changes.find((c) =>
         c.path.includes('disabledWhen'),
@@ -127,12 +123,14 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should evaluate IS_EQUAL to false when condition does not match', () => {
-      shadowInit({ user: { role: 'guest' } })
-      registerBoolLogic('_concerns.user.role.disabledWhen', {
+      wasm.shadowInit({ user: { role: 'guest' } })
+      wasm.registerBoolLogic('_concerns.user.role.disabledWhen', {
         IS_EQUAL: ['user.role', 'admin'],
       })
 
-      const result = processChanges([{ path: 'user.role', value: 'editor' }])
+      const result = wasm.processChanges([
+        { path: 'user.role', value: 'editor' },
+      ])
 
       const bl = result.concern_changes.find((c) =>
         c.path.includes('disabledWhen'),
@@ -142,12 +140,12 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should not evaluate BoolLogic for unrelated path changes', () => {
-      shadowInit({ user: { role: 'guest', age: 20 } })
-      registerBoolLogic('_concerns.user.role.disabledWhen', {
+      wasm.shadowInit({ user: { role: 'guest', age: 20 } })
+      wasm.registerBoolLogic('_concerns.user.role.disabledWhen', {
         IS_EQUAL: ['user.role', 'admin'],
       })
 
-      const result = processChanges([{ path: 'user.age', value: 25 }])
+      const result = wasm.processChanges([{ path: 'user.age', value: 25 }])
 
       // Only the direct change, no BoolLogic output
       expect(result.changes).toHaveLength(1)
@@ -156,18 +154,20 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should evaluate multiple BoolLogics on same dependency', () => {
-      shadowInit({ user: { role: 'guest' } })
-      registerBoolLogic('_concerns.user.role.disabledWhen', {
+      wasm.shadowInit({ user: { role: 'guest' } })
+      wasm.registerBoolLogic('_concerns.user.role.disabledWhen', {
         IS_EQUAL: ['user.role', 'admin'],
       })
-      registerBoolLogic('_concerns.user.role.readonlyWhen', {
+      wasm.registerBoolLogic('_concerns.user.role.readonlyWhen', {
         IS_EQUAL: ['user.role', 'admin'],
       })
-      registerBoolLogic('_concerns.user.name.visibleWhen', {
+      wasm.registerBoolLogic('_concerns.user.name.visibleWhen', {
         EXISTS: 'user.role',
       })
 
-      const result = processChanges([{ path: 'user.role', value: 'admin' }])
+      const result = wasm.processChanges([
+        { path: 'user.role', value: 'admin' },
+      ])
 
       // 1 state change + 3 concern changes
       expect(result.changes).toHaveLength(1)
@@ -180,12 +180,14 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should evaluate complex AND logic', () => {
-      shadowInit({ user: { role: 'guest', age: 20 } })
-      registerBoolLogic('_concerns.panel.visibleWhen', {
+      wasm.shadowInit({ user: { role: 'guest', age: 20 } })
+      wasm.registerBoolLogic('_concerns.panel.visibleWhen', {
         AND: [{ IS_EQUAL: ['user.role', 'admin'] }, { GTE: ['user.age', 18] }],
       })
 
-      const result = processChanges([{ path: 'user.role', value: 'admin' }])
+      const result = wasm.processChanges([
+        { path: 'user.role', value: 'admin' },
+      ])
 
       const bl = result.concern_changes.find((c) =>
         c.path.includes('visibleWhen'),
@@ -195,12 +197,14 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should evaluate NOT operator', () => {
-      shadowInit({ user: { role: 'guest' } })
-      registerBoolLogic('_concerns.user.role.enabledWhen', {
+      wasm.shadowInit({ user: { role: 'guest' } })
+      wasm.registerBoolLogic('_concerns.user.role.enabledWhen', {
         NOT: { IS_EQUAL: ['user.role', 'admin'] },
       })
 
-      const result = processChanges([{ path: 'user.role', value: 'editor' }])
+      const result = wasm.processChanges([
+        { path: 'user.role', value: 'editor' },
+      ])
 
       const bl = result.concern_changes.find((c) =>
         c.path.includes('enabledWhen'),
@@ -209,12 +213,14 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should evaluate IN operator', () => {
-      shadowInit({ user: { role: 'guest' } })
-      registerBoolLogic('_concerns.user.panel.visibleWhen', {
+      wasm.shadowInit({ user: { role: 'guest' } })
+      wasm.registerBoolLogic('_concerns.user.panel.visibleWhen', {
         IN: ['user.role', ['admin', 'editor', 'moderator']],
       })
 
-      const result = processChanges([{ path: 'user.role', value: 'editor' }])
+      const result = wasm.processChanges([
+        { path: 'user.role', value: 'editor' },
+      ])
 
       const bl = result.concern_changes.find((c) =>
         c.path.includes('visibleWhen'),
@@ -223,12 +229,12 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should handle nested object update triggering BoolLogic', () => {
-      shadowInit({ user: { role: 'guest', age: 20 } })
-      registerBoolLogic('_concerns.user.email.disabledWhen', {
+      wasm.shadowInit({ user: { role: 'guest', age: 20 } })
+      wasm.registerBoolLogic('_concerns.user.email.disabledWhen', {
         IS_EQUAL: ['user.role', 'admin'],
       })
 
-      const result = processChanges([
+      const result = wasm.processChanges([
         { path: 'user', value: { role: 'admin', age: 30 } },
       ])
 
@@ -242,42 +248,42 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
 
   describe('BoolLogic unregistration', () => {
     it('should stop evaluating after unregister', () => {
-      shadowInit({ user: { role: 'guest' } })
-      const id = registerBoolLogic('_concerns.user.role.disabledWhen', {
+      wasm.shadowInit({ user: { role: 'guest' } })
+      const id = wasm.registerBoolLogic('_concerns.user.role.disabledWhen', {
         IS_EQUAL: ['user.role', 'admin'],
       })
 
       // Verify it works
-      let result = processChanges([{ path: 'user.role', value: 'admin' }])
+      let result = wasm.processChanges([{ path: 'user.role', value: 'admin' }])
       expect(result.changes).toHaveLength(1)
       expect(result.concern_changes).toHaveLength(1)
 
       // Unregister
-      unregisterBoolLogic(id)
+      wasm.unregisterBoolLogic(id)
 
-      result = processChanges([{ path: 'user.role', value: 'editor' }])
+      result = wasm.processChanges([{ path: 'user.role', value: 'editor' }])
       expect(result.changes).toHaveLength(1)
       expect(result.concern_changes).toHaveLength(0)
     })
 
     it('should handle multiple register/unregister cycles', () => {
-      shadowInit({ user: { role: 'guest' } })
-      const id1 = registerBoolLogic('out1', {
+      wasm.shadowInit({ user: { role: 'guest' } })
+      const id1 = wasm.registerBoolLogic('out1', {
         IS_EQUAL: ['user.role', 'admin'],
       })
-      const id2 = registerBoolLogic('out2', { EXISTS: 'user.role' })
+      const id2 = wasm.registerBoolLogic('out2', { EXISTS: 'user.role' })
 
-      let result = processChanges([{ path: 'user.role', value: 'admin' }])
+      let result = wasm.processChanges([{ path: 'user.role', value: 'admin' }])
       expect(result.changes).toHaveLength(1)
       expect(result.concern_changes).toHaveLength(2)
 
-      unregisterBoolLogic(id1)
-      result = processChanges([{ path: 'user.role', value: 'editor' }])
+      wasm.unregisterBoolLogic(id1)
+      result = wasm.processChanges([{ path: 'user.role', value: 'editor' }])
       expect(result.changes).toHaveLength(1)
       expect(result.concern_changes).toHaveLength(1)
 
-      unregisterBoolLogic(id2)
-      result = processChanges([{ path: 'user.role', value: 'guest' }])
+      wasm.unregisterBoolLogic(id2)
+      result = wasm.processChanges([{ path: 'user.role', value: 'guest' }])
       expect(result.changes).toHaveLength(1)
       expect(result.concern_changes).toHaveLength(0)
     })
@@ -285,18 +291,18 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
 
   describe('shadow state consistency', () => {
     it('should maintain full shadow state dump after pipeline', () => {
-      shadowInit({ x: 1, y: 2, z: 3 })
+      wasm.shadowInit({ x: 1, y: 2, z: 3 })
 
-      processChanges([{ path: 'x', value: 10 }])
+      wasm.processChanges([{ path: 'x', value: 10 }])
 
       const dump = shadowDump() as Record<string, unknown>
       expect(dump).toEqual({ x: 10, y: 2, z: 3 })
     })
 
     it('should update shadow state for all changes in a batch', () => {
-      shadowInit({ a: 1, b: 2, c: 3 })
+      wasm.shadowInit({ a: 1, b: 2, c: 3 })
 
-      processChanges([
+      wasm.processChanges([
         { path: 'a', value: 100 },
         { path: 'b', value: 200 },
       ])
@@ -307,9 +313,9 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
     })
 
     it('should handle deep nested path updates in shadow', () => {
-      shadowInit({ a: { b: { c: { d: 0 } } } })
+      wasm.shadowInit({ a: { b: { c: { d: 0 } } } })
 
-      processChanges([{ path: 'a.b.c.d', value: 42 }])
+      wasm.processChanges([{ path: 'a.b.c.d', value: 42 }])
 
       expect(shadowGet('a.b.c.d')).toBe(42)
       expect(shadowGet('a.b.c')).toEqual({ d: 42 })
@@ -322,13 +328,13 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
       for (let i = 0; i < 60; i++) {
         initialState[`field${i}`] = 0
       }
-      shadowInit(initialState)
+      wasm.shadowInit(initialState)
 
       // Register BoolLogic on a few fields
-      registerBoolLogic('_concerns.field0.active', {
+      wasm.registerBoolLogic('_concerns.field0.active', {
         GTE: ['field0', 50],
       })
-      registerBoolLogic('_concerns.field10.active', {
+      wasm.registerBoolLogic('_concerns.field10.active', {
         GTE: ['field10', 50],
       })
 
@@ -337,7 +343,7 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
         value: i + 100,
       }))
 
-      const result = processChanges(changes)
+      const result = wasm.processChanges(changes)
 
       // 55 state changes + 2 concern changes
       expect(result.changes).toHaveLength(55)
@@ -354,17 +360,17 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
 
   describe('pipelineReset', () => {
     it('should clear all BoolLogic registrations', () => {
-      shadowInit({ x: 0 })
-      registerBoolLogic('_concerns.x.active', { GTE: ['x', 5] })
+      wasm.shadowInit({ x: 0 })
+      wasm.registerBoolLogic('_concerns.x.active', { GTE: ['x', 5] })
 
-      let result = processChanges([{ path: 'x', value: 10 }])
+      let result = wasm.processChanges([{ path: 'x', value: 10 }])
       expect(result.changes).toHaveLength(1)
       expect(result.concern_changes).toHaveLength(1)
 
       pipelineReset()
-      shadowInit({ x: 0 })
+      wasm.shadowInit({ x: 0 })
 
-      result = processChanges([{ path: 'x', value: 10 }])
+      result = wasm.processChanges([{ path: 'x', value: 10 }])
       expect(result.changes).toHaveLength(1)
       expect(result.concern_changes).toHaveLength(0)
     })
@@ -378,12 +384,12 @@ describe('EP2 Pipeline — processChanges + BoolLogic', () => {
 describe('EP2 Pipeline — sync/flip/aggregation', () => {
   describe('aggregation', () => {
     it('should distribute target write to source paths', () => {
-      shadowInit({ allUsers: null, user1: 'a', user2: 'b', user3: 'c' })
-      registerAggregationBatch([
+      wasm.shadowInit({ allUsers: null, user1: 'a', user2: 'b', user3: 'c' })
+      wasm.registerAggregationBatch([
         { target: 'allUsers', sources: ['user1', 'user2', 'user3'] },
       ])
 
-      const result = processChanges([{ path: 'allUsers', value: 'alice' }])
+      const result = wasm.processChanges([{ path: 'allUsers', value: 'alice' }])
 
       const paths = result.changes.map((c) => c.path)
       expect(paths).toContain('user1')
@@ -394,12 +400,12 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
     })
 
     it('should handle aggregation with child path', () => {
-      shadowInit({ allUsers: {}, user1: {}, user2: {} })
-      registerAggregationBatch([
+      wasm.shadowInit({ allUsers: {}, user1: {}, user2: {} })
+      wasm.registerAggregationBatch([
         { target: 'allUsers', sources: ['user1', 'user2'] },
       ])
 
-      const result = processChanges([
+      const result = wasm.processChanges([
         { path: 'allUsers.email', value: 'test@example.com' },
       ])
 
@@ -409,14 +415,14 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
     })
 
     it('should stop aggregation after unregistration', () => {
-      shadowInit({ allUsers: null, user1: 'a', user2: 'b' })
-      registerAggregationBatch([
+      wasm.shadowInit({ allUsers: null, user1: 'a', user2: 'b' })
+      wasm.registerAggregationBatch([
         { target: 'allUsers', sources: ['user1', 'user2'] },
       ])
 
       unregisterAggregationBatch(['allUsers'])
 
-      const result = processChanges([{ path: 'allUsers', value: 'alice' }])
+      const result = wasm.processChanges([{ path: 'allUsers', value: 'alice' }])
       expect(result.changes).toHaveLength(1)
       expect(result.changes[0].path).toBe('allUsers')
     })
@@ -424,10 +430,10 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
 
   describe('sync', () => {
     it('should propagate value to sync peer', () => {
-      shadowInit({ a: 'old', b: 'old' })
-      registerSyncBatch([['a', 'b']])
+      wasm.shadowInit({ a: 'old', b: 'old' })
+      wasm.registerSyncBatch([['a', 'b']])
 
-      const result = processChanges([{ path: 'a', value: 'new' }])
+      const result = wasm.processChanges([{ path: 'a', value: 'new' }])
 
       expect(result.changes).toHaveLength(2)
       const paths = result.changes.map((c) => c.path)
@@ -438,10 +444,10 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
     })
 
     it('should sync in the reverse direction', () => {
-      shadowInit({ a: 'old', b: 'old' })
-      registerSyncBatch([['a', 'b']])
+      wasm.shadowInit({ a: 'old', b: 'old' })
+      wasm.registerSyncBatch([['a', 'b']])
 
-      const result = processChanges([{ path: 'b', value: 'reverse' }])
+      const result = wasm.processChanges([{ path: 'b', value: 'reverse' }])
 
       const paths = result.changes.map((c) => c.path)
       expect(paths).toContain('a')
@@ -450,23 +456,23 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
     })
 
     it('should stop sync after unregistration', () => {
-      shadowInit({ a: 'old', b: 'old' })
-      registerSyncBatch([['a', 'b']])
+      wasm.shadowInit({ a: 'old', b: 'old' })
+      wasm.registerSyncBatch([['a', 'b']])
       unregisterSyncBatch([['a', 'b']])
 
-      const result = processChanges([{ path: 'a', value: 'new' }])
+      const result = wasm.processChanges([{ path: 'a', value: 'new' }])
       expect(result.changes).toHaveLength(1)
       expect(result.changes[0].path).toBe('a')
     })
 
     it('should sync multi-component groups', () => {
-      shadowInit({ a: 'x', b: 'x', c: 'x' })
-      registerSyncBatch([
+      wasm.shadowInit({ a: 'x', b: 'x', c: 'x' })
+      wasm.registerSyncBatch([
         ['a', 'b'],
         ['b', 'c'],
       ])
 
-      const result = processChanges([{ path: 'a', value: 'synced' }])
+      const result = wasm.processChanges([{ path: 'a', value: 'synced' }])
 
       const paths = result.changes.map((c) => c.path)
       expect(paths).toContain('a')
@@ -478,10 +484,10 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
   describe('flip', () => {
     it('should invert boolean value for flip peer', () => {
       // Start with opposite values so the change is NOT a no-op
-      shadowInit({ visible: false, hidden: true })
-      registerFlipBatch([['visible', 'hidden']])
+      wasm.shadowInit({ visible: false, hidden: true })
+      wasm.registerFlipBatch([['visible', 'hidden']])
 
-      const result = processChanges([{ path: 'visible', value: true }])
+      const result = wasm.processChanges([{ path: 'visible', value: true }])
 
       expect(result.changes).toHaveLength(2)
       const hidden = result.changes.find((c) => c.path === 'hidden')
@@ -490,30 +496,30 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
 
     it('should flip in the reverse direction', () => {
       // Start with opposite values so the change is NOT a no-op
-      shadowInit({ visible: false, hidden: true })
-      registerFlipBatch([['visible', 'hidden']])
+      wasm.shadowInit({ visible: false, hidden: true })
+      wasm.registerFlipBatch([['visible', 'hidden']])
 
-      const result = processChanges([{ path: 'hidden', value: false }])
+      const result = wasm.processChanges([{ path: 'hidden', value: false }])
 
       const visible = result.changes.find((c) => c.path === 'visible')
       expect(visible!.value).toBe(true)
     })
 
     it('should not flip non-boolean values', () => {
-      shadowInit({ a: 'x', b: 'y' })
-      registerFlipBatch([['a', 'b']])
+      wasm.shadowInit({ a: 'x', b: 'y' })
+      wasm.registerFlipBatch([['a', 'b']])
 
-      const result = processChanges([{ path: 'a', value: 'hello' }])
+      const result = wasm.processChanges([{ path: 'a', value: 'hello' }])
       expect(result.changes).toHaveLength(1)
     })
 
     it('should stop flip after unregistration', () => {
       // Start with opposite value so the change is NOT a no-op
-      shadowInit({ a: false, b: true })
-      registerFlipBatch([['a', 'b']])
+      wasm.shadowInit({ a: false, b: true })
+      wasm.registerFlipBatch([['a', 'b']])
       unregisterFlipBatch([['a', 'b']])
 
-      const result = processChanges([{ path: 'a', value: true }])
+      const result = wasm.processChanges([{ path: 'a', value: true }])
       expect(result.changes).toHaveLength(1)
     })
   })
@@ -521,11 +527,11 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
   describe('combined pipeline', () => {
     it('should process sync + flip in one batch', () => {
       // Start with different values so changes are NOT no-ops
-      shadowInit({ a: 1, b: 1, flag1: false, flag2: true })
-      registerSyncBatch([['a', 'b']])
-      registerFlipBatch([['flag1', 'flag2']])
+      wasm.shadowInit({ a: 1, b: 1, flag1: false, flag2: true })
+      wasm.registerSyncBatch([['a', 'b']])
+      wasm.registerFlipBatch([['flag1', 'flag2']])
 
-      const result = processChanges([
+      const result = wasm.processChanges([
         { path: 'a', value: 42 },
         { path: 'flag1', value: true },
       ])
@@ -541,13 +547,13 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
     })
 
     it('should trigger BoolLogic from synced changes', () => {
-      shadowInit({ x: 'old', y: 'old' })
-      registerSyncBatch([['x', 'y']])
-      registerBoolLogic('_concerns.field.disabledWhen', {
+      wasm.shadowInit({ x: 'old', y: 'old' })
+      wasm.registerSyncBatch([['x', 'y']])
+      wasm.registerBoolLogic('_concerns.field.disabledWhen', {
         IS_EQUAL: ['y', 'admin'],
       })
 
-      const result = processChanges([{ path: 'x', value: 'admin' }])
+      const result = wasm.processChanges([{ path: 'x', value: 'admin' }])
 
       const bl = result.concern_changes.find((c) =>
         c.path.includes('disabledWhen'),
@@ -557,13 +563,13 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
     })
 
     it('should trigger BoolLogic from flip-produced changes', () => {
-      shadowInit({ flag: true, inverse: false })
-      registerFlipBatch([['flag', 'inverse']])
-      registerBoolLogic('_concerns.panel.visibleWhen', {
+      wasm.shadowInit({ flag: true, inverse: false })
+      wasm.registerFlipBatch([['flag', 'inverse']])
+      wasm.registerBoolLogic('_concerns.panel.visibleWhen', {
         IS_EQUAL: ['inverse', true],
       })
 
-      const result = processChanges([{ path: 'flag', value: false }])
+      const result = wasm.processChanges([{ path: 'flag', value: false }])
 
       const bl = result.concern_changes.find((c) =>
         c.path.includes('visibleWhen'),
@@ -576,11 +582,11 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
   describe('shadow state with sync/flip', () => {
     it('should reflect all changes including sync/flip in shadow', () => {
       // Start with different values so changes are NOT no-ops
-      shadowInit({ a: 1, b: 1, x: false, y: true })
-      registerSyncBatch([['a', 'b']])
-      registerFlipBatch([['x', 'y']])
+      wasm.shadowInit({ a: 1, b: 1, x: false, y: true })
+      wasm.registerSyncBatch([['a', 'b']])
+      wasm.registerFlipBatch([['x', 'y']])
 
-      processChanges([
+      wasm.processChanges([
         { path: 'a', value: 99 },
         { path: 'x', value: true },
       ])
@@ -600,10 +606,10 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
       state['flagB'] = false
       state['syncA'] = 'x'
       state['syncB'] = 'x'
-      shadowInit(state)
+      wasm.shadowInit(state)
 
-      registerSyncBatch([['syncA', 'syncB']])
-      registerFlipBatch([['flagA', 'flagB']])
+      wasm.registerSyncBatch([['syncA', 'syncB']])
+      wasm.registerFlipBatch([['flagA', 'flagB']])
 
       const changes = Array.from({ length: 50 }, (_, i) => ({
         path: `f${i}`,
@@ -612,7 +618,7 @@ describe('EP2 Pipeline — sync/flip/aggregation', () => {
       changes.push({ path: 'syncA', value: 'synced' })
       changes.push({ path: 'flagA', value: false })
 
-      const result = processChanges(changes)
+      const result = wasm.processChanges(changes)
 
       // 52 direct + 1 sync + 1 flip = 54
       expect(result.changes.length).toBeGreaterThanOrEqual(54)

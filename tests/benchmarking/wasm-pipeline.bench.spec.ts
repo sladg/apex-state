@@ -13,17 +13,7 @@ import { processChanges as processChangesEntry } from '../../src/pipeline/proces
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'
 import type { Change } from '../../src/wasm/bridge'
-import {
-  createDispatchPlan,
-  initWasm,
-  processChanges as wasmProcessChanges,
-  registerBoolLogic,
-  registerFlipBatch,
-  registerListenersBatch,
-  registerSyncBatch,
-  resetWasm,
-  shadowInit,
-} from '../../src/wasm/bridge'
+import { initWasm, resetWasm } from '../../src/wasm/bridge'
 import { typeHelpers } from '../mocks/helpers'
 
 // ---------------------------------------------------------------------------
@@ -36,7 +26,7 @@ let wasmReady = false
 
 beforeAll(async () => {
   try {
-    const wasmModule = await import('../../rust/pkg-node/apex_state_wasm.js')
+    const wasmModule = await import('../../rust/pkg/apex_state_wasm.js')
     initWasm(wasmModule)
     wasmReady = true
   } catch {
@@ -52,13 +42,13 @@ const setupWasm = (fields: number) => {
   resetWasm()
   const wasmModule =
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('../../rust/pkg-node/apex_state_wasm.js') as Record<string, unknown>
+    require('../../rust/pkg/apex_state_wasm.js') as Record<string, unknown>
   initWasm(wasmModule)
   const state: Record<string, unknown> = {}
   for (let i = 0; i < fields; i++) {
     state[`f${i}`] = i
   }
-  shadowInit(state)
+  wasm.shadowInit(state)
 }
 
 const makeChanges = (count: number): Change[] =>
@@ -121,7 +111,7 @@ describe('WASM raw processChanges', () => {
     '5 changes',
     () => {
       setupWasm(20)
-      wasmProcessChanges(makeChanges(5))
+      wasm.processChanges(makeChanges(5))
     },
     { skip: !wasmReady },
   )
@@ -130,7 +120,7 @@ describe('WASM raw processChanges', () => {
     '50 changes',
     () => {
       setupWasm(100)
-      wasmProcessChanges(makeChanges(50))
+      wasm.processChanges(makeChanges(50))
     },
     { skip: !wasmReady },
   )
@@ -139,7 +129,7 @@ describe('WASM raw processChanges', () => {
     '200 changes',
     () => {
       setupWasm(300)
-      wasmProcessChanges(makeChanges(200))
+      wasm.processChanges(makeChanges(200))
     },
     { skip: !wasmReady },
   )
@@ -155,9 +145,9 @@ describe('WASM processChanges + BoolLogic', () => {
     () => {
       setupWasm(20)
       for (let i = 0; i < 5; i++) {
-        registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
+        wasm.registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
       }
-      wasmProcessChanges(makeChanges(5))
+      wasm.processChanges(makeChanges(5))
     },
     { skip: !wasmReady },
   )
@@ -167,9 +157,9 @@ describe('WASM processChanges + BoolLogic', () => {
     () => {
       setupWasm(100)
       for (let i = 0; i < 10; i++) {
-        registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
+        wasm.registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
       }
-      wasmProcessChanges(makeChanges(50))
+      wasm.processChanges(makeChanges(50))
     },
     { skip: !wasmReady },
   )
@@ -179,9 +169,9 @@ describe('WASM processChanges + BoolLogic', () => {
     () => {
       setupWasm(300)
       for (let i = 0; i < 20; i++) {
-        registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
+        wasm.registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
       }
-      wasmProcessChanges(makeChanges(200))
+      wasm.processChanges(makeChanges(200))
     },
     { skip: !wasmReady },
   )
@@ -200,8 +190,8 @@ describe('WASM processChanges + sync/flip', () => {
         `f${i}`,
         `f${i + 10}`,
       ])
-      registerSyncBatch(pairs)
-      wasmProcessChanges(makeChanges(5))
+      wasm.registerSyncBatch(pairs)
+      wasm.processChanges(makeChanges(5))
     },
     { skip: !wasmReady },
   )
@@ -218,9 +208,9 @@ describe('WASM processChanges + sync/flip', () => {
         { length: 10 },
         (_, i) => [`f${i + 20}`, `f${i + 70}`],
       )
-      registerSyncBatch(syncPairs)
-      registerFlipBatch(flipPairs)
-      wasmProcessChanges(makeChanges(50))
+      wasm.registerSyncBatch(syncPairs)
+      wasm.registerFlipBatch(flipPairs)
+      wasm.processChanges(makeChanges(50))
     },
     { skip: !wasmReady },
   )
@@ -235,14 +225,14 @@ describe('WASM dispatch plan', () => {
     '10 listeners, 5 changes',
     () => {
       setupWasm(20)
-      registerListenersBatch(
+      wasm.registerListenersBatch(
         Array.from({ length: 10 }, (_, i) => ({
           subscriber_id: i,
           topic_path: `f${i % 5}`,
           scope_path: `f${i % 5}`,
         })),
       )
-      createDispatchPlan(makeChanges(5))
+      wasm.createDispatchPlan(makeChanges(5))
     },
     { skip: !wasmReady },
   )
@@ -251,14 +241,14 @@ describe('WASM dispatch plan', () => {
     '50 listeners, 20 changes',
     () => {
       setupWasm(50)
-      registerListenersBatch(
+      wasm.registerListenersBatch(
         Array.from({ length: 50 }, (_, i) => ({
           subscriber_id: i,
           topic_path: `f${i % 20}`,
           scope_path: `f${i % 20}`,
         })),
       )
-      createDispatchPlan(makeChanges(20))
+      wasm.createDispatchPlan(makeChanges(20))
     },
     { skip: !wasmReady },
   )
@@ -273,22 +263,22 @@ describe('WASM full pipeline cycle', () => {
     '20 changes, 10 sync, 5 flip, 10 BoolLogic, 20 listeners',
     () => {
       setupWasm(60)
-      registerSyncBatch(
+      wasm.registerSyncBatch(
         Array.from(
           { length: 10 },
           (_, i) => [`f${i}`, `f${i + 30}`] as [string, string],
         ),
       )
-      registerFlipBatch(
+      wasm.registerFlipBatch(
         Array.from(
           { length: 5 },
           (_, i) => [`f${i + 10}`, `f${i + 40}`] as [string, string],
         ),
       )
       for (let i = 0; i < 10; i++) {
-        registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
+        wasm.registerBoolLogic(`_concerns.f${i}.active`, { GTE: [`f${i}`, 50] })
       }
-      registerListenersBatch(
+      wasm.registerListenersBatch(
         Array.from({ length: 20 }, (_, i) => ({
           subscriber_id: i,
           topic_path: `f${i % 15}`,
@@ -296,11 +286,11 @@ describe('WASM full pipeline cycle', () => {
         })),
       )
 
-      const results = wasmProcessChanges(makeChanges(20))
+      const results = wasm.processChanges(makeChanges(20))
       const stateChanges = results.filter(
         (c) => !c.path.startsWith('_concerns.'),
       )
-      createDispatchPlan(stateChanges)
+      wasm.createDispatchPlan(stateChanges)
     },
     { skip: !wasmReady },
   )

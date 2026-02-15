@@ -10,7 +10,6 @@ export default defineConfig([
     'node_modules',
     'rust/target',
     'rust/pkg',
-    'rust/pkg-node',
     '.auto-claude',
   ]),
   {

@@ -17,17 +17,10 @@ import { beforeAll, bench, describe } from 'vitest'
 
 import { createPathGroups } from '../../src/core/pathGroups'
 import type { StoreInstance } from '../../src/core/types'
-import { processChanges } from '../../src/pipeline/processChanges'
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'
 import type { Change } from '../../src/wasm/bridge'
-import {
-  initWasm,
-  processChanges as wasmProcessChanges,
-  registerListenersBatch,
-  resetWasm,
-  shadowInit,
-} from '../../src/wasm/bridge'
+import { initWasm, resetWasm } from '../../src/wasm/bridge'
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -39,7 +32,7 @@ let wasmReady = false
 
 beforeAll(async () => {
   try {
-    const wasmModule = await import('../../rust/pkg-node/apex_state_wasm.js')
+    const wasmModule = await import('../../rust/pkg/apex_state_wasm.js')
     initWasm(wasmModule)
     wasmReady = true
   } catch {
@@ -62,7 +55,7 @@ describe('Serialization: serde-wasm-bindgen vs JSON.stringify', () => {
     // Simulate WASM receiving string and parsing it
     const parsedInWasm = JSON.parse(jsonString) as Change[]
     // Then call WASM with parsed data (this simulates the round-trip cost)
-    return wasmProcessChanges(parsedInWasm)
+    return wasm.processChanges(parsedInWasm)
   }
 
   /**
@@ -70,7 +63,7 @@ describe('Serialization: serde-wasm-bindgen vs JSON.stringify', () => {
    */
   const processChangesWithWasmBindgen = (changes: Change[]) => {
     // Direct call - wasm-bindgen handles serialization
-    return wasmProcessChanges(changes)
+    return wasm.processChanges(changes)
   }
 
   const makeChanges = (count: number): Change[] =>
@@ -101,17 +94,14 @@ describe('Serialization: serde-wasm-bindgen vs JSON.stringify', () => {
     resetWasm()
     const wasmModule =
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('../../rust/pkg-node/apex_state_wasm.js') as Record<
-        string,
-        unknown
-      >
+      require('../../rust/pkg/apex_state_wasm.js') as Record<string, unknown>
     initWasm(wasmModule)
 
     const state: Record<string, unknown> = {}
     for (let i = 0; i < changeCount; i++) {
       state[`field_${i}`] = { value: i }
     }
-    shadowInit(state)
+    wasm.shadowInit(state)
   }
 
   bench(
@@ -246,14 +236,11 @@ describe('Execution Plan: Single call vs Multiple roundtrips', () => {
       resetWasm()
       const wasmModule =
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require('../../rust/pkg-node/apex_state_wasm.js') as Record<
-          string,
-          unknown
-        >
+        require('../../rust/pkg/apex_state_wasm.js') as Record<string, unknown>
       initWasm(wasmModule)
-      shadowInit(buildInitialState())
+      wasm.shadowInit(buildInitialState())
 
-      registerListenersBatch(
+      wasm.registerListenersBatch(
         Array.from({ length: ORDER_COUNT }, (_, i) => ({
           subscriber_id: i,
           topic_path: `orders.order_${i}`,
@@ -263,7 +250,7 @@ describe('Execution Plan: Single call vs Multiple roundtrips', () => {
 
       const store = makeStoreShell()
       // This does: WASM call (returns plan) → TS loop (executes plan)
-      processChanges(store, [['orders.order_0.currency', 'EUR', {}]])
+      wasm.processChanges(store, [['orders.order_0.currency', 'EUR', {}]])
     },
     { skip: !wasmReady },
   )
@@ -278,14 +265,11 @@ describe('Execution Plan: Single call vs Multiple roundtrips', () => {
       resetWasm()
       const wasmModule =
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require('../../rust/pkg-node/apex_state_wasm.js') as Record<
-          string,
-          unknown
-        >
+        require('../../rust/pkg/apex_state_wasm.js') as Record<string, unknown>
       initWasm(wasmModule)
-      shadowInit(buildInitialState())
+      wasm.shadowInit(buildInitialState())
 
-      registerListenersBatch(
+      wasm.registerListenersBatch(
         Array.from({ length: ORDER_COUNT }, (_, i) => ({
           subscriber_id: i,
           topic_path: `orders.order_${i}`,
@@ -294,7 +278,7 @@ describe('Execution Plan: Single call vs Multiple roundtrips', () => {
       )
 
       // First WASM call
-      wasmProcessChanges([{ path: 'orders.order_0.currency', value: 'EUR' }])
+      wasm.processChanges([{ path: 'orders.order_0.currency', value: 'EUR' }])
 
       // Simulate multiple roundtrips (old approach had ~17 WASM calls)
       // Each listener execution would route back to WASM
@@ -303,11 +287,11 @@ describe('Execution Plan: Single call vs Multiple roundtrips', () => {
         const changes: Change[] = [
           { path: `orders.order_${i}.status`, value: 'processed' },
         ]
-        // This represents the OLD approach: routeProducedChanges() → WASM
+        // This represents the OLD approach: wasm.routeProducedChanges() → WASM
         JSON.stringify(changes) // Simulate stringify overhead
         JSON.parse(JSON.stringify(changes)) // Simulate parse overhead
         // Then call WASM again (boundary crossing)
-        wasmProcessChanges(changes)
+        wasm.processChanges(changes)
       }
     },
     { skip: !wasmReady },

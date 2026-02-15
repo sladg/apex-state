@@ -4,15 +4,15 @@
  * Compares the OLD vs NEW listener dispatch approaches:
  *
  * OLD (multi-call):
- *   1. processChanges() → WASM
- *   2. createDispatchPlan() → WASM
+ *   1. wasm.processChanges() → WASM
+ *   2. wasm.createDispatchPlan() → WASM
  *   3. For each depth level:
  *      - Execute listeners
- *      - routeProducedChanges(depth) → WASM (per level!)
+ *      - wasm.routeProducedChanges(depth) → WASM (per level!)
  *   Total: 1 + 1 + depth_levels WASM calls
  *
  * NEW (single plan):
- *   1. processChanges() → WASM (returns FullExecutionPlan)
+ *   1. wasm.processChanges() → WASM (returns FullExecutionPlan)
  *   2. Execute all listeners in TypeScript loop (no more WASM calls)
  *   Total: 1 WASM call
  *
@@ -24,19 +24,10 @@ import { beforeAll, bench, describe } from 'vitest'
 
 import { createPathGroups } from '../../src/core/pathGroups'
 import type { StoreInstance } from '../../src/core/types'
-import { processChanges } from '../../src/pipeline/processChanges'
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'
 import type { Change } from '../../src/wasm/bridge'
-import {
-  createDispatchPlan,
-  initWasm,
-  processChanges as wasmProcessChanges,
-  registerListenersBatch,
-  resetWasm,
-  routeProducedChanges,
-  shadowInit,
-} from '../../src/wasm/bridge'
+import { initWasm, resetWasm } from '../../src/wasm/bridge'
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -48,7 +39,7 @@ let wasmReady = false
 
 beforeAll(async () => {
   try {
-    const wasmModule = await import('../../rust/pkg-node/apex_state_wasm.js')
+    const wasmModule = await import('../../rust/pkg/apex_state_wasm.js')
     initWasm(wasmModule)
     wasmReady = true
   } catch {
@@ -155,7 +146,7 @@ const makeStoreShell = (): StoreInstance<BenchState, GenericMeta> => {
 
 describe('Execution Plan: Single call vs Multi-call (REAL implementations)', () => {
   /**
-   * NEW APPROACH: Single processChanges() returns FullExecutionPlan
+   * NEW APPROACH: Single wasm.processChanges() returns FullExecutionPlan
    * TypeScript executes all listeners with no additional WASM calls
    */
   bench(
@@ -164,12 +155,9 @@ describe('Execution Plan: Single call vs Multi-call (REAL implementations)', () 
       resetWasm()
       const wasmModule =
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require('../../rust/pkg-node/apex_state_wasm.js') as Record<
-          string,
-          unknown
-        >
+        require('../../rust/pkg/apex_state_wasm.js') as Record<string, unknown>
       initWasm(wasmModule)
-      shadowInit(buildNestedState())
+      wasm.shadowInit(buildNestedState())
 
       // Register all listeners
       const registrations = []
@@ -194,22 +182,22 @@ describe('Execution Plan: Single call vs Multi-call (REAL implementations)', () 
           scope_path: `aggregate_${i}`,
         })
       }
-      registerListenersBatch(registrations)
+      wasm.registerListenersBatch(registrations)
 
       const store = makeStoreShell()
 
       // Single call - returns complete execution plan
       // TypeScript then executes all listeners with no further WASM calls
-      processChanges(store, [['item_0.value', 100, {}]])
+      wasm.processChanges(store, [['item_0.value', 100, {}]])
     },
     { skip: !wasmReady },
   )
 
   /**
    * OLD APPROACH: Multiple WASM calls
-   * 1. processChanges() - initial
-   * 2. createDispatchPlan() - get first level
-   * 3. routeProducedChanges() - for each depth level after execution
+   * 1. wasm.processChanges() - initial
+   * 2. wasm.createDispatchPlan() - get first level
+   * 3. wasm.routeProducedChanges() - for each depth level after execution
    *
    * Total: 1 (process) + 1 (create plan) + 3 (route per level) = 5 WASM calls
    */
@@ -219,12 +207,9 @@ describe('Execution Plan: Single call vs Multi-call (REAL implementations)', () 
       resetWasm()
       const wasmModule =
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require('../../rust/pkg-node/apex_state_wasm.js') as Record<
-          string,
-          unknown
-        >
+        require('../../rust/pkg/apex_state_wasm.js') as Record<string, unknown>
       initWasm(wasmModule)
-      shadowInit(buildNestedState())
+      wasm.shadowInit(buildNestedState())
 
       // Register all listeners
       const registrations = []
@@ -249,15 +234,15 @@ describe('Execution Plan: Single call vs Multi-call (REAL implementations)', () 
           scope_path: `aggregate_${i}`,
         })
       }
-      registerListenersBatch(registrations)
+      wasm.registerListenersBatch(registrations)
 
       const handlers = makeListenerHandlers()
 
       // WASM call 1: Process initial changes
-      const result = wasmProcessChanges([{ path: 'item_0.value', value: 100 }])
+      const result = wasm.processChanges([{ path: 'item_0.value', value: 100 }])
 
       // WASM call 2: Create initial dispatch plan
-      const initialPlan = createDispatchPlan(result.changes)
+      const initialPlan = wasm.createDispatchPlan(result.changes)
 
       // Execute each depth level with WASM routing calls
       for (const level of initialPlan.levels) {
@@ -276,7 +261,7 @@ describe('Execution Plan: Single call vs Multi-call (REAL implementations)', () 
 
         // WASM call 3+: Route produced changes to next level
         if (producedChanges.length > 0) {
-          routeProducedChanges(level.depth, producedChanges)
+          wasm.routeProducedChanges(level.depth, producedChanges)
         }
       }
     },
@@ -326,12 +311,12 @@ describe('Scaling: More depth levels = bigger gap', () => {
         resetWasm()
         const wasmModule =
           // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('../../rust/pkg-node/apex_state_wasm.js') as Record<
+          require('../../rust/pkg/apex_state_wasm.js') as Record<
             string,
             unknown
           >
         initWasm(wasmModule)
-        shadowInit(makeDeepState(levels))
+        wasm.shadowInit(makeDeepState(levels))
 
         const registrations = []
         for (let lvl = 0; lvl < levels; lvl++) {
@@ -343,13 +328,13 @@ describe('Scaling: More depth levels = bigger gap', () => {
             })
           }
         }
-        registerListenersBatch(registrations)
+        wasm.registerListenersBatch(registrations)
 
         const store = makeStoreShell()
         store._internal.graphs.listenerHandlers = makeDeepHandlers(levels)
         store.state = proxy(makeDeepState(levels))
 
-        processChanges(store, [['level0_item0.value', 999, {}]])
+        wasm.processChanges(store, [['level0_item0.value', 999, {}]])
       },
       { skip: !wasmReady },
     )
@@ -360,12 +345,12 @@ describe('Scaling: More depth levels = bigger gap', () => {
         resetWasm()
         const wasmModule =
           // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('../../rust/pkg-node/apex_state_wasm.js') as Record<
+          require('../../rust/pkg/apex_state_wasm.js') as Record<
             string,
             unknown
           >
         initWasm(wasmModule)
-        shadowInit(makeDeepState(levels))
+        wasm.shadowInit(makeDeepState(levels))
 
         const registrations = []
         for (let lvl = 0; lvl < levels; lvl++) {
@@ -377,15 +362,15 @@ describe('Scaling: More depth levels = bigger gap', () => {
             })
           }
         }
-        registerListenersBatch(registrations)
+        wasm.registerListenersBatch(registrations)
 
         const handlers = makeDeepHandlers(levels)
 
         // Initial process
-        const result = wasmProcessChanges([
+        const result = wasm.processChanges([
           { path: 'level0_item0.value', value: 999 },
         ])
-        const initialPlan = createDispatchPlan(result.changes)
+        const initialPlan = wasm.createDispatchPlan(result.changes)
 
         // Route through each level
         for (const level of initialPlan.levels) {
@@ -400,7 +385,7 @@ describe('Scaling: More depth levels = bigger gap', () => {
             }
           }
           if (producedChanges.length > 0) {
-            routeProducedChanges(level.depth, producedChanges)
+            wasm.routeProducedChanges(level.depth, producedChanges)
           }
         }
       },

@@ -6,20 +6,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Change } from '../../src/wasm/bridge'
-import {
-  createDispatchPlan,
-  initWasm,
-  registerListenersBatch,
-  resetWasm,
-  routeProducedChanges,
-  shadowInit,
-  unregisterListenersBatch,
-} from '../../src/wasm/bridge'
+import { initWasm, resetWasm, wasm } from '../../src/wasm/bridge'
 
 beforeEach(async () => {
-  const wasmModule = await import('../../rust/pkg-node/apex_state_wasm.js')
+  const wasmModule = await import('../../rust/pkg/apex_state_wasm.js')
   initWasm(wasmModule)
-  shadowInit({
+  wasm.shadowInit({
     user: { name: 'Alice', role: 'admin', email: 'a@b.com' },
   })
 })
@@ -31,12 +23,12 @@ afterEach(() => {
 describe('EP3 Listener Dispatch', () => {
   describe('single listener', () => {
     it('should include listener in dispatch plan when topic matches', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: 'user', scope_path: 'user' },
       ])
 
       const changes: Change[] = [{ path: 'user.name', value: 'Bob' }]
-      const plan = createDispatchPlan(changes)
+      const plan = wasm.createDispatchPlan(changes)
 
       expect(plan.levels.length).toBeGreaterThan(0)
       const allDispatches = plan.levels.flatMap((l) => l.dispatches)
@@ -46,7 +38,7 @@ describe('EP3 Listener Dispatch', () => {
     })
 
     it('should not dispatch to unrelated listener', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         {
           subscriber_id: 1,
           topic_path: 'settings',
@@ -54,7 +46,9 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       const allDispatches = plan.levels.flatMap((l) => l.dispatches)
       expect(allDispatches).toHaveLength(0)
     })
@@ -62,7 +56,7 @@ describe('EP3 Listener Dispatch', () => {
 
   describe('multi-depth listeners', () => {
     it('should order levels deepest-first', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: 'user', scope_path: 'user' },
         {
           subscriber_id: 2,
@@ -71,7 +65,9 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       expect(plan.levels.length).toBeGreaterThanOrEqual(2)
 
       const depths = plan.levels.map((l) => l.depth)
@@ -81,7 +77,7 @@ describe('EP3 Listener Dispatch', () => {
     })
 
     it('should dispatch to listeners at multiple depth levels', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 10, topic_path: 'user', scope_path: 'user' },
         {
           subscriber_id: 20,
@@ -95,7 +91,7 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = createDispatchPlan([
+      const plan = wasm.createDispatchPlan([
         { path: 'user.name', value: 'Bob' },
         { path: 'user.role', value: 'editor' },
       ])
@@ -112,11 +108,13 @@ describe('EP3 Listener Dispatch', () => {
 
   describe('change relativization', () => {
     it('should relativize changes to subscriber scope path', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: 'user', scope_path: 'user' },
       ])
 
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       const dispatch = plan.levels
         .flatMap((l) => l.dispatches)
         .find((d) => d.subscriber_id === 1)
@@ -129,7 +127,7 @@ describe('EP3 Listener Dispatch', () => {
     })
 
     it('should provide full path when scope is at leaf level', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         {
           subscriber_id: 1,
           topic_path: 'user.name',
@@ -137,7 +135,9 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       const dispatch = plan.levels
         .flatMap((l) => l.dispatches)
         .find((d) => d.subscriber_id === 1)
@@ -149,7 +149,7 @@ describe('EP3 Listener Dispatch', () => {
 
   describe('no matching listeners', () => {
     it('should return empty plan when no listeners match', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         {
           subscriber_id: 1,
           topic_path: 'settings',
@@ -157,19 +157,23 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       expect(plan.levels.flatMap((l) => l.dispatches)).toHaveLength(0)
     })
 
     it('should return empty plan when no listeners registered', () => {
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       expect(plan.levels.flatMap((l) => l.dispatches)).toHaveLength(0)
     })
   })
 
   describe('route produced changes', () => {
     it('should route produced changes to downstream topics', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: 'user', scope_path: 'user' },
         {
           subscriber_id: 2,
@@ -179,7 +183,7 @@ describe('EP3 Listener Dispatch', () => {
       ])
 
       const produced: Change[] = [{ path: 'user.email', value: 'new@test.com' }]
-      const plan = routeProducedChanges(2, produced)
+      const plan = wasm.routeProducedChanges(2, produced)
 
       if (plan !== null) {
         const allIds = plan.levels
@@ -190,7 +194,7 @@ describe('EP3 Listener Dispatch', () => {
     })
 
     it('should return null when no downstream listeners match', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         {
           subscriber_id: 1,
           topic_path: 'settings',
@@ -198,7 +202,7 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = routeProducedChanges(2, [
+      const plan = wasm.routeProducedChanges(2, [
         { path: 'user.name', value: 'Bob' },
       ])
       expect(plan).toBeNull()
@@ -207,7 +211,7 @@ describe('EP3 Listener Dispatch', () => {
 
   describe('unregistration', () => {
     it('should remove listener from dispatch plan', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: 'user', scope_path: 'user' },
         {
           subscriber_id: 2,
@@ -216,16 +220,16 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      let plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      let plan = wasm.createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
       let allIds = plan.levels
         .flatMap((l) => l.dispatches)
         .map((d) => d.subscriber_id)
       expect(allIds).toContain(1)
       expect(allIds).toContain(2)
 
-      unregisterListenersBatch([2])
+      unwasm.registerListenersBatch([2])
 
-      plan = createDispatchPlan([{ path: 'user.name', value: 'Charlie' }])
+      plan = wasm.createDispatchPlan([{ path: 'user.name', value: 'Charlie' }])
       allIds = plan.levels
         .flatMap((l) => l.dispatches)
         .map((d) => d.subscriber_id)
@@ -235,23 +239,25 @@ describe('EP3 Listener Dispatch', () => {
     })
 
     it('should handle unregistering all listeners', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: 'user', scope_path: 'user' },
       ])
-      unregisterListenersBatch([1])
+      unwasm.registerListenersBatch([1])
 
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       expect(plan.levels.flatMap((l) => l.dispatches)).toHaveLength(0)
     })
   })
 
   describe('root topic listener', () => {
     it('should receive all changes when listening on root', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: '', scope_path: '' },
       ])
 
-      const plan = createDispatchPlan([
+      const plan = wasm.createDispatchPlan([
         { path: 'user.name', value: 'Bob' },
         { path: 'user.role', value: 'editor' },
       ])
@@ -267,7 +273,7 @@ describe('EP3 Listener Dispatch', () => {
 
   describe('subscriber metadata', () => {
     it('should correctly store and return scope_path', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         {
           subscriber_id: 42,
           topic_path: 'user.name',
@@ -275,7 +281,9 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = createDispatchPlan([{ path: 'user.name', value: 'Bob' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.name', value: 'Bob' },
+      ])
       const dispatch = plan.levels
         .flatMap((l) => l.dispatches)
         .find((d) => d.subscriber_id === 42)
@@ -285,7 +293,7 @@ describe('EP3 Listener Dispatch', () => {
     })
 
     it('should handle different topic_path and scope_path', () => {
-      registerListenersBatch([
+      wasm.registerListenersBatch([
         {
           subscriber_id: 99,
           topic_path: 'user',
@@ -293,7 +301,9 @@ describe('EP3 Listener Dispatch', () => {
         },
       ])
 
-      const plan = createDispatchPlan([{ path: 'user.role', value: 'admin' }])
+      const plan = wasm.createDispatchPlan([
+        { path: 'user.role', value: 'admin' },
+      ])
       const dispatch = plan.levels
         .flatMap((l) => l.dispatches)
         .find((d) => d.subscriber_id === 99)

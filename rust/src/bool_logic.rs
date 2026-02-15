@@ -4,13 +4,12 @@
 //! - `BoolLogicNode`: An enum that deserializes JS boolean logic expressions directly
 //!   using serde tuple variants, enabling high-performance WASM-based condition checking.
 //! - `BoolLogicRegistry`: Stores registered BoolLogic expressions with metadata.
-//! - `ReverseDependencyIndex`: Maps input path IDs to logic IDs for efficient
-//!   invalidation when state changes.
 //!
 //! The enum uses externally tagged representation (serde default) which matches
 //! the JavaScript format: `{ "OPERATOR": [args] }` without requiring transformation.
 
 use crate::intern::InternTable;
+use crate::rev_index::ReverseDependencyIndex;
 use crate::shadow::{ShadowState, ValueRepr};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -289,66 +288,6 @@ impl BoolLogicRegistry {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ReverseDependencyIndex
-// ---------------------------------------------------------------------------
-
-/// Maps interned path IDs to the set of logic IDs that depend on them,
-/// enabling O(1) average-case lookup of affected expressions when a path changes.
-pub(crate) struct ReverseDependencyIndex {
-    /// path_id -> set of logic_ids
-    path_to_logic: HashMap<u32, HashSet<u32>>,
-    /// logic_id -> set of path_ids (for cleanup)
-    logic_to_paths: HashMap<u32, HashSet<u32>>,
-}
-
-impl ReverseDependencyIndex {
-    pub(crate) fn new() -> Self {
-        Self {
-            path_to_logic: HashMap::new(),
-            logic_to_paths: HashMap::new(),
-        }
-    }
-
-    /// Add a logic_id with its set of interned input path IDs.
-    fn add(&mut self, logic_id: u32, path_ids: &HashSet<u32>) {
-        for &path_id in path_ids {
-            self.path_to_logic
-                .entry(path_id)
-                .or_default()
-                .insert(logic_id);
-        }
-        self.logic_to_paths.insert(logic_id, path_ids.clone());
-    }
-
-    /// Remove a logic_id and all its reverse index entries.
-    fn remove(&mut self, logic_id: u32) {
-        if let Some(path_ids) = self.logic_to_paths.remove(&logic_id) {
-            for path_id in path_ids {
-                if let Some(set) = self.path_to_logic.get_mut(&path_id) {
-                    set.remove(&logic_id);
-                    if set.is_empty() {
-                        self.path_to_logic.remove(&path_id);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Return logic IDs affected by a given interned path ID.
-    pub(crate) fn affected_by_path(&self, path_id: u32) -> Vec<u32> {
-        self.path_to_logic
-            .get(&path_id)
-            .map(|set| set.iter().copied().collect())
-            .unwrap_or_default()
-    }
-
-    /// Number of tracked path entries.
-    #[allow(dead_code)]
-    pub(crate) fn path_count(&self) -> usize {
-        self.path_to_logic.len()
-    }
-}
 
 // ===========================================================================
 // Tests

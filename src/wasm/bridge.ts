@@ -16,7 +16,7 @@
  * @module wasm/bridge
  */
 
-import type * as WasmExports from '../../rust/pkg-node/apex_state_wasm'
+import type * as WasmExports from '../../rust/pkg/apex_state_wasm'
 
 // ---------------------------------------------------------------------------
 // Types — exported for downstream use
@@ -96,6 +96,20 @@ export interface ListenerEntry {
   scope_path: string
 }
 
+/** A validator registration entry for validation orchestration. */
+export interface ValidatorEntry {
+  validator_id: number
+  output_path: string
+  dependency_paths: string[]
+}
+
+/** Validator dispatch info for JS-side execution. */
+export interface ValidatorDispatch {
+  validator_id: number
+  output_path: string
+  dependency_values: Record<string, string>
+}
+
 // ---------------------------------------------------------------------------
 // Internal WASM change format (path + value_json string)
 // ---------------------------------------------------------------------------
@@ -160,7 +174,7 @@ export const resetWasm = (): void => {
   loadingPromise = null
 }
 
-const wasm = (): typeof WasmExports => {
+const getWasmInstance = (): typeof WasmExports => {
   if (!wasmInstance) {
     throw new Error('WASM not loaded. Call loadWasm() first.')
   }
@@ -186,185 +200,206 @@ const wasmChangesToJs = (wasmChanges: WasmChange[]): Change[] =>
   }))
 
 // ---------------------------------------------------------------------------
-// Bridge functions — SYNC, thin wrappers
+// WASM namespace — Single export boundary
 // ---------------------------------------------------------------------------
 
-// -- Shadow state -----------------------------------------------------------
-
-/** Initialize shadow state from a JS object (no JSON serialization — direct JsValue). */
-export const shadowInit = (state: Record<string, unknown>): void => {
-  wasm().shadow_init(state as never)
-}
-
-/** Dump shadow state as JS object (debug/testing). */
-export const shadowDump = (): unknown =>
-  JSON.parse(wasm().shadow_dump()) as unknown
-
-/** Get a value from shadow state at a dot-path (debug/testing). */
-export const shadowGet = (path: string): unknown => {
-  const json = wasm().shadow_get(path)
-  return json !== undefined ? (JSON.parse(json) as unknown) : undefined
-}
-
-// -- BoolLogic --------------------------------------------------------------
-
-/** Register a BoolLogic expression. Returns logic_id for cleanup. */
-export const registerBoolLogic = (outputPath: string, tree: unknown): number =>
-  wasm().register_boollogic(outputPath, JSON.stringify(tree))
-
-/** Unregister a BoolLogic expression by logic_id. */
-export const unregisterBoolLogic = (logicId: number): void => {
-  wasm().unregister_boollogic(logicId)
-}
-
-// -- Aggregation (EP2) ------------------------------------------------------
-
-/** Register a batch of aggregations. */
-export const registerAggregationBatch = (
-  aggregations: AggregationEntry[],
-): void => {
-  wasm().register_aggregation_batch(JSON.stringify(aggregations))
-}
-
-/** Unregister a batch of aggregations by target paths. */
-export const unregisterAggregationBatch = (targets: string[]): void => {
-  wasm().unregister_aggregation_batch(JSON.stringify(targets))
-}
-
-// -- Sync graph (EP2) -------------------------------------------------------
-
-/** Register a batch of sync pairs. */
-export const registerSyncBatch = (pairs: [string, string][]): void => {
-  wasm().register_sync_batch(JSON.stringify(pairs))
-}
-
-/** Unregister a batch of sync pairs. */
-export const unregisterSyncBatch = (pairs: [string, string][]): void => {
-  wasm().unregister_sync_batch(JSON.stringify(pairs))
-}
-
-// -- Flip graph (EP2) -------------------------------------------------------
-
-/** Register a batch of flip pairs. */
-export const registerFlipBatch = (pairs: [string, string][]): void => {
-  wasm().register_flip_batch(JSON.stringify(pairs))
-}
-
-/** Unregister a batch of flip pairs. */
-export const unregisterFlipBatch = (pairs: [string, string][]): void => {
-  wasm().unregister_flip_batch(JSON.stringify(pairs))
-}
-
-// -- Pipeline (EP2) ---------------------------------------------------------
-
-/** Reset the pipeline to a fresh state (testing only). */
-export const pipelineReset = (): void => {
-  wasm().pipeline_reset()
-}
-
-// -- Process changes --------------------------------------------------------
-
 /**
- * Process a batch of state changes through the WASM pipeline.
- * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
- * Returns state changes, concern changes, and a pre-computed execution plan.
+ * All WASM functions accessible through this single namespace.
+ * This is the primary interface for crossing the JS↔WASM boundary.
+ *
+ * Usage: `import { wasm } from './wasm/bridge'` then `wasm.processChanges(...)`
  */
-export const processChanges = (
-  changes: Change[],
-): {
-  changes: Change[]
-  concern_changes: Change[]
-  execution_plan: FullExecutionPlan | null
-} => {
-  // Pass WasmChange[] directly via serde-wasm-bindgen (no outer JSON.stringify)
-  const result = wasm().process_changes(
-    changesToWasm(changes) as never,
-  ) as unknown as {
-    changes: WasmChange[]
-    concern_changes: WasmChange[]
-    execution_plan?: FullExecutionPlan
-  }
+export const wasm = {
+  // -- Shadow state ---------------------------------------------------------
 
-  return {
-    changes: wasmChangesToJs(result.changes),
-    concern_changes: wasmChangesToJs(result.concern_changes ?? []),
-    execution_plan: result.execution_plan ?? null,
-  }
-}
+  /** Initialize shadow state from a JS object (no JSON serialization — direct JsValue). */
+  shadowInit: (state: Record<string, unknown>): void => {
+    getWasmInstance().shadow_init(state as never)
+  },
 
-// -- Listener dispatch (EP3) ------------------------------------------------
+  /** Dump shadow state as JS object (debug/testing). */
+  shadowDump: (): unknown =>
+    JSON.parse(getWasmInstance().shadow_dump()) as unknown,
 
-/** Register a batch of listeners for topic-based dispatch. */
-export const registerListenersBatch = (listeners: ListenerEntry[]): void => {
-  wasm().register_listeners_batch(JSON.stringify(listeners))
-}
+  /** Get a value from shadow state at a dot-path (debug/testing). */
+  shadowGet: (path: string): unknown => {
+    const json = getWasmInstance().shadow_get(path)
+    return json !== undefined ? (JSON.parse(json) as unknown) : undefined
+  },
 
-/** Unregister a batch of listeners by subscriber IDs. */
-export const unregisterListenersBatch = (subscriberIds: number[]): void => {
-  wasm().unregister_listeners_batch(JSON.stringify(subscriberIds))
-}
+  // -- BoolLogic ------------------------------------------------------------
 
-/** Create a dispatch plan for the given changes (serde-wasm-bindgen). */
-export const createDispatchPlan = (changes: Change[]): DispatchPlan => {
-  const raw = wasm().create_dispatch_plan(
-    changesToWasm(changes) as never,
-  ) as unknown as {
-    levels: {
-      depth: number
-      dispatches: {
-        subscriber_id: number
-        scope_path: string
-        changes: WasmChange[]
+  /** Register a BoolLogic expression. Returns logic_id for cleanup. */
+  registerBoolLogic: (outputPath: string, tree: unknown): number =>
+    getWasmInstance().register_boollogic(outputPath, JSON.stringify(tree)),
+
+  /** Unregister a BoolLogic expression by logic_id. */
+  unregisterBoolLogic: (logicId: number): void => {
+    getWasmInstance().unregister_boollogic(logicId)
+  },
+
+  // -- Aggregation (EP2) ----------------------------------------------------
+
+  /** Register a batch of aggregations. */
+  registerAggregationBatch: (aggregations: AggregationEntry[]): void => {
+    getWasmInstance().register_aggregation_batch(JSON.stringify(aggregations))
+  },
+
+  /** Unregister a batch of aggregations by target paths. */
+  unregisterAggregationBatch: (targets: string[]): void => {
+    getWasmInstance().unregister_aggregation_batch(JSON.stringify(targets))
+  },
+
+  // -- Sync graph (EP2) -----------------------------------------------------
+
+  /** Register a batch of sync pairs. */
+  registerSyncBatch: (pairs: [string, string][]): void => {
+    getWasmInstance().register_sync_batch(JSON.stringify(pairs))
+  },
+
+  /** Unregister a batch of sync pairs. */
+  unregisterSyncBatch: (pairs: [string, string][]): void => {
+    getWasmInstance().unregister_sync_batch(JSON.stringify(pairs))
+  },
+
+  // -- Flip graph (EP2) -----------------------------------------------------
+
+  /** Register a batch of flip pairs. */
+  registerFlipBatch: (pairs: [string, string][]): void => {
+    getWasmInstance().register_flip_batch(JSON.stringify(pairs))
+  },
+
+  /** Unregister a batch of flip pairs. */
+  unregisterFlipBatch: (pairs: [string, string][]): void => {
+    getWasmInstance().unregister_flip_batch(JSON.stringify(pairs))
+  },
+
+  // -- Pipeline (EP2) -------------------------------------------------------
+
+  /** Reset the pipeline to a fresh state (testing only). */
+  pipelineReset: (): void => {
+    getWasmInstance().pipeline_reset()
+  },
+
+  // -- Process changes ------------------------------------------------------
+
+  /**
+   * Process a batch of state changes through the WASM pipeline.
+   * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
+   * Returns state changes, concern changes, validators to run, and a pre-computed execution plan.
+   */
+  processChanges: (
+    changes: Change[],
+  ): {
+    changes: Change[]
+    concern_changes: Change[]
+    validators_to_run: ValidatorDispatch[]
+    execution_plan: FullExecutionPlan | null
+  } => {
+    // Pass WasmChange[] directly via serde-wasm-bindgen (no outer JSON.stringify)
+    const result = getWasmInstance().process_changes(
+      changesToWasm(changes) as never,
+    ) as unknown as {
+      changes: WasmChange[]
+      concern_changes: WasmChange[]
+      validators_to_run?: ValidatorDispatch[]
+      execution_plan?: FullExecutionPlan
+    }
+
+    return {
+      changes: wasmChangesToJs(result.changes),
+      concern_changes: wasmChangesToJs(result.concern_changes ?? []),
+      validators_to_run: result.validators_to_run ?? [],
+      execution_plan: result.execution_plan ?? null,
+    }
+  },
+
+  // -- Listener dispatch (EP3) ----------------------------------------------
+
+  /** Register a batch of listeners for topic-based dispatch. */
+  registerListenersBatch: (listeners: ListenerEntry[]): void => {
+    getWasmInstance().register_listeners_batch(JSON.stringify(listeners))
+  },
+
+  /** Unregister a batch of listeners by subscriber IDs. */
+  unregisterListenersBatch: (subscriberIds: number[]): void => {
+    getWasmInstance().unregister_listeners_batch(JSON.stringify(subscriberIds))
+  },
+
+  /** Create a dispatch plan for the given changes (serde-wasm-bindgen). */
+  createDispatchPlan: (changes: Change[]): DispatchPlan => {
+    const raw = getWasmInstance().create_dispatch_plan(
+      changesToWasm(changes) as never,
+    ) as unknown as {
+      levels: {
+        depth: number
+        dispatches: {
+          subscriber_id: number
+          scope_path: string
+          changes: WasmChange[]
+        }[]
       }[]
-    }[]
-  }
+    }
 
-  return {
-    levels: raw.levels.map((level) => ({
-      depth: level.depth,
-      dispatches: level.dispatches.map((d) => ({
-        subscriber_id: d.subscriber_id,
-        scope_path: d.scope_path,
-        changes: wasmChangesToJs(d.changes),
+    return {
+      levels: raw.levels.map((level) => ({
+        depth: level.depth,
+        dispatches: level.dispatches.map((d) => ({
+          subscriber_id: d.subscriber_id,
+          scope_path: d.scope_path,
+          changes: wasmChangesToJs(d.changes),
+        })),
       })),
-    })),
-  }
-}
+    }
+  },
 
-/** Route produced changes from a depth level to downstream topics (serde-wasm-bindgen). */
-export const routeProducedChanges = (
-  depth: number,
-  producedChanges: Change[],
-): DispatchPlan | null => {
-  const raw = wasm().route_produced_changes(
-    depth,
-    changesToWasm(producedChanges) as never,
-  ) as unknown as {
-    levels: {
-      depth: number
-      dispatches: {
-        subscriber_id: number
-        scope_path: string
-        changes: WasmChange[]
+  /** Route produced changes from a depth level to downstream topics (serde-wasm-bindgen). */
+  routeProducedChanges: (
+    depth: number,
+    producedChanges: Change[],
+  ): DispatchPlan | null => {
+    const raw = getWasmInstance().route_produced_changes(
+      depth,
+      changesToWasm(producedChanges) as never,
+    ) as unknown as {
+      levels: {
+        depth: number
+        dispatches: {
+          subscriber_id: number
+          scope_path: string
+          changes: WasmChange[]
+        }[]
       }[]
-    }[]
-  } | null
+    } | null
 
-  if (!raw || raw.levels.length === 0) return null
+    if (!raw || raw.levels.length === 0) return null
 
-  return {
-    levels: raw.levels.map((level) => ({
-      depth: level.depth,
-      dispatches: level.dispatches.map((d) => ({
-        subscriber_id: d.subscriber_id,
-        scope_path: d.scope_path,
-        changes: wasmChangesToJs(d.changes),
+    return {
+      levels: raw.levels.map((level) => ({
+        depth: level.depth,
+        dispatches: level.dispatches.map((d) => ({
+          subscriber_id: d.subscriber_id,
+          scope_path: d.scope_path,
+          changes: wasmChangesToJs(d.changes),
+        })),
       })),
-    })),
-  }
+    }
+  },
+
+  // -- Validator registry (EP4) ---------------------------------------------
+
+  /** Register a batch of validators. */
+  registerValidatorsBatch: (validators: ValidatorEntry[]): void => {
+    getWasmInstance().register_validators_batch(JSON.stringify(validators))
+  },
+
+  /** Unregister a batch of validators by validator IDs. */
+  unregisterValidatorsBatch: (validatorIds: number[]): void => {
+    getWasmInstance().unregister_validators_batch(JSON.stringify(validatorIds))
+  },
+
+  // -- Debug/testing --------------------------------------------------------
+
+  /** Number of interned paths (debug/testing). */
+  internCount: (): number => getWasmInstance().intern_count(),
 }
-
-// -- Debug/testing ----------------------------------------------------------
-
-/** Number of interned paths (debug/testing). */
-export const internCount = (): number => wasm().intern_count()

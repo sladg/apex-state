@@ -16,13 +16,7 @@
  * - hasEdge(p1, p2): O(1)
  */
 
-import {
-  isWasmLoaded,
-  registerFlipBatch,
-  registerSyncBatch,
-  unregisterFlipBatch,
-  unregisterSyncBatch,
-} from '../wasm/bridge'
+import { isWasmLoaded, wasm } from '../wasm/bridge'
 
 /** Graph type for WASM mirroring. When set, addEdge/removeEdge mirror to WASM. */
 export type WasmGraphType = 'sync' | 'flip'
@@ -56,16 +50,19 @@ export interface PathGroups {
 /**
  * Creates a new empty PathGroups instance.
  */
-export const createPathGroups = (
-  wasmGraphType?: WasmGraphType,
-): PathGroups => ({
-  pathToGroup: new Map(),
-  groupToPaths: new Map(),
-  edges: new Set(),
-  adjacency: new Map(),
-  nextGroupId: 0,
-  wasmGraphType,
-})
+export const createPathGroups = (wasmGraphType?: WasmGraphType): PathGroups => {
+  const groups: PathGroups = {
+    pathToGroup: new Map(),
+    groupToPaths: new Map(),
+    edges: new Set(),
+    adjacency: new Map(),
+    nextGroupId: 0,
+  }
+  if (wasmGraphType !== undefined) {
+    groups.wasmGraphType = wasmGraphType
+  }
+  return groups
+}
 
 /**
  * BFS traversal from a starting path, collecting all reachable paths.
@@ -149,9 +146,9 @@ const mirrorAddToWasm = (
 ): void => {
   if (!wasmGraphType || !isWasmLoaded()) return
   if (wasmGraphType === 'sync') {
-    registerSyncBatch([[path1, path2]])
+    wasm.registerSyncBatch([[path1, path2]])
   } else {
-    registerFlipBatch([[path1, path2]])
+    wasm.registerFlipBatch([[path1, path2]])
   }
 }
 
@@ -163,9 +160,9 @@ const mirrorRemoveFromWasm = (
 ): void => {
   if (!wasmGraphType || !isWasmLoaded()) return
   if (wasmGraphType === 'sync') {
-    unregisterSyncBatch([[path1, path2]])
+    wasm.unregisterSyncBatch([[path1, path2]])
   } else {
-    unregisterFlipBatch([[path1, path2]])
+    wasm.unregisterFlipBatch([[path1, path2]])
   }
 }
 

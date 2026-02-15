@@ -111,7 +111,7 @@ describe('🚨 SMOKE TEST - Core Functionality', () => {
   it('should validate WASM bridge is available (if built)', async () => {
     try {
       // Try to load WASM module
-      await import('../rust/pkg-node/apex_state_wasm.js')
+      await import('../rust/pkg/apex_state_wasm.js')
 
       // If we get here, WASM is available - success!
       expect(true).toBe(true)

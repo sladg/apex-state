@@ -1,6 +1,7 @@
 import type { ListenerRegistration, StoreInstance } from '../../core/types'
 import type { GenericMeta } from '../../types'
 import { getPathDepth } from '../../utils/pathUtils'
+import { isWasmLoaded, wasm } from '../../wasm/bridge'
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -81,6 +82,17 @@ export const registerListener = <
   // Update sorted paths cache
   updateSortedListenerPaths(graphs)
 
+  // Sync listener registration to WASM router (if loaded)
+  if (isWasmLoaded()) {
+    wasm.registerListenersBatch([
+      {
+        subscriber_id: subscriberId,
+        topic_path: registration.path ?? '',
+        scope_path: registration.scope ?? '',
+      },
+    ])
+  }
+
   return () => {
     const list = listeners.get(mapKey)
     if (list) {
@@ -95,5 +107,10 @@ export const registerListener = <
     }
     // Remove from flat handler map
     listenerHandlers.delete(subscriberId)
+
+    // Sync unregistration to WASM router (if loaded)
+    if (isWasmLoaded()) {
+      wasm.unregisterListenersBatch([subscriberId])
+    }
   }
 }

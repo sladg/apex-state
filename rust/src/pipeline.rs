@@ -6,11 +6,13 @@
 //! (input + computed).
 
 use crate::aggregation::{process_aggregation_writes, Aggregation, AggregationRegistry};
-use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry, ReverseDependencyIndex};
+use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry};
 use crate::graphs::Graph;
 use crate::intern::InternTable;
+use crate::rev_index::ReverseDependencyIndex;
 use crate::router::{FullExecutionPlan, TopicRouter};
 use crate::shadow::ShadowState;
+use crate::validator::{ValidatorInput, ValidatorRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -21,6 +23,14 @@ pub(crate) struct Change {
     pub value_json: String,
 }
 
+/// Validator dispatch info for JS-side execution.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub(crate) struct ValidatorDispatch {
+    pub validator_id: u32,
+    pub output_path: String,
+    pub dependency_values: std::collections::HashMap<String, String>,
+}
+
 /// Output wrapper for processChanges.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ProcessResult {
@@ -29,6 +39,9 @@ pub(crate) struct ProcessResult {
     /// BoolLogic outputs (_concerns.* paths), separated for direct application.
     #[serde(default)]
     pub concern_changes: Vec<Change>,
+    /// Validators to run on JS side with their dependency values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub validators_to_run: Vec<ValidatorDispatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_plan: Option<FullExecutionPlan>,
 }
@@ -39,6 +52,8 @@ pub(crate) struct ProcessingPipeline {
     intern: InternTable,
     registry: BoolLogicRegistry,
     rev_index: ReverseDependencyIndex,
+    validator_registry: ValidatorRegistry,
+    validator_rev_index: ReverseDependencyIndex,
     aggregations: AggregationRegistry,
     sync_graph: Graph,
     flip_graph: Graph,
@@ -49,6 +64,7 @@ pub(crate) struct ProcessingPipeline {
     buf_flip: Vec<Change>,
     buf_affected_ids: HashSet<u32>,
     buf_concern_changes: Vec<Change>,
+    buf_affected_validators: HashSet<u32>,
 }
 
 impl ProcessingPipeline {
@@ -58,6 +74,8 @@ impl ProcessingPipeline {
             intern: InternTable::new(),
             registry: BoolLogicRegistry::new(),
             rev_index: ReverseDependencyIndex::new(),
+            validator_registry: ValidatorRegistry::new(),
+            validator_rev_index: ReverseDependencyIndex::new(),
             aggregations: AggregationRegistry::new(),
             sync_graph: Graph::new(),
             flip_graph: Graph::new(),
@@ -67,6 +85,7 @@ impl ProcessingPipeline {
             buf_flip: Vec::with_capacity(16),
             buf_affected_ids: HashSet::with_capacity(16),
             buf_concern_changes: Vec::with_capacity(16),
+            buf_affected_validators: HashSet::with_capacity(16),
         }
     }
 
@@ -201,6 +220,40 @@ impl ProcessingPipeline {
         Ok(())
     }
 
+    /// Register a batch of validators.
+    ///
+    /// Input: JSON array of `{ "validator_id": N, "output_path": "...", "dependency_paths": [...] }`
+    pub(crate) fn register_validators_batch(&mut self, validators_json: &str) -> Result<(), String> {
+        let validators: Vec<ValidatorInput> = serde_json::from_str(validators_json)
+            .map_err(|e| format!("Validators parse error: {}", e))?;
+
+        for validator in validators {
+            self.validator_registry.register(
+                validator.validator_id,
+                validator.output_path,
+                validator.dependency_paths,
+                &mut self.intern,
+                &mut self.validator_rev_index,
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Unregister a batch of validators.
+    ///
+    /// Input: JSON array of validator IDs
+    pub(crate) fn unregister_validators_batch(&mut self, validator_ids_json: &str) -> Result<(), String> {
+        let validator_ids: Vec<u32> = serde_json::from_str(validator_ids_json)
+            .map_err(|e| format!("Validator IDs parse error: {}", e))?;
+
+        for validator_id in validator_ids {
+            self.validator_registry.unregister(validator_id, &mut self.validator_rev_index);
+        }
+
+        Ok(())
+    }
+
     /// Process sync paths into buf_sync (pre-allocated buffer).
     fn process_sync_paths_into(&mut self, changes: &[Change]) {
         self.buf_sync.clear();
@@ -309,6 +362,7 @@ impl ProcessingPipeline {
         self.buf_flip.clear();
         self.buf_affected_ids.clear();
         self.buf_concern_changes.clear();
+        self.buf_affected_validators.clear();
 
         // Step 0: Filter out no-op changes (value already matches shadow state)
         let input_changes: Vec<Change> = input_changes
@@ -321,6 +375,7 @@ impl ProcessingPipeline {
             return Ok(ProcessResult {
                 changes: Vec::new(),
                 concern_changes: Vec::new(),
+                validators_to_run: Vec::new(),
                 execution_plan: None,
             });
         }
@@ -366,7 +421,33 @@ impl ProcessingPipeline {
             }
         }
 
-        // Step 10: Create full execution plan if listeners are registered
+        // Step 10: Collect affected validators with their dependency values
+        let validators_to_run: Vec<ValidatorDispatch> = self.buf_affected_validators
+            .iter()
+            .filter_map(|&validator_id| {
+                let meta = self.validator_registry.get(validator_id)?;
+
+                // Gather dependency values from shadow state
+                let mut dependency_values = std::collections::HashMap::new();
+                for dep_path in &meta.dependency_paths {
+                    if let Some(value) = self.shadow.get(dep_path) {
+                        let value_json = serde_json::to_string(&value.to_json_value())
+                            .unwrap_or_else(|_| "null".to_owned());
+                        dependency_values.insert(dep_path.clone(), value_json);
+                    } else {
+                        dependency_values.insert(dep_path.clone(), "null".to_owned());
+                    }
+                }
+
+                Some(ValidatorDispatch {
+                    validator_id,
+                    output_path: meta.output_path.clone(),
+                    dependency_values,
+                })
+            })
+            .collect();
+
+        // Step 11: Create full execution plan if listeners are registered
         let execution_plan = if self.router.has_listeners() {
             let plan = self.router.create_full_execution_plan(&self.buf_output);
             if plan.groups.is_empty() { None } else { Some(plan) }
@@ -381,22 +462,33 @@ impl ProcessingPipeline {
         Ok(ProcessResult {
             changes: output_changes,
             concern_changes,
+            validators_to_run,
             execution_plan,
         })
     }
 
-    /// Mark all BoolLogic expressions affected by a change at the given path.
+    /// Mark all BoolLogic expressions and validators affected by a change at the given path.
     fn mark_affected_logic(&mut self, path: &str) {
         let affected_paths = self.shadow.affected_paths(path);
         for affected_path in &affected_paths {
             let path_id = self.intern.intern(affected_path);
+            // Mark affected BoolLogic
             for logic_id in self.rev_index.affected_by_path(path_id) {
                 self.buf_affected_ids.insert(logic_id);
             }
+            // Mark affected validators
+            for validator_id in self.validator_rev_index.affected_by_path(path_id) {
+                self.buf_affected_validators.insert(validator_id);
+            }
         }
         let path_id = self.intern.intern(path);
+        // Mark affected BoolLogic
         for logic_id in self.rev_index.affected_by_path(path_id) {
             self.buf_affected_ids.insert(logic_id);
+        }
+        // Mark affected validators
+        for validator_id in self.validator_rev_index.affected_by_path(path_id) {
+            self.buf_affected_validators.insert(validator_id);
         }
     }
 

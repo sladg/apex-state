@@ -3,7 +3,7 @@
  *
  * ONLY measures the execution time, NOT setup/initialization.
  *
- * NEW: Single processChanges() call (returns plan, TS executes)
+ * NEW: Single wasm.processChanges() call (returns plan, TS executes)
  * OLD: Multiple WASM roundtrips (process + plan + route per level)
  */
 
@@ -12,19 +12,10 @@ import { beforeAll, beforeEach, bench, describe } from 'vitest'
 
 import { createPathGroups } from '../../src/core/pathGroups'
 import type { StoreInstance } from '../../src/core/types'
-import { processChanges } from '../../src/pipeline/processChanges'
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'
 import type { Change } from '../../src/wasm/bridge'
-import {
-  createDispatchPlan,
-  initWasm,
-  processChanges as wasmProcessChanges,
-  registerListenersBatch,
-  resetWasm,
-  routeProducedChanges,
-  shadowInit,
-} from '../../src/wasm/bridge'
+import { initWasm, resetWasm } from '../../src/wasm/bridge'
 
 type BenchState = Record<string, unknown>
 
@@ -33,11 +24,10 @@ let wasmModule: Record<string, unknown> | null = null
 
 beforeAll(async () => {
   try {
-    wasmModule =
-      (await import('../../rust/pkg-node/apex_state_wasm.js')) as Record<
-        string,
-        unknown
-      >
+    wasmModule = (await import('../../rust/pkg/apex_state_wasm.js')) as Record<
+      string,
+      unknown
+    >
     wasmReady = true
   } catch {
     wasmReady = false
@@ -165,7 +155,7 @@ const setupWasmEnvironment = () => {
   if (!wasmModule) return
   resetWasm()
   initWasm(wasmModule)
-  shadowInit(buildNestedState())
+  wasm.shadowInit(buildNestedState())
 
   const registrations = []
   let listenerId = 0
@@ -182,7 +172,7 @@ const setupWasmEnvironment = () => {
     }
   }
 
-  registerListenersBatch(registrations)
+  wasm.registerListenersBatch(registrations)
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +193,7 @@ describe('Execution Plan: 50 listeners across 15 depth levels', () => {
     () => {
       // ONLY measure this call - setup already done
       // Trigger 10 root listeners at level 0
-      processChanges(store, [['level0_item0.value', 100, {}]])
+      wasm.processChanges(store, [['level0_item0.value', 100, {}]])
     },
     {
       skip: !wasmReady,
@@ -220,12 +210,12 @@ describe('Execution Plan: 50 listeners across 15 depth levels', () => {
       const handlers = makeListenerHandlers()
 
       // WASM call 1: process
-      const result = wasmProcessChanges([
+      const result = wasm.processChanges([
         { path: 'level0_item0.value', value: 100 },
       ])
 
       // WASM call 2: create plan
-      const plan = createDispatchPlan(result.changes)
+      const plan = wasm.createDispatchPlan(result.changes)
 
       // WASM calls 3+: route per level (up to 15 calls)
       for (const level of plan.levels) {
@@ -240,7 +230,7 @@ describe('Execution Plan: 50 listeners across 15 depth levels', () => {
           }
         }
         if (producedChanges.length > 0) {
-          routeProducedChanges(level.depth, producedChanges)
+          wasm.routeProducedChanges(level.depth, producedChanges)
         }
       }
     },
@@ -291,7 +281,7 @@ describe('Scaling: More depth = more OLD overhead', () => {
     if (!wasmModule) return
     resetWasm()
     initWasm(wasmModule)
-    shadowInit(makeDeepState(levels))
+    wasm.shadowInit(makeDeepState(levels))
 
     const registrations = []
     for (let lvl = 0; lvl < levels; lvl++) {
@@ -303,7 +293,7 @@ describe('Scaling: More depth = more OLD overhead', () => {
         })
       }
     }
-    registerListenersBatch(registrations)
+    wasm.registerListenersBatch(registrations)
   }
 
   const testDepth = (levels: number) => {
@@ -312,7 +302,7 @@ describe('Scaling: More depth = more OLD overhead', () => {
     bench(
       `NEW: ${levels} levels (1 call)`,
       () => {
-        processChanges(store, [['level0_item0.value', 999, {}]])
+        wasm.processChanges(store, [['level0_item0.value', 999, {}]])
       },
       {
         skip: !wasmReady,
@@ -330,10 +320,10 @@ describe('Scaling: More depth = more OLD overhead', () => {
       () => {
         const handlers = makeDeepHandlers(levels)
 
-        const result = wasmProcessChanges([
+        const result = wasm.processChanges([
           { path: 'level0_item0.value', value: 999 },
         ])
-        const plan = createDispatchPlan(result.changes)
+        const plan = wasm.createDispatchPlan(result.changes)
 
         for (const level of plan.levels) {
           const producedChanges: Change[] = []
@@ -347,7 +337,7 @@ describe('Scaling: More depth = more OLD overhead', () => {
             }
           }
           if (producedChanges.length > 0) {
-            routeProducedChanges(level.depth, producedChanges)
+            wasm.routeProducedChanges(level.depth, producedChanges)
           }
         }
       },

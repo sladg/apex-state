@@ -19,16 +19,10 @@ import type {
   ListenerRegistration,
   StoreInstance,
 } from '../../src/core/types'
-import { processChanges } from '../../src/pipeline/processChanges'
 import type { ArrayOfChanges, GenericMeta } from '../../src/types'
 import { getPathDepth } from '../../src/utils/pathUtils'
 import { createTiming } from '../../src/utils/timing'
-import {
-  initWasm,
-  registerListenersBatch,
-  resetWasm,
-  shadowInit,
-} from '../../src/wasm/bridge'
+import { initWasm, resetWasm } from '../../src/wasm/bridge'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -216,11 +210,10 @@ let wasmModule: Record<string, unknown> | null = null
 
 beforeAll(async () => {
   try {
-    wasmModule =
-      (await import('../../rust/pkg-node/apex_state_wasm.js')) as Record<
-        string,
-        unknown
-      >
+    wasmModule = (await import('../../rust/pkg/apex_state_wasm.js')) as Record<
+      string,
+      unknown
+    >
   } catch {
     // WASM not available
   }
@@ -239,7 +232,7 @@ describe('Real-World: 15 Orders Currency Change (~256 changes)', () => {
       'processChanges',
       () => {
         resetStoreState(jsStore)
-        processChanges(jsStore, triggerChanges())
+        wasm.processChanges(jsStore, triggerChanges())
       },
       {
         setup: () => {
@@ -271,17 +264,17 @@ describe('Real-World: 15 Orders Currency Change (~256 changes)', () => {
         for (const [a, b] of syncPairs) addEdge(syncGraph, a, b)
         for (const [a, b] of flipPairs) addEdge(flipGraph, a, b)
 
-        registerListenersBatch(
+        wasm.registerListenersBatch(
           Array.from({ length: ORDER_COUNT }, (_, i) => ({
             subscriber_id: i,
             topic_path: `orders.order_${i}`,
             scope_path: `orders.order_${i}`,
           })),
         )
-        shadowInit(buildInitialState())
+        wasm.shadowInit(buildInitialState())
 
         const store = makeStoreShell(syncGraph, flipGraph)
-        processChanges(store, triggerChanges())
+        wasm.processChanges(store, triggerChanges())
       },
       { skip: !wasmModule },
     )
@@ -295,9 +288,9 @@ describe('Real-World: 15 Orders Currency Change (~256 changes)', () => {
       'processChanges',
       () => {
         // Only reset state — graphs, listeners, sync, flip stay registered
-        shadowInit(buildInitialState())
+        wasm.shadowInit(buildInitialState())
         resetStoreState(wasmStore)
-        processChanges(wasmStore, triggerChanges())
+        wasm.processChanges(wasmStore, triggerChanges())
       },
       {
         skip: !wasmModule,
@@ -311,14 +304,14 @@ describe('Real-World: 15 Orders Currency Change (~256 changes)', () => {
           for (const [a, b] of syncPairs) addEdge(syncGraph, a, b)
           for (const [a, b] of flipPairs) addEdge(flipGraph, a, b)
 
-          registerListenersBatch(
+          wasm.registerListenersBatch(
             Array.from({ length: ORDER_COUNT }, (_, i) => ({
               subscriber_id: i,
               topic_path: `orders.order_${i}`,
               scope_path: `orders.order_${i}`,
             })),
           )
-          shadowInit(buildInitialState())
+          wasm.shadowInit(buildInitialState())
           wasmStore = makeStoreShell(syncGraph, flipGraph)
         },
       },

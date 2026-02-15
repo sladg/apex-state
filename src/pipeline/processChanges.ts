@@ -13,10 +13,7 @@ import type { StoreInstance } from '../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
 import type { Change, FullExecutionPlan } from '../wasm/bridge'
-import {
-  isWasmLoaded,
-  processChanges as wasmProcessChanges,
-} from '../wasm/bridge'
+import { isWasmLoaded, wasm } from '../wasm/bridge'
 import { applyBatch } from './applyBatch'
 import {
   processAggregationWrites,
@@ -184,7 +181,7 @@ const processChangesWASM = <
     changes: stateChanges,
     concern_changes: concernChanges,
     execution_plan: executionPlan,
-  } = wasmProcessChanges(bridgeChanges)
+  } = wasm.processChanges(bridgeChanges)
 
   // Apply BoolLogic results to _concerns proxy
   for (const change of concernChanges) {
