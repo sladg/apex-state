@@ -4,7 +4,9 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 
 ## Pending Items
 
-(None tracked yet. As work progresses, issues will be added here with location references.)
+- **[JS/WASM boundary]** Store integration with WASM `processChanges` — callers (`_useFieldValue`, `useJitStore`) need to apply BoolLogic results from `processChanges()` output back to `_concerns` proxy. `src/concerns/registration.ts:68`
+- **[JS]** Old WASM test files (`tests/wasm/interning.test.ts`, `tests/wasm/bool_logic.test.ts`, `tests/wasm/shadow.test.ts`, `tests/wasm/interning.bench.ts`) use the old bridge API and have TS errors. Remove or rewrite.
+- **[JS]** JS BoolLogic evaluator (`src/utils/boolLogic.ts`) is redundant now that WASM handles evaluation. Can be removed after full integration.
 
 ---
 

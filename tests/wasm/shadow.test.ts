@@ -1500,7 +1500,10 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
       await initShadowState(state)
 
       expect(
-        await evaluateBoolLogic({ EXISTS: 'user.profile.personal.name' }, state),
+        await evaluateBoolLogic(
+          { EXISTS: 'user.profile.personal.name' },
+          state,
+        ),
       ).toBe(true)
 
       expect(
@@ -1511,7 +1514,10 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
       ).toBe(true)
 
       expect(
-        await evaluateBoolLogic({ EXISTS: 'user.profile.personal.email' }, state),
+        await evaluateBoolLogic(
+          { EXISTS: 'user.profile.personal.email' },
+          state,
+        ),
       ).toBe(false)
 
       expect(
@@ -1552,9 +1558,9 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
         await evaluateBoolLogic({ IS_EMPTY: 'product.info.title' }, state),
       ).toBe(false)
 
-      expect(
-        await evaluateBoolLogic({ IS_EMPTY: 'product.tags' }, state),
-      ).toBe(true)
+      expect(await evaluateBoolLogic({ IS_EMPTY: 'product.tags' }, state)).toBe(
+        true,
+      )
     })
 
     it('should evaluate AND operator with nested shadow state', async () => {
@@ -1774,10 +1780,7 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
       await initShadowState(state)
 
       expect(
-        await evaluateBoolLogic(
-          { IS_EQUAL: ['users.0.name', 'Alice'] },
-          state,
-        ),
+        await evaluateBoolLogic({ IS_EQUAL: ['users.0.name', 'Alice'] }, state),
       ).toBe(true)
 
       expect(
@@ -1788,13 +1791,13 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
         await evaluateBoolLogic({ IS_EQUAL: ['users.1.name', 'Bob'] }, state),
       ).toBe(true)
 
-      expect(
-        await evaluateBoolLogic({ EXISTS: 'users.0.name' }, state),
-      ).toBe(true)
+      expect(await evaluateBoolLogic({ EXISTS: 'users.0.name' }, state)).toBe(
+        true,
+      )
 
-      expect(
-        await evaluateBoolLogic({ EXISTS: 'users.2.name' }, state),
-      ).toBe(false)
+      expect(await evaluateBoolLogic({ EXISTS: 'users.2.name' }, state)).toBe(
+        false,
+      )
     })
 
     it('should evaluate BoolLogic after shadow state updates', async () => {
@@ -1955,10 +1958,7 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
       await initShadowState(state)
 
       expect(
-        await evaluateBoolLogic(
-          { IS_EMPTY: 'values.emptyString' },
-          state,
-        ),
+        await evaluateBoolLogic({ IS_EMPTY: 'values.emptyString' }, state),
       ).toBe(true)
 
       expect(
@@ -1977,17 +1977,17 @@ describe('WASM Shadow State - JS/WASM Boundary', () => {
         await evaluateBoolLogic({ EXISTS: 'values.emptyString' }, state),
       ).toBe(true)
 
-      expect(
-        await evaluateBoolLogic({ EXISTS: 'values.zero' }, state),
-      ).toBe(true)
+      expect(await evaluateBoolLogic({ EXISTS: 'values.zero' }, state)).toBe(
+        true,
+      )
 
-      expect(
-        await evaluateBoolLogic({ EXISTS: 'values.false' }, state),
-      ).toBe(true)
+      expect(await evaluateBoolLogic({ EXISTS: 'values.false' }, state)).toBe(
+        true,
+      )
 
-      expect(
-        await evaluateBoolLogic({ EXISTS: 'values.null' }, state),
-      ).toBe(false)
+      expect(await evaluateBoolLogic({ EXISTS: 'values.null' }, state)).toBe(
+        false,
+      )
     })
   })
 })

@@ -3,8 +3,19 @@ import { effect } from 'valtio-reactive'
 import type { StoreInstance } from '../core/types'
 import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
+import {
+  isWasmLoaded,
+  registerBoolLogic,
+  unregisterBoolLogic,
+} from '../wasm/bridge'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
+
+/** Check if a concern config has a `condition` field (BoolLogic concern). */
+const isBoolLogicConfig = (
+  config: Record<string, unknown>,
+): config is { condition: unknown } =>
+  'condition' in config && config['condition'] != null
 
 const registerConcernEffectsImpl = <
   DATA extends object,
@@ -46,6 +57,21 @@ const registerConcernEffectsImpl = <
         return
       }
 
+      // --- WASM path: BoolLogic concerns ---
+      // If WASM is loaded and the config has a `condition` field,
+      // register via WASM instead of wrapping in effect().
+      // Evaluation happens in processChanges(), not here.
+      if (isWasmLoaded() && isBoolLogicConfig(config)) {
+        const outputPath = `_concerns.${path}.${concernName}`
+        const logicId = registerBoolLogic(outputPath, config.condition)
+
+        disposeCallbacks.push(() => {
+          unregisterBoolLogic(logicId)
+        })
+        return
+      }
+
+      // --- JS path: Custom concerns (effect-based) ---
       const cacheKey = `${path}.${concernName}`
 
       // Wrap evaluation in effect() for automatic dependency tracking
@@ -86,7 +112,7 @@ const registerConcernEffectsImpl = <
 
   // Return cleanup function that disposes all effects on unmount
   return () => {
-    // Stop all effects (removes tracking subscriptions)
+    // Stop all effects and unregister WASM BoolLogic
     disposeCallbacks.forEach((dispose) => dispose())
 
     // Clear caches

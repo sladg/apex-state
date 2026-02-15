@@ -1,71 +1,177 @@
-//! Boolean logic DSL for conditional expressions
+//! Boolean logic DSL for conditional expressions with reverse dependency tracking
 //!
-//! This module provides a BoolLogic enum that can deserialize JavaScript boolean
-//! logic expressions directly using serde tuple variants, enabling high-performance
-//! WASM-based reactive condition checking.
+//! This module provides:
+//! - `BoolLogicNode`: An enum that deserializes JS boolean logic expressions directly
+//!   using serde tuple variants, enabling high-performance WASM-based condition checking.
+//! - `BoolLogicRegistry`: Stores registered BoolLogic expressions with metadata.
+//! - `ReverseDependencyIndex`: Maps input path IDs to logic IDs for efficient
+//!   invalidation when state changes.
 //!
 //! The enum uses externally tagged representation (serde default) which matches
 //! the JavaScript format: `{ "OPERATOR": [args] }` without requiring transformation.
-//!
-//! # Example
-//!
-//! ```rust
-//! use apex_state_wasm::bool_logic::BoolLogic;
-//! use serde_json::json;
-//!
-//! // Simple equality check
-//! let logic: BoolLogic = serde_json::from_value(json!({
-//!     "IS_EQUAL": ["user.role", "admin"]
-//! })).unwrap();
-//!
-//! // Combined conditions
-//! let complex_logic: BoolLogic = serde_json::from_value(json!({
-//!     "AND": [
-//!         { "IS_EQUAL": ["user.role", "editor"] },
-//!         { "EXISTS": "document.id" }
-//!     ]
-//! })).unwrap();
-//! ```
 
-use crate::shadow::{get_value, ValueRepr};
+use crate::intern::InternTable;
+use crate::shadow::{ShadowState, ValueRepr};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 
-/// Resolve a dot-notation path in a ValueRepr tree
+// ---------------------------------------------------------------------------
+// BoolLogicNode
+// ---------------------------------------------------------------------------
+
+/// Boolean logic DSL for conditional expressions.
 ///
-/// Returns the value at the specified path, or None if the path doesn't exist.
-///
-/// # Examples
-///
-/// ```
-/// use apex_state_wasm::bool_logic::get_path_value;
-/// use apex_state_wasm::shadow::ValueRepr;
-/// use std::collections::HashMap;
-///
-/// let mut user = HashMap::new();
-/// user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-/// let mut root = HashMap::new();
-/// root.insert("user".to_string(), ValueRepr::Object(user));
-/// let state = ValueRepr::Object(root);
-///
-/// let value = get_path_value(&state, "user.role");
-/// assert!(matches!(value, Some(&ValueRepr::String(_))));
-/// ```
-pub fn get_path_value<'a>(state: &'a ValueRepr, path: &str) -> Option<&'a ValueRepr> {
-    let parts: Vec<&str> = path.split('.').collect();
-    get_value(state, &parts)
+/// Supports declarative condition checking against state paths.
+/// Uses externally tagged serde representation to match JS format directly:
+/// `{ "OPERATOR": [args] }`.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub(crate) enum BoolLogicNode {
+    IsEqual(String, Value),
+    Exists(String),
+    IsEmpty(String),
+    And(Vec<BoolLogicNode>),
+    Or(Vec<BoolLogicNode>),
+    Not(Box<BoolLogicNode>),
+    Gt(String, f64),
+    Lt(String, f64),
+    Gte(String, f64),
+    Lte(String, f64),
+    In(String, Vec<Value>),
 }
 
-/// Check if a ValueRepr is considered "empty"
+/// Backward-compatible alias.
+pub(crate) type BoolLogic = BoolLogicNode;
+
+impl BoolLogicNode {
+    /// Evaluate this expression against a ShadowState.
+    ///
+    /// Returns `true` if the condition is satisfied.
+    pub(crate) fn evaluate(&self, shadow: &ShadowState) -> bool {
+        self.evaluate_value(shadow.root())
+    }
+
+    /// Evaluate this expression against a raw ValueRepr tree.
+    ///
+    /// Used internally and for testing without a full ShadowState.
+    pub(crate) fn evaluate_value(&self, state: &ValueRepr) -> bool {
+        match self {
+            BoolLogicNode::IsEqual(path, expected) => match get_path_value(state, path) {
+                Some(value) => value_repr_to_json(value) == *expected,
+                None => expected.is_null(),
+            },
+
+            BoolLogicNode::Exists(path) => match get_path_value(state, path) {
+                Some(value) => !matches!(value, ValueRepr::Null),
+                None => false,
+            },
+
+            BoolLogicNode::IsEmpty(path) => match get_path_value(state, path) {
+                Some(value) => is_empty(value),
+                None => true,
+            },
+
+            BoolLogicNode::And(conditions) => {
+                conditions.iter().all(|c| c.evaluate_value(state))
+            }
+            BoolLogicNode::Or(conditions) => {
+                conditions.iter().any(|c| c.evaluate_value(state))
+            }
+            BoolLogicNode::Not(condition) => !condition.evaluate_value(state),
+
+            BoolLogicNode::Gt(path, threshold) => matches!(
+                get_path_value(state, path),
+                Some(ValueRepr::Number(n)) if n > threshold
+            ),
+            BoolLogicNode::Lt(path, threshold) => matches!(
+                get_path_value(state, path),
+                Some(ValueRepr::Number(n)) if n < threshold
+            ),
+            BoolLogicNode::Gte(path, threshold) => matches!(
+                get_path_value(state, path),
+                Some(ValueRepr::Number(n)) if n >= threshold
+            ),
+            BoolLogicNode::Lte(path, threshold) => matches!(
+                get_path_value(state, path),
+                Some(ValueRepr::Number(n)) if n <= threshold
+            ),
+
+            BoolLogicNode::In(path, allowed) => match get_path_value(state, path) {
+                Some(value) => allowed.contains(&value_repr_to_json(value)),
+                None => false,
+            },
+        }
+    }
+
+    /// Extract all input path strings from the tree recursively.
+    pub(crate) fn extract_paths(&self) -> Vec<String> {
+        let mut paths = Vec::new();
+        self.collect_paths(&mut paths);
+        paths
+    }
+
+    fn collect_paths(&self, out: &mut Vec<String>) {
+        match self {
+            BoolLogicNode::IsEqual(path, _)
+            | BoolLogicNode::Exists(path)
+            | BoolLogicNode::IsEmpty(path)
+            | BoolLogicNode::Gt(path, _)
+            | BoolLogicNode::Lt(path, _)
+            | BoolLogicNode::Gte(path, _)
+            | BoolLogicNode::Lte(path, _) => {
+                out.push(path.clone());
+            }
+            BoolLogicNode::In(path, _) => {
+                out.push(path.clone());
+            }
+            BoolLogicNode::And(children) | BoolLogicNode::Or(children) => {
+                for child in children {
+                    child.collect_paths(out);
+                }
+            }
+            BoolLogicNode::Not(child) => {
+                child.collect_paths(out);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible free function used by lib.rs
+// ---------------------------------------------------------------------------
+
+/// Evaluate a BoolLogicNode against a ValueRepr tree (free-function form).
+pub(crate) fn evaluate(logic: &BoolLogicNode, state: &ValueRepr) -> bool {
+    logic.evaluate_value(state)
+}
+
+// ---------------------------------------------------------------------------
+// Path resolution helpers
+// ---------------------------------------------------------------------------
+
+/// Resolve a dot-notation path in a ValueRepr tree.
+pub(crate) fn get_path_value<'a>(state: &'a ValueRepr, path: &str) -> Option<&'a ValueRepr> {
+    let mut current = state;
+    for seg in path.split('.') {
+        match current {
+            ValueRepr::Object(map) => {
+                current = map.get(seg)?;
+            }
+            ValueRepr::Array(arr) => {
+                let idx: usize = seg.parse().ok()?;
+                current = arr.get(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(current)
+}
+
+/// Check if a ValueRepr is considered "empty".
 ///
-/// Empty values are:
-/// - null
-/// - empty string ("")
-/// - empty array ([])
-/// - empty object ({})
-///
-/// Non-empty values include: non-empty strings, numbers (including 0),
-/// booleans, non-empty arrays/objects
+/// Empty: Null, empty string, empty array, empty object.
+/// Non-empty: everything else (including 0, false).
 fn is_empty(value: &ValueRepr) -> bool {
     match value {
         ValueRepr::Null => true,
@@ -76,19 +182,25 @@ fn is_empty(value: &ValueRepr) -> bool {
     }
 }
 
-/// Convert ValueRepr to serde_json::Value for comparison
+/// Convert ValueRepr to serde_json::Value for comparison.
 ///
-/// This enables comparing values from the shadow state (ValueRepr)
-/// against expected values from JavaScript (serde_json::Value).
+/// For numbers, prefers integer representation when the f64 is a whole number.
+/// This ensures `ValueRepr::Number(25.0)` equals `json!(25)`.
 fn value_repr_to_json(value: &ValueRepr) -> Value {
     match value {
         ValueRepr::Null => Value::Null,
         ValueRepr::Bool(b) => Value::Bool(*b),
         ValueRepr::Number(n) => {
-            // Convert f64 to JSON number
-            serde_json::Number::from_f64(*n)
-                .map(Value::Number)
-                .unwrap_or(Value::Null)
+            let n = *n;
+            // If it's a whole number that fits in i64, use integer representation
+            // so that comparisons with json!(25) work correctly.
+            if n.fract() == 0.0 && n >= (i64::MIN as f64) && n <= (i64::MAX as f64) {
+                Value::Number(serde_json::Number::from(n as i64))
+            } else {
+                serde_json::Number::from_f64(n)
+                    .map(Value::Number)
+                    .unwrap_or(Value::Null)
+            }
         }
         ValueRepr::String(s) => Value::String(s.clone()),
         ValueRepr::Array(arr) => Value::Array(arr.iter().map(value_repr_to_json).collect()),
@@ -102,1441 +214,295 @@ fn value_repr_to_json(value: &ValueRepr) -> Value {
     }
 }
 
-/// Evaluate a BoolLogic expression against a shadow state
-///
-/// Returns `true` if the condition is satisfied, `false` otherwise.
-///
-/// # Examples
-///
-/// ```
-/// use apex_state_wasm::bool_logic::{BoolLogic, evaluate};
-/// use apex_state_wasm::shadow::ValueRepr;
-/// use serde_json::json;
-/// use std::collections::HashMap;
-///
-/// let mut user = HashMap::new();
-/// user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-/// let mut root = HashMap::new();
-/// root.insert("user".to_string(), ValueRepr::Object(user));
-/// let state = ValueRepr::Object(root);
-///
-/// let logic = BoolLogic::IsEqual("user.role".to_string(), json!("admin"));
-/// assert_eq!(evaluate(&logic, &state), true);
-/// ```
-pub fn evaluate(logic: &BoolLogic, state: &ValueRepr) -> bool {
-    match logic {
-        BoolLogic::IsEqual(path, expected) => {
-            // Get value at path and compare to expected
-            match get_path_value(state, path) {
-                Some(value) => {
-                    // Convert ValueRepr to JSON for comparison
-                    let value_json = value_repr_to_json(value);
-                    &value_json == expected
-                }
-                None => expected.is_null(), // Missing path equals null
-            }
+// ---------------------------------------------------------------------------
+// BoolLogicRegistry
+// ---------------------------------------------------------------------------
+
+/// Metadata stored per registered BoolLogic expression.
+pub(crate) struct BoolLogicMetadata {
+    pub output_path: String,
+    pub tree: BoolLogicNode,
+}
+
+/// Registry of BoolLogic expressions keyed by sequential u32 IDs.
+pub(crate) struct BoolLogicRegistry {
+    logics: HashMap<u32, BoolLogicMetadata>,
+    next_id: u32,
+}
+
+impl BoolLogicRegistry {
+    pub(crate) fn new() -> Self {
+        Self {
+            logics: HashMap::new(),
+            next_id: 0,
         }
-        BoolLogic::Exists(path) => {
-            // Check if path exists and is not null
-            match get_path_value(state, path) {
-                Some(value) => !matches!(value, ValueRepr::Null),
-                None => false,
-            }
+    }
+
+    /// Register a new BoolLogic expression.
+    ///
+    /// Also updates the reverse dependency index with the extracted input paths.
+    /// Returns the assigned logic_id.
+    pub(crate) fn register(
+        &mut self,
+        output_path: String,
+        tree: BoolLogicNode,
+        intern: &mut InternTable,
+        rev_index: &mut ReverseDependencyIndex,
+    ) -> u32 {
+        let logic_id = self.next_id;
+        self.next_id += 1;
+
+        // Extract input paths and intern them for the reverse index
+        let input_paths = tree.extract_paths();
+        let mut interned_ids = HashSet::with_capacity(input_paths.len());
+        for path in &input_paths {
+            let path_id = intern.intern(path);
+            interned_ids.insert(path_id);
         }
-        BoolLogic::IsEmpty(path) => {
-            // Check if path value is empty (null, "", [], {})
-            match get_path_value(state, path) {
-                Some(value) => is_empty(value),
-                None => true, // Missing path is considered empty
-            }
+
+        // Update reverse index
+        rev_index.add(logic_id, &interned_ids);
+
+        // Store metadata
+        self.logics
+            .insert(logic_id, BoolLogicMetadata { output_path, tree });
+
+        logic_id
+    }
+
+    /// Unregister a BoolLogic expression and clean up reverse index entries.
+    pub(crate) fn unregister(&mut self, logic_id: u32, rev_index: &mut ReverseDependencyIndex) {
+        if self.logics.remove(&logic_id).is_some() {
+            rev_index.remove(logic_id);
         }
-        BoolLogic::And(conditions) => {
-            // All conditions must be true (short-circuit on first false)
-            conditions
-                .iter()
-                .all(|condition| evaluate(condition, state))
-        }
-        BoolLogic::Or(conditions) => {
-            // At least one condition must be true (short-circuit on first true)
-            conditions
-                .iter()
-                .any(|condition| evaluate(condition, state))
-        }
-        BoolLogic::Not(condition) => {
-            // Negate the inner condition
-            !evaluate(condition, state)
-        }
-        BoolLogic::Gt(path, threshold) => {
-            // Check if numeric value > threshold
-            match get_path_value(state, path) {
-                Some(ValueRepr::Number(n)) => n > threshold,
-                _ => false,
-            }
-        }
-        BoolLogic::Lt(path, threshold) => {
-            // Check if numeric value < threshold
-            match get_path_value(state, path) {
-                Some(ValueRepr::Number(n)) => n < threshold,
-                _ => false,
-            }
-        }
-        BoolLogic::Gte(path, threshold) => {
-            // Check if numeric value >= threshold
-            match get_path_value(state, path) {
-                Some(ValueRepr::Number(n)) => n >= threshold,
-                _ => false,
-            }
-        }
-        BoolLogic::Lte(path, threshold) => {
-            // Check if numeric value <= threshold
-            match get_path_value(state, path) {
-                Some(ValueRepr::Number(n)) => n <= threshold,
-                _ => false,
-            }
-        }
-        BoolLogic::In(path, allowed) => {
-            // Check if value is in the list of allowed values
-            match get_path_value(state, path) {
-                Some(value) => {
-                    // Convert ValueRepr to JSON for comparison
-                    let value_json = value_repr_to_json(value);
-                    allowed.contains(&value_json)
-                }
-                None => false,
-            }
-        }
+    }
+
+    /// Get metadata for a given logic_id.
+    pub(crate) fn get(&self, logic_id: u32) -> Option<&BoolLogicMetadata> {
+        self.logics.get(&logic_id)
+    }
+
+    /// Number of registered expressions.
+    #[allow(dead_code)]
+    pub(crate) fn len(&self) -> usize {
+        self.logics.len()
     }
 }
 
-/// Boolean logic DSL for conditional expressions
-///
-/// Supports declarative condition checking against state paths.
-/// This enum uses externally tagged representation to match the JavaScript
-/// format exactly: `{ "OPERATOR": [args] }`.
-///
-/// # Supported Operators
-///
-/// **Equality & Existence:**
-/// - `IS_EQUAL`: Compare path value to expected value
-/// - `EXISTS`: Check if path value is not null/undefined
-/// - `IS_EMPTY`: Check if value is empty (null, "", [], {})
-///
-/// **Boolean Combinators:**
-/// - `AND`: All conditions must be true
-/// - `OR`: At least one condition must be true
-/// - `NOT`: Negate a condition
-///
-/// **Numeric Comparisons:**
-/// - `GT`: Greater than
-/// - `LT`: Less than
-/// - `GTE`: Greater than or equal
-/// - `LTE`: Less than or equal
-///
-/// **Inclusion:**
-/// - `IN`: Check if value is in a list
-///
-/// # Serialization Format
-///
-/// The enum uses `#[serde(rename_all = "SCREAMING_SNAKE_CASE")]` to match
-/// the JavaScript operator names (IS_EQUAL, EXISTS, AND, etc.).
-///
-/// Externally tagged format (serde default):
-/// - `{ "IS_EQUAL": ["path", value] }` - tuple variant
-/// - `{ "EXISTS": "path" }` - newtype variant
-/// - `{ "AND": [...] }` - newtype variant with array
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum BoolLogic {
-    /// Compare path value to expected value
-    ///
-    /// Format: `{ "IS_EQUAL": ["path.to.value", expectedValue] }`
-    ///
-    /// Returns `true` if the value at the path equals the expected value.
-    /// Supports string, number, boolean, and null comparisons.
-    ///
-    /// # Example
-    /// ```json
-    /// { "IS_EQUAL": ["user.role", "admin"] }
-    /// ```
-    IsEqual(String, serde_json::Value),
+// ---------------------------------------------------------------------------
+// ReverseDependencyIndex
+// ---------------------------------------------------------------------------
 
-    /// Check if path value exists (not null/undefined)
-    ///
-    /// Format: `{ "EXISTS": "path.to.value" }`
-    ///
-    /// Returns `true` if the value at the path is not null or undefined.
-    ///
-    /// # Example
-    /// ```json
-    /// { "EXISTS": "user.email" }
-    /// ```
-    Exists(String),
-
-    /// Check if path value is empty
-    ///
-    /// Format: `{ "IS_EMPTY": "path.to.value" }`
-    ///
-    /// Returns `true` if the value is null, "", [], or {}.
-    /// Missing paths are considered empty.
-    ///
-    /// # Example
-    /// ```json
-    /// { "IS_EMPTY": "user.tags" }
-    /// ```
-    IsEmpty(String),
-
-    /// Boolean AND combinator
-    ///
-    /// Format: `{ "AND": [condition1, condition2, ...] }`
-    ///
-    /// Returns `true` if all nested conditions evaluate to `true`.
-    /// Short-circuits on first `false` value.
-    ///
-    /// # Example
-    /// ```json
-    /// {
-    ///   "AND": [
-    ///     { "IS_EQUAL": ["user.role", "admin"] },
-    ///     { "EXISTS": "user.email" }
-    ///   ]
-    /// }
-    /// ```
-    And(Vec<BoolLogic>),
-
-    /// Boolean OR combinator
-    ///
-    /// Format: `{ "OR": [condition1, condition2, ...] }`
-    ///
-    /// Returns `true` if at least one nested condition evaluates to `true`.
-    /// Short-circuits on first `true` value.
-    ///
-    /// # Example
-    /// ```json
-    /// {
-    ///   "OR": [
-    ///     { "IS_EQUAL": ["user.role", "admin"] },
-    ///     { "IS_EQUAL": ["user.role", "editor"] }
-    ///   ]
-    /// }
-    /// ```
-    Or(Vec<BoolLogic>),
-
-    /// Boolean NOT combinator
-    ///
-    /// Format: `{ "NOT": condition }`
-    ///
-    /// Returns the negation of the nested condition.
-    ///
-    /// # Example
-    /// ```json
-    /// { "NOT": { "IS_EQUAL": ["user.role", "guest"] } }
-    /// ```
-    Not(Box<BoolLogic>),
-
-    /// Greater than comparison
-    ///
-    /// Format: `{ "GT": ["path.to.number", threshold] }`
-    ///
-    /// Returns `true` if the numeric value is greater than the threshold.
-    /// Non-numeric values return `false`.
-    ///
-    /// # Example
-    /// ```json
-    /// { "GT": ["user.age", 18] }
-    /// ```
-    Gt(String, f64),
-
-    /// Less than comparison
-    ///
-    /// Format: `{ "LT": ["path.to.number", threshold] }`
-    ///
-    /// Returns `true` if the numeric value is less than the threshold.
-    /// Non-numeric values return `false`.
-    ///
-    /// # Example
-    /// ```json
-    /// { "LT": ["user.age", 65] }
-    /// ```
-    Lt(String, f64),
-
-    /// Greater than or equal comparison
-    ///
-    /// Format: `{ "GTE": ["path.to.number", threshold] }`
-    ///
-    /// Returns `true` if the numeric value is >= the threshold.
-    /// Non-numeric values return `false`.
-    ///
-    /// # Example
-    /// ```json
-    /// { "GTE": ["user.score", 100] }
-    /// ```
-    Gte(String, f64),
-
-    /// Less than or equal comparison
-    ///
-    /// Format: `{ "LTE": ["path.to.number", threshold] }`
-    ///
-    /// Returns `true` if the numeric value is <= the threshold.
-    /// Non-numeric values return `false`.
-    ///
-    /// # Example
-    /// ```json
-    /// { "LTE": ["user.score", 999] }
-    /// ```
-    Lte(String, f64),
-
-    /// Inclusion check
-    ///
-    /// Format: `{ "IN": ["path.to.value", [allowed, values]] }`
-    ///
-    /// Returns `true` if the value at the path is in the list of allowed values.
-    /// Missing paths return `false`.
-    ///
-    /// # Example
-    /// ```json
-    /// { "IN": ["user.role", ["admin", "editor", "moderator"]] }
-    /// ```
-    In(String, Vec<serde_json::Value>),
+/// Maps interned path IDs to the set of logic IDs that depend on them,
+/// enabling O(1) average-case lookup of affected expressions when a path changes.
+pub(crate) struct ReverseDependencyIndex {
+    /// path_id -> set of logic_ids
+    path_to_logic: HashMap<u32, HashSet<u32>>,
+    /// logic_id -> set of path_ids (for cleanup)
+    logic_to_paths: HashMap<u32, HashSet<u32>>,
 }
+
+impl ReverseDependencyIndex {
+    pub(crate) fn new() -> Self {
+        Self {
+            path_to_logic: HashMap::new(),
+            logic_to_paths: HashMap::new(),
+        }
+    }
+
+    /// Add a logic_id with its set of interned input path IDs.
+    fn add(&mut self, logic_id: u32, path_ids: &HashSet<u32>) {
+        for &path_id in path_ids {
+            self.path_to_logic
+                .entry(path_id)
+                .or_default()
+                .insert(logic_id);
+        }
+        self.logic_to_paths.insert(logic_id, path_ids.clone());
+    }
+
+    /// Remove a logic_id and all its reverse index entries.
+    fn remove(&mut self, logic_id: u32) {
+        if let Some(path_ids) = self.logic_to_paths.remove(&logic_id) {
+            for path_id in path_ids {
+                if let Some(set) = self.path_to_logic.get_mut(&path_id) {
+                    set.remove(&logic_id);
+                    if set.is_empty() {
+                        self.path_to_logic.remove(&path_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Return logic IDs affected by a given interned path ID.
+    pub(crate) fn affected_by_path(&self, path_id: u32) -> Vec<u32> {
+        self.path_to_logic
+            .get(&path_id)
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Number of tracked path entries.
+    #[allow(dead_code)]
+    pub(crate) fn path_count(&self) -> usize {
+        self.path_to_logic.len()
+    }
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::HashMap;
+
+    // -----------------------------------------------------------------------
+    // Helper: build a simple shadow state for testing
+    // -----------------------------------------------------------------------
+
+    fn make_state() -> ValueRepr {
+        let mut user = HashMap::new();
+        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
+        user.insert("age".to_string(), ValueRepr::Number(25.0));
+        user.insert("active".to_string(), ValueRepr::Bool(true));
+        user.insert(
+            "email".to_string(),
+            ValueRepr::String("alice@example.com".to_string()),
+        );
+        user.insert("score".to_string(), ValueRepr::Number(150.0));
+        user.insert(
+            "tags".to_string(),
+            ValueRepr::Array(vec![ValueRepr::String("premium".to_string())]),
+        );
+        user.insert("bio".to_string(), ValueRepr::String("".to_string()));
+        user.insert("deleted".to_string(), ValueRepr::Null);
+
+        let mut profile = HashMap::new();
+        profile.insert("verified".to_string(), ValueRepr::Bool(true));
+        profile.insert("name".to_string(), ValueRepr::String("Alice".to_string()));
+        user.insert("profile".to_string(), ValueRepr::Object(profile));
+
+        let mut document = HashMap::new();
+        document.insert("id".to_string(), ValueRepr::String("doc-456".to_string()));
+        document.insert(
+            "status".to_string(),
+            ValueRepr::String("draft".to_string()),
+        );
+
+        let mut root = HashMap::new();
+        root.insert("user".to_string(), ValueRepr::Object(user));
+        root.insert("document".to_string(), ValueRepr::Object(document));
+        ValueRepr::Object(root)
+    }
+
+    // -----------------------------------------------------------------------
+    // Serde deserialization tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn test_deserialize_is_equal_string() {
-        let json = json!({
-            "IS_EQUAL": ["user.role", "admin"]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
+        let json = json!({"IS_EQUAL": ["user.role", "admin"]});
+        let logic: BoolLogicNode = serde_json::from_value(json).unwrap();
         assert_eq!(
             logic,
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin"))
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin"))
         );
     }
 
     #[test]
     fn test_deserialize_is_equal_number() {
-        let json = json!({
-            "IS_EQUAL": ["user.age", 25]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(logic, BoolLogic::IsEqual("user.age".to_string(), json!(25)));
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"IS_EQUAL": ["user.age", 25]})).unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::IsEqual("user.age".into(), json!(25))
+        );
     }
 
     #[test]
     fn test_deserialize_is_equal_boolean() {
-        let json = json!({
-            "IS_EQUAL": ["user.active", true]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"IS_EQUAL": ["user.active", true]})).unwrap();
         assert_eq!(
             logic,
-            BoolLogic::IsEqual("user.active".to_string(), json!(true))
+            BoolLogicNode::IsEqual("user.active".into(), json!(true))
         );
     }
 
     #[test]
     fn test_deserialize_is_equal_null() {
-        let json = json!({
-            "IS_EQUAL": ["user.deleted", null]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"IS_EQUAL": ["user.deleted", null]})).unwrap();
         assert_eq!(
             logic,
-            BoolLogic::IsEqual("user.deleted".to_string(), json!(null))
+            BoolLogicNode::IsEqual("user.deleted".into(), json!(null))
         );
     }
 
     #[test]
     fn test_deserialize_exists() {
-        let json = json!({
-            "EXISTS": "user.email"
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(logic, BoolLogic::Exists("user.email".to_string()));
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"EXISTS": "user.email"})).unwrap();
+        assert_eq!(logic, BoolLogicNode::Exists("user.email".into()));
     }
 
     #[test]
-    fn test_deserialize_and_simple() {
-        let json = json!({
-            "AND": [
-                { "EXISTS": "user.email" },
-                { "IS_EQUAL": ["user.role", "admin"] }
-            ]
-        });
+    fn test_deserialize_is_empty() {
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"IS_EMPTY": "user.tags"})).unwrap();
+        assert_eq!(logic, BoolLogicNode::IsEmpty("user.tags".into()));
+    }
 
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
+    #[test]
+    fn test_deserialize_and() {
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "AND": [
+                {"EXISTS": "user.email"},
+                {"IS_EQUAL": ["user.role", "admin"]}
+            ]
+        }))
+        .unwrap();
         assert_eq!(
             logic,
-            BoolLogic::And(vec![
-                BoolLogic::Exists("user.email".to_string()),
-                BoolLogic::IsEqual("user.role".to_string(), json!("admin"))
+            BoolLogicNode::And(vec![
+                BoolLogicNode::Exists("user.email".into()),
+                BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
             ])
         );
     }
-
-    #[test]
-    fn test_deserialize_and_nested() {
-        let json = json!({
-            "AND": [
-                { "EXISTS": "user.id" },
-                {
-                    "AND": [
-                        { "IS_EQUAL": ["user.role", "admin"] },
-                        { "IS_EQUAL": ["user.active", true] }
-                    ]
-                }
-            ]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(
-            logic,
-            BoolLogic::And(vec![
-                BoolLogic::Exists("user.id".to_string()),
-                BoolLogic::And(vec![
-                    BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-                    BoolLogic::IsEqual("user.active".to_string(), json!(true))
-                ])
-            ])
-        );
-    }
-
-    #[test]
-    fn test_serialize_is_equal() {
-        let logic = BoolLogic::IsEqual("user.role".to_string(), json!("admin"));
-        let json = serde_json::to_value(&logic).unwrap();
-
-        assert_eq!(
-            json,
-            json!({
-                "IS_EQUAL": ["user.role", "admin"]
-            })
-        );
-    }
-
-    #[test]
-    fn test_serialize_exists() {
-        let logic = BoolLogic::Exists("user.email".to_string());
-        let json = serde_json::to_value(&logic).unwrap();
-
-        assert_eq!(
-            json,
-            json!({
-                "EXISTS": "user.email"
-            })
-        );
-    }
-
-    #[test]
-    fn test_serialize_and() {
-        let logic = BoolLogic::And(vec![
-            BoolLogic::Exists("user.email".to_string()),
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-        ]);
-        let json = serde_json::to_value(&logic).unwrap();
-
-        assert_eq!(
-            json,
-            json!({
-                "AND": [
-                    { "EXISTS": "user.email" },
-                    { "IS_EQUAL": ["user.role", "admin"] }
-                ]
-            })
-        );
-    }
-
-    #[test]
-    fn test_roundtrip_complex() {
-        let original = json!({
-            "AND": [
-                { "IS_EQUAL": ["user.role", "admin"] },
-                { "EXISTS": "user.email" },
-                {
-                    "AND": [
-                        { "IS_EQUAL": ["user.active", true] },
-                        { "IS_EQUAL": ["user.verified", true] }
-                    ]
-                }
-            ]
-        });
-
-        // Deserialize
-        let logic: BoolLogic = serde_json::from_value(original.clone()).unwrap();
-
-        // Serialize back
-        let serialized = serde_json::to_value(&logic).unwrap();
-
-        // Should match original
-        assert_eq!(serialized, original);
-    }
-
-    #[test]
-    fn test_invalid_format_returns_error() {
-        let json = json!({
-            "INVALID_OPERATOR": ["path", "value"]
-        });
-
-        let result: Result<BoolLogic, _> = serde_json::from_value(json);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_is_equal_wrong_number_of_args_returns_error() {
-        let json = json!({
-            "IS_EQUAL": ["only_one_arg"]
-        });
-
-        let result: Result<BoolLogic, _> = serde_json::from_value(json);
-        assert!(result.is_err());
-    }
-
-    // === Path Resolution Tests ===
-
-    #[test]
-    fn test_get_path_value_simple() {
-        use std::collections::HashMap;
-        let mut root = HashMap::new();
-        root.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let state = ValueRepr::Object(root);
-        let value = super::get_path_value(&state, "role");
-        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "admin"));
-    }
-
-    #[test]
-    fn test_get_path_value_nested() {
-        use std::collections::HashMap;
-        let mut name_map = HashMap::new();
-        name_map.insert("name".to_string(), ValueRepr::String("Alice".to_string()));
-
-        let mut profile_map = HashMap::new();
-        profile_map.insert("profile".to_string(), ValueRepr::Object(name_map));
-
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(profile_map));
-
-        let state = ValueRepr::Object(root);
-        let value = super::get_path_value(&state, "user.profile.name");
-        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice"));
-    }
-
-    #[test]
-    fn test_get_path_value_missing() {
-        use std::collections::HashMap;
-        let mut user_map = HashMap::new();
-        user_map.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user_map));
-
-        let state = ValueRepr::Object(root);
-        let value = super::get_path_value(&state, "user.missing");
-        assert_eq!(value, None);
-    }
-
-    #[test]
-    fn test_get_path_value_missing_intermediate() {
-        use std::collections::HashMap;
-        let mut user_map = HashMap::new();
-        user_map.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user_map));
-
-        let state = ValueRepr::Object(root);
-        let value = super::get_path_value(&state, "missing.path.here");
-        assert_eq!(value, None);
-    }
-
-    // === Evaluation Tests - IS_EQUAL ===
-
-    #[test]
-    fn test_evaluate_is_equal_string_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.role".to_string(), json!("admin"));
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_equal_string_no_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("user".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.role".to_string(), json!("admin"));
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_is_equal_number_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(25.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.age".to_string(), json!(25));
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_equal_number_no_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(30.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.age".to_string(), json!(25));
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_is_equal_boolean_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.active".to_string(), json!(true));
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_equal_null_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("deleted".to_string(), ValueRepr::Null);
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.deleted".to_string(), json!(null));
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_equal_missing_path_equals_null() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.missing".to_string(), json!(null));
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_equal_missing_path_not_equals_value() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEqual("user.missing".to_string(), json!("admin"));
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    // === Evaluation Tests - EXISTS ===
-
-    #[test]
-    fn test_evaluate_exists_present() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Exists("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_exists_missing() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Exists("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_exists_null() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("email".to_string(), ValueRepr::Null);
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Exists("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_exists_empty_string() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("email".to_string(), ValueRepr::String("".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Exists("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_exists_zero() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("count".to_string(), ValueRepr::Number(0.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Exists("user.count".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_exists_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("active".to_string(), ValueRepr::Bool(false));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Exists("user.active".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    // === Evaluation Tests - AND ===
-
-    #[test]
-    fn test_evaluate_and_all_true() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::And(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-            BoolLogic::Exists("user.email".to_string()),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_and_one_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("user".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::And(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-            BoolLogic::Exists("user.email".to_string()),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_and_all_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("user".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(false));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::And(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-            BoolLogic::Exists("user.email".to_string()),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_and_empty() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::And(vec![]);
-        assert_eq!(super::evaluate(&logic, &state), true); // Empty AND is true (vacuous truth)
-    }
-
-    #[test]
-    fn test_evaluate_and_nested() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        user.insert("verified".to_string(), ValueRepr::Bool(true));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::And(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::And(vec![
-                BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-                BoolLogic::IsEqual("user.verified".to_string(), json!(true)),
-            ]),
-            BoolLogic::Exists("user.email".to_string()),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_and_nested_inner_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        user.insert("verified".to_string(), ValueRepr::Bool(false));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::And(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::And(vec![
-                BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-                BoolLogic::IsEqual("user.verified".to_string(), json!(true)),
-            ]),
-            BoolLogic::Exists("user.email".to_string()),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    // === Complex Integration Tests ===
-
-    #[test]
-    fn test_evaluate_complex_real_world_scenario() {
-        use std::collections::HashMap;
-        let mut profile = HashMap::new();
-        profile.insert("verified".to_string(), ValueRepr::Bool(true));
-        profile.insert("name".to_string(), ValueRepr::String("Alice".to_string()));
-
-        let mut user = HashMap::new();
-        user.insert("id".to_string(), ValueRepr::Number(123.0));
-        user.insert("role".to_string(), ValueRepr::String("editor".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        user.insert("profile".to_string(), ValueRepr::Object(profile));
-
-        let mut document = HashMap::new();
-        document.insert("id".to_string(), ValueRepr::String("doc-456".to_string()));
-        document.insert("status".to_string(), ValueRepr::String("draft".to_string()));
-
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        root.insert("document".to_string(), ValueRepr::Object(document));
-        let state = ValueRepr::Object(root);
-
-        let logic = BoolLogic::And(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("editor")),
-            BoolLogic::Exists("document.id".to_string()),
-            BoolLogic::And(vec![
-                BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-                BoolLogic::IsEqual("user.profile.verified".to_string(), json!(true)),
-            ]),
-        ]);
-
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    // === Evaluation Tests - OR ===
-
-    #[test]
-    fn test_evaluate_or_all_true() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Or(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_or_first_true() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(false));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Or(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_or_second_true() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("user".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Or(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_or_all_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("user".to_string()));
-        user.insert("active".to_string(), ValueRepr::Bool(false));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Or(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.active".to_string(), json!(true)),
-        ]);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_or_empty() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Or(vec![]);
-        assert_eq!(super::evaluate(&logic, &state), false); // Empty OR is false
-    }
-
-    // === Evaluation Tests - NOT ===
-
-    #[test]
-    fn test_evaluate_not_true_becomes_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Not(Box::new(BoolLogic::IsEqual(
-            "user.role".to_string(),
-            json!("admin"),
-        )));
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_not_false_becomes_true() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("user".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Not(Box::new(BoolLogic::IsEqual(
-            "user.role".to_string(),
-            json!("admin"),
-        )));
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_not_nested() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Not(Box::new(BoolLogic::Not(Box::new(BoolLogic::IsEqual(
-            "user.active".to_string(),
-            json!(true),
-        )))));
-        assert_eq!(super::evaluate(&logic, &state), true); // Double negation
-    }
-
-    // === Evaluation Tests - GT (Greater Than) ===
-
-    #[test]
-    fn test_evaluate_gt_true() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(25.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_gt_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(15.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_gt_equal() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(18.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_gt_non_numeric() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::String("25".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_gt_missing_path() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    // === Evaluation Tests - LT (Less Than) ===
-
-    #[test]
-    fn test_evaluate_lt_true() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(15.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Lt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_lt_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(25.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Lt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_lt_equal() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(18.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Lt("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    // === Evaluation Tests - GTE (Greater Than or Equal) ===
-
-    #[test]
-    fn test_evaluate_gte_greater() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(25.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gte("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_gte_equal() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(18.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gte("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_gte_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(15.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Gte("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    // === Evaluation Tests - LTE (Less Than or Equal) ===
-
-    #[test]
-    fn test_evaluate_lte_less() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(15.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Lte("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_lte_equal() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(18.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Lte("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_lte_false() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(25.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::Lte("user.age".to_string(), 18.0);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    // === Evaluation Tests - IS_EMPTY ===
-
-    #[test]
-    fn test_evaluate_is_empty_null() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("email".to_string(), ValueRepr::Null);
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_empty_string() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("email".to_string(), ValueRepr::String("".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_empty_array() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("tags".to_string(), ValueRepr::Array(vec![]));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.tags".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_empty_object() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("meta".to_string(), ValueRepr::Object(HashMap::new()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.meta".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_missing_path() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_non_empty_string() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.email".to_string());
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_non_empty_array() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert(
-            "tags".to_string(),
-            ValueRepr::Array(vec![ValueRepr::String("admin".to_string())]),
-        );
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.tags".to_string());
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_non_empty_object() {
-        use std::collections::HashMap;
-        let mut meta = HashMap::new();
-        meta.insert("key".to_string(), ValueRepr::String("value".to_string()));
-        let mut user = HashMap::new();
-        user.insert("meta".to_string(), ValueRepr::Object(meta));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.meta".to_string());
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_number() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("age".to_string(), ValueRepr::Number(0.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.age".to_string());
-        assert_eq!(super::evaluate(&logic, &state), false); // Numbers are never empty
-    }
-
-    #[test]
-    fn test_evaluate_is_empty_boolean() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("active".to_string(), ValueRepr::Bool(false));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::IsEmpty("user.active".to_string());
-        assert_eq!(super::evaluate(&logic, &state), false); // Booleans are never empty
-    }
-
-    // === Evaluation Tests - IN ===
-
-    #[test]
-    fn test_evaluate_in_string_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::In(
-            "user.role".to_string(),
-            vec![json!("admin"), json!("editor"), json!("moderator")],
-        );
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_in_string_no_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("guest".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::In(
-            "user.role".to_string(),
-            vec![json!("admin"), json!("editor"), json!("moderator")],
-        );
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_in_number_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("status".to_string(), ValueRepr::Number(200.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::In("user.status".to_string(), vec![json!(200), json!(201)]);
-        assert_eq!(super::evaluate(&logic, &state), true);
-    }
-
-    #[test]
-    fn test_evaluate_in_number_no_match() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("status".to_string(), ValueRepr::Number(404.0));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::In("user.status".to_string(), vec![json!(200), json!(201)]);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_in_missing_path() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::In("user.status".to_string(), vec![json!(200), json!(201)]);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    #[test]
-    fn test_evaluate_in_empty_list() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
-        let logic = BoolLogic::In("user.role".to_string(), vec![]);
-        assert_eq!(super::evaluate(&logic, &state), false);
-    }
-
-    // === Serialization/Deserialization Tests for New Operators ===
 
     #[test]
     fn test_deserialize_or() {
-        let json = json!({
+        let logic: BoolLogicNode = serde_json::from_value(json!({
             "OR": [
-                { "IS_EQUAL": ["user.role", "admin"] },
-                { "IS_EQUAL": ["user.role", "editor"] }
+                {"IS_EQUAL": ["user.role", "admin"]},
+                {"IS_EQUAL": ["user.role", "editor"]}
             ]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
+        }))
+        .unwrap();
         assert_eq!(
             logic,
-            BoolLogic::Or(vec![
-                BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-                BoolLogic::IsEqual("user.role".to_string(), json!("editor"))
+            BoolLogicNode::Or(vec![
+                BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+                BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
             ])
         );
     }
 
     #[test]
     fn test_deserialize_not() {
-        let json = json!({
-            "NOT": { "IS_EQUAL": ["user.role", "guest"] }
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "NOT": {"IS_EQUAL": ["user.role", "guest"]}
+        }))
+        .unwrap();
         assert_eq!(
             logic,
-            BoolLogic::Not(Box::new(BoolLogic::IsEqual(
-                "user.role".to_string(),
+            BoolLogicNode::Not(Box::new(BoolLogicNode::IsEqual(
+                "user.role".into(),
                 json!("guest")
             )))
         );
@@ -1544,84 +510,136 @@ mod tests {
 
     #[test]
     fn test_deserialize_gt() {
-        let json = json!({
-            "GT": ["user.age", 18]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(logic, BoolLogic::Gt("user.age".to_string(), 18.0));
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"GT": ["user.age", 18]})).unwrap();
+        assert_eq!(logic, BoolLogicNode::Gt("user.age".into(), 18.0));
     }
 
     #[test]
     fn test_deserialize_lt() {
-        let json = json!({
-            "LT": ["user.age", 65]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(logic, BoolLogic::Lt("user.age".to_string(), 65.0));
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"LT": ["user.age", 65]})).unwrap();
+        assert_eq!(logic, BoolLogicNode::Lt("user.age".into(), 65.0));
     }
 
     #[test]
     fn test_deserialize_gte() {
-        let json = json!({
-            "GTE": ["user.score", 100]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(logic, BoolLogic::Gte("user.score".to_string(), 100.0));
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"GTE": ["user.score", 100]})).unwrap();
+        assert_eq!(logic, BoolLogicNode::Gte("user.score".into(), 100.0));
     }
 
     #[test]
     fn test_deserialize_lte() {
-        let json = json!({
-            "LTE": ["user.score", 999]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(logic, BoolLogic::Lte("user.score".to_string(), 999.0));
-    }
-
-    #[test]
-    fn test_deserialize_is_empty() {
-        let json = json!({
-            "IS_EMPTY": "user.tags"
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
-        assert_eq!(logic, BoolLogic::IsEmpty("user.tags".to_string()));
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"LTE": ["user.score", 999]})).unwrap();
+        assert_eq!(logic, BoolLogicNode::Lte("user.score".into(), 999.0));
     }
 
     #[test]
     fn test_deserialize_in() {
-        let json = json!({
+        let logic: BoolLogicNode = serde_json::from_value(json!({
             "IN": ["user.role", ["admin", "editor", "moderator"]]
-        });
-
-        let logic: BoolLogic = serde_json::from_value(json).unwrap();
+        }))
+        .unwrap();
         assert_eq!(
             logic,
-            BoolLogic::In(
-                "user.role".to_string(),
-                vec![json!("admin"), json!("editor"), json!("moderator")]
+            BoolLogicNode::In(
+                "user.role".into(),
+                vec![json!("admin"), json!("editor"), json!("moderator")],
             )
         );
     }
 
     #[test]
-    fn test_serialize_or() {
-        let logic = BoolLogic::Or(vec![
-            BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-            BoolLogic::IsEqual("user.role".to_string(), json!("editor")),
-        ]);
-        let json = serde_json::to_value(&logic).unwrap();
-
+    fn test_deserialize_nested_and() {
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "AND": [
+                {"EXISTS": "user.id"},
+                {"AND": [
+                    {"IS_EQUAL": ["user.role", "admin"]},
+                    {"IS_EQUAL": ["user.active", true]}
+                ]}
+            ]
+        }))
+        .unwrap();
         assert_eq!(
-            json,
+            logic,
+            BoolLogicNode::And(vec![
+                BoolLogicNode::Exists("user.id".into()),
+                BoolLogicNode::And(vec![
+                    BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+                    BoolLogicNode::IsEqual("user.active".into(), json!(true)),
+                ]),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_invalid_operator_returns_error() {
+        let result: Result<BoolLogicNode, _> =
+            serde_json::from_value(json!({"INVALID": ["x", "y"]}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_equal_wrong_args_returns_error() {
+        let result: Result<BoolLogicNode, _> =
+            serde_json::from_value(json!({"IS_EQUAL": ["only_one"]}));
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Serialization roundtrip tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_serialize_is_equal() {
+        let logic = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
+        assert_eq!(
+            serde_json::to_value(&logic).unwrap(),
+            json!({"IS_EQUAL": ["user.role", "admin"]})
+        );
+    }
+
+    #[test]
+    fn test_serialize_exists() {
+        let logic = BoolLogicNode::Exists("user.email".into());
+        assert_eq!(
+            serde_json::to_value(&logic).unwrap(),
+            json!({"EXISTS": "user.email"})
+        );
+    }
+
+    #[test]
+    fn test_serialize_and() {
+        let logic = BoolLogicNode::And(vec![
+            BoolLogicNode::Exists("user.email".into()),
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+        ]);
+        assert_eq!(
+            serde_json::to_value(&logic).unwrap(),
+            json!({
+                "AND": [
+                    {"EXISTS": "user.email"},
+                    {"IS_EQUAL": ["user.role", "admin"]}
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn test_serialize_or() {
+        let logic = BoolLogicNode::Or(vec![
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
+        ]);
+        assert_eq!(
+            serde_json::to_value(&logic).unwrap(),
             json!({
                 "OR": [
-                    { "IS_EQUAL": ["user.role", "admin"] },
-                    { "IS_EQUAL": ["user.role", "editor"] }
+                    {"IS_EQUAL": ["user.role", "admin"]},
+                    {"IS_EQUAL": ["user.role", "editor"]}
                 ]
             })
         );
@@ -1629,102 +647,640 @@ mod tests {
 
     #[test]
     fn test_serialize_not() {
-        let logic = BoolLogic::Not(Box::new(BoolLogic::IsEqual(
-            "user.role".to_string(),
+        let logic = BoolLogicNode::Not(Box::new(BoolLogicNode::IsEqual(
+            "user.role".into(),
             json!("guest"),
         )));
-        let json = serde_json::to_value(&logic).unwrap();
-
         assert_eq!(
-            json,
-            json!({
-                "NOT": { "IS_EQUAL": ["user.role", "guest"] }
-            })
+            serde_json::to_value(&logic).unwrap(),
+            json!({"NOT": {"IS_EQUAL": ["user.role", "guest"]}})
         );
     }
 
     #[test]
     fn test_serialize_gt() {
-        let logic = BoolLogic::Gt("user.age".to_string(), 18.0);
-        let json = serde_json::to_value(&logic).unwrap();
-
+        let logic = BoolLogicNode::Gt("user.age".into(), 18.0);
         assert_eq!(
-            json,
-            json!({
-                "GT": ["user.age", 18.0]
-            })
+            serde_json::to_value(&logic).unwrap(),
+            json!({"GT": ["user.age", 18.0]})
         );
     }
 
     #[test]
     fn test_serialize_is_empty() {
-        let logic = BoolLogic::IsEmpty("user.tags".to_string());
-        let json = serde_json::to_value(&logic).unwrap();
-
+        let logic = BoolLogicNode::IsEmpty("user.tags".into());
         assert_eq!(
-            json,
-            json!({
-                "IS_EMPTY": "user.tags"
-            })
+            serde_json::to_value(&logic).unwrap(),
+            json!({"IS_EMPTY": "user.tags"})
         );
     }
 
     #[test]
     fn test_serialize_in() {
-        let logic = BoolLogic::In(
-            "user.role".to_string(),
+        let logic = BoolLogicNode::In(
+            "user.role".into(),
             vec![json!("admin"), json!("editor")],
         );
-        let json = serde_json::to_value(&logic).unwrap();
-
         assert_eq!(
-            json,
-            json!({
-                "IN": ["user.role", ["admin", "editor"]]
-            })
+            serde_json::to_value(&logic).unwrap(),
+            json!({"IN": ["user.role", ["admin", "editor"]]})
         );
     }
 
-    // === Complex Integration Test with New Operators ===
+    #[test]
+    fn test_roundtrip_complex() {
+        let original = json!({
+            "AND": [
+                {"IS_EQUAL": ["user.role", "admin"]},
+                {"EXISTS": "user.email"},
+                {"AND": [
+                    {"IS_EQUAL": ["user.active", true]},
+                    {"IS_EQUAL": ["user.verified", true]}
+                ]}
+            ]
+        });
+        let logic: BoolLogicNode = serde_json::from_value(original.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&logic).unwrap(), original);
+    }
+
+    // -----------------------------------------------------------------------
+    // Evaluation tests
+    // -----------------------------------------------------------------------
 
     #[test]
-    fn test_complex_logic_with_all_operators() {
-        use std::collections::HashMap;
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("editor".to_string()));
-        user.insert("age".to_string(), ValueRepr::Number(25.0));
-        user.insert("score".to_string(), ValueRepr::Number(150.0));
-        user.insert(
-            "tags".to_string(),
-            ValueRepr::Array(vec![ValueRepr::String("premium".to_string())]),
-        );
-        user.insert("bio".to_string(), ValueRepr::String("".to_string()));
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
+    fn test_eval_is_equal_match() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEqual("user.role".into(), json!("admin")).evaluate_value(&state));
+    }
 
-        let logic = BoolLogic::And(vec![
-            // Role is editor OR admin
-            BoolLogic::Or(vec![
-                BoolLogic::IsEqual("user.role".to_string(), json!("admin")),
-                BoolLogic::IsEqual("user.role".to_string(), json!("editor")),
-            ]),
-            // Age >= 18 AND < 65
-            BoolLogic::And(vec![
-                BoolLogic::Gte("user.age".to_string(), 18.0),
-                BoolLogic::Lt("user.age".to_string(), 65.0),
-            ]),
-            // Score > 100
-            BoolLogic::Gt("user.score".to_string(), 100.0),
-            // Tags are not empty
-            BoolLogic::Not(Box::new(BoolLogic::IsEmpty("user.tags".to_string()))),
-            // Role is in allowed list
-            BoolLogic::In(
-                "user.role".to_string(),
-                vec![json!("admin"), json!("editor"), json!("moderator")],
-            ),
+    #[test]
+    fn test_eval_is_equal_no_match() {
+        let state = make_state();
+        assert!(!BoolLogicNode::IsEqual("user.role".into(), json!("editor")).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_equal_number() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEqual("user.age".into(), json!(25)).evaluate_value(&state));
+        assert!(!BoolLogicNode::IsEqual("user.age".into(), json!(30)).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_equal_bool() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEqual("user.active".into(), json!(true)).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_equal_null() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEqual("user.deleted".into(), json!(null)).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_equal_missing_path_equals_null() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEqual("user.missing".into(), json!(null)).evaluate_value(&state));
+        assert!(!BoolLogicNode::IsEqual("user.missing".into(), json!("x")).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_exists_present() {
+        let state = make_state();
+        assert!(BoolLogicNode::Exists("user.email".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_exists_null() {
+        let state = make_state();
+        assert!(!BoolLogicNode::Exists("user.deleted".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_exists_missing() {
+        let state = make_state();
+        assert!(!BoolLogicNode::Exists("user.nonexistent".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_exists_empty_string_is_true() {
+        let state = make_state();
+        assert!(BoolLogicNode::Exists("user.bio".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_empty_null() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEmpty("user.deleted".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_empty_empty_string() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEmpty("user.bio".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_empty_non_empty_string() {
+        let state = make_state();
+        assert!(!BoolLogicNode::IsEmpty("user.email".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_empty_missing_path() {
+        let state = make_state();
+        assert!(BoolLogicNode::IsEmpty("user.nonexistent".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_empty_number_not_empty() {
+        let state = make_state();
+        assert!(!BoolLogicNode::IsEmpty("user.age".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_is_empty_bool_not_empty() {
+        let state = make_state();
+        assert!(!BoolLogicNode::IsEmpty("user.active".into()).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_and_all_true() {
+        let state = make_state();
+        let logic = BoolLogicNode::And(vec![
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            BoolLogicNode::Exists("user.email".into()),
         ]);
+        assert!(logic.evaluate_value(&state));
+    }
 
-        assert_eq!(super::evaluate(&logic, &state), true);
+    #[test]
+    fn test_eval_and_one_false() {
+        let state = make_state();
+        let logic = BoolLogicNode::And(vec![
+            BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
+            BoolLogicNode::Exists("user.email".into()),
+        ]);
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_and_empty_is_true() {
+        let state = make_state();
+        assert!(BoolLogicNode::And(vec![]).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_or_first_true() {
+        let state = make_state();
+        let logic = BoolLogicNode::Or(vec![
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
+        ]);
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_or_all_false() {
+        let state = make_state();
+        let logic = BoolLogicNode::Or(vec![
+            BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
+            BoolLogicNode::IsEqual("user.role".into(), json!("viewer")),
+        ]);
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_or_empty_is_false() {
+        let state = make_state();
+        assert!(!BoolLogicNode::Or(vec![]).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_not() {
+        let state = make_state();
+        let logic = BoolLogicNode::Not(Box::new(BoolLogicNode::IsEqual(
+            "user.role".into(),
+            json!("guest"),
+        )));
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_not_double_negation() {
+        let state = make_state();
+        let logic = BoolLogicNode::Not(Box::new(BoolLogicNode::Not(Box::new(
+            BoolLogicNode::IsEqual("user.active".into(), json!(true)),
+        ))));
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_gt() {
+        let state = make_state();
+        assert!(BoolLogicNode::Gt("user.age".into(), 18.0).evaluate_value(&state));
+        assert!(!BoolLogicNode::Gt("user.age".into(), 25.0).evaluate_value(&state));
+        assert!(!BoolLogicNode::Gt("user.age".into(), 30.0).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_lt() {
+        let state = make_state();
+        assert!(BoolLogicNode::Lt("user.age".into(), 30.0).evaluate_value(&state));
+        assert!(!BoolLogicNode::Lt("user.age".into(), 25.0).evaluate_value(&state));
+        assert!(!BoolLogicNode::Lt("user.age".into(), 20.0).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_gte() {
+        let state = make_state();
+        assert!(BoolLogicNode::Gte("user.age".into(), 25.0).evaluate_value(&state));
+        assert!(BoolLogicNode::Gte("user.age".into(), 24.0).evaluate_value(&state));
+        assert!(!BoolLogicNode::Gte("user.age".into(), 26.0).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_lte() {
+        let state = make_state();
+        assert!(BoolLogicNode::Lte("user.age".into(), 25.0).evaluate_value(&state));
+        assert!(BoolLogicNode::Lte("user.age".into(), 26.0).evaluate_value(&state));
+        assert!(!BoolLogicNode::Lte("user.age".into(), 24.0).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_numeric_non_number_returns_false() {
+        let state = make_state();
+        assert!(!BoolLogicNode::Gt("user.role".into(), 0.0).evaluate_value(&state));
+        assert!(!BoolLogicNode::Lt("user.missing".into(), 0.0).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_in_match() {
+        let state = make_state();
+        let logic =
+            BoolLogicNode::In("user.role".into(), vec![json!("admin"), json!("editor")]);
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_in_no_match() {
+        let state = make_state();
+        let logic =
+            BoolLogicNode::In("user.role".into(), vec![json!("editor"), json!("viewer")]);
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_in_empty_list() {
+        let state = make_state();
+        assert!(!BoolLogicNode::In("user.role".into(), vec![]).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_in_missing_path() {
+        let state = make_state();
+        assert!(!BoolLogicNode::In("user.missing".into(), vec![json!("x")]).evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_in_number() {
+        let state = make_state();
+        let logic = BoolLogicNode::In("user.age".into(), vec![json!(25), json!(30)]);
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_complex_real_world() {
+        let state = make_state();
+        let logic = BoolLogicNode::And(vec![
+            BoolLogicNode::Or(vec![
+                BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+                BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
+            ]),
+            BoolLogicNode::Gte("user.age".into(), 18.0),
+            BoolLogicNode::Gt("user.score".into(), 100.0),
+            BoolLogicNode::Not(Box::new(BoolLogicNode::IsEmpty("user.tags".into()))),
+            BoolLogicNode::In(
+                "user.role".into(),
+                vec![json!("admin"), json!("editor"), json!("mod")],
+            ),
+            BoolLogicNode::Exists("document.id".into()),
+            BoolLogicNode::IsEqual("user.profile.verified".into(), json!(true)),
+        ]);
+        assert!(logic.evaluate_value(&state));
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_paths tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_extract_paths_leaf() {
+        let logic = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
+        assert_eq!(logic.extract_paths(), vec!["user.role".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_paths_exists() {
+        assert_eq!(
+            BoolLogicNode::Exists("a.b".into()).extract_paths(),
+            vec!["a.b".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_extract_paths_and() {
+        let logic = BoolLogicNode::And(vec![
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            BoolLogicNode::Exists("user.email".into()),
+        ]);
+        let paths = logic.extract_paths();
+        assert_eq!(
+            paths,
+            vec!["user.role".to_string(), "user.email".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_extract_paths_nested_complex() {
+        let logic = BoolLogicNode::And(vec![
+            BoolLogicNode::Or(vec![
+                BoolLogicNode::Gt("user.age".into(), 18.0),
+                BoolLogicNode::In("user.role".into(), vec![json!("admin")]),
+            ]),
+            BoolLogicNode::Not(Box::new(BoolLogicNode::IsEmpty("user.bio".into()))),
+            BoolLogicNode::Lte("user.score".into(), 999.0),
+        ]);
+        let paths = logic.extract_paths();
+        assert_eq!(
+            paths,
+            vec![
+                "user.age".to_string(),
+                "user.role".to_string(),
+                "user.bio".to_string(),
+                "user.score".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extract_paths_empty_and() {
+        assert!(BoolLogicNode::And(vec![]).extract_paths().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // BoolLogicRegistry + ReverseDependencyIndex tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_registry_register_and_get() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let tree = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
+        let id = registry.register(
+            "_concerns.user.email.disabledWhen".into(),
+            tree,
+            &mut intern,
+            &mut rev,
+        );
+
+        assert_eq!(id, 0);
+        assert_eq!(registry.len(), 1);
+
+        let meta = registry.get(id).unwrap();
+        assert_eq!(meta.output_path, "_concerns.user.email.disabledWhen");
+    }
+
+    #[test]
+    fn test_registry_sequential_ids() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let id0 = registry.register(
+            "out0".into(),
+            BoolLogicNode::Exists("a".into()),
+            &mut intern,
+            &mut rev,
+        );
+        let id1 = registry.register(
+            "out1".into(),
+            BoolLogicNode::Exists("b".into()),
+            &mut intern,
+            &mut rev,
+        );
+        let id2 = registry.register(
+            "out2".into(),
+            BoolLogicNode::Exists("c".into()),
+            &mut intern,
+            &mut rev,
+        );
+
+        assert_eq!(id0, 0);
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert_eq!(registry.len(), 3);
+    }
+
+    #[test]
+    fn test_registry_unregister() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let id = registry.register(
+            "out".into(),
+            BoolLogicNode::Exists("a.b".into()),
+            &mut intern,
+            &mut rev,
+        );
+        assert_eq!(registry.len(), 1);
+
+        registry.unregister(id, &mut rev);
+        assert_eq!(registry.len(), 0);
+        assert!(registry.get(id).is_none());
+    }
+
+    #[test]
+    fn test_reverse_index_single_path() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let tree = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev);
+
+        let path_id = intern.intern("user.role");
+        let affected = rev.affected_by_path(path_id);
+        assert_eq!(affected, vec![logic_id]);
+    }
+
+    #[test]
+    fn test_reverse_index_multi_path() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let tree = BoolLogicNode::And(vec![
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            BoolLogicNode::Exists("user.email".into()),
+            BoolLogicNode::Gt("user.age".into(), 18.0),
+        ]);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev);
+
+        // All three paths should map to the same logic_id
+        for path in &["user.role", "user.email", "user.age"] {
+            let pid = intern.intern(path);
+            let affected = rev.affected_by_path(pid);
+            assert_eq!(affected, vec![logic_id]);
+        }
+    }
+
+    #[test]
+    fn test_reverse_index_multiple_logics_same_path() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let id0 = registry.register(
+            "out0".into(),
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            &mut intern,
+            &mut rev,
+        );
+        let id1 = registry.register(
+            "out1".into(),
+            BoolLogicNode::In("user.role".into(), vec![json!("editor")]),
+            &mut intern,
+            &mut rev,
+        );
+
+        let path_id = intern.intern("user.role");
+        let mut affected = rev.affected_by_path(path_id);
+        affected.sort();
+        assert_eq!(affected, vec![id0, id1]);
+    }
+
+    #[test]
+    fn test_reverse_index_unregister_cleanup() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let id0 = registry.register(
+            "out0".into(),
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            &mut intern,
+            &mut rev,
+        );
+        let id1 = registry.register(
+            "out1".into(),
+            BoolLogicNode::Exists("user.role".into()),
+            &mut intern,
+            &mut rev,
+        );
+
+        let path_id = intern.intern("user.role");
+
+        // Both should be affected
+        assert_eq!(rev.affected_by_path(path_id).len(), 2);
+
+        // Remove one
+        registry.unregister(id0, &mut rev);
+        let affected = rev.affected_by_path(path_id);
+        assert_eq!(affected, vec![id1]);
+
+        // Remove the other
+        registry.unregister(id1, &mut rev);
+        assert!(rev.affected_by_path(path_id).is_empty());
+        assert_eq!(rev.path_count(), 0);
+    }
+
+    #[test]
+    fn test_reverse_index_unaffected_path() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        registry.register(
+            "out".into(),
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+            &mut intern,
+            &mut rev,
+        );
+
+        let unrelated_pid = intern.intern("document.title");
+        assert!(rev.affected_by_path(unrelated_pid).is_empty());
+    }
+
+    #[test]
+    fn test_reverse_index_nested_tree_paths() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut intern = InternTable::new();
+        let mut rev = ReverseDependencyIndex::new();
+
+        let tree = BoolLogicNode::And(vec![
+            BoolLogicNode::Or(vec![
+                BoolLogicNode::Gt("stats.views".into(), 100.0),
+                BoolLogicNode::IsEqual("user.premium".into(), json!(true)),
+            ]),
+            BoolLogicNode::Not(Box::new(BoolLogicNode::IsEmpty("user.bio".into()))),
+        ]);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev);
+
+        // Three distinct paths
+        for path in &["stats.views", "user.premium", "user.bio"] {
+            let pid = intern.intern(path);
+            assert_eq!(rev.affected_by_path(pid), vec![logic_id]);
+        }
+    }
+
+    #[test]
+    fn test_unregister_nonexistent_is_noop() {
+        let mut registry = BoolLogicRegistry::new();
+        let mut rev = ReverseDependencyIndex::new();
+        registry.unregister(999, &mut rev); // should not panic
+        assert_eq!(registry.len(), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Path resolution helpers
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_get_path_value_simple() {
+        let mut root = HashMap::new();
+        root.insert("role".to_string(), ValueRepr::String("admin".to_string()));
+        let state = ValueRepr::Object(root);
+        let value = get_path_value(&state, "role");
+        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "admin"));
+    }
+
+    #[test]
+    fn test_get_path_value_nested() {
+        let state = make_state();
+        let value = get_path_value(&state, "user.profile.name");
+        assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice"));
+    }
+
+    #[test]
+    fn test_get_path_value_missing() {
+        let state = make_state();
+        assert!(get_path_value(&state, "user.nonexistent").is_none());
+        assert!(get_path_value(&state, "missing.path.here").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Backward-compatible free-function evaluate
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_free_fn_evaluate() {
+        let state = make_state();
+        let logic = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
+        assert!(evaluate(&logic, &state));
     }
 }
