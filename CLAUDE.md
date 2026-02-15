@@ -65,6 +65,23 @@ The JS ↔ WASM boundary is expensive. Every crossing should be intentional.
 
 Keep the boundary thin: paths in (strings), changes out (JSON).
 
+### Critical: WASM Bridge as Single Export
+
+**`src/wasm/bridge.ts` exports exactly one thing: `wasm`** — a namespace object holding all WASM functions.
+
+All calls from TypeScript go through this single interface:
+```ts
+import { wasm } from './wasm/bridge'
+// Call as: wasm.processChanges(...), wasm.registerBoolLogic(...), etc.
+```
+
+**Why?**
+- **Single boundary entry point** — All JS→WASM crossings visible and auditable
+- **Clear ownership** — You can see exactly what WASM capabilities are exposed
+- **Refactoring safety** — Renaming or restructuring WASM functions touches one import everywhere
+- **Prevents accidental direct imports** — No scattered imports of individual WASM functions
+- **Namespace clarity** — `wasm.fn()` immediately signals you're crossing the boundary
+
 ### Data Ownership Model
 
 **What belongs in WASM (Rust):**
@@ -395,6 +412,7 @@ This is a performance-critical layer. Patterns matter.
 ❌ **Never skip type-safe paths** — always use `DeepKey<T>` and `DeepValue<T, P>`
 ❌ **Never forget cleanup functions** — always `return () => { cleanup }` from effects
 ❌ **Never suppress TypeScript errors with shortcuts** — no `as any`, `@ts-ignore`, etc. Fix types properly.
+❌ **bridge.ts must export only one thing: `wasm`** — All WASM functions accessed as `wasm.functionName()` for clarity and single boundary entry point
 
 ### Rust/WASM Layer
 

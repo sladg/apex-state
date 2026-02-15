@@ -28,12 +28,13 @@ let loadingPromise: Promise<void> | null = null
  * Load the WASM module (async, call once at startup).
  * In production: dynamic import of bundler target.
  * In tests: use `initWasm()` to inject the node target synchronously.
+ * Returns the loaded WASM instance for inspection/testing.
  */
-export const loadWasm = async (): Promise<void> => {
-  if (wasmInstance) return
+export const loadWasm = async (): Promise<typeof WasmExports> => {
+  if (wasmInstance) return wasmInstance
   if (loadingPromise) {
     await loadingPromise
-    return
+    return wasmInstance!
   }
 
   loadingPromise = (async () => {
@@ -48,6 +49,7 @@ export const loadWasm = async (): Promise<void> => {
   })()
 
   await loadingPromise
+  return wasmInstance!
 }
 
 /**

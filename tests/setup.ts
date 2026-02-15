@@ -10,10 +10,20 @@ import { act } from 'react'
 
 import * as matchers from '@testing-library/jest-dom/matchers'
 import { cleanup, fireEvent as rtlFireEvent } from '@testing-library/react'
-import { afterEach, expect } from 'vitest'
+import { afterEach, beforeEach, expect } from 'vitest'
+
+import { initWasm, isWasmLoaded, resetWasm } from '../src/wasm/bridge'
 
 // Enable jest-dom matchers for vitest
 expect.extend(matchers)
+
+// Initialize WASM for all tests
+beforeEach(async () => {
+  if (!isWasmLoaded()) {
+    const wasmModule = await import('../rust/pkg/apex_state_wasm.js')
+    initWasm(wasmModule)
+  }
+})
 
 // Suppress React act() warnings for valtio async updates
 // Valtio's subscribe() triggers async state updates that are expected behavior
@@ -29,9 +39,10 @@ console.error = (...args: unknown[]) => {
   originalError.apply(console, args)
 }
 
-// Cleanup after each test
+// Cleanup after each test (React + WASM)
 afterEach(() => {
   cleanup()
+  resetWasm()
 })
 
 /**

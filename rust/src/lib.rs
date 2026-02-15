@@ -1,8 +1,11 @@
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 
+mod aggregation;
 mod bool_logic;
+mod graphs;
 mod intern;
+mod normalization;
 mod pipeline;
 mod shadow;
 
@@ -59,6 +62,84 @@ pub fn register_boollogic(output_path: &str, tree_json: &str) -> Result<u32, JsV
 pub fn unregister_boollogic(logic_id: u32) {
     PIPELINE.with(|p| {
         p.borrow_mut().unregister_boollogic(logic_id);
+    })
+}
+
+/// Register a batch of aggregations.
+///
+/// Input: JSON array of `{ "target": "...", "sources": [...] }`
+/// Example: `[{ "target": "allUsers", "sources": ["user1", "user2", "user3"] }]`
+#[wasm_bindgen]
+pub fn register_aggregation_batch(aggregations_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .register_aggregation_batch(aggregations_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Unregister a batch of aggregations by target paths.
+///
+/// Input: JSON array of target paths
+/// Example: `["allUsers", "summary.total"]`
+#[wasm_bindgen]
+pub fn unregister_aggregation_batch(targets_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .unregister_aggregation_batch(targets_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Register a batch of sync pairs.
+///
+/// Input: JSON array of path pairs that should stay synchronized
+/// Example: `[["user.name", "profile.name"], ["user.email", "profile.email"]]`
+#[wasm_bindgen]
+pub fn register_sync_batch(pairs_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .register_sync_batch(pairs_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Unregister a batch of sync pairs.
+///
+/// Input: JSON array of path pairs to remove from sync
+/// Example: `[["user.name", "profile.name"], ["user.email", "profile.email"]]`
+#[wasm_bindgen]
+pub fn unregister_sync_batch(pairs_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .unregister_sync_batch(pairs_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Register a batch of flip pairs.
+///
+/// Input: JSON array of path pairs that should stay inverted
+/// Example: `[["checkbox1", "checkbox2"], ["toggle1", "toggle2"]]`
+#[wasm_bindgen]
+pub fn register_flip_batch(pairs_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .register_flip_batch(pairs_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Unregister a batch of flip pairs.
+///
+/// Input: JSON array of path pairs to remove from flip
+/// Example: `[["checkbox1", "checkbox2"], ["toggle1", "toggle2"]]`
+#[wasm_bindgen]
+pub fn unregister_flip_batch(pairs_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .unregister_flip_batch(pairs_json)
+            .map_err(|e| JsValue::from_str(&e))
     })
 }
 

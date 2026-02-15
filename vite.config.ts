@@ -1,10 +1,11 @@
 import react from '@vitejs/plugin-react'
+import wasm from 'vite-plugin-wasm'
 import { defineConfig } from 'vitest/config'
 
 const isPerf = process.env.VITEST_PERF === 'true'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [wasm(), react()],
   test: {
     globals: true,
     environment: 'jsdom',
