@@ -255,6 +255,7 @@ impl ProcessingPipeline {
     }
 
     /// Process sync paths into buf_sync (pre-allocated buffer).
+    /// Only adds genuine changes by diffing against shadow state before pushing.
     fn process_sync_paths_into(&mut self, changes: &[Change]) {
         self.buf_sync.clear();
         for change in changes {
@@ -263,10 +264,27 @@ impl ProcessingPipeline {
             for peer_id in peer_ids {
                 if peer_id != path_id {
                     if let Some(peer_path) = self.intern.resolve(peer_id) {
-                        self.buf_sync.push(Change {
-                            path: peer_path.to_owned(),
-                            value_json: change.value_json.clone(),
-                        });
+                        // Check if this sync change is a no-op against current shadow state
+                        let current = self.shadow.get(peer_path);
+                        let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json) {
+                            Ok(v) => v,
+                            Err(_) => {
+                                // Can't parse → treat as genuine change
+                                self.buf_sync.push(Change {
+                                    path: peer_path.to_owned(),
+                                    value_json: change.value_json.clone(),
+                                });
+                                continue;
+                            }
+                        };
+
+                        // Only add if different from current shadow value
+                        if crate::diff::is_different(&current, &new_value) {
+                            self.buf_sync.push(Change {
+                                path: peer_path.to_owned(),
+                                value_json: change.value_json.clone(),
+                            });
+                        }
                     }
                 }
             }
@@ -274,6 +292,7 @@ impl ProcessingPipeline {
     }
 
     /// Process flip paths into buf_flip (pre-allocated buffer).
+    /// Only adds genuine changes by diffing against shadow state before pushing.
     fn process_flip_paths_into(&mut self, changes: &[Change]) {
         self.buf_flip.clear();
         for change in changes {
@@ -291,10 +310,18 @@ impl ProcessingPipeline {
                 for peer_id in peer_ids {
                     if peer_id != path_id {
                         if let Some(peer_path) = self.intern.resolve(peer_id) {
-                            self.buf_flip.push(Change {
-                                path: peer_path.to_owned(),
-                                value_json: inverted.clone(),
-                            });
+                            // Check if this flip change is a no-op against current shadow state
+                            let current = self.shadow.get(peer_path);
+                            let inverted_bool = inverted == "true";
+                            let new_value = crate::shadow::ValueRepr::Bool(inverted_bool);
+
+                            // Only add if different from current shadow value
+                            if crate::diff::is_different(&current, &new_value) {
+                                self.buf_flip.push(Change {
+                                    path: peer_path.to_owned(),
+                                    value_json: inverted.clone(),
+                                });
+                            }
                         }
                     }
                 }
@@ -348,7 +375,7 @@ impl ProcessingPipeline {
     pub(crate) fn process_changes(&mut self, changes_json: &str) -> Result<String, String> {
         let input_changes: Vec<Change> = serde_json::from_str(changes_json)
             .map_err(|e| format!("Changes parse error: {}", e))?;
-        let result = self.process_changes_vec(input_changes, false)?;
+        let result = self.process_changes_vec(input_changes)?;
         serde_json::to_string(&result).map_err(|e| format!("Serialize error: {}", e))
     }
 
@@ -356,10 +383,11 @@ impl ProcessingPipeline {
     ///
     /// Uses pre-allocated buffers to avoid per-call allocations.
     ///
-    /// If `enable_diff` is true, uses the diff engine to filter out no-op changes
-    /// upfront before entering the pipeline (streaming data path). Otherwise, processes
-    /// all input changes without filtering (regular state changes from user input).
-    pub(crate) fn process_changes_vec(&mut self, input_changes: Vec<Change>, enable_diff: bool) -> Result<ProcessResult, String> {
+    /// Three-checkpoint diff strategy:
+    /// - Checkpoint 1: Diff input changes before pipeline (early exit if all no-ops)
+    /// - Checkpoint 2: Inline filtering during aggregation/sync/flip (only add genuine changes to buffers)
+    /// - Checkpoint 3: JS-side diff of final queue before applyBatch (including listener changes)
+    pub(crate) fn process_changes_vec(&mut self, input_changes: Vec<Change>) -> Result<ProcessResult, String> {
         // Clear pre-allocated buffers
         self.buf_output.clear();
         self.buf_sync.clear();
@@ -368,9 +396,9 @@ impl ProcessingPipeline {
         self.buf_concern_changes.clear();
         self.buf_affected_validators.clear();
 
-        // Step 0: Optional diff pre-pass for streaming data
-        let input_changes: Vec<Change> = if enable_diff {
-            // Diff path: use diff engine to filter out no-op changes
+        // Step 0: Diff pre-pass (always-on)
+        let input_changes: Vec<Change> = {
+            // Use diff engine to filter out no-op changes
             let diffed = self.diff_changes(&input_changes);
             // Early exit if all changes are no-ops
             if diffed.is_empty() {
@@ -382,22 +410,41 @@ impl ProcessingPipeline {
                 });
             }
             diffed
-        } else {
-            // No filtering: process all input changes
-            input_changes
         };
 
         // Step 1-2: Process aggregation writes (distribute target → sources)
-        let mut changes = process_aggregation_writes(&self.aggregations, input_changes);
+        let changes = process_aggregation_writes(&self.aggregations, input_changes);
 
         // Step 3: Apply aggregated changes to shadow state and collect affected paths
+        // Only process genuine changes (diff against shadow before applying)
+        let mut genuine_changes = Vec::new();
         for change in &changes {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.buf_output.push(change.clone());
-            self.mark_affected_logic(&change.path);
+            // Check if this aggregated change is a no-op against current shadow state
+            let current = self.shadow.get(&change.path);
+            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json) {
+                Ok(v) => v,
+                Err(_) => {
+                    // Can't parse → treat as genuine change
+                    self.shadow.set(&change.path, &change.value_json)?;
+                    self.buf_output.push(change.clone());
+                    genuine_changes.push(change.clone());
+                    self.mark_affected_logic(&change.path);
+                    continue;
+                }
+            };
+
+            // Only apply and track if different from current shadow value
+            if crate::diff::is_different(&current, &new_value) {
+                self.shadow.set(&change.path, &change.value_json)?;
+                self.buf_output.push(change.clone());
+                genuine_changes.push(change.clone());
+                self.mark_affected_logic(&change.path);
+            }
         }
 
         // Step 4-5: Process sync paths and update shadow state
+        // Must process ALL aggregated changes (not just genuine ones) because even if
+        // a change is a no-op for path A, it might need to sync to path B that differs
         self.process_sync_paths_into(&changes);
         // Drain buf_sync to avoid borrow conflict with self.shadow/self.mark_affected_logic
         let sync_changes: Vec<Change> = self.buf_sync.drain(..).collect();
@@ -406,10 +453,13 @@ impl ProcessingPipeline {
             self.mark_affected_logic(&change.path);
         }
         self.buf_output.extend_from_slice(&sync_changes);
-        changes.extend(sync_changes);
 
         // Step 6-7: Process flip paths and update shadow state
-        self.process_flip_paths_into(&changes);
+        // Must process ALL aggregated changes + sync outputs (not just genuine ones)
+        // because even if a change is a no-op for path A, it might need to flip to path B that differs
+        let mut changes_for_flip = changes.clone();
+        changes_for_flip.extend(sync_changes.clone());
+        self.process_flip_paths_into(&changes_for_flip);
         let flip_changes: Vec<Change> = self.buf_flip.drain(..).collect();
         for change in &flip_changes {
             self.shadow.set(&change.path, &change.value_json)?;
@@ -455,6 +505,7 @@ impl ProcessingPipeline {
             .collect();
 
         // Step 11: Create full execution plan if listeners are registered
+        // Only genuine changes in buf_output (filtered inline during sync/flip/aggregation)
         let execution_plan = if self.router.has_listeners() {
             let plan = self.router.create_full_execution_plan(&self.buf_output);
             if plan.groups.is_empty() { None } else { Some(plan) }
@@ -1343,7 +1394,7 @@ mod tests {
     #[test]
     fn full_pipeline_sync_then_flip_then_boollogic() {
         let mut p = ProcessingPipeline::new();
-        p.shadow_init(r#"{"a": true, "b": false, "c": true}"#)
+        p.shadow_init(r#"{"a": true, "b": true, "c": false}"#)
             .unwrap();
 
         // a <-> b (sync)
@@ -1717,25 +1768,25 @@ mod tests {
     // --- WASM-029: process_changes_with_diff tests ---
 
     #[test]
-    fn process_changes_with_diff_enabled_filters_no_ops() {
+    fn process_changes_diff_filters_no_ops() {
         let mut p = make_pipeline();
 
         // Try to set user.role to "guest" (current value is already "guest")
         let changes = vec![Change::new("user.role".to_owned(), r#""guest""#.to_owned())];
-        let result = p.process_changes_vec(changes, true).unwrap();
+        let result = p.process_changes_vec(changes).unwrap();
 
-        // Should be filtered out by diff engine
+        // Should be filtered out by diff engine (always-on)
         assert_eq!(result.changes.len(), 0);
         assert_eq!(result.concern_changes.len(), 0);
     }
 
     #[test]
-    fn process_changes_with_diff_enabled_keeps_genuine_changes() {
+    fn process_changes_diff_keeps_genuine_changes() {
         let mut p = make_pipeline();
 
         // Change user.role to "admin" (different from current "guest")
         let changes = vec![Change::new("user.role".to_owned(), r#""admin""#.to_owned())];
-        let result = p.process_changes_vec(changes, true).unwrap();
+        let result = p.process_changes_vec(changes).unwrap();
 
         // Should pass through diff and process normally
         assert_eq!(result.changes.len(), 1);
@@ -1744,20 +1795,7 @@ mod tests {
     }
 
     #[test]
-    fn process_changes_with_diff_disabled_processes_all() {
-        let mut p = make_pipeline();
-
-        // Try to set user.role to "guest" (current value)
-        let changes = vec![Change::new("user.role".to_owned(), r#""guest""#.to_owned())];
-        let result = p.process_changes_vec(changes, false).unwrap();
-
-        // Should process all changes without filtering when diff is disabled
-        assert_eq!(result.changes.len(), 1);
-        assert_eq!(result.changes[0].path, "user.role");
-    }
-
-    #[test]
-    fn process_changes_with_diff_enabled_early_exit_empty() {
+    fn process_changes_diff_early_exit_empty() {
         let mut p = make_pipeline();
 
         // All changes are no-ops
@@ -1765,9 +1803,9 @@ mod tests {
             Change::new("user.role".to_owned(), r#""guest""#.to_owned()),
             Change::new("user.age".to_owned(), "20".to_owned()),
         ];
-        let result = p.process_changes_vec(changes, true).unwrap();
+        let result = p.process_changes_vec(changes).unwrap();
 
-        // Should early exit with empty result
+        // Should early exit with empty result (diff always-on)
         assert_eq!(result.changes.len(), 0);
         assert_eq!(result.concern_changes.len(), 0);
         assert_eq!(result.validators_to_run.len(), 0);
@@ -1775,7 +1813,7 @@ mod tests {
     }
 
     #[test]
-    fn process_changes_with_diff_enabled_partial_filter() {
+    fn process_changes_diff_partial_filter() {
         let mut p = make_pipeline();
 
         // Mix of unchanged and changed values
@@ -1783,9 +1821,9 @@ mod tests {
             Change::new("user.role".to_owned(), r#""guest""#.to_owned()), // unchanged
             Change::new("user.age".to_owned(), "25".to_owned()),          // changed
         ];
-        let result = p.process_changes_vec(changes, true).unwrap();
+        let result = p.process_changes_vec(changes).unwrap();
 
-        // Should keep only the changed value
+        // Should keep only the changed value (diff always-on)
         assert_eq!(result.changes.len(), 1);
         assert_eq!(result.changes[0].path, "user.age");
         assert_eq!(result.changes[0].value_json, "25");

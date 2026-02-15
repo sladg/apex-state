@@ -184,6 +184,15 @@ const processChangesWASM = <
     execution_plan: executionPlan,
   } = wasm.processChanges(bridgeChanges)
 
+  // Early exit if all results are empty (diff filtered out all no-ops)
+  if (
+    stateChanges.length === 0 &&
+    concernChanges.length === 0 &&
+    validatorsToRun.length === 0
+  ) {
+    return
+  }
+
   // Apply BoolLogic results to _concerns proxy
   for (const change of concernChanges) {
     const concernPath = change.path.slice('_concerns.'.length)
@@ -248,7 +257,20 @@ const processChangesWASM = <
     }
   }
 
-  // Apply all accumulated changes to state once
+  // Checkpoint 3 (output): Diff final queue against shadow state
+  // Filters out any no-ops before applying to valtio (including listener-produced changes)
+  const queueAsBridgeChanges = tuplesToBridgeChanges(processing.queue)
+  const genuineChanges = wasm.diffChanges(queueAsBridgeChanges)
+
+  // Early exit if diff filtered everything out
+  if (genuineChanges.length === 0) {
+    return
+  }
+
+  // Convert back to tuple format for applyBatch
+  processing.queue = bridgeChangesToTuples(genuineChanges)
+
+  // Apply all genuine changes to state once
   applyBatch(processing.queue, store.state)
 }
 

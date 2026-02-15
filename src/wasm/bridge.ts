@@ -297,6 +297,10 @@ export const wasm = {
 
   /**
    * Process a batch of state changes through the WASM pipeline.
+   *
+   * Always diffs incoming changes against shadow state to filter out no-ops before
+   * entering the pipeline. Early exits if all changes are no-ops.
+   *
    * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
    * Returns state changes, concern changes, validators to run, and a pre-computed execution plan.
    */
@@ -311,42 +315,6 @@ export const wasm = {
     // Pass WasmChange[] directly via serde-wasm-bindgen (no outer JSON.stringify)
     const result = getWasmInstance().process_changes(
       changesToWasm(changes) as never,
-    ) as unknown as {
-      changes: WasmChange[]
-      concern_changes: WasmChange[]
-      validators_to_run?: ValidatorDispatch[]
-      execution_plan?: FullExecutionPlan
-    }
-
-    return {
-      changes: wasmChangesToJs(result.changes),
-      concern_changes: wasmChangesToJs(result.concern_changes ?? []),
-      validators_to_run: result.validators_to_run ?? [],
-      execution_plan: result.execution_plan ?? null,
-    }
-  },
-
-  /**
-   * Process a batch of state changes with optional diff pre-pass (WASM-029).
-   *
-   * When `enableDiff` is true: diff first, early exit if no genuine changes, otherwise
-   * run full pipeline on filtered changes. When false: same as `processChanges()`.
-   *
-   * Used by streaming data gateway to minimize pipeline work.
-   */
-  processChangesWithDiff: (
-    changes: Change[],
-    enableDiff: boolean,
-  ): {
-    changes: Change[]
-    concern_changes: Change[]
-    validators_to_run: ValidatorDispatch[]
-    execution_plan: FullExecutionPlan | null
-  } => {
-    // Pass WasmChange[] + enableDiff flag via serde-wasm-bindgen
-    const result = getWasmInstance().process_changes_with_diff(
-      changesToWasm(changes) as never,
-      enableDiff,
     ) as unknown as {
       changes: WasmChange[]
       concern_changes: WasmChange[]

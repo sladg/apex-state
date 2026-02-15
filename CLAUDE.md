@@ -129,13 +129,21 @@ If you're storing something in TypeScript that WASM also has, ask why. Probably 
 
 ### 0. Always Format Code
 
-**CRITICAL**: After making ANY code changes, run:
+**CRITICAL**: After making ANY code changes, run the appropriate lint/format commands:
 
+**TypeScript changes:**
 ```bash
-npm run code:fix
+npm run code:fix && npm run code:check
 ```
 
-**DO NOT read the output** - it wastes tokens. Just run it and move on.
+**Rust/WASM changes:**
+```bash
+npm run wasm:fmt && npm run wasm:lint && npm run wasm:check
+```
+
+**Both layers changed:** Run both.
+
+**DO NOT read the output** - it wastes tokens. Just run them and move on.
 
 This applies ESLint + Prettier formatting. Code must follow project style.
 
@@ -425,8 +433,9 @@ This is a performance-critical layer. Patterns matter.
 
 ### JavaScript/React Layer
 
-❌ **Never skip running `npm run code:fix` after code changes**
-❌ **Never read code:fix output (wastes tokens)**
+❌ **Never skip running `npm run code:fix && npm run code:check` after TS changes**
+❌ **Never skip running `npm run wasm:fmt && npm run wasm:lint && npm run wasm:check` after Rust changes**
+❌ **Never read lint/format output (wastes tokens)**
 ❌ **Never use classes or function declarations** — always arrow functions
 ❌ **Never use derive-valtio for dependency tracking** — use `effect()` from valtio-reactive
 ❌ **Never read and write to same proxy in effects** — read from `state`, write to `_concerns`
@@ -504,7 +513,7 @@ This is a performance-critical layer. Patterns matter.
 
 ### All Code
 
-1. **Always format** - Run `npm run code:fix` after code changes (don't read output)
+1. **Always format + check** - Run `npm run code:fix && npm run code:check` after TS changes, `npm run wasm:fmt && npm run wasm:lint && npm run wasm:check` after Rust changes (don't read output)
 2. **Keep minimal scope** - Change only what solves the immediate problem
 3. **Ask when uncertain** - Multiple valid approaches? Ask which tradeoff matters
 4. **Understand before changing** - Read the code, grepai to understand intent, then modify
@@ -535,7 +544,7 @@ This is a performance-critical layer. Patterns matter.
 3. **Code** - Make the requested changes (keep scope narrow)
    - **If you see duplicated code**: Ask — should we remove it now or keep as reference?
    - **If you spot technical debt**: Add it to `TECHNICAL_DEBT.md` (one-liner), don't fix it yet
-4. **Format** - Run `npm run code:fix` (don't read output)
+4. **Format + check** - Run `npm run code:fix && npm run code:check` for TS, `npm run wasm:fmt && npm run wasm:lint && npm run wasm:check` for Rust (don't read output)
 5. **Summary** - If you added technical debt items, show them to the user so they stay informed
 6. **Done** - Code is ready
 

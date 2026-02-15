@@ -33,9 +33,14 @@ fn normalize_change(
         return Some((None, "EXACT".to_string()));
     }
 
-    // Case 2: Parent change
+    // Case 2: Parent change (including root change)
     // e.g., changePath='a.b', registeredPath='a.b.c.d'
     // Extract nested value: 'a.b.c.d' - 'a.b.' = 'c.d'
+    // Special case: changePath='' (root) is parent of all paths
+    if change_path.is_empty() && !registered_path.is_empty() {
+        // Root change → extract full registered path as nested
+        return Some((None, format!("PARENT:{}", registered_path)));
+    }
     if registered_path.starts_with(&format!("{}.", change_path)) {
         let nested_path = &registered_path[change_path.len() + 1..];
         return Some((None, format!("PARENT:{}", nested_path)));

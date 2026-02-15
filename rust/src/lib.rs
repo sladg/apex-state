@@ -187,34 +187,18 @@ pub fn unregister_validators_batch(validator_ids_json: &str) -> Result<(), JsVal
 
 /// Process a batch of state changes via serde-wasm-bindgen (no JSON string intermediary).
 ///
+/// Always diffs incoming changes against shadow state to filter out no-ops before
+/// entering the pipeline. Early exits if all changes are no-ops.
+///
 /// Input: JS array of `{ path: "...", value_json: "..." }`
-/// Output: JS object `{ changes: [...], dispatch_plan: ... }`
+/// Output: JS object `{ changes: [...], concern_changes: [...], validators_to_run: [...], execution_plan: ... }`
 #[wasm_bindgen]
 pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
     let input: Vec<Change> = from_js(changes)?;
     PIPELINE.with(|p| {
         let result = p
             .borrow_mut()
-            .process_changes_vec(input, false)
-            .map_err(|e| JsValue::from_str(&e))?;
-        to_js(&result)
-    })
-}
-
-/// Process a batch of state changes with optional diff pre-pass (WASM-029).
-///
-/// When `enable_diff` is true: diff first, early exit if no genuine changes, otherwise
-/// run full pipeline on filtered changes. When false: same as `process_changes()`.
-///
-/// Input: JS array of `{ path: "...", value_json: "..." }`, enable_diff boolean
-/// Output: JS object `{ changes: [...], concern_changes: [...], validators_to_run: [...], execution_plan: ... }`
-#[wasm_bindgen]
-pub fn process_changes_with_diff(changes: JsValue, enable_diff: bool) -> Result<JsValue, JsValue> {
-    let input: Vec<Change> = from_js(changes)?;
-    PIPELINE.with(|p| {
-        let result = p
-            .borrow_mut()
-            .process_changes_vec(input, enable_diff)
+            .process_changes_vec(input)
             .map_err(|e| JsValue::from_str(&e))?;
         to_js(&result)
     })

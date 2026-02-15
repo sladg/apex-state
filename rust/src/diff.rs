@@ -31,7 +31,7 @@ fn floats_equal(a: f64, b: f64) -> bool {
 /// - Object → always different (no deep comparison)
 /// - Array → always different (no deep comparison)
 /// - Type mismatch → always different
-fn is_different(current: &Option<&ValueRepr>, new: &ValueRepr) -> bool {
+pub(crate) fn is_different(current: &Option<&ValueRepr>, new: &ValueRepr) -> bool {
     match (current, new) {
         (None, _) => true, // First time seeing this path
         (Some(ValueRepr::Number(a)), ValueRepr::Number(b)) => !floats_equal(*a, *b),
