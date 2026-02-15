@@ -146,7 +146,10 @@ mod tests {
     #[test]
     fn is_different_string() {
         let current = Some(&ValueRepr::String("hello".to_owned()));
-        assert!(!is_different(&current, &ValueRepr::String("hello".to_owned())));
+        assert!(!is_different(
+            &current,
+            &ValueRepr::String("hello".to_owned())
+        ));
         assert!(is_different(
             &current,
             &ValueRepr::String("world".to_owned())
@@ -184,10 +187,7 @@ mod tests {
     #[test]
     fn diff_changes_all_unchanged() {
         let shadow = make_shadow(r#"{"a": 1, "b": "hello"}"#);
-        let changes = vec![
-            make_change("a", "1"),
-            make_change("b", r#""hello""#),
-        ];
+        let changes = vec![make_change("a", "1"), make_change("b", r#""hello""#)];
         let result = diff_changes(&shadow, &changes);
         assert_eq!(result.len(), 0); // All filtered out
     }
@@ -195,10 +195,7 @@ mod tests {
     #[test]
     fn diff_changes_all_changed() {
         let shadow = make_shadow(r#"{"a": 1, "b": "hello"}"#);
-        let changes = vec![
-            make_change("a", "2"),
-            make_change("b", r#""world""#),
-        ];
+        let changes = vec![make_change("a", "2"), make_change("b", r#""world""#)];
         let result = diff_changes(&shadow, &changes);
         assert_eq!(result.len(), 2); // All kept
         assert_eq!(result[0].path, "a");

@@ -46,7 +46,7 @@ pub(crate) struct ProcessResult {
     pub execution_plan: Option<FullExecutionPlan>,
 }
 
-/// Phase 1 result: pipeline orchestration, defers shadow state finalization.
+/// Result from processChanges: orchestrates pipeline, buffers concern results for finalization.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct Phase1Result {
     /// State changes (readonly context for JS listener execution, not for applying to valtio yet).
@@ -140,8 +140,8 @@ impl ProcessingPipeline {
         output_path: &str,
         tree_json: &str,
     ) -> Result<u32, String> {
-        let tree: BoolLogicNode = serde_json::from_str(tree_json)
-            .map_err(|e| format!("BoolLogic parse error: {}", e))?;
+        let tree: BoolLogicNode =
+            serde_json::from_str(tree_json).map_err(|e| format!("BoolLogic parse error: {}", e))?;
         let id = self.registry.register(
             output_path.to_owned(),
             tree,
@@ -159,7 +159,10 @@ impl ProcessingPipeline {
     /// Register a batch of aggregations.
     ///
     /// Input: JSON array of `{ "target": "...", "sources": [...] }`
-    pub(crate) fn register_aggregation_batch(&mut self, aggregations_json: &str) -> Result<(), String> {
+    pub(crate) fn register_aggregation_batch(
+        &mut self,
+        aggregations_json: &str,
+    ) -> Result<(), String> {
         let aggs: Vec<Aggregation> = serde_json::from_str(aggregations_json)
             .map_err(|e| format!("Aggregation parse error: {}", e))?;
 
@@ -173,7 +176,10 @@ impl ProcessingPipeline {
     /// Unregister a batch of aggregations.
     ///
     /// Input: JSON array of target paths
-    pub(crate) fn unregister_aggregation_batch(&mut self, targets_json: &str) -> Result<(), String> {
+    pub(crate) fn unregister_aggregation_batch(
+        &mut self,
+        targets_json: &str,
+    ) -> Result<(), String> {
         let targets: Vec<String> = serde_json::from_str(targets_json)
             .map_err(|e| format!("Targets parse error: {}", e))?;
 
@@ -253,7 +259,10 @@ impl ProcessingPipeline {
     /// Register a batch of validators.
     ///
     /// Input: JSON array of `{ "validator_id": N, "output_path": "...", "dependency_paths": [...] }`
-    pub(crate) fn register_validators_batch(&mut self, validators_json: &str) -> Result<(), String> {
+    pub(crate) fn register_validators_batch(
+        &mut self,
+        validators_json: &str,
+    ) -> Result<(), String> {
         let validators: Vec<ValidatorInput> = serde_json::from_str(validators_json)
             .map_err(|e| format!("Validators parse error: {}", e))?;
 
@@ -273,12 +282,16 @@ impl ProcessingPipeline {
     /// Unregister a batch of validators.
     ///
     /// Input: JSON array of validator IDs
-    pub(crate) fn unregister_validators_batch(&mut self, validator_ids_json: &str) -> Result<(), String> {
+    pub(crate) fn unregister_validators_batch(
+        &mut self,
+        validator_ids_json: &str,
+    ) -> Result<(), String> {
         let validator_ids: Vec<u32> = serde_json::from_str(validator_ids_json)
             .map_err(|e| format!("Validator IDs parse error: {}", e))?;
 
         for validator_id in validator_ids {
-            self.validator_registry.unregister(validator_id, &mut self.validator_rev_index);
+            self.validator_registry
+                .unregister(validator_id, &mut self.validator_rev_index);
         }
 
         Ok(())
@@ -296,17 +309,18 @@ impl ProcessingPipeline {
                     if let Some(peer_path) = self.intern.resolve(peer_id) {
                         // Check if this sync change is a no-op against current shadow state
                         let current = self.shadow.get(peer_path);
-                        let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json) {
-                            Ok(v) => v,
-                            Err(_) => {
-                                // Can't parse → treat as genuine change
-                                self.buf_sync.push(Change {
-                                    path: peer_path.to_owned(),
-                                    value_json: change.value_json.clone(),
-                                });
-                                continue;
-                            }
-                        };
+                        let new_value: crate::shadow::ValueRepr =
+                            match serde_json::from_str(&change.value_json) {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    // Can't parse → treat as genuine change
+                                    self.buf_sync.push(Change {
+                                        path: peer_path.to_owned(),
+                                        value_json: change.value_json.clone(),
+                                    });
+                                    continue;
+                                }
+                            };
 
                         // Only add if different from current shadow value
                         if crate::diff::is_different(&current, &new_value) {
@@ -378,7 +392,10 @@ impl ProcessingPipeline {
     }
 
     /// Create a dispatch plan from a pre-parsed Vec (serde-wasm-bindgen path).
-    pub(crate) fn create_dispatch_plan_vec(&self, changes: &[Change]) -> crate::router::DispatchPlan {
+    pub(crate) fn create_dispatch_plan_vec(
+        &self,
+        changes: &[Change],
+    ) -> crate::router::DispatchPlan {
         self.router.create_dispatch_plan(changes)
     }
 
@@ -417,7 +434,10 @@ impl ProcessingPipeline {
     /// - Checkpoint 1: Diff input changes before pipeline (early exit if all no-ops)
     /// - Checkpoint 2: Inline filtering during aggregation/sync/flip (only add genuine changes to buffers)
     /// - Checkpoint 3: JS-side diff of final queue before applyBatch (including listener changes)
-    pub(crate) fn process_changes_vec(&mut self, input_changes: Vec<Change>) -> Result<ProcessResult, String> {
+    pub(crate) fn process_changes_vec(
+        &mut self,
+        input_changes: Vec<Change>,
+    ) -> Result<ProcessResult, String> {
         // Clear pre-allocated buffers
         self.buf_output.clear();
         self.buf_sync.clear();
@@ -451,7 +471,8 @@ impl ProcessingPipeline {
         for change in &changes {
             // Check if this aggregated change is a no-op against current shadow state
             let current = self.shadow.get(&change.path);
-            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json) {
+            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
+            {
                 Ok(v) => v,
                 Err(_) => {
                     // Can't parse → treat as genuine change
@@ -503,13 +524,18 @@ impl ProcessingPipeline {
                 let result = meta.tree.evaluate(&self.shadow);
                 self.buf_concern_changes.push(Change {
                     path: meta.output_path.clone(),
-                    value_json: if result { "true".to_owned() } else { "false".to_owned() },
+                    value_json: if result {
+                        "true".to_owned()
+                    } else {
+                        "false".to_owned()
+                    },
                 });
             }
         }
 
         // Step 10: Collect affected validators with their dependency values
-        let validators_to_run: Vec<ValidatorDispatch> = self.buf_affected_validators
+        let validators_to_run: Vec<ValidatorDispatch> = self
+            .buf_affected_validators
             .iter()
             .filter_map(|&validator_id| {
                 let meta = self.validator_registry.get(validator_id)?;
@@ -538,7 +564,11 @@ impl ProcessingPipeline {
         // Only genuine changes in buf_output (filtered inline during sync/flip/aggregation)
         let execution_plan = if self.router.has_listeners() {
             let plan = self.router.create_full_execution_plan(&self.buf_output);
-            if plan.groups.is_empty() { None } else { Some(plan) }
+            if plan.groups.is_empty() {
+                None
+            } else {
+                Some(plan)
+            }
         } else {
             None
         };
@@ -605,16 +635,18 @@ impl ProcessingPipeline {
         crate::diff::diff_changes(&self.shadow, changes)
     }
 
-    /// Phase 1: Process changes through pipeline, defer shadow state finalization.
+    /// Process changes through pipeline: aggregation → sync → flip → BoolLogic → validators.
     ///
-    /// Runs: aggregation → sync → flip → BoolLogic → validators
     /// Updates shadow state during processing (needed for BoolLogic evaluation).
-    /// Stores intermediate results in buf_pending_* fields.
-    /// Returns: { state_changes (readonly context), validators_to_run, execution_plan }
+    /// Buffers BoolLogic concern results in buf_pending_concern_changes.
+    /// Creates execution plan for listeners and collects validators to run.
+    /// Returns: { state_changes, validators_to_run, execution_plan, has_work }
     ///
-    /// Shadow state IS updated during this phase for BoolLogic evaluation.
-    /// Final diffing and shadow update happens in pipeline_finalize.
-    pub(crate) fn process_changes_phase1(&mut self, input_changes: Vec<Change>) -> Result<Phase1Result, String> {
+    /// After JS executes listeners/validators, call pipeline_finalize() with their results.
+    pub(crate) fn process_changes_phase1(
+        &mut self,
+        input_changes: Vec<Change>,
+    ) -> Result<Phase1Result, String> {
         // Clear buffers
         self.buf_output.clear();
         self.buf_sync.clear();
@@ -645,7 +677,8 @@ impl ProcessingPipeline {
         // Step 3: Apply aggregated changes to shadow state
         for change in &changes {
             let current = self.shadow.get(&change.path);
-            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json) {
+            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
+            {
                 Ok(v) => v,
                 Err(_) => {
                     self.shadow.set(&change.path, &change.value_json)?;
@@ -689,13 +722,18 @@ impl ProcessingPipeline {
                 // Keep full path with _concerns. prefix (strip happens in finalize)
                 self.buf_concern_changes.push(Change {
                     path: meta.output_path.clone(),
-                    value_json: if result { "true".to_owned() } else { "false".to_owned() },
+                    value_json: if result {
+                        "true".to_owned()
+                    } else {
+                        "false".to_owned()
+                    },
                 });
             }
         }
 
         // Step 10: Collect affected validators
-        let validators_to_run: Vec<ValidatorDispatch> = self.buf_affected_validators
+        let validators_to_run: Vec<ValidatorDispatch> = self
+            .buf_affected_validators
             .iter()
             .filter_map(|&validator_id| {
                 let meta = self.validator_registry.get(validator_id)?;
@@ -723,7 +761,11 @@ impl ProcessingPipeline {
         // Step 11: Create execution plan
         let execution_plan = if self.router.has_listeners() {
             let plan = self.router.create_full_execution_plan(&self.buf_output);
-            if plan.groups.is_empty() { None } else { Some(plan) }
+            if plan.groups.is_empty() {
+                None
+            } else {
+                Some(plan)
+            }
         } else {
             None
         };
@@ -750,13 +792,11 @@ impl ProcessingPipeline {
         })
     }
 
-    /// Phase 2: Finalize pipeline with JS changes (listeners + validators mixed).
+    /// Finalize pipeline by merging JS-produced changes with buffered results.
     ///
-    /// Accepts:
-    /// - js_changes: Flat list mixing listener-produced state changes + validator concern results
-    ///
-    /// Partitions js_changes by _concerns. prefix, merges with pending buffers,
-    /// diffs against shadow, updates shadow, strips concern prefixes.
+    /// Accepts js_changes from listeners and validators (state + concern paths mixed).
+    /// Partitions by _concerns. prefix, merges with buffered BoolLogic results,
+    /// diffs all changes against shadow state (filters no-ops), updates shadow.
     /// Returns: { state_changes, concern_changes } ready for valtio application.
     pub(crate) fn pipeline_finalize(
         &mut self,
@@ -779,7 +819,7 @@ impl ProcessingPipeline {
             }
         }
 
-        // Merge state changes: pending (from phase 1) + JS state bucket
+        // Merge state changes: buffered from processChanges + JS-produced state changes
         let mut all_state_changes = std::mem::take(&mut self.buf_pending_state_changes);
         all_state_changes.extend(js_state_changes);
 
@@ -809,11 +849,33 @@ impl ProcessingPipeline {
             self.shadow.set(&change.path, &change.value_json)?;
         }
 
-        // Concern changes don't need diffing (they're always new evaluations)
-        // Return with paths relative to _concerns root
+        // Diff concern changes against shadow state (need to add _concerns. prefix for shadow lookup)
+        let concern_changes_with_prefix: Vec<Change> = all_concern_changes
+            .iter()
+            .map(|c| Change {
+                path: format!("_concerns.{}", c.path),
+                value_json: c.value_json.clone(),
+            })
+            .collect();
+        let genuine_concern_changes_with_prefix = self.diff_changes(&concern_changes_with_prefix);
+
+        // Update shadow state with genuine concern changes (using full _concerns. prefixed paths)
+        for change in &genuine_concern_changes_with_prefix {
+            self.shadow.set(&change.path, &change.value_json)?;
+        }
+
+        // Strip prefix back off for return (JS expects paths without _concerns. prefix in concern_changes)
+        let genuine_concern_changes: Vec<Change> = genuine_concern_changes_with_prefix
+            .iter()
+            .map(|c| Change {
+                path: c.path["_concerns.".len()..].to_owned(),
+                value_json: c.value_json.clone(),
+            })
+            .collect();
+
         Ok(FinalizeResult {
             state_changes: genuine_state_changes,
-            concern_changes: all_concern_changes,
+            concern_changes: genuine_concern_changes,
         })
     }
 }
@@ -990,7 +1052,11 @@ mod tests {
         assert_eq!(parsed.changes.len(), 1);
         assert_eq!(parsed.concern_changes.len(), 3);
 
-        let bl_paths: Vec<&str> = parsed.concern_changes.iter().map(|c| c.path.as_str()).collect();
+        let bl_paths: Vec<&str> = parsed
+            .concern_changes
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect();
         assert!(bl_paths.contains(&"_concerns.user.email.disabledWhen"));
         assert!(bl_paths.contains(&"_concerns.user.email.readonlyWhen"));
         assert!(bl_paths.contains(&"_concerns.user.name.visibleWhen"));
@@ -1013,7 +1079,11 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        let bl = parsed.concern_changes.iter().find(|c| c.path.contains("visibleWhen")).unwrap();
+        let bl = parsed
+            .concern_changes
+            .iter()
+            .find(|c| c.path.contains("visibleWhen"))
+            .unwrap();
         assert_eq!(bl.value_json, "true");
     }
 
@@ -1036,7 +1106,10 @@ mod tests {
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
         // Should trigger BoolLogic since user.role is a descendant of user
-        let bl = parsed.concern_changes.iter().find(|c| c.path.contains("disabledWhen"));
+        let bl = parsed
+            .concern_changes
+            .iter()
+            .find(|c| c.path.contains("disabledWhen"));
         assert!(bl.is_some());
         assert_eq!(bl.unwrap().value_json, "true");
     }
@@ -1168,14 +1241,14 @@ mod tests {
     fn aggregation_with_child_path() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(
-            r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#,
-        )
-        .unwrap();
+        p.register_aggregation_batch(r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#)
+            .unwrap();
 
         // Write to a child path of the aggregation target
         let result = p
-            .process_changes(r#"[{"path": "allUsers.email", "value_json": "\"test@example.com\""}]"#)
+            .process_changes(
+                r#"[{"path": "allUsers.email", "value_json": "\"test@example.com\""}]"#,
+            )
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
@@ -1213,14 +1286,22 @@ mod tests {
         assert_eq!(parsed.changes.len(), 5);
 
         // Check users
-        let user_changes: Vec<_> = parsed.changes.iter().filter(|c| c.path.starts_with("user")).collect();
+        let user_changes: Vec<_> = parsed
+            .changes
+            .iter()
+            .filter(|c| c.path.starts_with("user"))
+            .collect();
         assert_eq!(user_changes.len(), 2);
         for change in user_changes {
             assert_eq!(change.value_json, "\"alice\"");
         }
 
         // Check items
-        let item_changes: Vec<_> = parsed.changes.iter().filter(|c| c.path.starts_with("item")).collect();
+        let item_changes: Vec<_> = parsed
+            .changes
+            .iter()
+            .filter(|c| c.path.starts_with("item"))
+            .collect();
         assert_eq!(item_changes.len(), 3);
         for change in item_changes {
             assert_eq!(change.value_json, "42");
@@ -1252,7 +1333,9 @@ mod tests {
     #[test]
     fn register_sync_batch() {
         let mut p = make_pipeline();
-        let result = p.register_sync_batch(r#"[["user.name", "profile.name"], ["user.email", "profile.email"]]"#);
+        let result = p.register_sync_batch(
+            r#"[["user.name", "profile.name"], ["user.email", "profile.email"]]"#,
+        );
         assert!(result.is_ok());
     }
 
@@ -1266,7 +1349,8 @@ mod tests {
     #[test]
     fn unregister_sync_batch() {
         let mut p = make_pipeline();
-        p.register_sync_batch(r#"[["user.name", "profile.name"]]"#).unwrap();
+        p.register_sync_batch(r#"[["user.name", "profile.name"]]"#)
+            .unwrap();
         let result = p.unregister_sync_batch(r#"[["user.name", "profile.name"]]"#);
         assert!(result.is_ok());
     }
@@ -1305,7 +1389,8 @@ mod tests {
     #[test]
     fn register_flip_batch() {
         let mut p = make_pipeline();
-        let result = p.register_flip_batch(r#"[["checkbox1", "checkbox2"], ["toggle1", "toggle2"]]"#);
+        let result =
+            p.register_flip_batch(r#"[["checkbox1", "checkbox2"], ["toggle1", "toggle2"]]"#);
         assert!(result.is_ok());
     }
 
@@ -1319,7 +1404,8 @@ mod tests {
     #[test]
     fn unregister_flip_batch() {
         let mut p = make_pipeline();
-        p.register_flip_batch(r#"[["checkbox1", "checkbox2"]]"#).unwrap();
+        p.register_flip_batch(r#"[["checkbox1", "checkbox2"]]"#)
+            .unwrap();
         let result = p.unregister_flip_batch(r#"[["checkbox1", "checkbox2"]]"#);
         assert!(result.is_ok());
     }
@@ -1328,8 +1414,10 @@ mod tests {
     fn flip_inverts_true_to_false() {
         let mut p = make_pipeline();
         // Start with opposite values so the change is NOT a no-op
-        p.shadow_init(r#"{"isVisible": false, "isHidden": true}"#).unwrap();
-        p.register_flip_batch(r#"[["isVisible", "isHidden"]]"#).unwrap();
+        p.shadow_init(r#"{"isVisible": false, "isHidden": true}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["isVisible", "isHidden"]]"#)
+            .unwrap();
 
         let result = p
             .process_changes(r#"[{"path": "isVisible", "value_json": "true"}]"#)
@@ -1348,8 +1436,10 @@ mod tests {
     fn flip_inverts_false_to_true() {
         let mut p = make_pipeline();
         // Start with opposite values so the change is NOT a no-op
-        p.shadow_init(r#"{"isVisible": false, "isHidden": true}"#).unwrap();
-        p.register_flip_batch(r#"[["isVisible", "isHidden"]]"#).unwrap();
+        p.shadow_init(r#"{"isVisible": false, "isHidden": true}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["isVisible", "isHidden"]]"#)
+            .unwrap();
 
         let result = p
             .process_changes(r#"[{"path": "isHidden", "value_json": "false"}]"#)
@@ -1367,8 +1457,10 @@ mod tests {
     #[test]
     fn flip_with_non_boolean_passes_through() {
         let mut p = make_pipeline();
-        p.shadow_init(r#"{"enabled": true, "disabled": false}"#).unwrap();
-        p.register_flip_batch(r#"[["enabled", "disabled"]]"#).unwrap();
+        p.shadow_init(r#"{"enabled": true, "disabled": false}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["enabled", "disabled"]]"#)
+            .unwrap();
 
         // Try to set a non-boolean value (should pass through unchanged)
         let result = p
@@ -1386,8 +1478,10 @@ mod tests {
     fn flip_multiple_peers() {
         let mut p = make_pipeline();
         // Start with a=false so changing to true is NOT a no-op
-        p.shadow_init(r#"{"a": false, "b": true, "c": true}"#).unwrap();
-        p.register_flip_batch(r#"[["a", "b"], ["a", "c"]]"#).unwrap();
+        p.shadow_init(r#"{"a": false, "b": true, "c": true}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["a", "b"], ["a", "c"]]"#)
+            .unwrap();
 
         let result = p
             .process_changes(r#"[{"path": "a", "value_json": "true"}]"#)
@@ -1400,7 +1494,10 @@ mod tests {
         assert_eq!(parsed.changes[0].value_json, "true");
 
         // Check that both peers got false
-        let paths: Vec<&str> = parsed.changes[1..].iter().map(|c| c.path.as_str()).collect();
+        let paths: Vec<&str> = parsed.changes[1..]
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect();
         assert!(paths.contains(&"b"));
         assert!(paths.contains(&"c"));
         for change in &parsed.changes[1..] {
@@ -1448,10 +1545,8 @@ mod tests {
     fn full_pipeline_aggregation_only() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(
-            r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#,
-        )
-        .unwrap();
+        p.register_aggregation_batch(r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#)
+            .unwrap();
 
         let result = p
             .process_changes(r#"[{"path": "allUsers", "value_json": "\"alice\""}]"#)
@@ -1525,14 +1620,14 @@ mod tests {
         .unwrap();
 
         // Register aggregation
-        p.register_aggregation_batch(
-            r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#,
-        )
-        .unwrap();
+        p.register_aggregation_batch(r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#)
+            .unwrap();
 
         // Register sync: user.status <-> profile.status
-        p.register_sync_batch(r#"[["user1.status", "profile1.status"], ["user2.status", "profile2.status"]]"#)
-            .unwrap();
+        p.register_sync_batch(
+            r#"[["user1.status", "profile1.status"], ["user2.status", "profile2.status"]]"#,
+        )
+        .unwrap();
 
         // Register flip: user1.status <-> user2.status
         p.register_flip_batch(r#"[["user1.status", "user2.status"]]"#)
@@ -1562,8 +1657,14 @@ mod tests {
         // Check that key paths are present
         assert!(paths.contains(&"user1.status"), "Missing user1.status");
         assert!(paths.contains(&"user2.status"), "Missing user2.status");
-        assert!(paths.contains(&"profile1.status"), "Missing profile1.status");
-        assert!(paths.contains(&"profile2.status"), "Missing profile2.status");
+        assert!(
+            paths.contains(&"profile1.status"),
+            "Missing profile1.status"
+        );
+        assert!(
+            paths.contains(&"profile2.status"),
+            "Missing profile2.status"
+        );
     }
 
     #[test]
@@ -1601,8 +1702,7 @@ mod tests {
     fn full_pipeline_multiple_boollogics_from_sync() {
         let mut p = make_pipeline();
 
-        p.register_sync_batch(r#"[["flag1", "flag2"]]"#)
-            .unwrap();
+        p.register_sync_batch(r#"[["flag1", "flag2"]]"#).unwrap();
 
         p.register_boollogic(
             "_concerns.field1.visibleWhen",
@@ -1624,7 +1724,11 @@ mod tests {
         assert_eq!(parsed.changes.len(), 2);
         assert_eq!(parsed.concern_changes.len(), 2);
 
-        let bl_paths: Vec<&str> = parsed.concern_changes.iter().map(|c| c.path.as_str()).collect();
+        let bl_paths: Vec<&str> = parsed
+            .concern_changes
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect();
         assert!(bl_paths.contains(&"_concerns.field1.visibleWhen"));
         assert!(bl_paths.contains(&"_concerns.field2.visibleWhen"));
 
@@ -1640,19 +1744,14 @@ mod tests {
             .unwrap();
 
         // a <-> b (sync)
-        p.register_sync_batch(r#"[["a", "b"]]"#)
-            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
 
         // a <-> c (flip)
-        p.register_flip_batch(r#"[["a", "c"]]"#)
-            .unwrap();
+        p.register_flip_batch(r#"[["a", "c"]]"#).unwrap();
 
         // BoolLogic on c
-        p.register_boollogic(
-            "_concerns.x.disabledWhen",
-            r#"{"IS_EQUAL": ["c", false]}"#,
-        )
-        .unwrap();
+        p.register_boollogic("_concerns.x.disabledWhen", r#"{"IS_EQUAL": ["c", false]}"#)
+            .unwrap();
 
         // Set a = false
         let result = p
@@ -1670,16 +1769,22 @@ mod tests {
         assert!(paths.contains(&"b"), "Missing b (sync)");
         assert!(paths.contains(&"c"), "Missing c (flip)");
 
-        let concern_paths: Vec<&str> = parsed.concern_changes.iter().map(|c| c.path.as_str()).collect();
-        assert!(concern_paths.contains(&"_concerns.x.disabledWhen"), "Missing BoolLogic");
+        let concern_paths: Vec<&str> = parsed
+            .concern_changes
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect();
+        assert!(
+            concern_paths.contains(&"_concerns.x.disabledWhen"),
+            "Missing BoolLogic"
+        );
     }
 
     #[test]
     fn full_pipeline_shadow_state_kept_in_sync() {
         let mut p = make_pipeline();
 
-        p.register_sync_batch(r#"[["x", "y"]]"#)
-            .unwrap();
+        p.register_sync_batch(r#"[["x", "y"]]"#).unwrap();
 
         p.process_changes(r#"[{"path": "x", "value_json": "\"updated\""}]"#)
             .unwrap();
@@ -1706,8 +1811,7 @@ mod tests {
             .unwrap();
 
         // Flip pair
-        p.register_flip_batch(r#"[["b1", "b2"]]"#)
-            .unwrap();
+        p.register_flip_batch(r#"[["b1", "b2"]]"#).unwrap();
 
         // 3 input changes
         let result = p
@@ -1738,7 +1842,8 @@ mod tests {
         assert!(paths.contains(&"c2"));
 
         // Verify values
-        let changes_map: std::collections::HashMap<&str, &str> = parsed.changes
+        let changes_map: std::collections::HashMap<&str, &str> = parsed
+            .changes
             .iter()
             .map(|c| (c.path.as_str(), c.value_json.as_str()))
             .collect();
@@ -1756,8 +1861,7 @@ mod tests {
         let mut p = make_pipeline();
 
         // x <-> y (sync)
-        p.register_sync_batch(r#"[["x", "y"]]"#)
-            .unwrap();
+        p.register_sync_batch(r#"[["x", "y"]]"#).unwrap();
 
         // BoolLogic depends on y
         p.register_boollogic(
@@ -1785,10 +1889,8 @@ mod tests {
     fn full_pipeline_aggregation_with_boollogic() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(
-            r#"[{"target": "allFlags", "sources": ["flag1", "flag2"]}]"#,
-        )
-        .unwrap();
+        p.register_aggregation_batch(r#"[{"target": "allFlags", "sources": ["flag1", "flag2"]}]"#)
+            .unwrap();
 
         p.register_boollogic(
             "_concerns.panel.visibleWhen",
@@ -1840,7 +1942,10 @@ mod tests {
 
         let validator = &parsed.validators_to_run[0];
         assert_eq!(validator.validator_id, 1);
-        assert_eq!(validator.output_path, "_concerns.user.email.validationState");
+        assert_eq!(
+            validator.output_path,
+            "_concerns.user.email.validationState"
+        );
         assert_eq!(validator.dependency_values.len(), 1);
         assert_eq!(
             validator.dependency_values.get("user.email").unwrap(),
@@ -2002,7 +2107,10 @@ mod tests {
         // Should have: 1 state change, 1 concern change (BoolLogic), 0 validators
         assert_eq!(parsed.changes.len(), 1);
         assert_eq!(parsed.concern_changes.len(), 1);
-        assert_eq!(parsed.concern_changes[0].path, "_concerns.user.email.disabledWhen");
+        assert_eq!(
+            parsed.concern_changes[0].path,
+            "_concerns.user.email.disabledWhen"
+        );
         assert_eq!(parsed.concern_changes[0].value_json, "true");
         assert_eq!(parsed.validators_to_run.len(), 0); // Validator depends on user.email, not user.role
     }

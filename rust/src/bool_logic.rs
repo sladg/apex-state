@@ -71,12 +71,8 @@ impl BoolLogicNode {
                 None => true,
             },
 
-            BoolLogicNode::And(conditions) => {
-                conditions.iter().all(|c| c.evaluate_value(state))
-            }
-            BoolLogicNode::Or(conditions) => {
-                conditions.iter().any(|c| c.evaluate_value(state))
-            }
+            BoolLogicNode::And(conditions) => conditions.iter().all(|c| c.evaluate_value(state)),
+            BoolLogicNode::Or(conditions) => conditions.iter().any(|c| c.evaluate_value(state)),
             BoolLogicNode::Not(condition) => !condition.evaluate_value(state),
 
             BoolLogicNode::Gt(path, threshold) => matches!(
@@ -288,7 +284,6 @@ impl BoolLogicRegistry {
     }
 }
 
-
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -327,10 +322,7 @@ mod tests {
 
         let mut document = HashMap::new();
         document.insert("id".to_string(), ValueRepr::String("doc-456".to_string()));
-        document.insert(
-            "status".to_string(),
-            ValueRepr::String("draft".to_string()),
-        );
+        document.insert("status".to_string(), ValueRepr::String("draft".to_string()));
 
         let mut root = HashMap::new();
         root.insert("user".to_string(), ValueRepr::Object(user));
@@ -356,10 +348,7 @@ mod tests {
     fn test_deserialize_is_equal_number() {
         let logic: BoolLogicNode =
             serde_json::from_value(json!({"IS_EQUAL": ["user.age", 25]})).unwrap();
-        assert_eq!(
-            logic,
-            BoolLogicNode::IsEqual("user.age".into(), json!(25))
-        );
+        assert_eq!(logic, BoolLogicNode::IsEqual("user.age".into(), json!(25)));
     }
 
     #[test]
@@ -384,8 +373,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_exists() {
-        let logic: BoolLogicNode =
-            serde_json::from_value(json!({"EXISTS": "user.email"})).unwrap();
+        let logic: BoolLogicNode = serde_json::from_value(json!({"EXISTS": "user.email"})).unwrap();
         assert_eq!(logic, BoolLogicNode::Exists("user.email".into()));
     }
 
@@ -449,15 +437,13 @@ mod tests {
 
     #[test]
     fn test_deserialize_gt() {
-        let logic: BoolLogicNode =
-            serde_json::from_value(json!({"GT": ["user.age", 18]})).unwrap();
+        let logic: BoolLogicNode = serde_json::from_value(json!({"GT": ["user.age", 18]})).unwrap();
         assert_eq!(logic, BoolLogicNode::Gt("user.age".into(), 18.0));
     }
 
     #[test]
     fn test_deserialize_lt() {
-        let logic: BoolLogicNode =
-            serde_json::from_value(json!({"LT": ["user.age", 65]})).unwrap();
+        let logic: BoolLogicNode = serde_json::from_value(json!({"LT": ["user.age", 65]})).unwrap();
         assert_eq!(logic, BoolLogicNode::Lt("user.age".into(), 65.0));
     }
 
@@ -616,10 +602,7 @@ mod tests {
 
     #[test]
     fn test_serialize_in() {
-        let logic = BoolLogicNode::In(
-            "user.role".into(),
-            vec![json!("admin"), json!("editor")],
-        );
+        let logic = BoolLogicNode::In("user.role".into(), vec![json!("admin"), json!("editor")]);
         assert_eq!(
             serde_json::to_value(&logic).unwrap(),
             json!({"IN": ["user.role", ["admin", "editor"]]})
@@ -857,16 +840,14 @@ mod tests {
     #[test]
     fn test_eval_in_match() {
         let state = make_state();
-        let logic =
-            BoolLogicNode::In("user.role".into(), vec![json!("admin"), json!("editor")]);
+        let logic = BoolLogicNode::In("user.role".into(), vec![json!("admin"), json!("editor")]);
         assert!(logic.evaluate_value(&state));
     }
 
     #[test]
     fn test_eval_in_no_match() {
         let state = make_state();
-        let logic =
-            BoolLogicNode::In("user.role".into(), vec![json!("editor"), json!("viewer")]);
+        let logic = BoolLogicNode::In("user.role".into(), vec![json!("editor"), json!("viewer")]);
         assert!(!logic.evaluate_value(&state));
     }
 

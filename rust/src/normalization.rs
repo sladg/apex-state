@@ -23,10 +23,7 @@ pub struct NormalizedChange {
 /// 1. Exact match: changePath == registeredPath → value applies directly
 /// 2. Parent change: registeredPath starts with changePath + '.' → extract nested value
 /// 3. Child change: changePath starts with registeredPath + '.' → preserve relative path
-fn normalize_change(
-    change_path: &str,
-    registered_path: &str,
-) -> Option<(Option<String>, String)> {
+fn normalize_change(change_path: &str, registered_path: &str) -> Option<(Option<String>, String)> {
     // Case 1: Exact match
     // e.g., changePath='a.b.c', registeredPath='a.b.c'
     if change_path == registered_path {
@@ -106,7 +103,9 @@ pub fn normalize_changes_for_groups(
             let mut match_found: Option<(String, Option<String>)> = None;
 
             for registered_path in group {
-                if let Some((relative_path, _match_type)) = normalize_change(&change.path, registered_path) {
+                if let Some((relative_path, _match_type)) =
+                    normalize_change(&change.path, registered_path)
+                {
                     match_found = Some((registered_path.clone(), relative_path));
                     break; // Stop at first match in group
                 }
@@ -160,10 +159,7 @@ mod tests {
             value_json: "{\"c\": {\"d\": 42}}".to_string(),
         }];
 
-        let path_groups = vec![vec![
-            "a.b.c.d".to_string(),
-            "path.synced".to_string(),
-        ]];
+        let path_groups = vec![vec!["a.b.c.d".to_string(), "path.synced".to_string()]];
 
         let result = normalize_changes_for_groups(&changes, &path_groups);
 
@@ -202,10 +198,7 @@ mod tests {
             value_json: "\"value\"".to_string(),
         }];
 
-        let path_groups = vec![vec![
-            "a.b.c".to_string(),
-            "path.synced".to_string(),
-        ]];
+        let path_groups = vec![vec!["a.b.c".to_string(), "path.synced".to_string()]];
 
         let result = normalize_changes_for_groups(&changes, &path_groups);
 
@@ -266,10 +259,7 @@ mod tests {
             value_json: "{}".to_string(),
         }];
 
-        let path_groups = vec![vec![
-            "".to_string(),
-            "other".to_string(),
-        ]];
+        let path_groups = vec![vec!["".to_string(), "other".to_string()]];
 
         let result = normalize_changes_for_groups(&changes, &path_groups);
 
@@ -285,10 +275,7 @@ mod tests {
             value_json: "{\"a\": {\"b\": 42}}".to_string(),
         }];
 
-        let path_groups = vec![vec![
-            "a.b".to_string(),
-            "x.y".to_string(),
-        ]];
+        let path_groups = vec![vec!["a.b".to_string(), "x.y".to_string()]];
 
         let result = normalize_changes_for_groups(&changes, &path_groups);
 
@@ -304,10 +291,7 @@ mod tests {
             value_json: "{\"name\": \"Alice\"}".to_string(),
         }];
 
-        let path_groups = vec![vec![
-            "user".to_string(),
-            "profile".to_string(),
-        ]];
+        let path_groups = vec![vec!["user".to_string(), "profile".to_string()]];
 
         let result = normalize_changes_for_groups(&changes, &path_groups);
 

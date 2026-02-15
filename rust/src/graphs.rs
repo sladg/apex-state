@@ -57,11 +57,11 @@ impl Graph {
         // Update adjacency
         self.adjacency
             .entry(path1_id)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(path2_id);
         self.adjacency
             .entry(path2_id)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(path1_id);
 
         let g1 = self.node_to_component.get(&path1_id).copied();
@@ -84,12 +84,18 @@ impl Graph {
             (Some(comp1), None) => {
                 // Add path2 to path1's component
                 self.node_to_component.insert(path2_id, comp1);
-                self.component_to_nodes.get_mut(&comp1).unwrap().insert(path2_id);
+                self.component_to_nodes
+                    .get_mut(&comp1)
+                    .unwrap()
+                    .insert(path2_id);
             }
             (None, Some(comp2)) => {
                 // Add path1 to path2's component
                 self.node_to_component.insert(path1_id, comp2);
-                self.component_to_nodes.get_mut(&comp2).unwrap().insert(path1_id);
+                self.component_to_nodes
+                    .get_mut(&comp2)
+                    .unwrap()
+                    .insert(path1_id);
             }
             (Some(comp1), Some(comp2)) if comp1 != comp2 => {
                 // Merge components - move smaller into larger
@@ -109,7 +115,10 @@ impl Graph {
 
                 for node in smaller_nodes {
                     self.node_to_component.insert(node, larger_comp);
-                    self.component_to_nodes.get_mut(&larger_comp).unwrap().insert(node);
+                    self.component_to_nodes
+                        .get_mut(&larger_comp)
+                        .unwrap()
+                        .insert(node);
                 }
 
                 self.component_to_nodes.remove(&smaller_comp);
@@ -145,18 +154,22 @@ impl Graph {
         self.edges.remove(&edge);
 
         // Update adjacency
-        self.adjacency.get_mut(&path1_id).map(|adj| adj.remove(&path2_id));
-        self.adjacency.get_mut(&path2_id).map(|adj| adj.remove(&path1_id));
+        self.adjacency
+            .get_mut(&path1_id)
+            .map(|adj| adj.remove(&path2_id));
+        self.adjacency
+            .get_mut(&path2_id)
+            .map(|adj| adj.remove(&path1_id));
 
         // Check for isolated nodes
         let path1_isolated = self
             .adjacency
             .get(&path1_id)
-            .map_or(true, |adj| adj.is_empty());
+            .is_none_or(|adj| adj.is_empty());
         let path2_isolated = self
             .adjacency
             .get(&path2_id)
-            .map_or(true, |adj| adj.is_empty());
+            .is_none_or(|adj| adj.is_empty());
 
         if path1_isolated {
             self.remove_isolated_node(path1_id);
@@ -174,7 +187,9 @@ impl Graph {
     /// Remove an isolated node from the graph.
     fn remove_isolated_node(&mut self, node: u32) {
         if let Some(comp_id) = self.node_to_component.get(&node).copied() {
-            self.component_to_nodes.get_mut(&comp_id).map(|nodes| nodes.remove(&node));
+            self.component_to_nodes
+                .get_mut(&comp_id)
+                .map(|nodes| nodes.remove(&node));
             if self.component_to_nodes[&comp_id].is_empty() {
                 self.component_to_nodes.remove(&comp_id);
             }

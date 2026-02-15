@@ -227,7 +227,7 @@ describe('EP3 Listener Dispatch', () => {
       expect(allIds).toContain(1)
       expect(allIds).toContain(2)
 
-      unwasm.registerListenersBatch([2])
+      wasm.unregisterListenersBatch([2])
 
       plan = wasm.createDispatchPlan([{ path: 'user.name', value: 'Charlie' }])
       allIds = plan.levels
@@ -242,7 +242,7 @@ describe('EP3 Listener Dispatch', () => {
       wasm.registerListenersBatch([
         { subscriber_id: 1, topic_path: 'user', scope_path: 'user' },
       ])
-      unwasm.registerListenersBatch([1])
+      wasm.unregisterListenersBatch([1])
 
       const plan = wasm.createDispatchPlan([
         { path: 'user.name', value: 'Bob' },
@@ -310,6 +310,78 @@ describe('EP3 Listener Dispatch', () => {
 
       expect(dispatch).toBeDefined()
       expect(dispatch!.scope_path).toBe('user.name')
+    })
+  })
+
+  describe('FullExecutionPlan with input_change_ids', () => {
+    it('should reference input changes by index in ProcessResult.changes', () => {
+      // TODO: Step 1 - Register listener and call processChanges with multiple changes
+      // TODO: Step 2 - Extract FullExecutionPlan from result
+      // TODO: Step 3 - Verify dispatch.input_change_ids contains correct indexes
+    })
+
+    it('should handle single change dispatch with single input_change_id', () => {
+      // TODO: Step 1 - Register listener for specific path
+      // TODO: Step 2 - Call processChanges with single matching change
+      // TODO: Step 3 - Verify dispatch.input_change_ids === [0]
+    })
+
+    it('should handle multiple changes dispatched to same listener', () => {
+      // TODO: Step 1 - Register listener on parent path (e.g., "user")
+      // TODO: Step 2 - Call processChanges with multiple child changes
+      // TODO: Step 3 - Verify dispatch.input_change_ids contains all matching indexes
+    })
+
+    it('should handle subset of changes matching listener topic', () => {
+      // TODO: Step 1 - Register listener on "user.name"
+      // TODO: Step 2 - Call processChanges with changes to "user.name" and "user.role"
+      // TODO: Step 3 - Verify only relevant change index appears in input_change_ids
+    })
+  })
+
+  describe('Propagation map structure', () => {
+    it('should map child dispatch to parent listener', () => {
+      // TODO: Step 1 - Register parent listener (depth 1) and child listener (depth 2)
+      // TODO: Step 2 - Call processChanges to get FullExecutionPlan
+      // TODO: Step 3 - Verify propagation_map[child_dispatch_id] contains parent target
+    })
+
+    it('should include remap_prefix for scope path transformation', () => {
+      // TODO: Step 1 - Register listener with scope_path differing from topic_path
+      // TODO: Step 2 - Call processChanges
+      // TODO: Step 3 - Verify PropagationTarget.remap_prefix matches expected prefix
+    })
+
+    it('should handle multiple targets for single dispatch', () => {
+      // TODO: Step 1 - Register multiple parent listeners subscribing to overlapping topics
+      // TODO: Step 2 - Register child listener that can propagate to both
+      // TODO: Step 3 - Verify propagation_map[child_id] contains multiple targets
+    })
+
+    it('should handle sibling dispatches with no propagation links', () => {
+      // TODO: Step 1 - Register listeners at same depth with different topics
+      // TODO: Step 2 - Call processChanges with changes for both
+      // TODO: Step 3 - Verify propagation_map entries for siblings are empty or only link upward
+    })
+
+    it('should handle root listener receiving all propagations', () => {
+      // TODO: Step 1 - Register root listener (topic_path: "")
+      // TODO: Step 2 - Register child listeners at various depths
+      // TODO: Step 3 - Verify root dispatch appears in propagation targets for all children
+    })
+  })
+
+  describe('FullExecutionPlan vs DispatchPlan (legacy)', () => {
+    it('should return FullExecutionPlan from processChanges', () => {
+      // TODO: Step 1 - Register listeners and call processChanges
+      // TODO: Step 2 - Extract execution_plan from result
+      // TODO: Step 3 - Verify structure matches FullExecutionPlan (groups, propagation_map)
+    })
+
+    it('should maintain backward compat with createDispatchPlan returning DispatchPlan', () => {
+      // TODO: Step 1 - Register listeners and call createDispatchPlan
+      // TODO: Step 2 - Verify result structure matches legacy DispatchPlan (levels, depth)
+      // TODO: Step 3 - Ensure no FullExecutionPlan fields present (no propagation_map)
     })
   })
 })

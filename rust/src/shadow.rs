@@ -26,9 +26,11 @@ impl From<serde_json::Value> for ValueRepr {
             serde_json::Value::Array(arr) => {
                 ValueRepr::Array(arr.into_iter().map(ValueRepr::from).collect())
             }
-            serde_json::Value::Object(map) => {
-                ValueRepr::Object(map.into_iter().map(|(k, v)| (k, ValueRepr::from(v))).collect())
-            }
+            serde_json::Value::Object(map) => ValueRepr::Object(
+                map.into_iter()
+                    .map(|(k, v)| (k, ValueRepr::from(v)))
+                    .collect(),
+            ),
         }
     }
 }
@@ -53,11 +55,11 @@ impl ValueRepr {
             ValueRepr::Array(arr) => {
                 serde_json::Value::Array(arr.iter().map(|v| v.to_json_value()).collect())
             }
-            ValueRepr::Object(map) => {
-                serde_json::Value::Object(
-                    map.iter().map(|(k, v)| (k.clone(), v.to_json_value())).collect(),
-                )
-            }
+            ValueRepr::Object(map) => serde_json::Value::Object(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), v.to_json_value()))
+                    .collect(),
+            ),
         }
     }
 }
@@ -131,7 +133,11 @@ impl ShadowState {
         };
 
         let mut result = Vec::new();
-        let base = if path.is_empty() { String::new() } else { path.to_owned() };
+        let base = if path.is_empty() {
+            String::new()
+        } else {
+            path.to_owned()
+        };
         Self::collect_leaves(value, &base, &mut result);
         result
     }
@@ -204,10 +210,7 @@ impl ShadowState {
                     Self::set_at(child, rest, value)
                 }
             }
-            _ => Err(format!(
-                "Cannot traverse through primitive at '{}'",
-                key
-            )),
+            _ => Err(format!("Cannot traverse through primitive at '{}'", key)),
         }
     }
 
@@ -261,8 +264,14 @@ mod tests {
     #[test]
     fn from_json_primitives() {
         assert_eq!(ValueRepr::from(serde_json::json!(null)), ValueRepr::Null);
-        assert_eq!(ValueRepr::from(serde_json::json!(true)), ValueRepr::Bool(true));
-        assert_eq!(ValueRepr::from(serde_json::json!(42)), ValueRepr::Number(42.0));
+        assert_eq!(
+            ValueRepr::from(serde_json::json!(true)),
+            ValueRepr::Bool(true)
+        );
+        assert_eq!(
+            ValueRepr::from(serde_json::json!(42)),
+            ValueRepr::Number(42.0)
+        );
         assert_eq!(
             ValueRepr::from(serde_json::json!("hello")),
             ValueRepr::String("hello".to_owned())
@@ -468,5 +477,4 @@ mod tests {
         let mut state = ShadowState::new();
         assert!(state.set("a", "not json").is_err());
     }
-
 }

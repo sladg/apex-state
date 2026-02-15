@@ -313,7 +313,7 @@ impl TopicRouter {
             // Add subscriber
             self.subscribers
                 .entry(topic_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(reg.subscriber_id);
 
             self.subscriber_meta.insert(
@@ -491,7 +491,7 @@ impl TopicRouter {
             if let Some(meta) = self.topic_meta.get(&topic_id) {
                 depth_groups
                     .entry(meta.depth)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(topic_id);
             }
         }
@@ -649,7 +649,9 @@ impl TopicRouter {
                 }
 
                 if !entries.is_empty() {
-                    groups.push(DispatchGroup { dispatches: entries });
+                    groups.push(DispatchGroup {
+                        dispatches: entries,
+                    });
                 }
             }
         }
@@ -658,8 +660,7 @@ impl TopicRouter {
         // For each dispatch D_child, find all dispatches at shallower depths
         // whose scope_path is an ancestor of D_child's scope_path.
         let total_dispatches = next_dispatch_id as usize;
-        let mut propagation_map: Vec<Vec<PropagationTarget>> =
-            vec![Vec::new(); total_dispatches];
+        let mut propagation_map: Vec<Vec<PropagationTarget>> = vec![Vec::new(); total_dispatches];
 
         for child in &all_dispatch_metas {
             for parent in &all_dispatch_metas {
@@ -674,11 +675,7 @@ impl TopicRouter {
                     false // same scope, not ancestor
                 } else {
                     child.scope_path.starts_with(&parent.scope_path)
-                        && child
-                            .scope_path
-                            .as_bytes()
-                            .get(parent.scope_path.len())
-                            == Some(&b'.')
+                        && child.scope_path.as_bytes().get(parent.scope_path.len()) == Some(&b'.')
                 };
 
                 if !is_ancestor {
@@ -769,7 +766,7 @@ impl TopicRouter {
                 for route in routes {
                     let to_changes = downstream_changes
                         .entry(route.to_topic_id)
-                        .or_insert_with(Vec::new);
+                        .or_default();
                     // Pass produced changes as absolute paths (not relativized yet)
                     for &change in &relevant {
                         to_changes.push(change.clone());
@@ -787,9 +784,7 @@ impl TopicRouter {
                     continue; // Only route to shallower topics
                 }
             }
-            let entry = downstream_changes
-                .entry(topic_id)
-                .or_insert_with(Vec::new);
+            let entry = downstream_changes.entry(topic_id).or_insert_with(Vec::new);
             for change in produced_changes {
                 if !entry.iter().any(|c| c.path == change.path) {
                     entry.push(change.clone());
@@ -807,7 +802,7 @@ impl TopicRouter {
             if let Some(meta) = self.topic_meta.get(&topic_id) {
                 depth_groups
                     .entry(meta.depth)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push((topic_id, changes));
             }
         }
@@ -1077,10 +1072,7 @@ mod tests {
         register(&mut router, 2, "user", "user");
         register(&mut router, 3, "", "");
 
-        let changes = vec![make_change(
-            "user.profile.email",
-            r#""test@test.com""#,
-        )];
+        let changes = vec![make_change("user.profile.email", r#""test@test.com""#)];
         let matched = router.seed_topics(&changes);
 
         // Should match: user.profile, user, root
@@ -1224,11 +1216,10 @@ mod tests {
         // Should route to depth-1 topic (user)
         assert!(!plan.levels.is_empty());
 
-        let has_user_dispatch = plan.levels.iter().any(|l| {
-            l.dispatches
-                .iter()
-                .any(|d| d.subscriber_id == 2)
-        });
+        let has_user_dispatch = plan
+            .levels
+            .iter()
+            .any(|l| l.dispatches.iter().any(|d| d.subscriber_id == 2));
         assert!(has_user_dispatch);
     }
 
@@ -1498,7 +1489,8 @@ mod tests {
         assert_eq!(plan.propagation_map.len(), 3);
 
         // Find dispatch IDs by scope
-        let mut id_by_scope: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+        let mut id_by_scope: std::collections::HashMap<&str, u32> =
+            std::collections::HashMap::new();
         for group in &plan.groups {
             for d in &group.dispatches {
                 id_by_scope.insert(&d.scope_path, d.dispatch_id);
@@ -1513,10 +1505,16 @@ mod tests {
         let deep_targets = &plan.propagation_map[deep_id as usize];
         assert_eq!(deep_targets.len(), 2);
 
-        let to_orders = deep_targets.iter().find(|t| t.target_dispatch_id == mid_id).unwrap();
+        let to_orders = deep_targets
+            .iter()
+            .find(|t| t.target_dispatch_id == mid_id)
+            .unwrap();
         assert_eq!(to_orders.remap_prefix, "order_0");
 
-        let to_root = deep_targets.iter().find(|t| t.target_dispatch_id == root_id).unwrap();
+        let to_root = deep_targets
+            .iter()
+            .find(|t| t.target_dispatch_id == root_id)
+            .unwrap();
         assert_eq!(to_root.remap_prefix, "orders.order_0");
 
         // Mid dispatch (orders) should propagate to root only

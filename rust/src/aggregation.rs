@@ -36,13 +36,8 @@ impl AggregationRegistry {
 
     /// Register a single aggregation.
     pub(crate) fn register(&mut self, target: String, sources: Vec<String>) {
-        self.aggregations.insert(
-            target.clone(),
-            Aggregation {
-                target,
-                sources,
-            },
-        );
+        self.aggregations
+            .insert(target.clone(), Aggregation { target, sources });
     }
 
     /// Unregister a single aggregation by target path.
@@ -138,7 +133,11 @@ mod tests {
         let mut registry = AggregationRegistry::new();
         registry.register(
             "allUsers".to_string(),
-            vec!["user1".to_string(), "user2".to_string(), "user3".to_string()],
+            vec![
+                "user1".to_string(),
+                "user2".to_string(),
+                "user3".to_string(),
+            ],
         );
 
         let changes = vec![Change {

@@ -51,8 +51,7 @@ pub fn pipeline_reset() {
 /// Initialize shadow state directly from a JS object (no JSON serialization).
 #[wasm_bindgen]
 pub fn shadow_init(state: JsValue) -> Result<(), JsValue> {
-    let value: serde_json::Value =
-        from_js(state)?;
+    let value: serde_json::Value = from_js(state)?;
     PIPELINE.with(|p| {
         p.borrow_mut()
             .shadow_init_value(value)
@@ -185,16 +184,18 @@ pub fn unregister_validators_batch(validator_ids_json: &str) -> Result<(), JsVal
     })
 }
 
-/// Process a batch of state changes (Phase 1: orchestration, defers finalization).
+/// Process a batch of state changes through the pipeline.
 ///
-/// Always diffs incoming changes against shadow state to filter out no-ops before
-/// entering the pipeline. Early exits if all changes are no-ops.
-///
+/// Diffs incoming changes against shadow state to filter no-ops before processing.
+/// Runs: aggregation → sync → flip → BoolLogic → validator routing → listener routing.
 /// Updates shadow state during processing (needed for BoolLogic evaluation).
-/// Returns readonly context for JS listener execution + validators + execution plan.
+/// Buffers BoolLogic concern results for later finalization.
+///
+/// Returns execution context for JS: state_changes, validators_to_run, execution_plan.
+/// After JS executes listeners/validators, call pipeline_finalize() with their results.
 ///
 /// Input: JS array of `{ path: "...", value_json: "..." }`
-/// Output: JS object `{ state_changes: [...], validators_to_run: [...], execution_plan: ... }`
+/// Output: JS object `{ state_changes: [...], validators_to_run: [...], execution_plan: {...}, has_work: bool }`
 #[wasm_bindgen]
 pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
     let input: Vec<Change> = from_js(changes)?;
@@ -207,15 +208,17 @@ pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
     })
 }
 
-/// Finalize pipeline with JS changes (listeners + validators mixed) (Phase 2).
+/// Finalize pipeline by merging JS-produced changes with buffered BoolLogic results.
 ///
-/// Partitions js_changes by _concerns. prefix, merges with pending buffers,
-/// diffs against shadow state, updates shadow, returns final changes for valtio.
+/// Partitions js_changes by _concerns. prefix, merges with buffered concern changes,
+/// diffs all changes against shadow state (filters no-ops), updates shadow for both
+/// state and concern paths, returns final changes ready for valtio application.
 ///
 /// Input: Single JS array of `{ path: "...", value_json: "..." }`
 ///   - Mix of listener-produced state changes + validator concern results (with _concerns. prefix)
 /// Output: JS object `{ state_changes: [...], concern_changes: [...] }`
 ///   - concern_changes have _concerns. prefix stripped (paths relative to _concerns root)
+///   - Both state_changes and concern_changes are diffed (no-ops filtered out)
 #[wasm_bindgen]
 pub fn pipeline_finalize(js_changes: JsValue) -> Result<JsValue, JsValue> {
     let changes: Vec<Change> = from_js(js_changes)?;
@@ -295,4 +298,3 @@ pub fn shadow_get(path: &str) -> Option<String> {
 pub fn intern_count() -> u32 {
     PIPELINE.with(|p| p.borrow().intern_count())
 }
-

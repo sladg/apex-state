@@ -10,9 +10,10 @@ Project key: **WASM**
 | WASM-EP2 | Shadow State & Pipeline | WASM-008 → WASM-015 | EP1 | **✅ COMPLETE** (2026-02-15) |
 | WASM-EP3 | Listener Orchestration | WASM-016 → WASM-019 | EP2 | **✅ COMPLETE** (2026-02-15) — Tests deferred |
 | WASM-EP4 | Validation Batching | WASM-021 → WASM-024 | EP2 | **✅ COMPLETE** (2026-02-15) — Tests: placeholders written |
-| WASM-EP5 | Streaming Data Gateway | WASM-028 → WASM-031 | EP2 | **⏳ READY** |
+| ~~WASM-EP5~~ | ~~Streaming Data Gateway~~ | ~~WASM-028 → WASM-031~~ | ~~EP2~~ | **🚫 SUPERSEDED** — Absorbed by EP6; no-op filtering in every pipeline step eliminates the need for a separate streaming gateway |
+| WASM-EP6 | Pipeline Refactor | WASM-032 | EP4 | **✅ COMPLETE** (2026-02-15) |
 
-EP3, EP4, EP5 can run in parallel after EP2 completes.
+EP3, EP4 ran in parallel after EP2. EP6 followed EP4.
 
 ## Story Map
 
@@ -37,14 +38,20 @@ EP2 Shadow State & Pipeline (COMPLETE ✅)
   014 JS-side pipeline bridge ✅ (src/pipeline/processChanges.ts)
   015 Phase 2 integration tests ✅ fa385db
         │
-        ├──────────────┬──────────────┐
-        ▼              ▼              ▼
-EP3 Listeners (✅)   EP4 Validation (✅)  EP5 Streaming (⏳)
-  016 TopicRouter ✅    021 Rev-dep ✅        028 Diff engine
-  017 Dispatch plan ✅  022 Dispatch ✅       029 Diff + pipeline
-  018 Seed+routing ✅   023 Batch Zod ✅      030 Gateway API
-  019 JS dispatch ✅    024 Tests (stubs) ✅  031 Tests
+        ├──────────────┐
+        ▼              ▼
+EP3 Listeners (✅)   EP4 Validation (✅)
+  016 TopicRouter ✅    021 Rev-dep ✅
+  017 Dispatch plan ✅  022 Dispatch ✅
+  018 Seed+routing ✅   023 Batch Zod ✅
+  019 JS dispatch ✅    024 Tests (stubs) ✅
+                              │
+                              ▼
+                       EP6 Pipeline Refactor (✅)
+                         032 Round-trip refactor ✅ 22199cf
 ```
+
+~~EP5 Streaming (SUPERSEDED)~~ — No-op change filtering at every pipeline step makes a separate streaming gateway unnecessary.
 
 ---
 
@@ -101,28 +108,63 @@ EP3 Listeners (✅)   EP4 Validation (✅)  EP5 Streaming (⏳)
   - WASM-024: Test placeholders written — `tests/wasm/validation-batching.test.ts` (18 stubs, bodies TBD)
 - **Implementation**: `rust/src/validator.rs`, `rust/src/rev_index.rs`, `src/concerns/registration.ts`, `src/pipeline/processChanges.ts`
 
-### ⏳ Ready: EP5 Streaming Data Gateway
+### 🚫 Superseded: EP5 Streaming Data Gateway
 
-- **Depends On**: EP2 (complete)
-- **Spec**: `tasks/WASM-EP5-STREAMING-v2.md` (canonical)
-- **Stories**: WASM-028 → WASM-031
-- **Scope**:
-  - WASM-028: Shadow state diff engine (Rust) — 4pts
-  - WASM-029: Integrated diff + pipeline (single WASM call) — 4pts
-  - WASM-030: `createStreamGateway` JS API — 3pts
-  - WASM-031: Phase 5 integration tests — 3pts
-- **Total**: 14pts
+- **Decision**: Absorbed by EP6 Pipeline Refactor
+- **Reason**: The pipeline now filters no-op changes at every step (diff engine built into pipeline checkpoints). A separate streaming gateway with its own diff/filter API is no longer needed — the pipeline itself is the filter.
+- **Original spec**: `tasks/WASM-EP5-STREAMING-v2.md` (archived, not implemented)
+
+### ✅ Completed: EP6 Pipeline Refactor (100%)
+
+- **Completion Date**: 2026-02-15
+- **Stories**: WASM-032 (single story epic)
+- **Spec**: `tasks/WASM-EP5-PIPELINE-REFACTOR.md` (canonical)
+- **Key Deliverables**:
+  - Two-phase pipeline: `processChanges()` → JS executes listeners/validators → `pipelineFinalize()`
+  - WASM owns all diffing (3 internal checkpoints)
+  - WASM owns shadow state updates (during finalize)
+  - JS simplified to ~20 lines: send → execute JS-only work → finalize → apply
+  - No manual concern change handling in JS
+  - No manual validator result writing in JS
+  - No-op change filtering at every pipeline step
+  - **Implementation**: `rust/src/pipeline.rs`, `rust/src/lib.rs`, `src/wasm/bridge.ts`, `src/pipeline/processChanges.ts`
+- **Commits**: b9b89b1, c0bf901, 22199cf
 
 ---
 
-## Deferred Tests
+## Test Suite — Phase 1 (Placeholders) & Phase 2 (Implementation)
 
-Tests with placeholders/stubs that need implementation:
+**Test plan**: `docs/WASM_TEST_PLAN_PHASE1.md`
 
-| Source | File | Count | Status |
-|--------|------|-------|--------|
-| EP3 | `tests/wasm/listener-dispatch.test.ts` | TBD | Stubs |
-| EP4 | `tests/wasm/validation-batching.test.ts` | 18 | Stubs (step comments in place) |
+**Errata**: Test plan section "Shadow state NOT updated in Phase 1" is **incorrect**. `processChanges()` DOES update shadow state during processing (needed for BoolLogic). Those stubs should be rewritten.
+
+### Phase 1: Write Placeholders (3 tasks)
+
+| Task | File | Action | Stubs | Status |
+|------|------|--------|-------|--------|
+| QA-1 | `tests/wasm/two-phase-pipeline.test.ts` | **New file** — EP6 two-phase flow | ~40 | ⏳ |
+| QA-2 | `tests/wasm/listener-dispatch.test.ts` | **Fix bug** (L230,245) + add FullExecutionPlan stubs | +11 | ⏳ |
+| QA-3 | `tests/wasm/two-phase-pipeline.test.ts` | **Extend** — E2E integration scenarios | +20 | ⏳ |
+
+### Phase 2: Implement Tests (4 tasks — after Phase 1)
+
+| Task | File | Stubs to implement | Priority | Status |
+|------|------|--------------------|----------|--------|
+| QA-4 | `tests/wasm/validation-batching.test.ts` | 18 (existing stubs) | Critical | ⏳ |
+| QA-5 | `tests/wasm/two-phase-pipeline.test.ts` | ~60 (from QA-1 + QA-3) | Critical | ⏳ |
+| QA-6 | `tests/wasm/listener-dispatch.test.ts` | ~11 (from QA-2) | High | ⏳ |
+| QA-7 | Existing EP1/EP2 test files | Minor edge case additions | Medium | ⏳ |
+
+### Existing Coverage (no work needed)
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `tests/wasm/bool_logic.test.ts` | ~991 lines | ✅ Comprehensive |
+| `tests/wasm/interning.test.ts` | ~533 lines | ✅ Comprehensive |
+| `tests/wasm/shadow.test.ts` | ~1994 lines | ✅ Comprehensive |
+| `tests/wasm/pipeline.test.ts` | ~340 lines | ✅ Good |
+| `tests/wasm/pipeline-integration.test.ts` | ~630 lines | ✅ Good |
+| `tests/wasm/diff-engine.test.ts` | ~271 lines | ✅ Comprehensive |
 
 ---
 
@@ -130,6 +172,9 @@ Tests with placeholders/stubs that need implementation:
 
 | Hash | Message | Status |
 |------|---------|--------|
+| 22199cf | feat(wasm): pipeline update, simplified typescript pipeline handler | ✅ |
+| b9b89b1 | feat(wasm): optimize writes and filter out no-op changes | ✅ |
+| c0bf901 | feat(wasm): diff engine | ✅ |
 | 772aa47 | feat(wasm): validations | ✅ |
 | 94f0770 | feat(wasm): allow for validations (zod) in rust | ✅ |
 | fa385db | feat(wasm): optimizations, test placeholders, speed comparisons | ✅ |

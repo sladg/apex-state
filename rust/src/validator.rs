@@ -367,7 +367,10 @@ mod tests {
         assert_eq!(affected, vec![1, 2]);
 
         // Verify no duplicates in the result
-        let unique_count = affected.iter().collect::<std::collections::HashSet<_>>().len();
+        let unique_count = affected
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
         assert_eq!(unique_count, 2);
     }
 }
