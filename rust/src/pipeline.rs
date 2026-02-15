@@ -348,14 +348,18 @@ impl ProcessingPipeline {
     pub(crate) fn process_changes(&mut self, changes_json: &str) -> Result<String, String> {
         let input_changes: Vec<Change> = serde_json::from_str(changes_json)
             .map_err(|e| format!("Changes parse error: {}", e))?;
-        let result = self.process_changes_vec(input_changes)?;
+        let result = self.process_changes_vec(input_changes, false)?;
         serde_json::to_string(&result).map_err(|e| format!("Serialize error: {}", e))
     }
 
     /// Process a batch of changes from a pre-parsed Vec (serde-wasm-bindgen path).
     ///
     /// Uses pre-allocated buffers to avoid per-call allocations.
-    pub(crate) fn process_changes_vec(&mut self, input_changes: Vec<Change>) -> Result<ProcessResult, String> {
+    ///
+    /// If `enable_diff` is true, uses the diff engine to filter out no-op changes
+    /// upfront before entering the pipeline (streaming data path). Otherwise, processes
+    /// all input changes without filtering (regular state changes from user input).
+    pub(crate) fn process_changes_vec(&mut self, input_changes: Vec<Change>, enable_diff: bool) -> Result<ProcessResult, String> {
         // Clear pre-allocated buffers
         self.buf_output.clear();
         self.buf_sync.clear();
@@ -364,21 +368,24 @@ impl ProcessingPipeline {
         self.buf_concern_changes.clear();
         self.buf_affected_validators.clear();
 
-        // Step 0: Filter out no-op changes (value already matches shadow state)
-        let input_changes: Vec<Change> = input_changes
-            .into_iter()
-            .filter(|c| !self.shadow.is_unchanged(&c.path, &c.value_json))
-            .collect();
-
-        // Early return if all changes are no-ops
-        if input_changes.is_empty() {
-            return Ok(ProcessResult {
-                changes: Vec::new(),
-                concern_changes: Vec::new(),
-                validators_to_run: Vec::new(),
-                execution_plan: None,
-            });
-        }
+        // Step 0: Optional diff pre-pass for streaming data
+        let input_changes: Vec<Change> = if enable_diff {
+            // Diff path: use diff engine to filter out no-op changes
+            let diffed = self.diff_changes(&input_changes);
+            // Early exit if all changes are no-ops
+            if diffed.is_empty() {
+                return Ok(ProcessResult {
+                    changes: Vec::new(),
+                    concern_changes: Vec::new(),
+                    validators_to_run: Vec::new(),
+                    execution_plan: None,
+                });
+            }
+            diffed
+        } else {
+            // No filtering: process all input changes
+            input_changes
+        };
 
         // Step 1-2: Process aggregation writes (distribute target → sources)
         let mut changes = process_aggregation_writes(&self.aggregations, input_changes);
@@ -507,6 +514,14 @@ impl ProcessingPipeline {
     /// Number of interned paths (debug/testing).
     pub(crate) fn intern_count(&self) -> u32 {
         self.intern.count()
+    }
+
+    /// Diff a batch of changes against shadow state (WASM-028).
+    ///
+    /// Returns only changes where the value differs from the current shadow state.
+    /// Primitives are compared by value, objects/arrays always pass through.
+    pub(crate) fn diff_changes(&self, changes: &[Change]) -> Vec<Change> {
+        crate::diff::diff_changes(&self.shadow, changes)
     }
 }
 
@@ -1697,5 +1712,82 @@ mod tests {
         assert_eq!(parsed.concern_changes[0].path, "_concerns.user.email.disabledWhen");
         assert_eq!(parsed.concern_changes[0].value_json, "true");
         assert_eq!(parsed.validators_to_run.len(), 0); // Validator depends on user.email, not user.role
+    }
+
+    // --- WASM-029: process_changes_with_diff tests ---
+
+    #[test]
+    fn process_changes_with_diff_enabled_filters_no_ops() {
+        let mut p = make_pipeline();
+
+        // Try to set user.role to "guest" (current value is already "guest")
+        let changes = vec![Change::new("user.role".to_owned(), r#""guest""#.to_owned())];
+        let result = p.process_changes_vec(changes, true).unwrap();
+
+        // Should be filtered out by diff engine
+        assert_eq!(result.changes.len(), 0);
+        assert_eq!(result.concern_changes.len(), 0);
+    }
+
+    #[test]
+    fn process_changes_with_diff_enabled_keeps_genuine_changes() {
+        let mut p = make_pipeline();
+
+        // Change user.role to "admin" (different from current "guest")
+        let changes = vec![Change::new("user.role".to_owned(), r#""admin""#.to_owned())];
+        let result = p.process_changes_vec(changes, true).unwrap();
+
+        // Should pass through diff and process normally
+        assert_eq!(result.changes.len(), 1);
+        assert_eq!(result.changes[0].path, "user.role");
+        assert_eq!(result.changes[0].value_json, r#""admin""#);
+    }
+
+    #[test]
+    fn process_changes_with_diff_disabled_processes_all() {
+        let mut p = make_pipeline();
+
+        // Try to set user.role to "guest" (current value)
+        let changes = vec![Change::new("user.role".to_owned(), r#""guest""#.to_owned())];
+        let result = p.process_changes_vec(changes, false).unwrap();
+
+        // Should process all changes without filtering when diff is disabled
+        assert_eq!(result.changes.len(), 1);
+        assert_eq!(result.changes[0].path, "user.role");
+    }
+
+    #[test]
+    fn process_changes_with_diff_enabled_early_exit_empty() {
+        let mut p = make_pipeline();
+
+        // All changes are no-ops
+        let changes = vec![
+            Change::new("user.role".to_owned(), r#""guest""#.to_owned()),
+            Change::new("user.age".to_owned(), "20".to_owned()),
+        ];
+        let result = p.process_changes_vec(changes, true).unwrap();
+
+        // Should early exit with empty result
+        assert_eq!(result.changes.len(), 0);
+        assert_eq!(result.concern_changes.len(), 0);
+        assert_eq!(result.validators_to_run.len(), 0);
+        assert!(result.execution_plan.is_none());
+    }
+
+    #[test]
+    fn process_changes_with_diff_enabled_partial_filter() {
+        let mut p = make_pipeline();
+
+        // Mix of unchanged and changed values
+        let changes = vec![
+            Change::new("user.role".to_owned(), r#""guest""#.to_owned()), // unchanged
+            Change::new("user.age".to_owned(), "25".to_owned()),          // changed
+        ];
+        let result = p.process_changes_vec(changes, true).unwrap();
+
+        // Should keep only the changed value
+        assert_eq!(result.changes.len(), 1);
+        assert_eq!(result.changes[0].path, "user.age");
+        assert_eq!(result.changes[0].value_json, "25");
     }
 }

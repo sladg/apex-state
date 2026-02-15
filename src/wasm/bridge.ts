@@ -326,6 +326,42 @@ export const wasm = {
     }
   },
 
+  /**
+   * Process a batch of state changes with optional diff pre-pass (WASM-029).
+   *
+   * When `enableDiff` is true: diff first, early exit if no genuine changes, otherwise
+   * run full pipeline on filtered changes. When false: same as `processChanges()`.
+   *
+   * Used by streaming data gateway to minimize pipeline work.
+   */
+  processChangesWithDiff: (
+    changes: Change[],
+    enableDiff: boolean,
+  ): {
+    changes: Change[]
+    concern_changes: Change[]
+    validators_to_run: ValidatorDispatch[]
+    execution_plan: FullExecutionPlan | null
+  } => {
+    // Pass WasmChange[] + enableDiff flag via serde-wasm-bindgen
+    const result = getWasmInstance().process_changes_with_diff(
+      changesToWasm(changes) as never,
+      enableDiff,
+    ) as unknown as {
+      changes: WasmChange[]
+      concern_changes: WasmChange[]
+      validators_to_run?: ValidatorDispatch[]
+      execution_plan?: FullExecutionPlan
+    }
+
+    return {
+      changes: wasmChangesToJs(result.changes),
+      concern_changes: wasmChangesToJs(result.concern_changes ?? []),
+      validators_to_run: result.validators_to_run ?? [],
+      execution_plan: result.execution_plan ?? null,
+    }
+  },
+
   // -- Listener dispatch (EP3) ----------------------------------------------
 
   /** Register a batch of listeners for topic-based dispatch. */
@@ -408,6 +444,21 @@ export const wasm = {
   /** Unregister a batch of validators by validator IDs. */
   unregisterValidatorsBatch: (validatorIds: number[]): void => {
     getWasmInstance().unregister_validators_batch(JSON.stringify(validatorIds))
+  },
+
+  // -- Diff engine (EP5) ----------------------------------------------------
+
+  /**
+   * Diff a batch of changes against shadow state.
+   * Returns only changes where the value differs from the current shadow state.
+   * Primitives are compared by value, objects/arrays always pass through.
+   */
+  diffChanges: (changes: Change[]): Change[] => {
+    const raw = getWasmInstance().diff_changes(
+      changesToWasm(changes) as never,
+    ) as unknown as WasmChange[]
+
+    return wasmChangesToJs(raw)
   },
 
   // -- Debug/testing --------------------------------------------------------

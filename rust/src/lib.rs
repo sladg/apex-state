@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 
 mod aggregation;
 mod bool_logic;
+mod diff;
 mod graphs;
 mod intern;
 mod normalization;
@@ -194,7 +195,26 @@ pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
     PIPELINE.with(|p| {
         let result = p
             .borrow_mut()
-            .process_changes_vec(input)
+            .process_changes_vec(input, false)
+            .map_err(|e| JsValue::from_str(&e))?;
+        to_js(&result)
+    })
+}
+
+/// Process a batch of state changes with optional diff pre-pass (WASM-029).
+///
+/// When `enable_diff` is true: diff first, early exit if no genuine changes, otherwise
+/// run full pipeline on filtered changes. When false: same as `process_changes()`.
+///
+/// Input: JS array of `{ path: "...", value_json: "..." }`, enable_diff boolean
+/// Output: JS object `{ changes: [...], concern_changes: [...], validators_to_run: [...], execution_plan: ... }`
+#[wasm_bindgen]
+pub fn process_changes_with_diff(changes: JsValue, enable_diff: bool) -> Result<JsValue, JsValue> {
+    let input: Vec<Change> = from_js(changes)?;
+    PIPELINE.with(|p| {
+        let result = p
+            .borrow_mut()
+            .process_changes_vec(input, enable_diff)
             .map_err(|e| JsValue::from_str(&e))?;
         to_js(&result)
     })
@@ -266,4 +286,23 @@ pub fn shadow_get(path: &str) -> Option<String> {
 #[wasm_bindgen]
 pub fn intern_count() -> u32 {
     PIPELINE.with(|p| p.borrow().intern_count())
+}
+
+/// Diff a batch of changes against shadow state (WASM-028).
+///
+/// Compares incoming changes against the nested shadow state and returns only
+/// genuine changes. Primitives are compared by value, objects/arrays always
+/// pass through (no deep comparison).
+///
+/// Input: JSON array of `{ "path": "...", "value_json": "..." }`
+/// Output: JSON array of changes that differ from shadow state
+///
+/// Zero allocations on the fast path when all changes are no-ops.
+#[wasm_bindgen]
+pub fn diff_changes(changes: JsValue) -> Result<JsValue, JsValue> {
+    let input: Vec<Change> = from_js(changes)?;
+    PIPELINE.with(|p| {
+        let result = p.borrow().diff_changes(&input);
+        to_js(&result)
+    })
 }
