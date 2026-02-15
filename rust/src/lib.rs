@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 // Module declarations
 pub mod bool_logic;
 pub mod intern;
+pub mod shadow;
 
 // Optional: Better panic messages in browser console
 #[cfg(feature = "console_error_panic_hook")]
@@ -32,7 +33,7 @@ pub fn intern(path: String) -> u32 {
 // Export resolve function for path resolution
 #[wasm_bindgen]
 pub fn resolve(id: u32) -> String {
-    intern::resolve_global(id).unwrap_or_else(|| String::new())
+    intern::resolve_global(id).unwrap_or_default()
 }
 
 // Export batch_intern for efficient bulk interning
@@ -60,12 +61,53 @@ pub fn evaluate_bool_logic(logic: JsValue, state: JsValue) -> Result<bool, JsVal
     let logic: bool_logic::BoolLogic = serde_wasm_bindgen::from_value(logic)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse BoolLogic: {:?}", e)))?;
 
-    // Convert JsValue to serde_json::Value for state
-    let state: serde_json::Value = serde_wasm_bindgen::from_value(state)
+    // Convert JsValue to ValueRepr for state (BoolLogic now uses nested shadow state)
+    let state: shadow::ValueRepr = serde_wasm_bindgen::from_value(state)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse state: {:?}", e)))?;
 
     // Evaluate and return the result
     Ok(bool_logic::evaluate(&logic, &state))
+}
+
+// Export shadow_init function for initializing shadow state management
+#[wasm_bindgen]
+pub fn shadow_init() {
+    // Initialize shadow state system
+    // Currently a no-op as shadow module uses direct ValueRepr operations
+    // Future: May initialize global shadow state if needed
+}
+
+// Export shadow_get function for retrieving values from shadow state
+#[wasm_bindgen]
+pub fn shadow_get(path: String) -> JsValue {
+    // Get value from global shadow state
+    match shadow::shadow_get_global(path) {
+        Some(value) => {
+            // Serialize the ValueRepr to JsValue
+            serde_wasm_bindgen::to_value(&value).unwrap_or(JsValue::NULL)
+        }
+        None => JsValue::NULL,
+    }
+}
+
+// Export shadow_dump function for retrieving entire shadow state
+#[wasm_bindgen]
+pub fn shadow_dump() -> JsValue {
+    // Get entire shadow state
+    let state = shadow::shadow_dump_global();
+    // Serialize the ValueRepr to JsValue
+    serde_wasm_bindgen::to_value(&state).unwrap_or(JsValue::NULL)
+}
+
+// Export shadow_update function for updating shadow state
+#[wasm_bindgen]
+pub fn shadow_update(path: String, value: JsValue) -> Result<(), JsValue> {
+    // Convert JsValue to ValueRepr using serde-wasm-bindgen
+    let value_repr: shadow::ValueRepr = serde_wasm_bindgen::from_value(value)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse value: {:?}", e)))?;
+
+    // Update shadow state
+    shadow::shadow_set_global(path, value_repr).map_err(|e| JsValue::from_str(&e))
 }
 
 // ============================================================================
@@ -100,6 +142,7 @@ pub fn evaluate_bool_logic(logic: JsValue, state: JsValue) -> Result<bool, JsVal
 /// // This would be called internally, not from JavaScript
 /// // assert!(internal_path_matches(path_id, prefix_id, suffix_id));
 /// ```
+#[cfg(test)]
 fn internal_path_matches(
     path_id: intern::PathID,
     prefix_id: intern::PathID,
@@ -127,6 +170,7 @@ fn internal_path_matches(
 ///
 /// # Example
 /// This is an internal function used by WASM operations, not called from JS.
+#[cfg(test)]
 fn internal_filter_paths(
     path_ids: Vec<intern::PathID>,
     pattern_id: intern::PathID,

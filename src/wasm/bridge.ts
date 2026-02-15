@@ -215,6 +215,151 @@ export interface ApexStateWasm {
    * ```
    */
   evaluate_bool_logic: (logic: unknown, state: unknown) => boolean
+
+  /**
+   * Initialize the shadow state with a nested object structure
+   *
+   * **Shadow State Initialization:**
+   * - Converts JavaScript object to nested ValueRepr tree in WASM
+   * - Stores the shadow state globally in WASM memory
+   * - Shadow state persists across WASM calls until cleared or reinitialized
+   * - Automatically handles deep nesting, arrays, primitives, and null values
+   * - No transformation needed - JS objects deserialize directly via serde
+   *
+   * **Use Case:**
+   * Initialize the WASM shadow state system with the current application state.
+   * This creates the foundational nested tree structure that BoolLogic evaluation,
+   * dependency tracking, and path traversal operations work against.
+   *
+   * @param state - State object to initialize (arbitrary nested JSON structure)
+   * @throws Error if state cannot be deserialized or is invalid
+   *
+   * @example
+   * ```typescript
+   * const wasm = await loadWasm()
+   *
+   * // Initialize with nested state
+   * wasm.shadow_init({
+   *   user: {
+   *     profile: {
+   *       name: "Alice",
+   *       email: "alice@example.com"
+   *     },
+   *     settings: {
+   *       theme: "dark"
+   *     }
+   *   },
+   *   todos: ["Task 1", "Task 2"]
+   * })
+   * ```
+   */
+  shadow_init: (state: unknown) => void
+
+  /**
+   * Retrieve a value from shadow state by path
+   *
+   * **Shadow State Traversal:**
+   * - Accepts path as array of strings (e.g., ["user", "profile", "email"])
+   * - Traverses nested ValueRepr tree to find the value
+   * - Returns the value at the path, or undefined if not found
+   * - Handles object keys, array indices, and deep nesting
+   * - Returns null for explicit ValueRepr::Null values
+   * - Returns undefined for non-existent paths
+   *
+   * **Use Case:**
+   * Efficiently query shadow state by path without deserializing the entire tree.
+   * Critical for reactive dependency tracking and conditional evaluation.
+   *
+   * @param path - Array of strings representing the path to traverse (e.g., ["user", "name"])
+   * @returns Value at the path, or undefined if not found
+   * @throws Error if path cannot be processed
+   *
+   * @example
+   * ```typescript
+   * const wasm = await loadWasm()
+   * wasm.shadow_init({ user: { name: "Alice", age: 30 } })
+   *
+   * const name = wasm.shadow_get(["user", "name"]) // "Alice"
+   * const age = wasm.shadow_get(["user", "age"]) // 30
+   * const missing = wasm.shadow_get(["user", "email"]) // undefined
+   * const deep = wasm.shadow_get(["user", "profile", "bio"]) // undefined
+   * ```
+   */
+  shadow_get: (path: string[]) => unknown
+
+  /**
+   * Export the entire shadow state as a JavaScript object
+   *
+   * **Shadow State Dump:**
+   * - Serializes the entire nested ValueRepr tree to JavaScript
+   * - Returns a plain JavaScript object with full structure
+   * - Useful for debugging, logging, or syncing state back to JS
+   * - No transformation needed - ValueRepr serializes directly via serde
+   *
+   * **Use Case:**
+   * Export the complete shadow state for debugging, inspection, or synchronization
+   * with JavaScript state management systems. Allows full visibility into WASM state.
+   *
+   * @returns Complete shadow state as JavaScript object
+   * @throws Error if shadow state cannot be serialized
+   *
+   * @example
+   * ```typescript
+   * const wasm = await loadWasm()
+   * wasm.shadow_init({ user: { name: "Alice", age: 30 } })
+   *
+   * const state = wasm.shadow_dump()
+   * // { user: { name: "Alice", age: 30 } }
+   *
+   * console.log(state.user.name) // "Alice"
+   * ```
+   */
+  shadow_dump: () => unknown
+
+  /**
+   * Update a value in shadow state at a specific path
+   *
+   * **Shadow State Update:**
+   * - Accepts path as array of strings (e.g., ["user", "profile", "email"])
+   * - Updates the value at the specified path in the nested ValueRepr tree
+   * - Supports leaf updates (single values), subtree updates (objects), and root updates (empty path)
+   * - Automatically creates intermediate Object nodes if they don't exist
+   * - Returns affected paths for cascading update propagation
+   * - Preserves unrelated paths - only updates the target subtree
+   *
+   * **Update Types:**
+   * - **Leaf Update**: Path to specific value (e.g., ["user", "name"] = "Bob")
+   * - **Subtree Update**: Path to object (e.g., ["user", "profile"] = { name: "Bob", email: "bob@example.com" })
+   * - **Root Update**: Empty path [] replaces entire state
+   *
+   * **Use Case:**
+   * Efficiently update shadow state after JavaScript state changes. Maintains
+   * synchronization between JS state and WASM shadow state for reactive systems.
+   *
+   * @param path - Array of strings representing the path to update (e.g., ["user", "email"])
+   * @param value - New value to set at the path (can be primitive, object, array, or null)
+   * @throws Error if path is invalid or update fails
+   *
+   * @example
+   * ```typescript
+   * const wasm = await loadWasm()
+   * wasm.shadow_init({ user: { name: "Alice", age: 30 } })
+   *
+   * // Leaf update
+   * wasm.shadow_update(["user", "name"], "Bob")
+   * console.log(wasm.shadow_get(["user", "name"])) // "Bob"
+   *
+   * // Subtree update
+   * wasm.shadow_update(["user"], { name: "Charlie", age: 25, email: "charlie@example.com" })
+   * console.log(wasm.shadow_dump())
+   * // { user: { name: "Charlie", age: 25, email: "charlie@example.com" } }
+   *
+   * // Create nested path
+   * wasm.shadow_update(["user", "profile", "bio"], "Software Engineer")
+   * console.log(wasm.shadow_get(["user", "profile", "bio"])) // "Software Engineer"
+   * ```
+   */
+  shadow_update: (path: string[], value: unknown) => void
 }
 
 /**
@@ -657,4 +802,187 @@ export const evaluateBoolLogic = async (
 ): Promise<boolean> => {
   const wasm = await loadWasm()
   return wasm.evaluate_bool_logic(logic, state)
+}
+
+/**
+ * Shadow State Wrapper Functions
+ *
+ * These convenience functions automatically load WASM and handle
+ * shadow state operations, hiding the manual loadWasm() calls.
+ *
+ * **Shadow State Pattern:**
+ * - Auto-load: WASM loads on first call, cached for subsequent calls
+ * - Direct format: JS objects pass through directly via serde-wasm-bindgen
+ * - Type-safe: TypeScript types ensure correct parameter types
+ * - Error handling: Wrapped in try/catch for descriptive error messages
+ *
+ * **Use Case:**
+ * Use these wrappers for the simplest API - just pass state objects and paths,
+ * get results, without managing WASM lifecycle or serialization.
+ */
+
+/**
+ * Initialize shadow state with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then initializes the shadow state with the provided state object.
+ *
+ * **Shadow State Initialization:**
+ * - Auto-loads WASM on first call (cached thereafter)
+ * - Converts JavaScript object to nested ValueRepr tree in WASM
+ * - Stores the shadow state globally in WASM memory
+ * - Shadow state persists across calls until cleared or reinitialized
+ * - Handles deep nesting, arrays, primitives, and null values
+ *
+ * @param state - State object to initialize (arbitrary nested JSON structure)
+ * @returns Promise that resolves when initialization is complete
+ * @throws Error if state cannot be deserialized or initialization fails
+ *
+ * @example
+ * ```typescript
+ * // Initialize with nested state
+ * await initShadowState({
+ *   user: {
+ *     profile: {
+ *       name: "Alice",
+ *       email: "alice@example.com"
+ *     },
+ *     settings: {
+ *       theme: "dark"
+ *     }
+ *   },
+ *   todos: ["Task 1", "Task 2"]
+ * })
+ * ```
+ */
+export const initShadowState = async (state: unknown): Promise<void> => {
+  try {
+    const wasm = await loadWasm()
+    wasm.shadow_init(state)
+  } catch (error) {
+    throw new Error(
+      `Shadow state initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+/**
+ * Get a value from shadow state by path with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then retrieves the value at the specified path from shadow state.
+ *
+ * **Shadow State Traversal:**
+ * - Auto-loads WASM if needed
+ * - Accepts path as array of strings (e.g., ["user", "profile", "email"])
+ * - Traverses nested ValueRepr tree to find the value
+ * - Returns the value at the path, or undefined if not found
+ * - Handles object keys, array indices, and deep nesting
+ *
+ * @param path - Array of strings representing the path to traverse
+ * @returns Promise resolving to the value at the path, or undefined if not found
+ * @throws Error if path cannot be processed or retrieval fails
+ *
+ * @example
+ * ```typescript
+ * await initShadowState({ user: { name: "Alice", age: 30 } })
+ *
+ * const name = await getShadowValue(["user", "name"]) // "Alice"
+ * const age = await getShadowValue(["user", "age"]) // 30
+ * const missing = await getShadowValue(["user", "email"]) // undefined
+ * ```
+ */
+export const getShadowValue = async (path: string[]): Promise<unknown> => {
+  try {
+    const wasm = await loadWasm()
+    return wasm.shadow_get(path)
+  } catch (error) {
+    throw new Error(
+      `Shadow state get failed for path [${path.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+/**
+ * Export entire shadow state with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then exports the complete shadow state as a JavaScript object.
+ *
+ * **Shadow State Dump:**
+ * - Auto-loads WASM if needed
+ * - Serializes the entire nested ValueRepr tree to JavaScript
+ * - Returns a plain JavaScript object with full structure
+ * - Useful for debugging, logging, or syncing state back to JS
+ *
+ * @returns Promise resolving to the complete shadow state as JavaScript object
+ * @throws Error if shadow state cannot be serialized or export fails
+ *
+ * @example
+ * ```typescript
+ * await initShadowState({ user: { name: "Alice", age: 30 } })
+ *
+ * const state = await dumpShadowState()
+ * // { user: { name: "Alice", age: 30 } }
+ *
+ * console.log(state.user.name) // "Alice"
+ * ```
+ */
+export const dumpShadowState = async (): Promise<unknown> => {
+  try {
+    const wasm = await loadWasm()
+    return wasm.shadow_dump()
+  } catch (error) {
+    throw new Error(
+      `Shadow state dump failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+/**
+ * Update a value in shadow state with auto-loading
+ *
+ * Convenience wrapper that automatically loads WASM if needed,
+ * then updates the value at the specified path in shadow state.
+ *
+ * **Shadow State Update:**
+ * - Auto-loads WASM if needed
+ * - Accepts path as array of strings (e.g., ["user", "profile", "email"])
+ * - Updates the value at the specified path in the nested ValueRepr tree
+ * - Supports leaf updates (single values), subtree updates (objects), and root updates (empty path)
+ * - Automatically creates intermediate Object nodes if they don't exist
+ * - Preserves unrelated paths - only updates the target subtree
+ *
+ * @param path - Array of strings representing the path to update
+ * @param value - New value to set at the path (can be primitive, object, array, or null)
+ * @returns Promise that resolves when update is complete
+ * @throws Error if path is invalid or update fails
+ *
+ * @example
+ * ```typescript
+ * await initShadowState({ user: { name: "Alice", age: 30 } })
+ *
+ * // Leaf update
+ * await updateShadowValue(["user", "name"], "Bob")
+ * console.log(await getShadowValue(["user", "name"])) // "Bob"
+ *
+ * // Subtree update
+ * await updateShadowValue(["user"], { name: "Charlie", age: 25, email: "charlie@example.com" })
+ *
+ * // Create nested path
+ * await updateShadowValue(["user", "profile", "bio"], "Software Engineer")
+ * ```
+ */
+export const updateShadowValue = async (
+  path: string[],
+  value: unknown,
+): Promise<void> => {
+  try {
+    const wasm = await loadWasm()
+    wasm.shadow_update(path, value)
+  } catch (error) {
+    throw new Error(
+      `Shadow state update failed for path [${path.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
