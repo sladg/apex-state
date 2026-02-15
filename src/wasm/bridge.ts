@@ -16,6 +16,8 @@
  * @module wasm/bridge
  */
 
+import type { z } from 'zod'
+
 import type * as WasmExports from '../../rust/pkg/apex_state_wasm'
 
 // ---------------------------------------------------------------------------
@@ -180,6 +182,16 @@ const getWasmInstance = (): typeof WasmExports => {
   }
   return wasmInstance
 }
+
+// ---------------------------------------------------------------------------
+// Validator schema storage (Zod schemas can't cross WASM boundary)
+// ---------------------------------------------------------------------------
+
+/**
+ * JS-side validator schema storage.
+ * Maps validator_id (from WASM) to ZodSchema for execution.
+ */
+export const validatorSchemas = new Map<number, z.ZodSchema>()
 
 // ---------------------------------------------------------------------------
 // Helpers — conversion between JS Change[] and WASM WasmChange[]

@@ -13,7 +13,7 @@ import type { StoreInstance } from '../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
 import type { Change, FullExecutionPlan } from '../wasm/bridge'
-import { isWasmLoaded, wasm } from '../wasm/bridge'
+import { isWasmLoaded, validatorSchemas, wasm } from '../wasm/bridge'
 import { applyBatch } from './applyBatch'
 import {
   processAggregationWrites,
@@ -176,10 +176,11 @@ const processChangesWASM = <
   const bridgeChanges = tuplesToBridgeChanges(initialChanges)
 
   // WASM handles: aggregation -> sync -> flip -> BoolLogic evaluation
-  // Returns state changes, concern changes, and pre-computed execution plan
+  // Returns state changes, concern changes, validators to run, and pre-computed execution plan
   const {
     changes: stateChanges,
     concern_changes: concernChanges,
+    validators_to_run: validatorsToRun,
     execution_plan: executionPlan,
   } = wasm.processChanges(bridgeChanges)
 
@@ -187,6 +188,38 @@ const processChangesWASM = <
   for (const change of concernChanges) {
     const concernPath = change.path.slice('_concerns.'.length)
     dot.set__unsafe(store._concerns, concernPath, change.value)
+  }
+
+  // Execute validators if any are affected
+  if (validatorsToRun?.length) {
+    for (const validator of validatorsToRun) {
+      const schema = validatorSchemas.get(validator.validator_id)
+      if (!schema) continue
+
+      // Parse dependency values from JSON strings
+      const values = Object.fromEntries(
+        Object.entries(validator.dependency_values).map(([k, v]) => [
+          k,
+          JSON.parse(v) as unknown,
+        ]),
+      )
+
+      // For single-field validators, validate the primary value
+      const primaryValue = Object.values(values)[0]
+      const zodResult = schema.safeParse(primaryValue)
+
+      // Write validation result to _concerns proxy
+      const concernPath = validator.output_path.slice('_concerns.'.length)
+      dot.set__unsafe(store._concerns, concernPath, {
+        isError: !zodResult.success,
+        errors: zodResult.success
+          ? []
+          : zodResult.error.errors.map((e) => ({
+              field: e.path.length > 0 ? e.path.join('.') : '.',
+              message: e.message,
+            })),
+      })
+    }
   }
 
   // Get current state snapshot for listener execution

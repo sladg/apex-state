@@ -3,7 +3,7 @@ import { effect } from 'valtio-reactive'
 import type { StoreInstance } from '../core/types'
 import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
-import { isWasmLoaded, wasm } from '../wasm/bridge'
+import { isWasmLoaded, validatorSchemas, wasm } from '../wasm/bridge'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
@@ -12,6 +12,18 @@ const isBoolLogicConfig = (
   config: Record<string, unknown>,
 ): config is { condition: unknown } =>
   'condition' in config && config['condition'] != null
+
+/** Check if a concern config is schema-based validation. */
+const isSchemaValidation = (
+  concernName: string,
+  config: Record<string, unknown>,
+): boolean =>
+  concernName === 'validationState' &&
+  'schema' in config &&
+  !('evaluate' in config)
+
+/** Sequential validator ID counter. */
+let nextValidatorId = 0
 
 const registerConcernEffectsImpl = <
   DATA extends object,
@@ -63,6 +75,36 @@ const registerConcernEffectsImpl = <
 
         disposeCallbacks.push(() => {
           wasm.unregisterBoolLogic(logicId)
+        })
+        return
+      }
+
+      // --- WASM path: Schema-based validation ---
+      // If WASM is loaded and this is a validationState with schema (no custom evaluate),
+      // register via WASM for pipeline orchestration.
+      if (isWasmLoaded() && isSchemaValidation(concernName, config)) {
+        const validatorId = nextValidatorId++
+        const outputPath = `_concerns.${path}.${concernName}`
+
+        // Store Zod schema in JS (can't cross WASM boundary)
+        validatorSchemas.set(validatorId, config.schema)
+
+        // Determine dependency path: scope if provided, otherwise registration path
+        const depPaths =
+          'scope' in config && config.scope ? [config.scope as string] : [path]
+
+        // Register in WASM (reverse index for processChanges dispatch)
+        wasm.registerValidatorsBatch([
+          {
+            validator_id: validatorId,
+            output_path: outputPath,
+            dependency_paths: depPaths,
+          },
+        ])
+
+        disposeCallbacks.push(() => {
+          validatorSchemas.delete(validatorId)
+          wasm.unregisterValidatorsBatch([validatorId])
         })
         return
       }

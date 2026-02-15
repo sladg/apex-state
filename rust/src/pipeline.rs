@@ -1502,4 +1502,200 @@ mod tests {
         assert!(bl.path.contains("visibleWhen"));
         assert_eq!(bl.value_json, "true");
     }
+
+    // --- Validator tests (WASM-022) ---
+
+    #[test]
+    fn validator_included_in_process_changes_output() {
+        let mut p = make_pipeline();
+
+        // Register validator on user.email
+        p.register_validators_batch(
+            r#"[{
+                "validator_id": 1,
+                "output_path": "_concerns.user.email.validationState",
+                "dependency_paths": ["user.email"]
+            }]"#,
+        )
+        .unwrap();
+
+        // Change user.email
+        let result = p
+            .process_changes(r#"[{"path": "user.email", "value_json": "\"new@test.com\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Should have 1 state change + 1 validator in validators_to_run
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.changes[0].path, "user.email");
+        assert_eq!(parsed.validators_to_run.len(), 1);
+
+        let validator = &parsed.validators_to_run[0];
+        assert_eq!(validator.validator_id, 1);
+        assert_eq!(validator.output_path, "_concerns.user.email.validationState");
+        assert_eq!(validator.dependency_values.len(), 1);
+        assert_eq!(
+            validator.dependency_values.get("user.email").unwrap(),
+            r#""new@test.com""#
+        );
+    }
+
+    #[test]
+    fn validator_unrelated_change_skips_validator() {
+        let mut p = make_pipeline();
+
+        // Register validator on user.email
+        p.register_validators_batch(
+            r#"[{
+                "validator_id": 1,
+                "output_path": "_concerns.user.email.validationState",
+                "dependency_paths": ["user.email"]
+            }]"#,
+        )
+        .unwrap();
+
+        // Change user.age (unrelated to validator)
+        let result = p
+            .process_changes(r#"[{"path": "user.age", "value_json": "25"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Should have 1 state change, no validators
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.changes[0].path, "user.age");
+        assert_eq!(parsed.validators_to_run.len(), 0);
+    }
+
+    #[test]
+    fn validator_multi_dep_gets_all_values() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"order": {"amount": 100, "currency": "USD"}}"#)
+            .unwrap();
+
+        // Register validator that depends on two fields
+        p.register_validators_batch(
+            r#"[{
+                "validator_id": 2,
+                "output_path": "_concerns.order.validationState",
+                "dependency_paths": ["order.amount", "order.currency"]
+            }]"#,
+        )
+        .unwrap();
+
+        // Change order.amount (should trigger validator with both values)
+        let result = p
+            .process_changes(r#"[{"path": "order.amount", "value_json": "200"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Should have 1 state change + 1 validator with both dependency values
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.validators_to_run.len(), 1);
+
+        let validator = &parsed.validators_to_run[0];
+        assert_eq!(validator.validator_id, 2);
+        assert_eq!(validator.dependency_values.len(), 2);
+        assert_eq!(
+            validator.dependency_values.get("order.amount").unwrap(),
+            "200"
+        );
+        assert_eq!(
+            validator.dependency_values.get("order.currency").unwrap(),
+            r#""USD""#
+        );
+    }
+
+    #[test]
+    fn validator_multiple_validators_deduped() {
+        let mut p = make_pipeline();
+
+        // Register two validators on the same dependency path
+        p.register_validators_batch(
+            r#"[
+                {
+                    "validator_id": 1,
+                    "output_path": "_concerns.user.email.validationState",
+                    "dependency_paths": ["user.email"]
+                },
+                {
+                    "validator_id": 2,
+                    "output_path": "_concerns.user.email.formatState",
+                    "dependency_paths": ["user.email"]
+                }
+            ]"#,
+        )
+        .unwrap();
+
+        // Change user.email (should trigger both validators)
+        let result = p
+            .process_changes(r#"[{"path": "user.email", "value_json": "\"test@example.com\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Should have 1 state change + 2 validators (both appear once)
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.validators_to_run.len(), 2);
+
+        let validator_ids: Vec<u32> = parsed
+            .validators_to_run
+            .iter()
+            .map(|v| v.validator_id)
+            .collect();
+        assert!(validator_ids.contains(&1));
+        assert!(validator_ids.contains(&2));
+
+        // Verify both have correct dependency value
+        for validator in &parsed.validators_to_run {
+            assert_eq!(
+                validator.dependency_values.get("user.email").unwrap(),
+                r#""test@example.com""#
+            );
+        }
+    }
+
+    #[test]
+    fn validator_boollogic_and_validators_in_same_run() {
+        let mut p = make_pipeline();
+
+        // Register BoolLogic
+        p.register_boollogic(
+            "_concerns.user.email.disabledWhen",
+            r#"{"IS_EQUAL": ["user.role", "admin"]}"#,
+        )
+        .unwrap();
+
+        // Register validator
+        p.register_validators_batch(
+            r#"[{
+                "validator_id": 1,
+                "output_path": "_concerns.user.email.validationState",
+                "dependency_paths": ["user.email"]
+            }]"#,
+        )
+        .unwrap();
+
+        // Change user.email (triggers validator, not BoolLogic)
+        let result = p
+            .process_changes(r#"[{"path": "user.email", "value_json": "\"admin@example.com\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Should have: 1 state change, 0 concern changes (BoolLogic not affected), 1 validator
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.concern_changes.len(), 0); // BoolLogic depends on user.role, not user.email
+        assert_eq!(parsed.validators_to_run.len(), 1);
+
+        // Now change user.role (triggers BoolLogic, not validator)
+        let result = p
+            .process_changes(r#"[{"path": "user.role", "value_json": "\"admin\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Should have: 1 state change, 1 concern change (BoolLogic), 0 validators
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.concern_changes.len(), 1);
+        assert_eq!(parsed.concern_changes[0].path, "_concerns.user.email.disabledWhen");
+        assert_eq!(parsed.concern_changes[0].value_json, "true");
+        assert_eq!(parsed.validators_to_run.len(), 0); // Validator depends on user.email, not user.role
+    }
 }
