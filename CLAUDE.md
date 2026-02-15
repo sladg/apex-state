@@ -13,6 +13,7 @@ Built on a **Dual-Layer Architecture**: JavaScript/React owns reactivity and ren
 This is a **two-layer system**:
 
 ### JavaScript/React Layer (Everything User-Facing)
+
 - **Valtio proxies** — State reactivity, Proxy traps, mutation tracking
 - **React rendering** — Components, hooks, re-render optimization
 - **Listener handlers** — User-defined functions that react to state changes
@@ -22,6 +23,7 @@ This is a **two-layer system**:
 - **`applyBatch()`** — Final step to write changes back to valtio
 
 ### Rust/WASM Layer (Heavy Lifting)
+
 - **Shadow state** — Getter-free copy of all values for fast diffing
 - **String interning** — Path ↔ ID mapping for O(1) lookups
 - **Sync/flip graphs** — Connected components for synchronized/inverted boolean paths
@@ -47,6 +49,7 @@ This is a **two-layer system**:
 The JS ↔ WASM boundary is expensive. Every crossing should be intentional.
 
 **WASM holds all computational state internally:**
+
 - Sync/flip graphs
 - Topic router
 - Path interning table
@@ -55,10 +58,12 @@ The JS ↔ WASM boundary is expensive. Every crossing should be intentional.
 - Listener registry
 
 **TypeScript should NOT duplicate this data** except:
+
 - Function references needed during execution (e.g., listener handler functions, Zod schemas)
 - These are stored in `Map<id, function>` only, not as copies of WASM state
 
 **Every piece of data crossing the boundary should answer:**
+
 - "Why does JS need this?"
 - "Could WASM handle it instead?"
 - "Is there a cheaper way?"
@@ -70,12 +75,14 @@ Keep the boundary thin: paths in (strings), changes out (JSON).
 **`src/wasm/bridge.ts` exports exactly one thing: `wasm`** — a namespace object holding all WASM functions.
 
 All calls from TypeScript go through this single interface:
+
 ```ts
 import { wasm } from './wasm/bridge'
 // Call as: wasm.processChanges(...), wasm.registerBoolLogic(...), etc.
 ```
 
 **Why?**
+
 - **Single boundary entry point** — All JS→WASM crossings visible and auditable
 - **Clear ownership** — You can see exactly what WASM capabilities are exposed
 - **Refactoring safety** — Renaming or restructuring WASM functions touches one import everywhere
@@ -85,6 +92,7 @@ import { wasm } from './wasm/bridge'
 ### Data Ownership Model
 
 **What belongs in WASM (Rust):**
+
 - All graphs (sync, flip, topic router, etc.)
 - All registries (BoolLogic, listeners, validators)
 - Shadow state (getter-free value copy)
@@ -93,6 +101,7 @@ import { wasm } from './wasm/bridge'
 - All business logic for pipeline orchestration
 
 **What belongs in TypeScript (JS):**
+
 - Valtio proxies (state, _concerns)
 - React hooks and components
 - Function references: `Map<id, handler>`, `Map<id, schema>`
@@ -101,10 +110,12 @@ import { wasm } from './wasm/bridge'
 - Zod schema instances
 
 **What crosses the boundary:**
+
 - **JS → WASM**: String paths, JSON values, function IDs, metadata flags
 - **WASM → JS**: Change plans (what to do), dispatch orders (when to call what), result data
 
 **Never, ever duplicate:**
+
 - Graph structures
 - Registry data
 - Listener/sync/flip information (except function refs)
@@ -241,11 +252,13 @@ JS/React Layer (continued):
 ## Documentation & References
 
 **Primary reference for everything**: `docs/WASM_ARCHITECTURE.md`
+
 - Complete data flow, ownership split, boundary crossings
 - Shadow state structure, path interning, listener dispatch protocol
 - WASM API specification (what JS can call, when, what it returns)
 
 **Architecture decisions**: `tasks/WASM-EP*.md`
+
 - WASM-EP1-FOUNDATION: String interning, BoolLogic, reverse dependencies
 - WASM-EP2-PIPELINE: Aggregation, sync/flip graphs, shadow state sync
 - WASM-EP3-LISTENERS: Topic router, dispatch plan, depth-ordered execution
@@ -267,11 +280,13 @@ JS/React Layer (continued):
 **STOP and ask.** Don't guess. Ask which direction you should take, what the user prefers, or what constraints matter most.
 
 Example questions:
+
 - "I see 3 ways to structure this concern. Which tradeoff matters most to you — bundle size, runtime speed, or code clarity?"
 - "Should this logic live in JS (more flexible) or Rust (faster)? What's the priority?"
 - "I could refactor X to reduce duplication, but it changes the architecture slightly. Should I do that?"
 
 **DO NOT**:
+
 - Assume the "best" approach
 - Optimize for code duplication if it obscures architecture
 - Make choices that prioritize tooling convenience over clarity
@@ -282,6 +297,7 @@ Example questions:
 ## Understanding the Code
 
 Use **grepai** as your primary tool:
+
 - `grepai search "concern evaluation"` to find how concerns work
 - `grepai search "sync graph"` to understand sync/flip logic
 - `grepai trace callers "processChanges"` to see what calls the pipeline
@@ -296,12 +312,14 @@ Code is the source of truth. Implementation files are more current than docs.
 ### TSDoc Comments
 
 ✅ **DO add TSDoc for:**
+
 - Public exports (functions, types, constants users will import)
 - Complex algorithms that need explanation
 - Non-obvious tradeoffs or constraints
 - When explicitly asked
 
 ❌ **DON'T add TSDoc for:**
+
 - Private/internal functions
 - Self-documenting code (clear names, simple logic)
 - Every function "just in case"
@@ -309,12 +327,14 @@ Code is the source of truth. Implementation files are more current than docs.
 ### Code Comments
 
 ✅ **DO keep comments that explain:**
+
 - Why something is done this way (not what it does)
 - Tradeoffs or constraints
 - References to external docs or issues
 - Historical context ("we tried X, it caused Y")
 
 ❌ **DON'T remove comments:**
+
 - For cleanup or refactoring
 - Comments are context, they have value even if code changes
 - If a comment is wrong, fix it, don't delete it
@@ -328,6 +348,7 @@ Code is the source of truth. Implementation files are more current than docs.
 ### Key patterns in this codebase
 
 1. **Generic constraints over union types**
+
    ```ts
    // Good: Constraint keeps type information
    const getValue = <T extends Record<string, unknown>>(obj: T, key: keyof T): T[keyof T] => ...
@@ -371,6 +392,7 @@ This is a performance-critical layer. Patterns matter.
    - Pattern: Intern once, reference by ID forever
 
 3. **Enums for type safety (no magic strings/numbers)**
+
    ```rust
    #[derive(Deserialize)]
    enum BoolLogicNode {
@@ -446,6 +468,9 @@ This is a performance-critical layer. Patterns matter.
 
 ### Code Quality
 
+❌ **Never create more than 1 new file (testing, analysis, research) per session/task** — Always edit existing files instead of creating duplicates
+❌ **If you created a file earlier in the session, edit it** — Don't create a second version of the same file
+❌ **Never create multiple test files for the same task** — One test file per feature, edit it if changes are needed
 ❌ **Never automatically remove duplicated code** — ask first whether it should stay as reference
 ❌ **Never fix technical debt you spot** — add to `TECHNICAL_DEBT.md`, ask user before processing
 ❌ **Never refactor to "improve" code** — keep changes scoped to what was asked
@@ -457,6 +482,7 @@ This is a performance-critical layer. Patterns matter.
 
 ❌ **Never skip test names** — test names are documentation, they matter
 ❌ **Never delete test content entirely** — replace with placeholder listing the steps/assertions that belong there:
+
    ```typescript
    it('should validate user email format', () => {
      // TODO: Step 1 - Create a user object with invalid email
@@ -464,6 +490,7 @@ This is a performance-critical layer. Patterns matter.
      // TODO: Step 3 - Assert validation fails with correct error message
    })
    ```
+
 ❌ **Never refactor test without keeping case structure** — preserve test case names and step descriptions
 
 ### Both Layers
@@ -519,6 +546,7 @@ This is a performance-critical layer. Patterns matter.
 ❌ **Don't automatically remove it.** Code might be duplicated intentionally (for clarity, performance, independence, or coupling avoidance).
 
 ✅ **Always ask:**
+
 - "I see this pattern repeated in X and Y. Should I extract a helper now, or keep them separate for reference?"
 - "Would removing duplication reduce clarity or add coupling?"
 - "Is this duplication worth 3 lines, or would abstracting it help?"
@@ -532,12 +560,14 @@ This is a performance-critical layer. Patterns matter.
 **As you work, you'll spot opportunities for improvement that aren't in scope right now.**
 
 ✅ **Do this:**
+
 1. Add one-liner to `TECHNICAL_DEBT.md` (see format below)
 2. Continue with the task at hand
 3. When done, show the debt list to the user
 4. **Ask** before processing any items
 
 ❌ **Don't do this:**
+
 - Fix technical debt you spot unless explicitly asked
 - Refactor to address debt during unrelated work
 - Hide debt issues hoping they'll resolve themselves
@@ -574,6 +604,7 @@ This is a performance-critical layer. Patterns matter.
 - Technical debt opportunities
 
 **Stop and ask:**
+
 - "What's the priority here?"
 - "Do you prefer approach A or B?"
 - "Is this worth the complexity?"
@@ -587,11 +618,13 @@ This is a performance-critical layer. Patterns matter.
 ## Summary: The Two Layers
 
 **React/Valtio (JS)** — User-facing reactivity
+
 - State mutations, Proxy traps, React re-renders
 - Listener handlers, Zod validation, getters
 - Custom concern logic that can't be declarative
 
 **Rust/WASM (Heavy Lifting)** — Orchestration & computation
+
 - Shadow state, string interning, path ID lookups
 - Sync/flip graphs, topic routing, listener dispatch
 - BoolLogic evaluation, reverse dependency index

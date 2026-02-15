@@ -9,6 +9,7 @@ use crate::aggregation::{process_aggregation_writes, Aggregation, AggregationReg
 use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry, ReverseDependencyIndex};
 use crate::graphs::Graph;
 use crate::intern::InternTable;
+use crate::router::{FullExecutionPlan, TopicRouter};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -23,7 +24,13 @@ pub(crate) struct Change {
 /// Output wrapper for processChanges.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ProcessResult {
+    /// State changes only (no _concerns.* paths).
     pub changes: Vec<Change>,
+    /// BoolLogic outputs (_concerns.* paths), separated for direct application.
+    #[serde(default)]
+    pub concern_changes: Vec<Change>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_plan: Option<FullExecutionPlan>,
 }
 
 /// Owns all WASM-internal state and orchestrates change processing.
@@ -35,6 +42,13 @@ pub(crate) struct ProcessingPipeline {
     aggregations: AggregationRegistry,
     sync_graph: Graph,
     flip_graph: Graph,
+    router: TopicRouter,
+    // Pre-allocated buffers for hot-path processing (reused across calls)
+    buf_output: Vec<Change>,
+    buf_sync: Vec<Change>,
+    buf_flip: Vec<Change>,
+    buf_affected_ids: HashSet<u32>,
+    buf_concern_changes: Vec<Change>,
 }
 
 impl ProcessingPipeline {
@@ -47,6 +61,12 @@ impl ProcessingPipeline {
             aggregations: AggregationRegistry::new(),
             sync_graph: Graph::new(),
             flip_graph: Graph::new(),
+            router: TopicRouter::new(),
+            buf_output: Vec::with_capacity(64),
+            buf_sync: Vec::with_capacity(16),
+            buf_flip: Vec::with_capacity(16),
+            buf_affected_ids: HashSet::with_capacity(16),
+            buf_concern_changes: Vec::with_capacity(16),
         }
     }
 
@@ -58,6 +78,11 @@ impl ProcessingPipeline {
     /// Initialize shadow state from a JSON string.
     pub(crate) fn shadow_init(&mut self, state_json: &str) -> Result<(), String> {
         self.shadow.init(state_json)
+    }
+
+    /// Initialize shadow state from a pre-parsed serde_json::Value (no string intermediary).
+    pub(crate) fn shadow_init_value(&mut self, value: serde_json::Value) -> Result<(), String> {
+        self.shadow.init_value(value)
     }
 
     /// Register a BoolLogic expression. Returns logic_id for later cleanup.
@@ -176,19 +201,16 @@ impl ProcessingPipeline {
         Ok(())
     }
 
-    /// Process sync paths: for each changed path, propagate to all peers in its component.
-    fn process_sync_paths(&mut self, changes: &[Change]) -> Vec<Change> {
-        let mut sync_changes = Vec::new();
-
+    /// Process sync paths into buf_sync (pre-allocated buffer).
+    fn process_sync_paths_into(&mut self, changes: &[Change]) {
+        self.buf_sync.clear();
         for change in changes {
             let path_id = self.intern.intern(&change.path);
             let peer_ids = self.sync_graph.get_component_paths_public(path_id);
-
-            // Generate changes for all peers (excluding the source path itself)
             for peer_id in peer_ids {
                 if peer_id != path_id {
                     if let Some(peer_path) = self.intern.resolve(peer_id) {
-                        sync_changes.push(Change {
+                        self.buf_sync.push(Change {
                             path: peer_path.to_owned(),
                             value_json: change.value_json.clone(),
                         });
@@ -196,37 +218,27 @@ impl ProcessingPipeline {
                 }
             }
         }
-
-        sync_changes
     }
 
-    /// Process flip paths: for each changed path, invert value for all peers in its component.
-    /// Only applies to boolean values; non-boolean values pass through unchanged.
-    fn process_flip_paths(&mut self, changes: &[Change]) -> Vec<Change> {
-        let mut flip_changes = Vec::new();
-
+    /// Process flip paths into buf_flip (pre-allocated buffer).
+    fn process_flip_paths_into(&mut self, changes: &[Change]) {
+        self.buf_flip.clear();
         for change in changes {
             let path_id = self.intern.intern(&change.path);
             let peer_ids = self.flip_graph.get_component_paths_public(path_id);
-
-            // Only process if this path has flip peers
             if peer_ids.is_empty() {
                 continue;
             }
-
-            // Try to parse the value as a boolean
             let inverted_value = match change.value_json.trim() {
                 "true" => Some("false".to_owned()),
                 "false" => Some("true".to_owned()),
-                _ => None, // Non-boolean values pass through unchanged
+                _ => None,
             };
-
-            // If the value was a boolean, generate inverted changes for all peers
             if let Some(inverted) = inverted_value {
                 for peer_id in peer_ids {
                     if peer_id != path_id {
                         if let Some(peer_path) = self.intern.resolve(peer_id) {
-                            flip_changes.push(Change {
+                            self.buf_flip.push(Change {
                                 path: peer_path.to_owned(),
                                 value_json: inverted.clone(),
                             });
@@ -235,134 +247,157 @@ impl ProcessingPipeline {
                 }
             }
         }
-
-        flip_changes
     }
 
-    /// Process a batch of changes.
-    ///
-    /// Algorithm:
-    /// 1. Parse input changes
-    /// 2. Process aggregation writes (distribute target → sources)
-    /// 3. Update shadow state with aggregated changes
-    /// 4. Process sync paths (propagate to peers)
-    /// 5. Update shadow state with sync changes
-    /// 6. Process flip paths (invert booleans for peers)
-    /// 7. Update shadow state with flip changes
-    /// 8. Find affected BoolLogic expressions via reverse index
-    /// 9. Evaluate each affected expression
-    /// 10. Return all changes (input/aggregated/sync/flip + BoolLogic)
+    /// Register a batch of listeners for topic-based dispatch.
+    pub(crate) fn register_listeners_batch(&mut self, listeners_json: &str) -> Result<(), String> {
+        self.router.register_listeners_batch(listeners_json)
+    }
+
+    /// Unregister a batch of listeners by subscriber IDs.
+    pub(crate) fn unregister_listeners_batch(
+        &mut self,
+        subscriber_ids_json: &str,
+    ) -> Result<(), String> {
+        self.router.unregister_listeners_batch(subscriber_ids_json)
+    }
+
+    /// Create a dispatch plan for changes (JSON string path, used by Rust tests).
+    pub(crate) fn create_dispatch_plan(&self, changes_json: &str) -> Result<String, String> {
+        self.router.create_dispatch_plan_json(changes_json)
+    }
+
+    /// Create a dispatch plan from a pre-parsed Vec (serde-wasm-bindgen path).
+    pub(crate) fn create_dispatch_plan_vec(&self, changes: &[Change]) -> crate::router::DispatchPlan {
+        self.router.create_dispatch_plan(changes)
+    }
+
+    /// Route produced changes from a depth level to downstream topics (JSON string path).
+    pub(crate) fn route_produced_changes(
+        &self,
+        depth: u32,
+        produced_changes_json: &str,
+    ) -> Result<String, String> {
+        self.router
+            .route_produced_changes_json(depth, produced_changes_json)
+    }
+
+    /// Route produced changes from a pre-parsed Vec (serde-wasm-bindgen path).
+    pub(crate) fn route_produced_changes_vec(
+        &self,
+        depth: u32,
+        produced_changes: &[Change],
+    ) -> crate::router::DispatchPlan {
+        self.router.route_produced_changes(depth, produced_changes)
+    }
+
+    /// Process a batch of changes from a JSON string (legacy path, used by Rust tests).
     pub(crate) fn process_changes(&mut self, changes_json: &str) -> Result<String, String> {
         let input_changes: Vec<Change> = serde_json::from_str(changes_json)
             .map_err(|e| format!("Changes parse error: {}", e))?;
+        let result = self.process_changes_vec(input_changes)?;
+        serde_json::to_string(&result).map_err(|e| format!("Serialize error: {}", e))
+    }
+
+    /// Process a batch of changes from a pre-parsed Vec (serde-wasm-bindgen path).
+    ///
+    /// Uses pre-allocated buffers to avoid per-call allocations.
+    pub(crate) fn process_changes_vec(&mut self, input_changes: Vec<Change>) -> Result<ProcessResult, String> {
+        // Clear pre-allocated buffers
+        self.buf_output.clear();
+        self.buf_sync.clear();
+        self.buf_flip.clear();
+        self.buf_affected_ids.clear();
+        self.buf_concern_changes.clear();
+
+        // Step 0: Filter out no-op changes (value already matches shadow state)
+        let input_changes: Vec<Change> = input_changes
+            .into_iter()
+            .filter(|c| !self.shadow.is_unchanged(&c.path, &c.value_json))
+            .collect();
+
+        // Early return if all changes are no-ops
+        if input_changes.is_empty() {
+            return Ok(ProcessResult {
+                changes: Vec::new(),
+                concern_changes: Vec::new(),
+                execution_plan: None,
+            });
+        }
 
         // Step 1-2: Process aggregation writes (distribute target → sources)
         let mut changes = process_aggregation_writes(&self.aggregations, input_changes);
 
-        // Collect all output changes (start with aggregated input)
-        let mut output_changes: Vec<Change> = Vec::with_capacity(changes.len());
-
-        // Track which logic IDs need re-evaluation
-        let mut affected_logic_ids: HashSet<u32> = HashSet::new();
-
         // Step 3: Apply aggregated changes to shadow state and collect affected paths
         for change in &changes {
-            // Update shadow state
             self.shadow.set(&change.path, &change.value_json)?;
-
-            // Echo aggregated change to output
-            output_changes.push(Change {
-                path: change.path.clone(),
-                value_json: change.value_json.clone(),
-            });
-
-            // Mark affected logic for later evaluation
-            let affected_paths = self.shadow.affected_paths(&change.path);
-            for affected_path in &affected_paths {
-                let path_id = self.intern.intern(affected_path);
-                for logic_id in self.rev_index.affected_by_path(path_id) {
-                    affected_logic_ids.insert(logic_id);
-                }
-            }
-            let path_id = self.intern.intern(&change.path);
-            for logic_id in self.rev_index.affected_by_path(path_id) {
-                affected_logic_ids.insert(logic_id);
-            }
+            self.buf_output.push(change.clone());
+            self.mark_affected_logic(&change.path);
         }
 
-        // Step 4: Process sync paths (propagate to all peers in component)
-        let sync_changes = self.process_sync_paths(&changes);
-
-        // Step 5: Update shadow state with sync changes
+        // Step 4-5: Process sync paths and update shadow state
+        self.process_sync_paths_into(&changes);
+        // Drain buf_sync to avoid borrow conflict with self.shadow/self.mark_affected_logic
+        let sync_changes: Vec<Change> = self.buf_sync.drain(..).collect();
         for change in &sync_changes {
             self.shadow.set(&change.path, &change.value_json)?;
-
-            // Add to output
-            output_changes.push(Change {
-                path: change.path.clone(),
-                value_json: change.value_json.clone(),
-            });
-
-            // Mark affected logic
-            let affected_paths = self.shadow.affected_paths(&change.path);
-            for affected_path in &affected_paths {
-                let path_id = self.intern.intern(affected_path);
-                for logic_id in self.rev_index.affected_by_path(path_id) {
-                    affected_logic_ids.insert(logic_id);
-                }
-            }
-            let path_id = self.intern.intern(&change.path);
-            for logic_id in self.rev_index.affected_by_path(path_id) {
-                affected_logic_ids.insert(logic_id);
-            }
+            self.mark_affected_logic(&change.path);
         }
-
-        // Extend changes to include sync changes for flip processing
+        self.buf_output.extend_from_slice(&sync_changes);
         changes.extend(sync_changes);
 
-        // Step 6: Process flip paths (invert booleans for peers)
-        let flip_changes = self.process_flip_paths(&changes);
-
-        // Step 7: Update shadow state with flip changes
+        // Step 6-7: Process flip paths and update shadow state
+        self.process_flip_paths_into(&changes);
+        let flip_changes: Vec<Change> = self.buf_flip.drain(..).collect();
         for change in &flip_changes {
             self.shadow.set(&change.path, &change.value_json)?;
-
-            // Add to output
-            output_changes.push(Change {
-                path: change.path.clone(),
-                value_json: change.value_json.clone(),
-            });
-
-            // Mark affected logic
-            let affected_paths = self.shadow.affected_paths(&change.path);
-            for affected_path in &affected_paths {
-                let path_id = self.intern.intern(affected_path);
-                for logic_id in self.rev_index.affected_by_path(path_id) {
-                    affected_logic_ids.insert(logic_id);
-                }
-            }
-            let path_id = self.intern.intern(&change.path);
-            for logic_id in self.rev_index.affected_by_path(path_id) {
-                affected_logic_ids.insert(logic_id);
-            }
+            self.mark_affected_logic(&change.path);
         }
+        self.buf_output.extend(flip_changes);
 
         // Step 8-9: Evaluate affected BoolLogic expressions
-        for logic_id in &affected_logic_ids {
+        for logic_id in &self.buf_affected_ids {
             if let Some(meta) = self.registry.get(*logic_id) {
                 let result = meta.tree.evaluate(&self.shadow);
-                output_changes.push(Change {
+                self.buf_concern_changes.push(Change {
                     path: meta.output_path.clone(),
                     value_json: if result { "true".to_owned() } else { "false".to_owned() },
                 });
             }
         }
 
-        // Step 10: Serialize output
-        let result = ProcessResult {
-            changes: output_changes,
+        // Step 10: Create full execution plan if listeners are registered
+        let execution_plan = if self.router.has_listeners() {
+            let plan = self.router.create_full_execution_plan(&self.buf_output);
+            if plan.groups.is_empty() { None } else { Some(plan) }
+        } else {
+            None
         };
-        serde_json::to_string(&result).map_err(|e| format!("Serialize error: {}", e))
+
+        // Move buffers into result (swap with empty vecs to avoid cloning)
+        let output_changes = std::mem::take(&mut self.buf_output);
+        let concern_changes = std::mem::take(&mut self.buf_concern_changes);
+
+        Ok(ProcessResult {
+            changes: output_changes,
+            concern_changes,
+            execution_plan,
+        })
+    }
+
+    /// Mark all BoolLogic expressions affected by a change at the given path.
+    fn mark_affected_logic(&mut self, path: &str) {
+        let affected_paths = self.shadow.affected_paths(path);
+        for affected_path in &affected_paths {
+            let path_id = self.intern.intern(affected_path);
+            for logic_id in self.rev_index.affected_by_path(path_id) {
+                self.buf_affected_ids.insert(logic_id);
+            }
+        }
+        let path_id = self.intern.intern(path);
+        for logic_id in self.rev_index.affected_by_path(path_id) {
+            self.buf_affected_ids.insert(logic_id);
+        }
     }
 
     /// Dump shadow state as JSON (debug/testing).
@@ -386,6 +421,13 @@ impl ProcessingPipeline {
 impl Default for ProcessingPipeline {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Re-export for lib.rs boundary
+impl Change {
+    pub fn new(path: String, value_json: String) -> Self {
+        Self { path, value_json }
     }
 }
 
@@ -465,11 +507,12 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have 2 changes: echoed input + computed BoolLogic
-        assert_eq!(parsed.changes.len(), 2);
+        // Should have 1 state change + 1 concern change
+        assert_eq!(parsed.changes.len(), 1);
         assert_eq!(parsed.changes[0].path, "user.role");
 
-        let bl_change = &parsed.changes[1];
+        assert_eq!(parsed.concern_changes.len(), 1);
+        let bl_change = &parsed.concern_changes[0];
         assert_eq!(bl_change.path, "_concerns.user.email.disabledWhen");
         assert_eq!(bl_change.value_json, "true");
     }
@@ -490,8 +533,9 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        assert_eq!(parsed.changes.len(), 2);
-        let bl_change = &parsed.changes[1];
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.concern_changes.len(), 1);
+        let bl_change = &parsed.concern_changes[0];
         assert_eq!(bl_change.path, "_concerns.user.email.disabledWhen");
         assert_eq!(bl_change.value_json, "false");
     }
@@ -542,10 +586,11 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // 1 input + 3 BoolLogic evaluations
-        assert_eq!(parsed.changes.len(), 4);
+        // 1 input change + 3 concern changes
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.concern_changes.len(), 3);
 
-        let bl_paths: Vec<&str> = parsed.changes[1..].iter().map(|c| c.path.as_str()).collect();
+        let bl_paths: Vec<&str> = parsed.concern_changes.iter().map(|c| c.path.as_str()).collect();
         assert!(bl_paths.contains(&"_concerns.user.email.disabledWhen"));
         assert!(bl_paths.contains(&"_concerns.user.email.readonlyWhen"));
         assert!(bl_paths.contains(&"_concerns.user.name.visibleWhen"));
@@ -568,7 +613,7 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        let bl = parsed.changes.iter().find(|c| c.path.contains("visibleWhen")).unwrap();
+        let bl = parsed.concern_changes.iter().find(|c| c.path.contains("visibleWhen")).unwrap();
         assert_eq!(bl.value_json, "true");
     }
 
@@ -591,7 +636,7 @@ mod tests {
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
         // Should trigger BoolLogic since user.role is a descendant of user
-        let bl = parsed.changes.iter().find(|c| c.path.contains("disabledWhen"));
+        let bl = parsed.concern_changes.iter().find(|c| c.path.contains("disabledWhen"));
         assert!(bl.is_some());
         assert_eq!(bl.unwrap().value_json, "true");
     }
@@ -614,7 +659,8 @@ mod tests {
             .process_changes(r#"[{"path": "user.role", "value_json": "\"admin\""}]"#)
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.changes.len(), 2);
+        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.concern_changes.len(), 1);
 
         // Unregister
         p.unregister_boollogic(id);
@@ -625,6 +671,7 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.concern_changes.len(), 0);
     }
 
     #[test]
@@ -880,7 +927,8 @@ mod tests {
     #[test]
     fn flip_inverts_true_to_false() {
         let mut p = make_pipeline();
-        p.shadow_init(r#"{"isVisible": true, "isHidden": false}"#).unwrap();
+        // Start with opposite values so the change is NOT a no-op
+        p.shadow_init(r#"{"isVisible": false, "isHidden": true}"#).unwrap();
         p.register_flip_batch(r#"[["isVisible", "isHidden"]]"#).unwrap();
 
         let result = p
@@ -899,7 +947,8 @@ mod tests {
     #[test]
     fn flip_inverts_false_to_true() {
         let mut p = make_pipeline();
-        p.shadow_init(r#"{"isVisible": true, "isHidden": false}"#).unwrap();
+        // Start with opposite values so the change is NOT a no-op
+        p.shadow_init(r#"{"isVisible": false, "isHidden": true}"#).unwrap();
         p.register_flip_batch(r#"[["isVisible", "isHidden"]]"#).unwrap();
 
         let result = p
@@ -936,8 +985,9 @@ mod tests {
     #[test]
     fn flip_multiple_peers() {
         let mut p = make_pipeline();
-        p.shadow_init(r#"{"a": true, "b": false, "c": false}"#).unwrap();
-        p.register_flip_batch(r#"[["a", "b", "c"]]"#).unwrap();
+        // Start with a=false so changing to true is NOT a no-op
+        p.shadow_init(r#"{"a": false, "b": true, "c": true}"#).unwrap();
+        p.register_flip_batch(r#"[["a", "b"], ["a", "c"]]"#).unwrap();
 
         let result = p
             .process_changes(r#"[{"path": "a", "value_json": "true"}]"#)
@@ -961,7 +1011,8 @@ mod tests {
     #[test]
     fn flip_isolated_paths_no_propagation() {
         let mut p = make_pipeline();
-        p.shadow_init(r#"{"x": true, "y": false}"#).unwrap();
+        // Start with x=false so changing to true is NOT a no-op
+        p.shadow_init(r#"{"x": false, "y": false}"#).unwrap();
 
         // No flip registered
         let result = p
@@ -1039,7 +1090,8 @@ mod tests {
     #[test]
     fn full_pipeline_flip_only() {
         let mut p = make_pipeline();
-        p.shadow_init(r#"{"isVisible": true, "isHidden": false}"#)
+        // Start with opposite values so change is NOT a no-op
+        p.shadow_init(r#"{"isVisible": false, "isHidden": true}"#)
             .unwrap();
 
         p.register_flip_batch(r#"[["isVisible", "isHidden"]]"#)
@@ -1135,11 +1187,12 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have: input + sync + BoolLogic
-        assert_eq!(parsed.changes.len(), 3);
+        // Should have: input + sync (state changes) + BoolLogic (concern change)
+        assert_eq!(parsed.changes.len(), 2);
         assert_eq!(parsed.changes[0].path, "user.role");
         assert_eq!(parsed.changes[1].path, "profile.role");
-        let bl = &parsed.changes[2];
+        assert_eq!(parsed.concern_changes.len(), 1);
+        let bl = &parsed.concern_changes[0];
         assert_eq!(bl.path, "_concerns.user.email.disabledWhen");
         assert_eq!(bl.value_json, "true");
     }
@@ -1167,19 +1220,15 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Input + sync + 2 BoolLogics
-        assert_eq!(parsed.changes.len(), 4);
+        // Input + sync (state changes) + 2 BoolLogics (concern changes)
+        assert_eq!(parsed.changes.len(), 2);
+        assert_eq!(parsed.concern_changes.len(), 2);
 
-        // Extract BoolLogic changes
-        let bl_paths: Vec<&str> = parsed.changes[2..]
-            .iter()
-            .map(|c| c.path.as_str())
-            .collect();
+        let bl_paths: Vec<&str> = parsed.concern_changes.iter().map(|c| c.path.as_str()).collect();
         assert!(bl_paths.contains(&"_concerns.field1.visibleWhen"));
         assert!(bl_paths.contains(&"_concerns.field2.visibleWhen"));
 
-        // Both should be true
-        for change in &parsed.changes[2..] {
+        for change in &parsed.concern_changes {
             assert_eq!(change.value_json, "true");
         }
     }
@@ -1220,7 +1269,9 @@ mod tests {
         assert!(paths.contains(&"a"), "Missing a");
         assert!(paths.contains(&"b"), "Missing b (sync)");
         assert!(paths.contains(&"c"), "Missing c (flip)");
-        assert!(paths.contains(&"_concerns.x.disabledWhen"), "Missing BoolLogic");
+
+        let concern_paths: Vec<&str> = parsed.concern_changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(concern_paths.contains(&"_concerns.x.disabledWhen"), "Missing BoolLogic");
     }
 
     #[test]
@@ -1321,10 +1372,12 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have: input + sync + BoolLogic
-        assert_eq!(parsed.changes.len(), 3);
+        // Should have: input + sync (state) + BoolLogic (concern)
+        assert_eq!(parsed.changes.len(), 2);
+        assert_eq!(parsed.concern_changes.len(), 1);
 
-        let bl_change = parsed.changes.iter().find(|c| c.path.contains("disabledWhen")).unwrap();
+        let bl_change = &parsed.concern_changes[0];
+        assert_eq!(bl_change.path, "_concerns.field.disabledWhen");
         assert_eq!(bl_change.value_json, "true");
     }
 
@@ -1349,10 +1402,12 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have: 2 aggregated changes + 1 BoolLogic
-        assert_eq!(parsed.changes.len(), 3);
+        // Should have: 2 aggregated state changes + 1 concern change
+        assert_eq!(parsed.changes.len(), 2);
+        assert_eq!(parsed.concern_changes.len(), 1);
 
-        let bl = parsed.changes.iter().find(|c| c.path.contains("visibleWhen")).unwrap();
+        let bl = &parsed.concern_changes[0];
+        assert!(bl.path.contains("visibleWhen"));
         assert_eq!(bl.value_json, "true");
     }
 }

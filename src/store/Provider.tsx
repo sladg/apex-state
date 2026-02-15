@@ -22,10 +22,11 @@ const createInternalState = <
   config: DeepRequired<StoreConfig>,
 ): InternalState<DATA, META> => ({
   graphs: {
-    sync: createPathGroups(),
-    flip: createPathGroups(),
+    sync: createPathGroups('sync'),
+    flip: createPathGroups('flip'),
     listeners: new Map(),
     sortedListenerPaths: [],
+    listenerHandlers: new Map(),
   },
   registrations: {
     concerns: new Map(),

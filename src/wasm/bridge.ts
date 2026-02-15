@@ -1,8 +1,11 @@
 /**
  * WASM Bridge - Thin wrapper over Rust/WASM exports
  *
- * Minimal serialization/deserialization layer. All heavy computation
- * lives in Rust — this bridge just handles JSON encoding at the boundary.
+ * Uses serde-wasm-bindgen for hot-path functions (processChanges,
+ * createDispatchPlan, routeProducedChanges, shadowInit) — JS objects
+ * cross the boundary directly without JSON string intermediary.
+ *
+ * Registration functions still use JSON strings (cold path, simpler).
  *
  * WASM must be loaded once before use via `loadWasm()`:
  * - In production: called in `<Provider />` setup
@@ -15,11 +18,96 @@
 
 import type * as WasmExports from '../../rust/pkg-node/apex_state_wasm'
 
+// ---------------------------------------------------------------------------
+// Types — exported for downstream use
+// ---------------------------------------------------------------------------
+
 /** A single state change (input or output). */
 export interface Change {
   path: string
   value: unknown
 }
+
+/** A single dispatch entry with sequential ID and input change references. */
+export interface DispatchEntry {
+  dispatch_id: number
+  subscriber_id: number
+  scope_path: string
+  /** Indexes into ProcessResult.changes array. */
+  input_change_ids: number[]
+}
+
+/** A group of dispatches to execute sequentially. */
+export interface DispatchGroup {
+  dispatches: DispatchEntry[]
+}
+
+/** A target for propagating produced changes from child to parent dispatch. */
+export interface PropagationTarget {
+  target_dispatch_id: number
+  /** Prefix to prepend to child's relative paths for the target's scope. */
+  remap_prefix: string
+}
+
+/** Pre-computed execution plan with propagation map. */
+export interface FullExecutionPlan {
+  groups: DispatchGroup[]
+  /** propagation_map[dispatch_id] = targets to forward produced changes to. */
+  propagation_map: PropagationTarget[][]
+}
+
+// ---------------------------------------------------------------------------
+// Legacy types — kept for backward compat with createDispatchPlan/routeProducedChanges
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use FullExecutionPlan instead. */
+export interface ListenerDispatch {
+  subscriber_id: number
+  scope_path: string
+  changes: Change[]
+  ancestors?: string[]
+}
+
+/** @deprecated Use FullExecutionPlan instead. */
+export interface DispatchLevel {
+  depth: number
+  dispatches: ListenerDispatch[]
+}
+
+/** @deprecated Use FullExecutionPlan instead. */
+export interface DispatchPlan {
+  levels: DispatchLevel[]
+}
+
+// ---------------------------------------------------------------------------
+// Registration types
+// ---------------------------------------------------------------------------
+
+/** An aggregation registration entry: target path + source paths. */
+export interface AggregationEntry {
+  target: string
+  sources: string[]
+}
+
+/** A listener registration entry for topic-based dispatch. */
+export interface ListenerEntry {
+  subscriber_id: number
+  topic_path: string
+  scope_path: string
+}
+
+// ---------------------------------------------------------------------------
+// Internal WASM change format (path + value_json string)
+// ---------------------------------------------------------------------------
+
+interface WasmChange {
+  path: string
+  value_json: string
+}
+
+// ---------------------------------------------------------------------------
+// Module loading
+// ---------------------------------------------------------------------------
 
 let wasmInstance: typeof WasmExports | null = null
 let loadingPromise: Promise<void> | null = null
@@ -80,41 +168,32 @@ const wasm = (): typeof WasmExports => {
 }
 
 // ---------------------------------------------------------------------------
-// Bridge functions — SYNC, thin wrappers with JSON serialization
+// Helpers — conversion between JS Change[] and WASM WasmChange[]
 // ---------------------------------------------------------------------------
 
-/** Initialize shadow state from a JS object. */
-export const shadowInit = (state: Record<string, unknown>): void => {
-  wasm().shadow_init(JSON.stringify(state))
-}
+/** Convert JS Change[] to WASM's { path, value_json }[] for serde-wasm-bindgen. */
+const changesToWasm = (changes: Change[]): WasmChange[] =>
+  changes.map((c) => ({
+    path: c.path,
+    value_json: JSON.stringify(c.value),
+  }))
 
-/** Register a BoolLogic expression. Returns logic_id for cleanup. */
-export const registerBoolLogic = (outputPath: string, tree: unknown): number =>
-  wasm().register_boollogic(outputPath, JSON.stringify(tree))
-
-/** Unregister a BoolLogic expression by logic_id. */
-export const unregisterBoolLogic = (logicId: number): void => {
-  wasm().unregister_boollogic(logicId)
-}
-
-/** Process a batch of state changes through the WASM pipeline. */
-export const processChanges = (changes: Change[]): Change[] => {
-  const changesJson = JSON.stringify(
-    changes.map((c) => ({
-      path: c.path,
-      value_json: JSON.stringify(c.value),
-    })),
-  )
-
-  const resultJson = wasm().process_changes(changesJson)
-  const result = JSON.parse(resultJson) as {
-    changes: { path: string; value_json: string }[]
-  }
-
-  return result.changes.map((c) => ({
+/** Convert WASM's { path, value_json }[] back to JS Change[]. */
+const wasmChangesToJs = (wasmChanges: WasmChange[]): Change[] =>
+  wasmChanges.map((c) => ({
     path: c.path,
     value: JSON.parse(c.value_json) as unknown,
   }))
+
+// ---------------------------------------------------------------------------
+// Bridge functions — SYNC, thin wrappers
+// ---------------------------------------------------------------------------
+
+// -- Shadow state -----------------------------------------------------------
+
+/** Initialize shadow state from a JS object (no JSON serialization — direct JsValue). */
+export const shadowInit = (state: Record<string, unknown>): void => {
+  wasm().shadow_init(state as never)
 }
 
 /** Dump shadow state as JS object (debug/testing). */
@@ -126,6 +205,166 @@ export const shadowGet = (path: string): unknown => {
   const json = wasm().shadow_get(path)
   return json !== undefined ? (JSON.parse(json) as unknown) : undefined
 }
+
+// -- BoolLogic --------------------------------------------------------------
+
+/** Register a BoolLogic expression. Returns logic_id for cleanup. */
+export const registerBoolLogic = (outputPath: string, tree: unknown): number =>
+  wasm().register_boollogic(outputPath, JSON.stringify(tree))
+
+/** Unregister a BoolLogic expression by logic_id. */
+export const unregisterBoolLogic = (logicId: number): void => {
+  wasm().unregister_boollogic(logicId)
+}
+
+// -- Aggregation (EP2) ------------------------------------------------------
+
+/** Register a batch of aggregations. */
+export const registerAggregationBatch = (
+  aggregations: AggregationEntry[],
+): void => {
+  wasm().register_aggregation_batch(JSON.stringify(aggregations))
+}
+
+/** Unregister a batch of aggregations by target paths. */
+export const unregisterAggregationBatch = (targets: string[]): void => {
+  wasm().unregister_aggregation_batch(JSON.stringify(targets))
+}
+
+// -- Sync graph (EP2) -------------------------------------------------------
+
+/** Register a batch of sync pairs. */
+export const registerSyncBatch = (pairs: [string, string][]): void => {
+  wasm().register_sync_batch(JSON.stringify(pairs))
+}
+
+/** Unregister a batch of sync pairs. */
+export const unregisterSyncBatch = (pairs: [string, string][]): void => {
+  wasm().unregister_sync_batch(JSON.stringify(pairs))
+}
+
+// -- Flip graph (EP2) -------------------------------------------------------
+
+/** Register a batch of flip pairs. */
+export const registerFlipBatch = (pairs: [string, string][]): void => {
+  wasm().register_flip_batch(JSON.stringify(pairs))
+}
+
+/** Unregister a batch of flip pairs. */
+export const unregisterFlipBatch = (pairs: [string, string][]): void => {
+  wasm().unregister_flip_batch(JSON.stringify(pairs))
+}
+
+// -- Pipeline (EP2) ---------------------------------------------------------
+
+/** Reset the pipeline to a fresh state (testing only). */
+export const pipelineReset = (): void => {
+  wasm().pipeline_reset()
+}
+
+// -- Process changes --------------------------------------------------------
+
+/**
+ * Process a batch of state changes through the WASM pipeline.
+ * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
+ * Returns state changes, concern changes, and a pre-computed execution plan.
+ */
+export const processChanges = (
+  changes: Change[],
+): {
+  changes: Change[]
+  concern_changes: Change[]
+  execution_plan: FullExecutionPlan | null
+} => {
+  // Pass WasmChange[] directly via serde-wasm-bindgen (no outer JSON.stringify)
+  const result = wasm().process_changes(
+    changesToWasm(changes) as never,
+  ) as unknown as {
+    changes: WasmChange[]
+    concern_changes: WasmChange[]
+    execution_plan?: FullExecutionPlan
+  }
+
+  return {
+    changes: wasmChangesToJs(result.changes),
+    concern_changes: wasmChangesToJs(result.concern_changes ?? []),
+    execution_plan: result.execution_plan ?? null,
+  }
+}
+
+// -- Listener dispatch (EP3) ------------------------------------------------
+
+/** Register a batch of listeners for topic-based dispatch. */
+export const registerListenersBatch = (listeners: ListenerEntry[]): void => {
+  wasm().register_listeners_batch(JSON.stringify(listeners))
+}
+
+/** Unregister a batch of listeners by subscriber IDs. */
+export const unregisterListenersBatch = (subscriberIds: number[]): void => {
+  wasm().unregister_listeners_batch(JSON.stringify(subscriberIds))
+}
+
+/** Create a dispatch plan for the given changes (serde-wasm-bindgen). */
+export const createDispatchPlan = (changes: Change[]): DispatchPlan => {
+  const raw = wasm().create_dispatch_plan(
+    changesToWasm(changes) as never,
+  ) as unknown as {
+    levels: {
+      depth: number
+      dispatches: {
+        subscriber_id: number
+        scope_path: string
+        changes: WasmChange[]
+      }[]
+    }[]
+  }
+
+  return {
+    levels: raw.levels.map((level) => ({
+      depth: level.depth,
+      dispatches: level.dispatches.map((d) => ({
+        subscriber_id: d.subscriber_id,
+        scope_path: d.scope_path,
+        changes: wasmChangesToJs(d.changes),
+      })),
+    })),
+  }
+}
+
+/** Route produced changes from a depth level to downstream topics (serde-wasm-bindgen). */
+export const routeProducedChanges = (
+  depth: number,
+  producedChanges: Change[],
+): DispatchPlan | null => {
+  const raw = wasm().route_produced_changes(
+    depth,
+    changesToWasm(producedChanges) as never,
+  ) as unknown as {
+    levels: {
+      depth: number
+      dispatches: {
+        subscriber_id: number
+        scope_path: string
+        changes: WasmChange[]
+      }[]
+    }[]
+  } | null
+
+  if (!raw || raw.levels.length === 0) return null
+
+  return {
+    levels: raw.levels.map((level) => ({
+      depth: level.depth,
+      dispatches: level.dispatches.map((d) => ({
+        subscriber_id: d.subscriber_id,
+        scope_path: d.scope_path,
+        changes: wasmChangesToJs(d.changes),
+      })),
+    })),
+  }
+}
+
+// -- Debug/testing ----------------------------------------------------------
 
 /** Number of interned paths (debug/testing). */
 export const internCount = (): number => wasm().intern_count()

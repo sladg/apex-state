@@ -85,6 +85,12 @@ impl ShadowState {
         Ok(())
     }
 
+    /// Initialize shadow state from a pre-parsed serde_json::Value (no string intermediary).
+    pub(crate) fn init_value(&mut self, value: serde_json::Value) -> Result<(), String> {
+        self.root = ValueRepr::from(value);
+        Ok(())
+    }
+
     /// Get a reference to the value at the given dot-separated path.
     pub(crate) fn get(&self, path: &str) -> Option<&ValueRepr> {
         if path.is_empty() {
@@ -133,6 +139,20 @@ impl ShadowState {
     /// Dump the entire shadow state as a JSON string.
     pub(crate) fn dump(&self) -> String {
         serde_json::to_string(&self.root.to_json_value()).unwrap_or_else(|_| "{}".to_owned())
+    }
+
+    /// Check if a value at the given path is unchanged (matches shadow state).
+    /// Returns true if the incoming value_json matches the stored value.
+    pub(crate) fn is_unchanged(&self, path: &str, value_json: &str) -> bool {
+        let incoming: ValueRepr = match serde_json::from_str(value_json) {
+            Ok(v) => v,
+            Err(_) => return false, // Can't parse → treat as changed
+        };
+
+        match self.get(path) {
+            Some(existing) => *existing == incoming,
+            None => false, // Path doesn't exist → it's a new value, not unchanged
+        }
     }
 
     /// Get a mutable reference to the root (for direct manipulation in pipeline).
@@ -461,5 +481,74 @@ mod tests {
     fn set_invalid_json_fails() {
         let mut state = ShadowState::new();
         assert!(state.set("a", "not json").is_err());
+    }
+
+    // --- is_unchanged ---
+
+    #[test]
+    fn is_unchanged_same_string() {
+        let state = make_state(r#"{"user": {"name": "Alice"}}"#);
+        assert!(state.is_unchanged("user.name", r#""Alice""#));
+    }
+
+    #[test]
+    fn is_unchanged_different_string() {
+        let state = make_state(r#"{"user": {"name": "Alice"}}"#);
+        assert!(!state.is_unchanged("user.name", r#""Bob""#));
+    }
+
+    #[test]
+    fn is_unchanged_same_number() {
+        let state = make_state(r#"{"x": 42}"#);
+        assert!(state.is_unchanged("x", "42"));
+    }
+
+    #[test]
+    fn is_unchanged_different_number() {
+        let state = make_state(r#"{"x": 42}"#);
+        assert!(!state.is_unchanged("x", "99"));
+    }
+
+    #[test]
+    fn is_unchanged_same_bool() {
+        let state = make_state(r#"{"flag": true}"#);
+        assert!(state.is_unchanged("flag", "true"));
+    }
+
+    #[test]
+    fn is_unchanged_different_bool() {
+        let state = make_state(r#"{"flag": true}"#);
+        assert!(!state.is_unchanged("flag", "false"));
+    }
+
+    #[test]
+    fn is_unchanged_same_null() {
+        let state = make_state(r#"{"val": null}"#);
+        assert!(state.is_unchanged("val", "null"));
+    }
+
+    #[test]
+    fn is_unchanged_same_object() {
+        let state = make_state(r#"{"obj": {"a": 1, "b": 2}}"#);
+        // Note: HashMap ordering may differ, but PartialEq compares values
+        assert!(state.is_unchanged("obj", r#"{"a": 1, "b": 2}"#));
+    }
+
+    #[test]
+    fn is_unchanged_different_object() {
+        let state = make_state(r#"{"obj": {"a": 1}}"#);
+        assert!(!state.is_unchanged("obj", r#"{"a": 2}"#));
+    }
+
+    #[test]
+    fn is_unchanged_missing_path() {
+        let state = make_state(r#"{"x": 1}"#);
+        assert!(!state.is_unchanged("missing", "1"));
+    }
+
+    #[test]
+    fn is_unchanged_invalid_json() {
+        let state = make_state(r#"{"x": 1}"#);
+        assert!(!state.is_unchanged("x", "not json"));
     }
 }

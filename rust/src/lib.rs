@@ -7,9 +7,10 @@ mod graphs;
 mod intern;
 mod normalization;
 mod pipeline;
+mod router;
 mod shadow;
 
-use pipeline::ProcessingPipeline;
+use pipeline::{Change, ProcessingPipeline};
 
 #[cfg(feature = "console_error_panic_hook")]
 fn set_panic_hook() {
@@ -26,6 +27,16 @@ thread_local! {
     static PIPELINE: RefCell<ProcessingPipeline> = RefCell::new(ProcessingPipeline::new());
 }
 
+/// Helper: convert a JsValue to a Rust type via serde-wasm-bindgen.
+fn from_js<T: serde::de::DeserializeOwned>(val: JsValue) -> Result<T, JsValue> {
+    serde_wasm_bindgen::from_value(val).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Helper: convert a Rust type to JsValue via serde-wasm-bindgen.
+fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsValue> {
+    serde_wasm_bindgen::to_value(val).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// Reset the entire pipeline to a fresh state (testing only).
 #[wasm_bindgen]
 pub fn pipeline_reset() {
@@ -34,12 +45,14 @@ pub fn pipeline_reset() {
     })
 }
 
-/// Initialize shadow state from a JSON string (full state snapshot).
+/// Initialize shadow state directly from a JS object (no JSON serialization).
 #[wasm_bindgen]
-pub fn shadow_init(state_json: &str) -> Result<(), JsValue> {
+pub fn shadow_init(state: JsValue) -> Result<(), JsValue> {
+    let value: serde_json::Value =
+        from_js(state)?;
     PIPELINE.with(|p| {
         p.borrow_mut()
-            .shadow_init(state_json)
+            .shadow_init_value(value)
             .map_err(|e| JsValue::from_str(&e))
     })
 }
@@ -143,16 +156,69 @@ pub fn unregister_flip_batch(pairs_json: &str) -> Result<(), JsValue> {
     })
 }
 
-/// Process a batch of state changes.
+/// Process a batch of state changes via serde-wasm-bindgen (no JSON string intermediary).
 ///
-/// Input: JSON array of `{ "path": "...", "value_json": "..." }`
-/// Output: JSON `{ "changes": [...] }` containing input changes + computed BoolLogic changes.
+/// Input: JS array of `{ path: "...", value_json: "..." }`
+/// Output: JS object `{ changes: [...], dispatch_plan: ... }`
 #[wasm_bindgen]
-pub fn process_changes(changes_json: &str) -> Result<String, JsValue> {
+pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
+    let input: Vec<Change> = from_js(changes)?;
+    PIPELINE.with(|p| {
+        let result = p
+            .borrow_mut()
+            .process_changes_vec(input)
+            .map_err(|e| JsValue::from_str(&e))?;
+        to_js(&result)
+    })
+}
+
+/// Register a batch of listeners for topic-based dispatch.
+///
+/// Input: JSON array of `{ "subscriber_id": N, "topic_path": "...", "scope_path": "..." }`
+#[wasm_bindgen]
+pub fn register_listeners_batch(listeners_json: &str) -> Result<(), JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
-            .process_changes(changes_json)
+            .register_listeners_batch(listeners_json)
             .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Unregister a batch of listeners by subscriber ID.
+///
+/// Input: JSON array of subscriber IDs, e.g. `[1, 2, 3]`
+#[wasm_bindgen]
+pub fn unregister_listeners_batch(subscriber_ids_json: &str) -> Result<(), JsValue> {
+    PIPELINE.with(|p| {
+        p.borrow_mut()
+            .unregister_listeners_batch(subscriber_ids_json)
+            .map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Create a dispatch plan for the given changes via serde-wasm-bindgen.
+///
+/// Input: JS array of `{ path: "...", value_json: "..." }`
+/// Output: JS object `{ levels: [{ depth: N, dispatches: [...] }] }`
+#[wasm_bindgen]
+pub fn create_dispatch_plan(changes: JsValue) -> Result<JsValue, JsValue> {
+    let input: Vec<Change> = from_js(changes)?;
+    PIPELINE.with(|p| {
+        let plan = p.borrow().create_dispatch_plan_vec(&input);
+        to_js(&plan)
+    })
+}
+
+/// Route produced changes from a depth level to downstream topics.
+///
+/// Input: depth level (u32) + JS array of produced changes
+/// Output: JS DispatchPlan for downstream topics
+#[wasm_bindgen]
+pub fn route_produced_changes(depth: u32, produced_changes: JsValue) -> Result<JsValue, JsValue> {
+    let input: Vec<Change> = from_js(produced_changes)?;
+    PIPELINE.with(|p| {
+        let plan = p.borrow().route_produced_changes_vec(depth, &input);
+        to_js(&plan)
     })
 }
 

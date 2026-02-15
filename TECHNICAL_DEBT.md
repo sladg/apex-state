@@ -4,10 +4,8 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 
 ## Pending Items
 
-- **[WASM Architecture]** Move `extractBoolLogicInputPaths` from TypeScript to Rust. Currently in `src/concerns/registration.ts:21-69`, this function should be implemented in Rust/WASM so WASM constructs listener registrations from BoolLogic config directly, reducing JS→WASM crossings. User feedback: "wasm should construct the listeners based on BoolLogic config provided".
-- **[JS/WASM boundary]** Store integration with WASM `processChanges` — callers (`_useFieldValue`, `useJitStore`) need to apply BoolLogic results from `processChanges()` output back to `_concerns` proxy. `src/concerns/registration.ts:68`
-- **[JS]** Old WASM test files (`tests/wasm/interning.test.ts`, `tests/wasm/bool_logic.test.ts`, `tests/wasm/shadow.test.ts`, `tests/wasm/interning.bench.ts`) expect removed APIs (`evaluateBoolLogic`, `initShadowState`). Rewrite to match current `processChanges`/`registerBoolLogic` design.
-- **[JS]** JS BoolLogic evaluator (`src/utils/boolLogic.ts`) is redundant now that WASM handles evaluation. Can be removed after full integration.
+- **[JS]** Old WASM test files (`tests/wasm/bool_logic.test.ts`, `tests/wasm/shadow.test.ts`) import removed APIs (`evaluateBoolLogic`, `initShadowState`, `getShadowValue`, `updateShadowValue`, `dumpShadowState`). Rewrite to use current `registerBoolLogic()` + `processChanges()` API.
+- **[JS]** JS BoolLogic evaluator (`src/utils/boolLogic.ts`) is redundant (WASM handles evaluation), but keeping for now as reference.
 
 ---
 
@@ -30,4 +28,8 @@ Each item follows this pattern:
 
 ## Completed Items
 
-(Moved here after user approval and processing.)
+- **[WASM Architecture]** `extractBoolLogicInputPaths` moved to Rust — RESOLVED. Function no longer needed; registration now directly passes `config.condition` to `registerBoolLogic()`.
+- **[JS/WASM boundary]** Concern results from `processChanges()` applied to `_concerns` — RESOLVED. Implementation at `src/pipeline/processChanges.ts:189-193`.
+- **[JS/Reactivity]** Valtio snapshot timing issue — RESOLVED. Pre-initialization pattern in `registration.ts:34-40` + `useLayoutEffect` ordering prevents race condition.
+- **[JS/Concerns]** Concern integration deferred — RESOLVED. Both WASM BoolLogic and JS custom concerns fully integrated in `registerConcernEffects()`.
+- **[JS]** Duplicate debt item about old test files — REMOVED. Consolidated into single pending item.

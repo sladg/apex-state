@@ -55,6 +55,7 @@ const createMockStore = (
         flip: flipGraph,
         listeners: new Map(),
         sortedListenerPaths: [],
+        listenerHandlers: new Map(),
       },
       registrations: {
         concerns: new Map(),

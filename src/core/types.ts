@@ -115,6 +115,11 @@ export interface ListenerRegistration<
   fn: OnStateListener<DATA, any, META>
 }
 
+export interface ListenerHandlerRef {
+  scope: string | null
+  fn: (...args: unknown[]) => unknown
+}
+
 export interface SideEffectGraphs<
   DATA extends object = object,
   META extends GenericMeta = GenericMeta,
@@ -123,6 +128,8 @@ export interface SideEffectGraphs<
   flip: FlipGraph
   listeners: Map<string, ListenerRegistration<DATA, META>[]>
   sortedListenerPaths: string[]
+  /** O(1) lookup: subscriber_id -> handler ref. Populated by registerListener. */
+  listenerHandlers: Map<number, ListenerHandlerRef>
 }
 
 export interface Registrations {

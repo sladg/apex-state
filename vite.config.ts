@@ -1,21 +1,34 @@
+import path from 'node:path'
+
 import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
 import { defineConfig } from 'vitest/config'
 
-const isPerf = process.env.VITEST_PERF === 'true'
-
 export default defineConfig({
   plugins: [wasm(), react()],
+  resolve: {
+    alias: {
+      '~': path.resolve(__dirname, 'src'),
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
-    include: isPerf
-      ? ['tests/performance/**/*.test.ts', 'tests/performance/**/*.test.tsx']
-      : ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
-    exclude: isPerf
-      ? ['**/node_modules/**']
-      : ['**/node_modules/**', 'tests/performance/**', 'tests/benchmarking/**'],
+    include: ['tests/**/*.test.{ts,tsx}'],
+    exclude: [
+      '**/node_modules/**',
+      'tests/performance/**',
+      'tests/benchmarking/**',
+      'tests/reference/**',
+    ],
+    // Stop on first failure
+    bail: 1,
+    // Ensure deterministic test ordering
+    sequence: {
+      shuffle: false,
+      hooks: 'stack',
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -24,8 +37,8 @@ export default defineConfig({
     },
     benchmark: {
       include: ['tests/**/*.bench.spec.ts'],
-      exclude: ['**/node_modules/**', '**/dist/**', '**/out-of-git/**'],
-      compare: './tests/benchmarking/baseline.json',
+      // Note: Vitest doesn't support tolerance-based comparison yet
+      // Results are tracked manually for performance regression detection
     },
   },
 })

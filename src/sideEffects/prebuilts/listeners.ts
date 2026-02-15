@@ -2,6 +2,14 @@ import type { ListenerRegistration, StoreInstance } from '../../core/types'
 import type { GenericMeta } from '../../types'
 import { getPathDepth } from '../../utils/pathUtils'
 
+/** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
+let nextSubscriberId = 0
+
+/** Reset the subscriber ID counter (testing only). */
+export const resetSubscriberIdCounter = (): void => {
+  nextSubscriberId = 0
+}
+
 const updateSortedListenerPaths = (graphs: {
   listeners: Map<string, unknown[]>
   sortedListenerPaths: string[]
@@ -42,10 +50,13 @@ export const registerListener = <
   registration: ListenerRegistration<DATA, META>,
 ): (() => void) => {
   const { graphs } = store._internal
-  const { listeners } = graphs
+  const { listeners, listenerHandlers } = graphs
 
   // Validate that scope is a parent/ancestor of path
   validateScopeAndPath(registration.path, registration.scope)
+
+  // Assign a unique subscriber_id for O(1) handler lookup
+  const subscriberId = nextSubscriberId++
 
   // Use path as the map key (empty string for null)
   const mapKey = registration.path ?? ''
@@ -60,6 +71,12 @@ export const registerListener = <
     })
 
   listeners.set(mapKey, [...existing, registration])
+
+  // Store in flat handler map for O(1) dispatch lookup
+  listenerHandlers.set(subscriberId, {
+    scope: registration.scope,
+    fn: registration.fn as (...args: unknown[]) => unknown,
+  })
 
   // Update sorted paths cache
   updateSortedListenerPaths(graphs)
@@ -76,5 +93,7 @@ export const registerListener = <
       // Update sorted paths cache after removal
       updateSortedListenerPaths(graphs)
     }
+    // Remove from flat handler map
+    listenerHandlers.delete(subscriberId)
   }
 }

@@ -67,8 +67,8 @@ describe('WASM Pipeline Integration', () => {
   describe('processChanges — echo input', () => {
     it('should echo input changes', () => {
       const result = processChanges([{ path: 'user.role', value: 'admin' }])
-      expect(result).toHaveLength(1)
-      expect(result[0]).toEqual({ path: 'user.role', value: 'admin' })
+      expect(result.changes).toHaveLength(1)
+      expect(result.changes[0]).toEqual({ path: 'user.role', value: 'admin' })
     })
 
     it('should update shadow state', () => {
@@ -81,14 +81,14 @@ describe('WASM Pipeline Integration', () => {
         { path: 'user.role', value: 'admin' },
         { path: 'user.age', value: 30 },
       ])
-      expect(result).toHaveLength(2)
+      expect(result.changes).toHaveLength(2)
       expect(shadowGet('user.role')).toBe('admin')
       expect(shadowGet('user.age')).toBe(30)
     })
 
     it('should handle empty changes', () => {
       const result = processChanges([])
-      expect(result).toHaveLength(0)
+      expect(result.changes).toHaveLength(0)
     })
 
     it('should handle nested object replacement', () => {
@@ -107,8 +107,11 @@ describe('WASM Pipeline Integration', () => {
 
       const result = processChanges([{ path: 'user.role', value: 'admin' }])
 
-      expect(result).toHaveLength(2)
-      const bl = result.find((c) => c.path.includes('disabledWhen'))
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(1)
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('disabledWhen'),
+      )
       expect(bl).toBeDefined()
       expect(bl!.value).toBe(true)
     })
@@ -120,7 +123,9 @@ describe('WASM Pipeline Integration', () => {
 
       const result = processChanges([{ path: 'user.role', value: 'editor' }])
 
-      const bl = result.find((c) => c.path.includes('disabledWhen'))
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('disabledWhen'),
+      )
       expect(bl!.value).toBe(false)
     })
 
@@ -130,7 +135,8 @@ describe('WASM Pipeline Integration', () => {
       })
 
       const result = processChanges([{ path: 'user.age', value: 25 }])
-      expect(result).toHaveLength(1)
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(0)
     })
 
     it('should evaluate multiple concerns on same dependency', () => {
@@ -146,10 +152,9 @@ describe('WASM Pipeline Integration', () => {
 
       const result = processChanges([{ path: 'user.role', value: 'admin' }])
 
-      expect(result).toHaveLength(4)
-      const blPaths = result
-        .filter((c) => c.path.startsWith('_concerns'))
-        .map((c) => c.path)
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(3)
+      const blPaths = result.concern_changes.map((c) => c.path)
       expect(blPaths).toContain('_concerns.user.email.disabledWhen')
       expect(blPaths).toContain('_concerns.user.email.readonlyWhen')
       expect(blPaths).toContain('_concerns.user.name.visibleWhen')
@@ -161,7 +166,9 @@ describe('WASM Pipeline Integration', () => {
       })
 
       const result = processChanges([{ path: 'user.role', value: 'admin' }])
-      const bl = result.find((c) => c.path.includes('visibleWhen'))
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('visibleWhen'),
+      )
       expect(bl!.value).toBe(true)
     })
 
@@ -174,7 +181,9 @@ describe('WASM Pipeline Integration', () => {
         { path: 'user', value: { role: 'admin', age: 30 } },
       ])
 
-      const bl = result.find((c) => c.path.includes('disabledWhen'))
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('disabledWhen'),
+      )
       expect(bl!.value).toBe(true)
     })
 
@@ -184,7 +193,9 @@ describe('WASM Pipeline Integration', () => {
       })
 
       const result = processChanges([{ path: 'user.role', value: 'editor' }])
-      const bl = result.find((c) => c.path.includes('visibleWhen'))
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('visibleWhen'),
+      )
       expect(bl!.value).toBe(true)
     })
 
@@ -193,19 +204,23 @@ describe('WASM Pipeline Integration', () => {
         NOT: { IS_EQUAL: ['user.role', 'admin'] },
       })
 
-      const result = processChanges([{ path: 'user.role', value: 'guest' }])
-      const bl = result.find((c) => c.path.includes('disabledWhen'))
+      const result = processChanges([{ path: 'user.role', value: 'editor' }])
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('disabledWhen'),
+      )
       expect(bl!.value).toBe(true)
     })
 
     it('should handle IS_EMPTY operator', () => {
-      shadowInit({ user: { bio: '' } })
+      shadowInit({ user: { bio: 'something' } })
       registerBoolLogic('_concerns.user.bio.visibleWhen', {
         IS_EMPTY: 'user.bio',
       })
 
       const result = processChanges([{ path: 'user.bio', value: '' }])
-      const bl = result.find((c) => c.path.includes('visibleWhen'))
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('visibleWhen'),
+      )
       expect(bl!.value).toBe(true)
     })
 
@@ -216,7 +231,9 @@ describe('WASM Pipeline Integration', () => {
       })
 
       const result = processChanges([{ path: 'user.email', value: 'a@b.com' }])
-      const bl = result.find((c) => c.path.includes('visibleWhen'))
+      const bl = result.concern_changes.find((c) =>
+        c.path.includes('visibleWhen'),
+      )
       expect(bl!.value).toBe(true)
     })
   })
@@ -228,12 +245,14 @@ describe('WASM Pipeline Integration', () => {
       })
 
       let result = processChanges([{ path: 'user.role', value: 'admin' }])
-      expect(result).toHaveLength(2)
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(1)
 
       unregisterBoolLogic(id)
 
       result = processChanges([{ path: 'user.role', value: 'editor' }])
-      expect(result).toHaveLength(1)
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(0)
     })
 
     it('should handle multiple register/unregister cycles', () => {
@@ -243,15 +262,18 @@ describe('WASM Pipeline Integration', () => {
       const id2 = registerBoolLogic('out2', { EXISTS: 'user.role' })
 
       let result = processChanges([{ path: 'user.role', value: 'admin' }])
-      expect(result).toHaveLength(3)
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(2)
 
       unregisterBoolLogic(id1)
       result = processChanges([{ path: 'user.role', value: 'editor' }])
-      expect(result).toHaveLength(2)
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(1)
 
       unregisterBoolLogic(id2)
       result = processChanges([{ path: 'user.role', value: 'guest' }])
-      expect(result).toHaveLength(1)
+      expect(result.changes).toHaveLength(1)
+      expect(result.concern_changes).toHaveLength(0)
     })
   })
 
@@ -266,36 +288,39 @@ describe('WASM Pipeline Integration', () => {
   describe('value types', () => {
     it('should handle string values', () => {
       const result = processChanges([{ path: 'user.role', value: 'admin' }])
-      expect(result[0].value).toBe('admin')
+      expect(result.changes[0].value).toBe('admin')
     })
 
     it('should handle number values', () => {
       const result = processChanges([{ path: 'user.age', value: 42 }])
-      expect(result[0].value).toBe(42)
+      expect(result.changes[0].value).toBe(42)
     })
 
     it('should handle boolean values', () => {
       const result = processChanges([{ path: 'user.active', value: true }])
-      expect(result[0].value).toBe(true)
+      expect(result.changes[0].value).toBe(true)
     })
 
     it('should handle null values', () => {
       const result = processChanges([{ path: 'user.deleted', value: null }])
-      expect(result[0].value).toBeNull()
+      expect(result.changes[0].value).toBeNull()
     })
 
     it('should handle object values', () => {
       const result = processChanges([
         { path: 'user.profile', value: { name: 'Alice', verified: true } },
       ])
-      expect(result[0].value).toEqual({ name: 'Alice', verified: true })
+      expect(result.changes[0].value).toEqual({
+        name: 'Alice',
+        verified: true,
+      })
     })
 
     it('should handle array values', () => {
       const result = processChanges([
         { path: 'user.tags', value: ['admin', 'premium'] },
       ])
-      expect(result[0].value).toEqual(['admin', 'premium'])
+      expect(result.changes[0].value).toEqual(['admin', 'premium'])
     })
   })
 })

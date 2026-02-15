@@ -4,6 +4,9 @@
  * A custom data structure that provides O(1) connected component lookups
  * instead of O(V+E) recomputation on every change like graphology's connectedComponents.
  *
+ * When wasmGraphType is set ('sync' | 'flip'), addEdge/removeEdge automatically
+ * mirror registrations to WASM bridge for pipeline processing.
+ *
  * Operations complexity:
  * - getAllGroups(): O(G) where G is number of groups (typically small)
  * - getGroupPaths(path): O(1) lookup
@@ -12,6 +15,17 @@
  * - hasPath(path): O(1)
  * - hasEdge(p1, p2): O(1)
  */
+
+import {
+  isWasmLoaded,
+  registerFlipBatch,
+  registerSyncBatch,
+  unregisterFlipBatch,
+  unregisterSyncBatch,
+} from '../wasm/bridge'
+
+/** Graph type for WASM mirroring. When set, addEdge/removeEdge mirror to WASM. */
+export type WasmGraphType = 'sync' | 'flip'
 
 /**
  * Creates a canonical edge key for consistent lookups.
@@ -36,17 +50,21 @@ export interface PathGroups {
   edges: Set<string>
   adjacency: Map<string, Set<string>>
   nextGroupId: number
+  wasmGraphType?: WasmGraphType
 }
 
 /**
  * Creates a new empty PathGroups instance.
  */
-export const createPathGroups = (): PathGroups => ({
+export const createPathGroups = (
+  wasmGraphType?: WasmGraphType,
+): PathGroups => ({
   pathToGroup: new Map(),
   groupToPaths: new Map(),
   edges: new Set(),
   adjacency: new Map(),
   nextGroupId: 0,
+  wasmGraphType,
 })
 
 /**
@@ -123,6 +141,34 @@ const handleComponentSplit = (
   }
 }
 
+/** Mirror an edge addition to WASM bridge if graph type is set. */
+const mirrorAddToWasm = (
+  wasmGraphType: WasmGraphType | undefined,
+  path1: string,
+  path2: string,
+): void => {
+  if (!wasmGraphType || !isWasmLoaded()) return
+  if (wasmGraphType === 'sync') {
+    registerSyncBatch([[path1, path2]])
+  } else {
+    registerFlipBatch([[path1, path2]])
+  }
+}
+
+/** Mirror an edge removal to WASM bridge if graph type is set. */
+const mirrorRemoveFromWasm = (
+  wasmGraphType: WasmGraphType | undefined,
+  path1: string,
+  path2: string,
+): void => {
+  if (!wasmGraphType || !isWasmLoaded()) return
+  if (wasmGraphType === 'sync') {
+    unregisterSyncBatch([[path1, path2]])
+  } else {
+    unregisterFlipBatch([[path1, path2]])
+  }
+}
+
 /**
  * Adds an edge between two paths.
  * If paths are in different groups, merges them (smaller into larger).
@@ -137,6 +183,9 @@ export const addEdge = (
 
   // Skip if edge already exists
   if (groups.edges.has(edgeKey)) return
+
+  // Mirror to WASM before local update
+  mirrorAddToWasm(groups.wasmGraphType, path1, path2)
 
   // Add edge
   groups.edges.add(edgeKey)
@@ -195,6 +244,9 @@ export const removeEdge = (
 
   // Skip if edge doesn't exist
   if (!groups.edges.has(edgeKey)) return
+
+  // Mirror to WASM before local update
+  mirrorRemoveFromWasm(groups.wasmGraphType, path1, path2)
 
   // Remove edge
   groups.edges.delete(edgeKey)
