@@ -2,29 +2,98 @@
 
 AI assistant configuration for apex-state concerns-based reactive state management library.
 
+Built on a **Dual-Layer Architecture**: JavaScript/React owns reactivity and rendering; Rust/WASM owns heavy computational operations (graphs, dependency tracking, pipeline orchestration).
+
+**Key Reference**: `docs/WASM_ARCHITECTURE.md` — Complete specification of the JS/WASM boundary, data flow, and ownership model.
+
 ---
 
-## 🚨 CRITICAL: NO LARGE REFACTORING
+## Architectural Philosophy: JS vs WASM
 
-**MAKE MINIMAL CHANGES ONLY**
+This is a **two-layer system**:
 
-- ✅ **DO**: Fix specific bugs, add requested features, make targeted improvements
-- ❌ **DON'T**: Refactor existing code unless explicitly asked
-- ❌ **DON'T**: Restructure files, rename things, or "improve" working code
-- ❌ **DON'T**: Change patterns "because it would be better"
+### JavaScript/React Layer (Everything User-Facing)
+- **Valtio proxies** — State reactivity, Proxy traps, mutation tracking
+- **React rendering** — Components, hooks, re-render optimization
+- **Listener handlers** — User-defined functions that react to state changes
+- **Zod schemas** — Validation logic (stays in JS)
+- **Custom concern evaluate()** — User-defined logic that can't be declarative
+- **Getter functions** — Computed properties on state objects
+- **`applyBatch()`** — Final step to write changes back to valtio
 
-**IF YOU SEE ISSUES THAT NEED REFACTORING:**
+### Rust/WASM Layer (Heavy Lifting)
+- **Shadow state** — Getter-free copy of all values for fast diffing
+- **String interning** — Path ↔ ID mapping for O(1) lookups
+- **Sync/flip graphs** — Connected components for synchronized/inverted boolean paths
+- **Topic router** — Listener topic hierarchy with pre-computed routes
+- **Pipeline engine** — Aggregation writes, sync processing, flip processing
+- **BoolLogic evaluator** — Tree walker for declarative logic
+- **Reverse dependency index** — Which concerns depend on which paths
+- **Listener orchestration** — Decides what to call, when, in what order
 
-1. **STOP** - Do NOT refactor automatically
-2. **EXPLAIN** - Tell the user what you found and why it might need refactoring
-3. **ASK** - Get explicit permission before making structural changes
-4. **ALTERNATIVE** - If possible, find a way to solve the problem WITHOUT refactoring
+**The boundary**: String paths cross it. Complex values use slot indices. WASM never touches valtio, React, or Zod.
 
-**When refactoring IS allowed:**
+### Critical: Shadow State Synchronization
 
-- User explicitly says "refactor X"
-- User asks "how can we improve X" and you propose refactoring
-- User approves your refactoring proposal
+**WASM maintains shadow state (a getter-free copy of all values).**
+
+- **Shadow state is automatically kept in-sync by the pipeline.** Every `processChanges()` call updates it as part of processing.
+- **There is NO separate `shadowSet()` call.** Never manually sync shadow state.
+- Updates work at any level: leaf values, nested objects, or entire subtrees.
+- **Shadow state is WASM-internal.** JS doesn't access it directly except for testing.
+
+### Critical: Minimize Cross-Boundary Communication
+
+The JS ↔ WASM boundary is expensive. Every crossing should be intentional.
+
+**WASM holds all computational state internally:**
+- Sync/flip graphs
+- Topic router
+- Path interning table
+- Reverse dependency index
+- BoolLogic registry
+- Listener registry
+
+**TypeScript should NOT duplicate this data** except:
+- Function references needed during execution (e.g., listener handler functions, Zod schemas)
+- These are stored in `Map<id, function>` only, not as copies of WASM state
+
+**Every piece of data crossing the boundary should answer:**
+- "Why does JS need this?"
+- "Could WASM handle it instead?"
+- "Is there a cheaper way?"
+
+Keep the boundary thin: paths in (strings), changes out (JSON).
+
+### Data Ownership Model
+
+**What belongs in WASM (Rust):**
+- All graphs (sync, flip, topic router, etc.)
+- All registries (BoolLogic, listeners, validators)
+- Shadow state (getter-free value copy)
+- Path interning (string ↔ ID bidirectional map)
+- Reverse dependency index
+- All business logic for pipeline orchestration
+
+**What belongs in TypeScript (JS):**
+- Valtio proxies (state, _concerns)
+- React hooks and components
+- Function references: `Map<id, handler>`, `Map<id, schema>`
+- Getter functions (evaluated at render time)
+- Custom concern evaluate() functions
+- Zod schema instances
+
+**What crosses the boundary:**
+- **JS → WASM**: String paths, JSON values, function IDs, metadata flags
+- **WASM → JS**: Change plans (what to do), dispatch orders (when to call what), result data
+
+**Never, ever duplicate:**
+- Graph structures
+- Registry data
+- Listener/sync/flip information (except function refs)
+- Computed registries or indices
+
+If you're storing something in TypeScript that WASM also has, ask why. Probably belongs in WASM only.
 
 ---
 
@@ -44,166 +113,475 @@ This applies ESLint + Prettier formatting. Code must follow project style.
 
 ### 1. Functional Programming Only
 
-**See examples in**: Any file in `src/` - all use arrow functions
+All code uses arrow functions. No classes, no function declarations.
 
-### 2. Never Use derive-valtio
+### 2. Valtio Reactive Only
 
-**Use**: `valtio-reactive`'s `effect()` for dependency tracking
-**See**: `src/concerns/registration.ts:54-76` for reference implementation
+Use `valtio-reactive`'s `effect()` for dependency tracking. Never use derive-valtio.
 
 ### 3. Two-Proxy Pattern
 
-**Pattern**: Read from `state`, write to `_concerns`
-**See**: `src/concerns/registration.ts:54-76` for how it's done
+In effects: read from `state`, write to `_concerns`. This prevents infinite loops.
 
-### 4. Type-Safe Paths
+### 4. Type-Safe Paths Always
 
-**Use**: `DeepKey<T>` and `DeepValue<T, P>` for all path operations
-**See**: `src/store/createStore.ts:85-106` (useStore implementation)
+Use `DeepKey<T>` and `DeepValue<T, P>` for every path operation. Never string literals.
 
 ### 5. Always Return Cleanup
 
-**See**: `src/concerns/registration.ts:84-110` for cleanup pattern
-
----
-
-## Core Architecture
-
-**Structure**:
-
-```
-StoreInstance {
-  state: proxy({ ...data })          // User data (tracked)
-  _concerns: proxy({ ...computed })  // Concern results (tracked)
-  _internal: ref({ ...graphs })      // Internal state (NOT tracked)
-}
-```
-
-**Read**: `src/store/types.ts:193-221` for complete type definition
-
-**Key Insight**: Reading from `state` and writing to `_concerns` prevents infinite loops.
-**See why**: `docs/guides/ARCHITECTURE.md`
+From effects: `return () => { /* cleanup */ }`. Never forget cleanup functions.
 
 ---
 
 ## Directory Structure
 
+### JavaScript/TypeScript (`src/`)
+
 ```
 src/
-├── concerns/          # Reactive validation & UI logic
+├── concerns/          # Concern types and registration
 │   ├── types.ts              # ConcernType interface
-│   ├── registration.ts       # How effect() wrapping works
-│   └── prebuilts/*.ts        # Built-in concern implementations
+│   ├── registration.ts       # effect() wrapping for custom concerns
+│   └── prebuilts/            # Built-in concern implementations
+│       ├── disabledWhen.ts           (BoolLogic-based)
+│       ├── validationState.ts        (with Zod schema)
+│       └── ...
 ├── store/
-│   ├── createStore.ts        # Store factory, all hooks
+│   ├── createStore.ts        # Store factory, all React hooks
 │   ├── Provider.tsx          # React context Provider
 │   ├── types.ts              # StoreInstance, InternalState
-│   └── executor.ts           # Change processing pipeline
+│   └── executor.ts           # Change processing coordination
 ├── types/
 │   ├── deepKey.ts            # Type-safe path generation
 │   ├── deepValue.ts          # Type-safe value extraction
-│   └── concerns.ts           # BoolLogic types
+│   └── concerns.ts           # BoolLogic, ConcernConfig types
+├── wasm/
+│   └── bridge.ts             # Thin wrapper over WASM exports
 └── utils/
-    ├── boolLogic.ts          # BoolLogic evaluation
     └── interpolation.ts      # Template string interpolation
+```
+
+### Rust/WASM (`rust/src/`)
+
+```
+rust/
+└── src/
+    ├── lib.rs                # WASM entry point, wasm_bindgen exports
+    ├── shadow.rs             # Shadow state tree, path traversal
+    ├── interning.rs          # String ↔ ID bidirectional map
+    ├── boollogic.rs          # BoolLogic tree evaluation
+    ├── graphs.rs             # Sync/flip graph structures
+    ├── router.rs             # Topic router for listeners
+    ├── pipeline.rs           # Main processChanges orchestration
+    └── Cargo.toml            # Rust dependencies
+```
+
+### Build Process
+
+```
+1. wasm-pack build --target bundler    Compile rust/ → .wasm + JS glue + .d.ts
+2. tsup (with @rollup/plugin-wasm)     Bundle src/ + inline .wasm as base64
+3. Output: dist/index.js + dist/index.d.ts
 ```
 
 ---
 
-## Expert Agents
+## Data Flow: One State Change
 
-**Before working on code in any of these areas, read the corresponding expert prompt first.** These contain domain-specific architecture context, key files, patterns, and rules. When spawning subagents (Task tool), include the expert prompt content in the task description.
+**User calls**: `setValue("user.email", "alice@example.com")`
 
-| Files touched                                                           | Read first                          |
-| ----------------------------------------------------------------------- | ----------------------------------- |
-| `src/concerns/`, `src/utils/boolLogic.ts`, `src/utils/interpolation.ts` | `docs/agents/expert-concerns.md`    |
-| `src/pipeline/`, `src/sideEffects/`, `src/core/pathGroups.ts`           | `docs/agents/expert-pipeline.md`    |
-| `src/store/`, `src/hooks/`, `src/core/context.ts`                       | `docs/agents/expert-store-hooks.md` |
-| `tests/` (any test work)                                                | `docs/agents/expert-testing.md`     |
-| Cross-cutting changes, new features, architecture decisions             | `docs/agents/expert-architect.md`   |
+```
+JS/React Layer:
+  ├─ Detect change (setValue call)
+  ├─ Queue change: { path: "user.email", value: "alice@example.com" }
+  └─ Call WASM: processChanges([...])
+         ↓
+  ┌──────────────────────────────────────────────────────┐
+  │          WASM/Rust Layer (single call)               │
+  ├──────────────────────────────────────────────────────┤
+  │ 1. Update shadow state                               │
+  │ 2. Intern path ID (or lookup from cache)             │
+  │ 3. Identify affected BoolLogics (reverse index)      │
+  │ 4. Evaluate affected BoolLogics                      │
+  │ 5. Identify affected listeners (topic router)        │
+  │ 6. Prepare dispatch plan (depth-ordered)             │
+  │ 7. Return: final changes + dispatch plan             │
+  └──────────────────────────────────────────────────────┘
+         ↓
+JS/React Layer (continued):
+  ├─ Apply BoolLogic results to _concerns proxy
+  ├─ Execute listener handlers (if any) — multiple round trips
+  ├─ Collect produced changes from handlers
+  ├─ Route produced changes back to WASM (if listeners)
+  ├─ Apply final changes to state proxy → triggers React re-renders
+  └─ Done (valtio change subscription notification sent)
+```
 
-## Documentation Navigation
-
-**Working on concerns system?**
-→ Read `docs/guides/CONCERNS_GUIDE.md`
-
-**Understanding architecture?**
-→ Read `docs/guides/ARCHITECTURE.md`
-
-**Using store hooks?**
-→ Read `docs/guides/STORE_HOOKS.md`
-
-**Architecture decisions?**
-→ Read `CONCERNS_REFERENCE.md`
+**Key insight**: One `processChanges` call orchestrates everything. No effect loops, no redundant evaluations.
 
 ---
 
-## Where to Find Examples
+## Documentation & References
 
-| Need Example Of          | Look At                                                                                                               |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| **Creating a concern**   | `src/concerns/prebuilts/validationState.ts` (validation)<br>`src/concerns/prebuilts/disabledWhen.ts` (with BoolLogic) |
-| **Using effect()**       | `src/concerns/registration.ts:54-76`                                                                                  |
-| **Hook implementation**  | `src/store/createStore.ts:85-106` (useStore)                                                                          |
-| **Type-safe paths**      | `src/types/deepKey.ts`, `src/types/deepValue.ts`                                                                      |
-| **BoolLogic evaluation** | `src/utils/boolLogic.ts`                                                                                              |
-| **Testing concerns**     | `tests/concerns/*.test.ts`                                                                                            |
-| **Integration tests**    | `tests/integration/*.test.tsx`                                                                                        |
+**Primary reference for everything**: `docs/WASM_ARCHITECTURE.md`
+- Complete data flow, ownership split, boundary crossings
+- Shadow state structure, path interning, listener dispatch protocol
+- WASM API specification (what JS can call, when, what it returns)
+
+**Architecture decisions**: `tasks/WASM-EP*.md`
+- WASM-EP1-FOUNDATION: String interning, BoolLogic, reverse dependencies
+- WASM-EP2-PIPELINE: Aggregation, sync/flip graphs, shadow state sync
+- WASM-EP3-LISTENERS: Topic router, dispatch plan, depth-ordered execution
+- WASM-EP4-VALIDATION: Validator batching, reverse index
+- WASM-EP5-STREAMING: Stream gateway, change filtering
+
+---
+
+## When Unsure or Multiple Options Exist: ASK
+
+**You're working with an expert.** This codebase is sophisticated. When you encounter:
+
+- ✅ Multiple valid approaches that trade off differently
+- ✅ Architectural decisions that could go multiple ways
+- ✅ Refactoring opportunities that might help or hurt clarity
+- ✅ Boundary placements between JS and WASM
+- ✅ Performance optimizations with unclear payoff
+
+**STOP and ask.** Don't guess. Ask which direction you should take, what the user prefers, or what constraints matter most.
+
+Example questions:
+- "I see 3 ways to structure this concern. Which tradeoff matters most to you — bundle size, runtime speed, or code clarity?"
+- "Should this logic live in JS (more flexible) or Rust (faster)? What's the priority?"
+- "I could refactor X to reduce duplication, but it changes the architecture slightly. Should I do that?"
+
+**DO NOT**:
+- Assume the "best" approach
+- Optimize for code duplication if it obscures architecture
+- Make choices that prioritize tooling convenience over clarity
+- Move logic around to "improve" things without explicit permission
+
+---
+
+## Understanding the Code
+
+Use **grepai** as your primary tool:
+- `grepai search "concern evaluation"` to find how concerns work
+- `grepai search "sync graph"` to understand sync/flip logic
+- `grepai trace callers "processChanges"` to see what calls the pipeline
+- `grepai trace callees "registerBoolLogic"` to understand registration flow
+
+Code is the source of truth. Implementation files are more current than docs.
+
+---
+
+## Documentation Practices
+
+### TSDoc Comments
+
+✅ **DO add TSDoc for:**
+- Public exports (functions, types, constants users will import)
+- Complex algorithms that need explanation
+- Non-obvious tradeoffs or constraints
+- When explicitly asked
+
+❌ **DON'T add TSDoc for:**
+- Private/internal functions
+- Self-documenting code (clear names, simple logic)
+- Every function "just in case"
+
+### Code Comments
+
+✅ **DO keep comments that explain:**
+- Why something is done this way (not what it does)
+- Tradeoffs or constraints
+- References to external docs or issues
+- Historical context ("we tried X, it caused Y")
+
+❌ **DON'T remove comments:**
+- For cleanup or refactoring
+- Comments are context, they have value even if code changes
+- If a comment is wrong, fix it, don't delete it
+
+---
+
+## TypeScript Best Practices
+
+**Strict mode enforced**. No `any`, `never`, or type casts to suppress errors. Fix types properly.
+
+### Key patterns in this codebase
+
+1. **Generic constraints over union types**
+   ```ts
+   // Good: Constraint keeps type information
+   const getValue = <T extends Record<string, unknown>>(obj: T, key: keyof T): T[keyof T] => ...
+
+   // Bad: Union loses specificity
+   const getValue = (obj: any, key: string): any => ...
+   ```
+
+2. **Mapped types for path safety**
+   - `DeepKey<T>` — Generates all valid paths in T
+   - `DeepValue<T, P>` — Gets the type of value at path P in T
+   - Always use these. Never use string literals for paths.
+
+3. **Template literal types for flexibility**
+   - Paths are strings at runtime but strongly typed at compile time
+   - Pattern: `type ValidPath = DeepKey<State>`
+
+4. **Inference over explicit types where possible**
+   - Let TS infer from implementation
+   - Explicit types on public boundaries only
+   - Reduces boilerplate, catches refactoring issues
+
+**Reference**: [TypeScript Handbook - Generics](https://www.typescriptlang.org/docs/handbook/2/generics.html), [Conditional Types](https://www.typescriptlang.org/docs/handbook/2/conditional-types.html), [Template Literal Types](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-4.html#template-literal-types)
+
+---
+
+## Rust Best Practices
+
+This is a performance-critical layer. Patterns matter.
+
+### Key patterns in WASM code
+
+1. **No allocations in hot paths**
+   - Use references, not clones
+   - Pre-allocate collections, reuse buffers
+   - Pattern: `fn process(&mut self, input: &[T]) { self.buffer.clear(); ... }`
+
+2. **Interior mutability for caching**
+   - Use `HashMap<K, V>` for interning tables (path string ↔ ID)
+   - Use `Vec<T>` for dense indexed storage (PathId → value)
+   - Pattern: Intern once, reference by ID forever
+
+3. **Enums for type safety (no magic strings/numbers)**
+   ```rust
+   #[derive(Deserialize)]
+   enum BoolLogicNode {
+       IsEqual(String, Value),
+       Exists(String),
+       And(Vec<BoolLogicNode>),
+       // ...
+   }
+   ```
+
+4. **Early returns instead of deep nesting**
+   - Keep cyclomatic complexity low
+   - Pattern: `let value = match self.get(key) { Some(v) => v, None => return Err(...) };`
+
+5. **serde for JS interop (no manual serialization)**
+   - `#[derive(Serialize, Deserialize)]` on all boundary types
+   - JSON is the serialization format (WASM ↔ JS)
+   - Pattern: JS sends `JSON.stringify(...)`, Rust does `serde_json::from_str(...)`
+
+6. **Documentation on public exports only**
+   - Every `#[wasm_bindgen]` function has doc comments
+   - Internal functions: minimal comments, code is self-documenting
+   - Pattern: Doc comments explain WHAT and WHY, not HOW
+
+**Reference**: [Rust Book - Ownership](https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html), [The Rust API Guidelines](https://rust-lang.github.io/api-guidelines/), [serde docs](https://serde.rs/)
 
 ---
 
 ## Critical DONTs
 
+### JavaScript/React Layer
+
 ❌ **Never skip running `npm run code:fix` after code changes**
 ❌ **Never read code:fix output (wastes tokens)**
-❌ **Never refactor or restructure without explicit permission**
+❌ **Never use classes or function declarations** — always arrow functions
+❌ **Never use derive-valtio for dependency tracking** — use `effect()` from valtio-reactive
+❌ **Never read and write to same proxy in effects** — read from `state`, write to `_concerns`
+❌ **Never mutate state inside concern evaluate()** — return new values, don't modify inputs
+❌ **Never skip type-safe paths** — always use `DeepKey<T>` and `DeepValue<T, P>`
+❌ **Never forget cleanup functions** — always `return () => { cleanup }` from effects
+❌ **Never suppress TypeScript errors with shortcuts** — no `as any`, `@ts-ignore`, etc. Fix types properly.
+
+### Rust/WASM Layer
+
+❌ **Never allocate in hot paths** — (processChanges is called frequently)
+❌ **Never clone when you can reference** — paths are strings, internalize to IDs
+❌ **Never hardcode assumptions about path structure** — traverse shadow state, don't assume flat
+❌ **Never skip serde derives on boundary types** — JS ↔ WASM uses JSON serialization
+❌ **Never panic in exported functions** — use `Result<T, JsValue>` and proper error handling
+❌ **Never let shadow state get out of sync** — it's updated by processChanges() automatically, never manually
+
+### JS/TypeScript Layer
+
+❌ **Never duplicate WASM computational state** — graphs, routers, registries are WASM-internal
+❌ **Never store sync/flip/listener data in TypeScript** — store only function references (handlers, schemas)
+❌ **Never manually sync shadow state** — it updates automatically during pipeline processing
+❌ **Never send unnecessary data across the boundary** — minimize crossings, keep it thin
+
+### Public API & Types
+
+❌ **Never change public API signatures without explicit confirmation** — e.g., `createStore()`, `useStore()`, `useConcerns()`
+❌ **Never change generic type constraints or structure without confirmation** — e.g., `DeepKey<T>`, `DeepValue<T, P>`, `BoolLogic<T>`
+❌ **Never add optional parameters to existing function signatures** — breaking change for consumers
+
+**Why?** Public APIs are contracts. Generic types enable type safety. Changes cascade to all consumers.
+
+### Git
+
+❌ **Never commit or push to git** — Only the user commits and pushes
+❌ **Never run destructive git commands** (force push, hard reset, etc.) without explicit user request
+❌ **Never move files without explicit permission** — use `git mv` to preserve history if user authorizes
+
+### Code Quality
+
+❌ **Never automatically remove duplicated code** — ask first whether it should stay as reference
+❌ **Never fix technical debt you spot** — add to `TECHNICAL_DEBT.md`, ask user before processing
+❌ **Never refactor to "improve" code** — keep changes scoped to what was asked
+❌ **Never create excessive TSDoc comments** — add docs only when explicitly asked or for public APIs
+❌ **Never remove code comments for no reason** — comments exist for context; preserve them
+❌ **Never remove test files or test cases without permission** — at minimum, keep test names + placeholder steps
+
+### Tests
+
+❌ **Never skip test names** — test names are documentation, they matter
+❌ **Never delete test content entirely** — replace with placeholder listing the steps/assertions that belong there:
+   ```typescript
+   it('should validate user email format', () => {
+     // TODO: Step 1 - Create a user object with invalid email
+     // TODO: Step 2 - Call validator
+     // TODO: Step 3 - Assert validation fails with correct error message
+   })
+   ```
+❌ **Never refactor test without keeping case structure** — preserve test case names and step descriptions
+
+### Both Layers
+
 ❌ **Never make changes beyond what was asked**
-❌ **Never use classes or function declarations**
-❌ **Never use derive-valtio for dependency tracking**
-❌ **Never read and write to same proxy in effects**
-❌ **Never mutate state inside concern evaluate()**
-❌ **Never skip type-safe paths (DeepKey/DeepValue)**
-❌ **Never forget to return cleanup functions**
-❌ **Never move files around without explicit permission, if you must, use git mv to preserve history**
-❌ **Never pick shortcuts in typescript types. Do NOT use `as any`, `as never`, `@ts-ignore`, or `@ts-expect-error` to suppress real type errors. Fix the types properly.**
+❌ **Never assume refactoring is needed** — ask first if benefits aren't obvious
 
 ---
 
 ## Core Principles
 
+### All Code
+
 1. **Always format** - Run `npm run code:fix` after code changes (don't read output)
-2. **Minimal changes** - Only change what was requested, nothing more
-3. **Functional only** - Arrow functions everywhere (see any file in `src/`)
-4. **Type-safe paths** - DeepKey<T> and DeepValue<T, P> (see `src/types/`)
-5. **Automatic tracking** - Use valtio-reactive's effect() (see `src/concerns/registration.ts`)
-6. **Two-proxy pattern** - Read from state, write to \_concerns (prevents infinite loops)
-7. **Pure concerns** - No mutations, no side-effects (see `src/concerns/prebuilts/` for examples)
-8. **Always cleanup** - Return cleanup functions (see `src/concerns/registration.ts:84-110`)
-9. **Start simple** - Add complexity only when needed
+2. **Keep minimal scope** - Change only what solves the immediate problem
+3. **Ask when uncertain** - Multiple valid approaches? Ask which tradeoff matters
+4. **Understand before changing** - Read the code, grepai to understand intent, then modify
+
+### JavaScript/React Layer
+
+5. **Functional only** - Arrow functions everywhere
+6. **Type-safe paths** - Always use `DeepKey<T>` and `DeepValue<T, P>`
+7. **Two-proxy pattern** - Read from `state`, write to `_concerns` (prevents loops)
+8. **Pure concerns** - No mutations, no side-effects in evaluate()
+9. **Always cleanup** - Return cleanup functions from effects
+10. **Valtio-reactive** - Use `effect()` for dependency tracking, not derive-valtio
+
+### Rust/WASM Layer
+
+11. **Prefer references** - Don't clone unless necessary
+12. **Intern early, reference often** - Paths become IDs at boundary
+13. **No panics in exports** - Use `Result<T, JsValue>` for all `#[wasm_bindgen]` functions
+14. **Serialize to JSON** - serde handles JS ↔ WASM boundary
+15. **Document public, not private** - Doc comments only on `#[wasm_bindgen]` exports
 
 ---
 
-## Workflow After Making Changes
+## Your Workflow
 
-1. **Write/edit code** - Make the requested changes
-2. **Format code** - Run `npm run code:fix` (don't read output)
-3. **Verify** - Check that files are properly formatted
-4. **Done** - Code is ready
+1. **Understand** - Use grepai to find relevant code, understand what it does, why it exists
+2. **Ask if unsure** - Multiple valid approaches? Ask which tradeoff matters most
+3. **Code** - Make the requested changes (keep scope narrow)
+   - **If you see duplicated code**: Ask — should we remove it now or keep as reference?
+   - **If you spot technical debt**: Add it to `TECHNICAL_DEBT.md` (one-liner), don't fix it yet
+4. **Format** - Run `npm run code:fix` (don't read output)
+5. **Summary** - If you added technical debt items, show them to the user so they stay informed
+6. **Done** - Code is ready
 
-## When in Doubt
+## Code Duplication: Ask, Don't Assume
 
-1. **Read the actual implementation files** - they are the source of truth
-2. **Check TSDoc comments** - implementation details are documented in code
-3. **Look at existing implementations** - follow established patterns
-4. **Check tests** - they show real usage
+**When you encounter duplicated code:**
 
-**DO NOT**:
+❌ **Don't automatically remove it.** Code might be duplicated intentionally (for clarity, performance, independence, or coupling avoidance).
 
-- Skip formatting (always run code:fix)
-- Read code:fix output (wastes tokens)
-- Guess or invent new patterns
-- Copy examples from docs (they may be outdated)
-- Refactor working code to "improve" it
+✅ **Always ask:**
+- "I see this pattern repeated in X and Y. Should I extract a helper now, or keep them separate for reference?"
+- "Would removing duplication reduce clarity or add coupling?"
+- "Is this duplication worth 3 lines, or would abstracting it help?"
+
+**Wait for feedback before removing or extracting anything.**
+
+---
+
+## Technical Debt: Track It, Don't Ignore It
+
+**As you work, you'll spot opportunities for improvement that aren't in scope right now.**
+
+✅ **Do this:**
+1. Add one-liner to `TECHNICAL_DEBT.md` (see format below)
+2. Continue with the task at hand
+3. When done, show the debt list to the user
+4. **Ask** before processing any items
+
+❌ **Don't do this:**
+- Fix technical debt you spot unless explicitly asked
+- Refactor to address debt during unrelated work
+- Hide debt issues hoping they'll resolve themselves
+
+### Technical Debt Tracking Format
+
+**File: `TECHNICAL_DEBT.md`**
+
+```markdown
+## Pending Technical Debt
+
+- **[Component/Layer]** Brief description of what should be improved. `src/file.ts:line`
+- **[WASM]** Shadow state diffing could use deeper comparison for arrays. `rust/src/shadow.rs:42`
+- **[JS/WASM boundary]** Multiple roundtrips for listener dispatch could be optimized. `src/wasm/bridge.ts:105`
+- **[Types]** Generic constraint on DeepKey could be tightened. `src/types/deepKey.ts:8`
+
+## Completed Items
+(moved here after processing)
+```
+
+**Each line is compact**: Layer, issue, location. When you encounter debt, add it, show it to the user, ask before fixing.
+
+---
+
+## When Facing a Decision
+
+**Never assume.** This codebase has sophisticated tradeoffs. When you see:
+
+- Multiple ways to solve something
+- A potential refactoring opportunity
+- A choice between JS and WASM placement
+- An optimization with unclear payoff
+- Duplicated code
+- Technical debt opportunities
+
+**Stop and ask:**
+- "What's the priority here?"
+- "Do you prefer approach A or B?"
+- "Is this worth the complexity?"
+- "Should I change this?"
+- "Should I remove this duplication or keep it as reference?"
+
+**This prevents wrong decisions and saves iteration time.**
+
+---
+
+## Summary: The Two Layers
+
+**React/Valtio (JS)** — User-facing reactivity
+- State mutations, Proxy traps, React re-renders
+- Listener handlers, Zod validation, getters
+- Custom concern logic that can't be declarative
+
+**Rust/WASM (Heavy Lifting)** — Orchestration & computation
+- Shadow state, string interning, path ID lookups
+- Sync/flip graphs, topic routing, listener dispatch
+- BoolLogic evaluation, reverse dependency index
+- Batches changes to minimize JS boundary crossings
+
+**The boundary**: Paths cross as strings. Values cross as JSON. WASM decides the execution plan, JS decides what to do.
+
+Everything follows from this split.
 
 ## grepai - Semantic Code Search
 
