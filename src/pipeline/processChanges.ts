@@ -21,7 +21,6 @@ import {
   processListeners,
   processSyncPaths,
 } from './processors'
-import { queueChange } from './queue'
 
 // ---------------------------------------------------------------------------
 // Conversion helpers: ArrayOfChanges <-> Change[]
@@ -77,14 +76,16 @@ const executeFullExecutionPlan = <
         scope === '' ? currentState : dot.get__unsafe(currentState, scope)
 
       // Build input: changes referenced by index + propagated extras
-      const input: [string, unknown, GenericMeta][] = d.input_change_ids.map(
-        (id) =>
-          [stateChanges[id].path, stateChanges[id].value, {}] as [
-            string,
-            unknown,
-            GenericMeta,
-          ],
-      )
+      const input: [string, unknown, GenericMeta][] = d.input_change_ids
+        .filter((id) => stateChanges[id] !== undefined)
+        .map(
+          (id) =>
+            [stateChanges[id]!.path, stateChanges[id]!.value, {}] as [
+              string,
+              unknown,
+              GenericMeta,
+            ],
+        )
 
       const extraChanges = extra.get(d.dispatch_id)
       if (extraChanges) {
@@ -160,7 +161,58 @@ const processChangesJS = <
 }
 
 // ---------------------------------------------------------------------------
-// WASM pipeline
+// Helper: Run validators and return concern changes
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute Zod validators and return concern changes.
+ * Takes validators_to_run from WASM, returns concern changes with _concerns. prefix.
+ */
+const runValidators = (
+  validatorsToRun: {
+    validator_id: number
+    output_path: string
+    dependency_values: Record<string, string>
+  }[],
+): Change[] => {
+  const validationResults: Change[] = []
+
+  for (const validator of validatorsToRun) {
+    const schema = validatorSchemas.get(validator.validator_id)
+    if (!schema) continue
+
+    // Parse dependency values from JSON strings
+    const values = Object.fromEntries(
+      Object.entries(validator.dependency_values).map(([k, v]) => [
+        k,
+        JSON.parse(v) as unknown,
+      ]),
+    )
+
+    // For single-field validators, validate the primary value
+    const primaryValue = Object.values(values)[0]
+    const zodResult = schema.safeParse(primaryValue)
+
+    // Return as Change with _concerns. prefix (WASM will strip it in finalize)
+    validationResults.push({
+      path: validator.output_path, // Already has _concerns. prefix from WASM
+      value: {
+        isError: !zodResult.success,
+        errors: zodResult.success
+          ? []
+          : zodResult.error.errors.map((e) => ({
+              field: e.path.length > 0 ? e.path.join('.') : '.',
+              message: e.message,
+            })),
+      },
+    })
+  }
+
+  return validationResults
+}
+
+// ---------------------------------------------------------------------------
+// WASM pipeline (two-phase round-trip)
 // ---------------------------------------------------------------------------
 
 const processChangesWASM = <
@@ -170,108 +222,42 @@ const processChangesWASM = <
   store: StoreInstance<DATA, META>,
   initialChanges: ArrayOfChanges<DATA, META>,
 ): void => {
-  const { processing } = store._internal
-
   // Convert to bridge format
   const bridgeChanges = tuplesToBridgeChanges(initialChanges)
 
-  // WASM handles: aggregation -> sync -> flip -> BoolLogic evaluation
-  // Returns state changes, concern changes, validators to run, and pre-computed execution plan
-  const {
-    changes: stateChanges,
-    concern_changes: concernChanges,
-    validators_to_run: validatorsToRun,
-    execution_plan: executionPlan,
-  } = wasm.processChanges(bridgeChanges)
+  // 1. WASM Phase 1: aggregation → sync → flip → BoolLogic
+  const { state_changes, execution_plan, validators_to_run, has_work } =
+    wasm.processChanges(bridgeChanges)
 
-  // Early exit if all results are empty (diff filtered out all no-ops)
-  if (
-    stateChanges.length === 0 &&
-    concernChanges.length === 0 &&
-    validatorsToRun.length === 0
-  ) {
+  // Early exit if WASM signals no work to do
+  if (!has_work) {
     return
   }
 
-  // Apply BoolLogic results to _concerns proxy
-  for (const change of concernChanges) {
-    const concernPath = change.path.slice('_concerns.'.length)
-    dot.set__unsafe(store._concerns, concernPath, change.value)
-  }
-
-  // Execute validators if any are affected
-  if (validatorsToRun?.length) {
-    for (const validator of validatorsToRun) {
-      const schema = validatorSchemas.get(validator.validator_id)
-      if (!schema) continue
-
-      // Parse dependency values from JSON strings
-      const values = Object.fromEntries(
-        Object.entries(validator.dependency_values).map(([k, v]) => [
-          k,
-          JSON.parse(v) as unknown,
-        ]),
-      )
-
-      // For single-field validators, validate the primary value
-      const primaryValue = Object.values(values)[0]
-      const zodResult = schema.safeParse(primaryValue)
-
-      // Write validation result to _concerns proxy
-      const concernPath = validator.output_path.slice('_concerns.'.length)
-      dot.set__unsafe(store._concerns, concernPath, {
-        isError: !zodResult.success,
-        errors: zodResult.success
-          ? []
-          : zodResult.error.errors.map((e) => ({
-              field: e.path.length > 0 ? e.path.join('.') : '.',
-              message: e.message,
-            })),
-      })
-    }
-  }
-
-  // Get current state snapshot for listener execution
+  // 2. Execute listeners (JS-only: user functions)
   const currentState = snapshot(store.state) as DATA
+  const produced = executeFullExecutionPlan(
+    execution_plan,
+    state_changes,
+    store,
+    currentState,
+  )
 
-  // Convert state changes back to pipeline tuple format
-  processing.queue = bridgeChangesToTuples(stateChanges)
+  // 3. Execute validators (JS-only: Zod schemas)
+  const validationResults = runValidators(validators_to_run)
 
-  // Execute pre-computed execution plan (trivial loop, no WASM calls)
-  if (executionPlan) {
-    const producedChanges = executeFullExecutionPlan(
-      executionPlan,
-      stateChanges,
-      store,
-      currentState,
-    )
+  // 4. WASM Phase 2: merge, diff, update shadow
+  // Single flat array: listener output + validator output (with _concerns. prefix)
+  const jsChanges: Change[] = [...produced, ...validationResults]
+  const final = wasm.pipelineFinalize(jsChanges)
 
-    // Add listener-produced changes to the queue
-    for (const change of producedChanges) {
-      queueChange({
-        queue: processing.queue,
-        path: change.path,
-        value: change.value,
-        meta: { isListenerChange: true },
-      })
-    }
+  // 5. Apply to valtio
+  if (final.state_changes.length > 0) {
+    applyBatch(bridgeChangesToTuples(final.state_changes), store.state)
   }
-
-  // Checkpoint 3 (output): Diff final queue against shadow state
-  // Filters out any no-ops before applying to valtio (including listener-produced changes)
-  const queueAsBridgeChanges = tuplesToBridgeChanges(processing.queue)
-  const genuineChanges = wasm.diffChanges(queueAsBridgeChanges)
-
-  // Early exit if diff filtered everything out
-  if (genuineChanges.length === 0) {
-    return
+  for (const c of final.concern_changes) {
+    dot.set__unsafe(store._concerns, c.path, c.value)
   }
-
-  // Convert back to tuple format for applyBatch
-  processing.queue = bridgeChangesToTuples(genuineChanges)
-
-  // Apply all genuine changes to state once
-  applyBatch(processing.queue, store.state)
 }
 
 // ---------------------------------------------------------------------------

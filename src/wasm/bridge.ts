@@ -293,40 +293,72 @@ export const wasm = {
     getWasmInstance().pipeline_reset()
   },
 
-  // -- Process changes ------------------------------------------------------
+  // -- Process changes (Phase 1) ------------------------------------------------
 
   /**
-   * Process a batch of state changes through the WASM pipeline.
+   * Process a batch of state changes through the WASM pipeline (Phase 1).
    *
    * Always diffs incoming changes against shadow state to filter out no-ops before
    * entering the pipeline. Early exits if all changes are no-ops.
    *
+   * Updates shadow state during processing (needed for BoolLogic evaluation).
+   * Returns readonly context for JS listener execution + validators + execution plan + work flag.
+   *
    * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
-   * Returns state changes, concern changes, validators to run, and a pre-computed execution plan.
    */
   processChanges: (
     changes: Change[],
   ): {
-    changes: Change[]
-    concern_changes: Change[]
+    state_changes: Change[]
     validators_to_run: ValidatorDispatch[]
     execution_plan: FullExecutionPlan | null
+    has_work: boolean
   } => {
-    // Pass WasmChange[] directly via serde-wasm-bindgen (no outer JSON.stringify)
     const result = getWasmInstance().process_changes(
       changesToWasm(changes) as never,
     ) as unknown as {
-      changes: WasmChange[]
-      concern_changes: WasmChange[]
+      state_changes: WasmChange[]
       validators_to_run?: ValidatorDispatch[]
       execution_plan?: FullExecutionPlan
+      has_work?: boolean
     }
 
     return {
-      changes: wasmChangesToJs(result.changes),
-      concern_changes: wasmChangesToJs(result.concern_changes ?? []),
+      state_changes: wasmChangesToJs(result.state_changes),
       validators_to_run: result.validators_to_run ?? [],
       execution_plan: result.execution_plan ?? null,
+      has_work: result.has_work ?? false,
+    }
+  },
+
+  /**
+   * Finalize pipeline with JS changes (listeners + validators mixed) (Phase 2).
+   *
+   * Partitions js_changes by _concerns. prefix, merges with pending buffers,
+   * diffs against shadow state, updates shadow, returns final changes for valtio.
+   *
+   * Input: Single flat array mixing listener output + validator output (with _concerns. prefix)
+   * Output: { state_changes, concern_changes } - concern paths have _concerns. prefix stripped
+   *
+   * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
+   */
+  pipelineFinalize: (
+    jsChanges: Change[],
+  ): {
+    state_changes: Change[]
+    concern_changes: Change[]
+  } => {
+    const wasmModule = getWasmInstance() as any
+    const result = wasmModule.pipeline_finalize(
+      changesToWasm(jsChanges) as never,
+    ) as unknown as {
+      state_changes: WasmChange[]
+      concern_changes: WasmChange[]
+    }
+
+    return {
+      state_changes: wasmChangesToJs(result.state_changes),
+      concern_changes: wasmChangesToJs(result.concern_changes),
     }
   },
 
@@ -412,21 +444,6 @@ export const wasm = {
   /** Unregister a batch of validators by validator IDs. */
   unregisterValidatorsBatch: (validatorIds: number[]): void => {
     getWasmInstance().unregister_validators_batch(JSON.stringify(validatorIds))
-  },
-
-  // -- Diff engine (EP5) ----------------------------------------------------
-
-  /**
-   * Diff a batch of changes against shadow state.
-   * Returns only changes where the value differs from the current shadow state.
-   * Primitives are compared by value, objects/arrays always pass through.
-   */
-  diffChanges: (changes: Change[]): Change[] => {
-    const raw = getWasmInstance().diff_changes(
-      changesToWasm(changes) as never,
-    ) as unknown as WasmChange[]
-
-    return wasmChangesToJs(raw)
   },
 
   // -- Debug/testing --------------------------------------------------------

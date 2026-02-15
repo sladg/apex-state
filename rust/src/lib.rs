@@ -185,20 +185,44 @@ pub fn unregister_validators_batch(validator_ids_json: &str) -> Result<(), JsVal
     })
 }
 
-/// Process a batch of state changes via serde-wasm-bindgen (no JSON string intermediary).
+/// Process a batch of state changes (Phase 1: orchestration, defers finalization).
 ///
 /// Always diffs incoming changes against shadow state to filter out no-ops before
 /// entering the pipeline. Early exits if all changes are no-ops.
 ///
+/// Updates shadow state during processing (needed for BoolLogic evaluation).
+/// Returns readonly context for JS listener execution + validators + execution plan.
+///
 /// Input: JS array of `{ path: "...", value_json: "..." }`
-/// Output: JS object `{ changes: [...], concern_changes: [...], validators_to_run: [...], execution_plan: ... }`
+/// Output: JS object `{ state_changes: [...], validators_to_run: [...], execution_plan: ... }`
 #[wasm_bindgen]
 pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
     let input: Vec<Change> = from_js(changes)?;
     PIPELINE.with(|p| {
         let result = p
             .borrow_mut()
-            .process_changes_vec(input)
+            .process_changes_phase1(input)
+            .map_err(|e| JsValue::from_str(&e))?;
+        to_js(&result)
+    })
+}
+
+/// Finalize pipeline with JS changes (listeners + validators mixed) (Phase 2).
+///
+/// Partitions js_changes by _concerns. prefix, merges with pending buffers,
+/// diffs against shadow state, updates shadow, returns final changes for valtio.
+///
+/// Input: Single JS array of `{ path: "...", value_json: "..." }`
+///   - Mix of listener-produced state changes + validator concern results (with _concerns. prefix)
+/// Output: JS object `{ state_changes: [...], concern_changes: [...] }`
+///   - concern_changes have _concerns. prefix stripped (paths relative to _concerns root)
+#[wasm_bindgen]
+pub fn pipeline_finalize(js_changes: JsValue) -> Result<JsValue, JsValue> {
+    let changes: Vec<Change> = from_js(js_changes)?;
+    PIPELINE.with(|p| {
+        let result = p
+            .borrow_mut()
+            .pipeline_finalize(changes)
             .map_err(|e| JsValue::from_str(&e))?;
         to_js(&result)
     })
@@ -272,21 +296,3 @@ pub fn intern_count() -> u32 {
     PIPELINE.with(|p| p.borrow().intern_count())
 }
 
-/// Diff a batch of changes against shadow state (WASM-028).
-///
-/// Compares incoming changes against the nested shadow state and returns only
-/// genuine changes. Primitives are compared by value, objects/arrays always
-/// pass through (no deep comparison).
-///
-/// Input: JSON array of `{ "path": "...", "value_json": "..." }`
-/// Output: JSON array of changes that differ from shadow state
-///
-/// Zero allocations on the fast path when all changes are no-ops.
-#[wasm_bindgen]
-pub fn diff_changes(changes: JsValue) -> Result<JsValue, JsValue> {
-    let input: Vec<Change> = from_js(changes)?;
-    PIPELINE.with(|p| {
-        let result = p.borrow().diff_changes(&input);
-        to_js(&result)
-    })
-}

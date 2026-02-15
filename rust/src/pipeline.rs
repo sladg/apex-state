@@ -31,7 +31,7 @@ pub(crate) struct ValidatorDispatch {
     pub dependency_values: std::collections::HashMap<String, String>,
 }
 
-/// Output wrapper for processChanges.
+/// Output wrapper for processChanges (deprecated, kept for backward compat).
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ProcessResult {
     /// State changes only (no _concerns.* paths).
@@ -44,6 +44,31 @@ pub(crate) struct ProcessResult {
     pub validators_to_run: Vec<ValidatorDispatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_plan: Option<FullExecutionPlan>,
+}
+
+/// Phase 1 result: pipeline orchestration, defers shadow state finalization.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct Phase1Result {
+    /// State changes (readonly context for JS listener execution, not for applying to valtio yet).
+    pub state_changes: Vec<Change>,
+    /// Validators to run on JS side with their dependency values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub validators_to_run: Vec<ValidatorDispatch>,
+    /// Pre-computed execution plan for listener dispatch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_plan: Option<FullExecutionPlan>,
+    /// Whether there's work to do (validators, listeners, or concern changes to apply).
+    /// If false, JS can return early without calling pipeline_finalize.
+    pub has_work: bool,
+}
+
+/// Finalize result: merged changes, diffed, ready for valtio application.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct FinalizeResult {
+    /// State changes to apply to store.state.
+    pub state_changes: Vec<Change>,
+    /// Concern changes to apply to store._concerns (paths relative to _concerns root).
+    pub concern_changes: Vec<Change>,
 }
 
 /// Owns all WASM-internal state and orchestrates change processing.
@@ -65,6 +90,9 @@ pub(crate) struct ProcessingPipeline {
     buf_affected_ids: HashSet<u32>,
     buf_concern_changes: Vec<Change>,
     buf_affected_validators: HashSet<u32>,
+    // Pending changes for round-trip refactor (EP5)
+    buf_pending_state_changes: Vec<Change>,
+    buf_pending_concern_changes: Vec<Change>,
 }
 
 impl ProcessingPipeline {
@@ -86,6 +114,8 @@ impl ProcessingPipeline {
             buf_affected_ids: HashSet::with_capacity(16),
             buf_concern_changes: Vec::with_capacity(16),
             buf_affected_validators: HashSet::with_capacity(16),
+            buf_pending_state_changes: Vec::with_capacity(64),
+            buf_pending_concern_changes: Vec::with_capacity(16),
         }
     }
 
@@ -573,6 +603,218 @@ impl ProcessingPipeline {
     /// Primitives are compared by value, objects/arrays always pass through.
     pub(crate) fn diff_changes(&self, changes: &[Change]) -> Vec<Change> {
         crate::diff::diff_changes(&self.shadow, changes)
+    }
+
+    /// Phase 1: Process changes through pipeline, defer shadow state finalization.
+    ///
+    /// Runs: aggregation → sync → flip → BoolLogic → validators
+    /// Updates shadow state during processing (needed for BoolLogic evaluation).
+    /// Stores intermediate results in buf_pending_* fields.
+    /// Returns: { state_changes (readonly context), validators_to_run, execution_plan }
+    ///
+    /// Shadow state IS updated during this phase for BoolLogic evaluation.
+    /// Final diffing and shadow update happens in pipeline_finalize.
+    pub(crate) fn process_changes_phase1(&mut self, input_changes: Vec<Change>) -> Result<Phase1Result, String> {
+        // Clear buffers
+        self.buf_output.clear();
+        self.buf_sync.clear();
+        self.buf_flip.clear();
+        self.buf_affected_ids.clear();
+        self.buf_concern_changes.clear();
+        self.buf_affected_validators.clear();
+        self.buf_pending_state_changes.clear();
+        self.buf_pending_concern_changes.clear();
+
+        // Step 0: Diff pre-pass (always-on)
+        let input_changes: Vec<Change> = {
+            let diffed = self.diff_changes(&input_changes);
+            if diffed.is_empty() {
+                return Ok(Phase1Result {
+                    state_changes: Vec::new(),
+                    validators_to_run: Vec::new(),
+                    execution_plan: None,
+                    has_work: false,
+                });
+            }
+            diffed
+        };
+
+        // Step 1-2: Process aggregation writes
+        let changes = process_aggregation_writes(&self.aggregations, input_changes);
+
+        // Step 3: Apply aggregated changes to shadow state
+        for change in &changes {
+            let current = self.shadow.get(&change.path);
+            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json) {
+                Ok(v) => v,
+                Err(_) => {
+                    self.shadow.set(&change.path, &change.value_json)?;
+                    self.buf_output.push(change.clone());
+                    self.mark_affected_logic(&change.path);
+                    continue;
+                }
+            };
+
+            if crate::diff::is_different(&current, &new_value) {
+                self.shadow.set(&change.path, &change.value_json)?;
+                self.buf_output.push(change.clone());
+                self.mark_affected_logic(&change.path);
+            }
+        }
+
+        // Step 4-5: Process sync paths
+        self.process_sync_paths_into(&changes);
+        let sync_changes: Vec<Change> = self.buf_sync.drain(..).collect();
+        for change in &sync_changes {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend_from_slice(&sync_changes);
+
+        // Step 6-7: Process flip paths
+        let mut changes_for_flip = changes.clone();
+        changes_for_flip.extend(sync_changes.clone());
+        self.process_flip_paths_into(&changes_for_flip);
+        let flip_changes: Vec<Change> = self.buf_flip.drain(..).collect();
+        for change in &flip_changes {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend(flip_changes);
+
+        // Step 8-9: Evaluate affected BoolLogic expressions
+        for logic_id in &self.buf_affected_ids {
+            if let Some(meta) = self.registry.get(*logic_id) {
+                let result = meta.tree.evaluate(&self.shadow);
+                // Keep full path with _concerns. prefix (strip happens in finalize)
+                self.buf_concern_changes.push(Change {
+                    path: meta.output_path.clone(),
+                    value_json: if result { "true".to_owned() } else { "false".to_owned() },
+                });
+            }
+        }
+
+        // Step 10: Collect affected validators
+        let validators_to_run: Vec<ValidatorDispatch> = self.buf_affected_validators
+            .iter()
+            .filter_map(|&validator_id| {
+                let meta = self.validator_registry.get(validator_id)?;
+
+                let mut dependency_values = std::collections::HashMap::new();
+                for dep_path in &meta.dependency_paths {
+                    if let Some(value) = self.shadow.get(dep_path) {
+                        let value_json = serde_json::to_string(&value.to_json_value())
+                            .unwrap_or_else(|_| "null".to_owned());
+                        dependency_values.insert(dep_path.clone(), value_json);
+                    } else {
+                        dependency_values.insert(dep_path.clone(), "null".to_owned());
+                    }
+                }
+
+                // Keep full path with _concerns. prefix (strip happens in finalize)
+                Some(ValidatorDispatch {
+                    validator_id,
+                    output_path: meta.output_path.clone(),
+                    dependency_values,
+                })
+            })
+            .collect();
+
+        // Step 11: Create execution plan
+        let execution_plan = if self.router.has_listeners() {
+            let plan = self.router.create_full_execution_plan(&self.buf_output);
+            if plan.groups.is_empty() { None } else { Some(plan) }
+        } else {
+            None
+        };
+
+        // Store pending changes for finalize
+        self.buf_pending_state_changes = std::mem::take(&mut self.buf_output);
+        self.buf_pending_concern_changes = std::mem::take(&mut self.buf_concern_changes);
+
+        // Determine if there's work to do:
+        // - If there are validators or listeners, JS needs to execute them
+        // - If there are concern changes (BoolLogic results), they need to be applied
+        // - If there are state changes, they need to be finalized
+        let has_work = !validators_to_run.is_empty()
+            || execution_plan.is_some()
+            || !self.buf_pending_concern_changes.is_empty()
+            || !self.buf_pending_state_changes.is_empty();
+
+        // Return readonly context for JS listener execution
+        Ok(Phase1Result {
+            state_changes: self.buf_pending_state_changes.clone(),
+            validators_to_run,
+            execution_plan,
+            has_work,
+        })
+    }
+
+    /// Phase 2: Finalize pipeline with JS changes (listeners + validators mixed).
+    ///
+    /// Accepts:
+    /// - js_changes: Flat list mixing listener-produced state changes + validator concern results
+    ///
+    /// Partitions js_changes by _concerns. prefix, merges with pending buffers,
+    /// diffs against shadow, updates shadow, strips concern prefixes.
+    /// Returns: { state_changes, concern_changes } ready for valtio application.
+    pub(crate) fn pipeline_finalize(
+        &mut self,
+        js_changes: Vec<Change>,
+    ) -> Result<FinalizeResult, String> {
+        // Partition js_changes: paths starting with _concerns. go to concern bucket, rest to state
+        let mut js_state_changes = Vec::new();
+        let mut js_concern_changes = Vec::new();
+
+        for change in js_changes {
+            if change.path.starts_with("_concerns.") {
+                // Strip prefix for concern bucket
+                let stripped_path = change.path["_concerns.".len()..].to_owned();
+                js_concern_changes.push(Change {
+                    path: stripped_path,
+                    value_json: change.value_json,
+                });
+            } else {
+                js_state_changes.push(change);
+            }
+        }
+
+        // Merge state changes: pending (from phase 1) + JS state bucket
+        let mut all_state_changes = std::mem::take(&mut self.buf_pending_state_changes);
+        all_state_changes.extend(js_state_changes);
+
+        // Merge concern changes: pending BoolLogic (strip prefix) + JS concern bucket
+        let pending_concerns = std::mem::take(&mut self.buf_pending_concern_changes);
+        let mut all_concern_changes = Vec::new();
+
+        for change in pending_concerns {
+            // Strip _concerns. prefix from pending (registered paths have it)
+            let stripped_path = if change.path.starts_with("_concerns.") {
+                change.path["_concerns.".len()..].to_owned()
+            } else {
+                change.path.clone()
+            };
+            all_concern_changes.push(Change {
+                path: stripped_path,
+                value_json: change.value_json,
+            });
+        }
+        all_concern_changes.extend(js_concern_changes);
+
+        // Diff state changes against shadow state
+        let genuine_state_changes = self.diff_changes(&all_state_changes);
+
+        // Update shadow state with genuine state changes
+        for change in &genuine_state_changes {
+            self.shadow.set(&change.path, &change.value_json)?;
+        }
+
+        // Concern changes don't need diffing (they're always new evaluations)
+        // Return with paths relative to _concerns root
+        Ok(FinalizeResult {
+            state_changes: genuine_state_changes,
+            concern_changes: all_concern_changes,
+        })
     }
 }
 
