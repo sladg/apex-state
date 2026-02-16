@@ -12,8 +12,10 @@ Project key: **WASM**
 | WASM-EP4 | Validation Batching | WASM-021 → WASM-024 | EP2 | **✅ COMPLETE** (2026-02-15) — Tests: placeholders written |
 | ~~WASM-EP5~~ | ~~Streaming Data Gateway~~ | ~~WASM-028 → WASM-031~~ | ~~EP2~~ | **🚫 SUPERSEDED** — Absorbed by EP6; no-op filtering in every pipeline step eliminates the need for a separate streaming gateway |
 | WASM-EP6 | Pipeline Refactor | WASM-032 | EP4 | **✅ COMPLETE** (2026-02-15) |
+| WASM-EP7 | Clean Mode Split | WASM-033 → WASM-037 | EP6 | **⏳ READY** |
+| WASM-EP8 | Recency-Based Sync | WASM-038 → WASM-040 | EP6 | **⏳ READY** |
 
-EP3, EP4 ran in parallel after EP2. EP6 followed EP4.
+EP3, EP4 ran in parallel after EP2. EP6 followed EP4. EP7 follows EP6.
 
 ## Story Map
 
@@ -49,6 +51,20 @@ EP3 Listeners (✅)   EP4 Validation (✅)
                               ▼
                        EP6 Pipeline Refactor (✅)
                          032 Round-trip refactor ✅ 22199cf
+                              │
+                              ▼
+                       EP7 Clean Mode Split (⏳)
+                         033 Clean sync registration
+                         034 Clean flip registration
+                         035 Clean listener registration
+                         036 WASM aggregation path
+                         037 Verify no cross-contamination
+                              │
+                              ▼
+                       EP8 Recency-Based Sync (⏳)
+                         038 Add recency tracking infrastructure
+                         039 Update sync registration logic
+                         040 Integration tests
 ```
 
 ~~EP5 Streaming (SUPERSEDED)~~ — No-op change filtering at every pipeline step makes a separate streaming gateway unnecessary.
@@ -129,6 +145,33 @@ EP3 Listeners (✅)   EP4 Validation (✅)
   - No-op change filtering at every pipeline step
   - **Implementation**: `rust/src/pipeline.rs`, `rust/src/lib.rs`, `src/wasm/bridge.ts`, `src/pipeline/processChanges.ts`
 - **Commits**: b9b89b1, c0bf901, 22199cf
+
+### ⏳ Ready: EP7 Clean Mode Split
+
+- **Depends On**: EP6 (complete)
+- **Spec**: `tasks/WASM-EP7-CLEAN-MODE-SPLIT.md` (canonical)
+- **Stories**: WASM-033 → WASM-037
+- **Scope**:
+  - WASM-033: Clean sync registration (skip JS PathGroups) — 2pts
+  - WASM-034: Clean flip registration (skip JS PathGroups) — 1pt
+  - WASM-035: Clean listener registration (keep `listenerHandlers` only) — 2pts
+  - WASM-036: WASM aggregation path (remove `effect()`) — 3pts ⚠️ may need Rust change
+  - WASM-037: Verify clean separation + benchmark test — 2pts
+- **Total**: 10pts
+- **Risk**: WASM-036 depends on whether Rust pipeline handles aggregation read direction (sources → target). Developer must verify before implementation.
+
+### ⏳ Ready: EP8 Recency-Based Sync Path Prioritization
+
+- **Depends On**: EP6 (complete)
+- **Spec**: `tasks/WASM-EP8-RECENCY-SYNC.md` (canonical)
+- **Stories**: WASM-038 → WASM-040
+- **Scope**:
+  - WASM-038: Add recency tracking infrastructure (change counter + HashMap) — 2pts
+  - WASM-039: Update sync registration to prioritize most recent value — 2pts
+  - WASM-040: Integration tests for recency prioritization — 1pt
+- **Total**: 5pts
+- **Motivation**: Currently sync paths use majority voting. This doesn't reflect user intent — if a user just changed `profile.name`, syncing should use that value (most recent), not the majority.
+- **Benefits**: Better UX (last touched wins), minimal overhead (O(1) lookups), backward compatible fallback.
 
 ---
 

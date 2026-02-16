@@ -25,6 +25,33 @@ export interface DebugConfig {
   timing?: boolean
   /** Threshold in milliseconds for slow operation warnings (default: 5ms) */
   timingThreshold?: number
+  /** Enable tracking of processChanges calls and applied changes for testing/debugging */
+  track?: boolean
+}
+
+/**
+ * A single recorded processChanges invocation
+ */
+export interface DebugTrackEntry {
+  /** Input changes passed to processChanges as [path, value, meta] tuples */
+  input: [string, unknown, unknown][]
+  /** Changes actually applied to state proxy */
+  applied: { path: string; value: unknown }[]
+  /** Changes applied to _concerns proxy */
+  appliedConcerns: { path: string; value: unknown }[]
+  /** Timestamp of the call */
+  timestamp: number
+}
+
+/**
+ * Debug tracking data exposed on StoreInstance when debug.track is enabled.
+ * Provides an append-only log of all processChanges calls and their effects.
+ */
+export interface DebugTrack {
+  /** All recorded processChanges calls (append-only) */
+  calls: DebugTrackEntry[]
+  /** Reset all tracking data */
+  clear: () => void
 }
 
 export interface StoreConfig {
@@ -34,6 +61,8 @@ export interface StoreConfig {
   maxIterations?: number
   /** Debug configuration for development tooling */
   debug?: DebugConfig
+  /** Use legacy TypeScript implementation instead of WASM (default: false) */
+  useLegacyImplementation?: boolean
 }
 
 export interface ProviderProps<DATA extends object> {
@@ -168,4 +197,6 @@ export interface StoreInstance<
   state: DATA
   _concerns: ConcernValues
   _internal: InternalState<DATA, META>
+  /** Debug tracking data, only populated when debug.track is enabled */
+  _debug: DebugTrack | null
 }

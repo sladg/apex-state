@@ -15,6 +15,8 @@
 // Store factory
 export type {
   DebugConfig,
+  DebugTrack,
+  DebugTrackEntry,
   ProviderProps,
   StoreConfig,
   StoreInstance,
@@ -51,7 +53,6 @@ export {
   registerFlipPair,
   registerListener,
   registerSideEffects,
-  registerSyncPair,
   registerSyncPairsBatch,
 } from './sideEffects'
 

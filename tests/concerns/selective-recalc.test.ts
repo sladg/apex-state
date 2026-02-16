@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
-import { flushSync, renderWithStore } from '../utils/react'
+import { flushSync, mountStore } from '../utils/react'
 
 interface AppState {
   products: {
@@ -37,8 +37,7 @@ describe('TEST-001: Selective Re-calculation', () => {
   it('AC1: Only leg-1 concerns recalculate when leg-1 strike changes', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -111,8 +110,7 @@ describe('TEST-001: Selective Re-calculation', () => {
   it('AC2: All leg-1 concerns recalculate', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -163,8 +161,7 @@ describe('TEST-001: Selective Re-calculation', () => {
   it('AC3: Correct values after recalculation', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -217,8 +214,7 @@ describe('TEST-001: Selective Re-calculation', () => {
   it('Performance target: < 5ms for re-evaluation', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -266,8 +262,7 @@ describe('TEST-001: Selective Re-calculation', () => {
   it('Round-trip: strike change → concern value available < 15ms', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {

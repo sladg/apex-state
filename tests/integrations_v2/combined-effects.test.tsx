@@ -279,6 +279,74 @@ describe('Combined Side Effects', () => {
     })
   })
 
+  describe('Aggregation + Sync together', () => {
+    it('should handle aggregation and sync on different fields', () => {
+      // Register aggregation: sources=[fieldA, fieldB] → target=fieldC
+      // Register syncPaths: [['syncSource', 'syncTarget']]
+      // Change fieldA, fieldB, syncSource
+      // Assert aggregation target correct
+      // Assert sync target correct
+      // No interference
+    })
+
+    it('should handle sync triggering aggregation recalculation', () => {
+      // Register sync: fieldA → fieldB
+      // Register aggregation: sources=[fieldB, fieldC] → target=result
+      // Change fieldA (syncs to fieldB, which is aggregation source)
+      // Assert fieldB synced
+      // Assert aggregation target recalculated with new fieldB
+    })
+  })
+
+  describe('Aggregation + Listeners together', () => {
+    it('should call listener when aggregation target changes', () => {
+      // Register aggregation: sources=[fieldA, fieldB] → target=fieldC
+      // Register listener on fieldC
+      // Change fieldA to match fieldB
+      // Assert aggregation updates fieldC
+      // Assert listener called for fieldC change
+    })
+
+    it('should allow listener to react to aggregation result', () => {
+      // Register aggregation
+      // Register listener on aggregation target
+      // Listener increments counter when target changes
+      // Trigger aggregation
+      // Assert counter incremented
+    })
+  })
+
+  describe('Aggregation + Flip together', () => {
+    it('should handle aggregation and flip on independent fields', () => {
+      // Register aggregation on numeric fields
+      // Register flipPaths on boolean fields
+      // Both should work without interference
+    })
+
+    it('should handle flip preventing aggregation convergence', () => {
+      // Register aggregation on boolean sources
+      // Register flip between those sources
+      // Since flip keeps them inverted, sources can never equal
+      // Assert aggregation target stays undefined
+    })
+  })
+
+  describe('All four: Aggregation + Sync + Flip + Listeners', () => {
+    it('should handle all effect types in one pipeline pass', () => {
+      // Register all 4 effect types
+      // Make changes that trigger all
+      // Assert all effects execute correctly
+      // Assert consistent final state
+    })
+
+    it('should maintain deterministic execution order', () => {
+      // Register all effect types
+      // Same input should always produce same output
+      // Run twice with identical setup
+      // Assert results match
+    })
+  })
+
   describe('Real-world scenarios', () => {
     it('should handle shopping cart sync/flip example', () => {
       // State: sameAsBilling (bool), shippingAddress, billingAddress

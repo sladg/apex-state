@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
 import type { GenericMeta } from '../../src/types'
-import { renderWithStore } from '../../tests/utils/react'
+import { mountStore } from '../../tests/utils/react'
 
 describe('createGenericStore', () => {
   it('should create a store with Provider', () => {
@@ -29,7 +29,7 @@ describe('createGenericStore', () => {
     }
     const store = createGenericStore<TestState>()
 
-    renderWithStore(<div>Child Component</div>, store, {
+    mountStore(<div>Child Component</div>, store, {
       value: 'test',
     })
 
@@ -42,7 +42,7 @@ describe('createGenericStore', () => {
     }
     const store = createGenericStore<TestState>()
 
-    renderWithStore(<div>Test</div>, store, {
+    mountStore(<div>Test</div>, store, {
       data: 'test',
     })
 
@@ -56,8 +56,8 @@ describe('createGenericStore', () => {
     const store1 = createGenericStore<TestState>()
     const store2 = createGenericStore<TestState>()
 
-    renderWithStore(<div>Store 1</div>, store1, { id: 'store1' })
-    renderWithStore(<div>Store 2</div>, store2, { id: 'store2' })
+    mountStore(<div>Store 1</div>, store1, { id: 'store1' })
+    mountStore(<div>Store 2</div>, store2, { id: 'store2' })
 
     expect(screen.getByText('Store 1')).toBeTruthy()
     expect(screen.getByText('Store 2')).toBeTruthy()
@@ -83,7 +83,7 @@ describe('createGenericStore', () => {
       },
     }
 
-    renderWithStore(<div>Nested State</div>, store, initialState)
+    mountStore(<div>Nested State</div>, store, initialState)
 
     expect(screen.getByText('Nested State')).toBeTruthy()
   })
@@ -92,7 +92,7 @@ describe('createGenericStore', () => {
     type TestState = Record<string, never>
     const store = createGenericStore<TestState>()
 
-    renderWithStore(<div>Empty</div>, store, {})
+    mountStore(<div>Empty</div>, store, {})
 
     expect(screen.getByText('Empty')).toBeTruthy()
   })
@@ -108,7 +108,7 @@ describe('createGenericStore', () => {
 
     const store = createGenericStore<TestState, CustomMeta>()
 
-    renderWithStore(<div>Custom Meta</div>, store, {
+    mountStore(<div>Custom Meta</div>, store, {
       value: 42,
     })
 

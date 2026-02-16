@@ -4,6 +4,7 @@ use wasm_bindgen::prelude::*;
 mod aggregation;
 mod bool_logic;
 mod diff;
+mod functions;
 mod graphs;
 mod intern;
 mod normalization;
@@ -84,11 +85,22 @@ pub fn unregister_boollogic(logic_id: u32) {
 ///
 /// Input: JSON array of `{ "target": "...", "sources": [...] }`
 /// Example: `[{ "target": "allUsers", "sources": ["user1", "user2", "user3"] }]`
+///
+/// Returns: JSON array of initial changes to apply (read direction: sources → target)
+/// Register aggregations from raw [target, source] pairs.
+///
+/// Rust handles validation, grouping, and initial value computation.
+///
+/// Input: JSON array of [target, source] pairs
+/// Example: `[["allUsers", "user1"], ["allUsers", "user2"], ["allUsers", "user3"]]`
+///
+/// Output: JSON array of initial changes
+/// Example: `[{ "path": "allUsers", "value_json": "\"alice\"" }]`
 #[wasm_bindgen]
-pub fn register_aggregation_batch(aggregations_json: &str) -> Result<(), JsValue> {
+pub fn register_aggregation_batch(pairs_json: &str) -> Result<String, JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
-            .register_aggregation_batch(aggregations_json)
+            .register_aggregation_batch(pairs_json)
             .map_err(|e| JsValue::from_str(&e))
     })
 }
@@ -108,10 +120,16 @@ pub fn unregister_aggregation_batch(targets_json: &str) -> Result<(), JsValue> {
 
 /// Register a batch of sync pairs.
 ///
+/// Registers pairs in sync graph, computes initial sync changes from shadow state,
+/// updates shadow with those changes, and returns them for valtio application.
+///
 /// Input: JSON array of path pairs that should stay synchronized
 /// Example: `[["user.name", "profile.name"], ["user.email", "profile.email"]]`
+///
+/// Output: JSON array of initial changes to sync all connected components
+/// Example: `[{ "path": "profile.name", "value_json": "\"alice\"" }]`
 #[wasm_bindgen]
-pub fn register_sync_batch(pairs_json: &str) -> Result<(), JsValue> {
+pub fn register_sync_batch(pairs_json: &str) -> Result<String, JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
             .register_sync_batch(pairs_json)
@@ -158,28 +176,31 @@ pub fn unregister_flip_batch(pairs_json: &str) -> Result<(), JsValue> {
     })
 }
 
-/// Register a batch of validators.
+/// Register a batch of generic functions.
 ///
-/// Input: JSON array of `{ "validator_id": N, "output_path": "...", "dependency_paths": [...] }`
-/// Example: `[{ "validator_id": 1, "output_path": "_concerns.user.email.validationState", "dependency_paths": ["user.email"] }]`
+/// Generic function registry for custom concerns, validators, and listeners.
+/// Functions are called when their dependency paths change.
+///
+/// Input: JSON array of `{ "function_id": N, "dependency_paths": [...], "scope": "...", "output_path": "..." }`
+/// Example: `[{ "function_id": 1, "dependency_paths": ["user.email"], "scope": "user", "output_path": "_concerns.user.email.validationState" }]`
 #[wasm_bindgen]
-pub fn register_validators_batch(validators_json: &str) -> Result<(), JsValue> {
+pub fn register_functions_batch(functions_json: &str) -> Result<(), JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
-            .register_validators_batch(validators_json)
+            .register_functions_batch(functions_json)
             .map_err(|e| JsValue::from_str(&e))
     })
 }
 
-/// Unregister a batch of validators by validator IDs.
+/// Unregister a batch of functions by function IDs.
 ///
-/// Input: JSON array of validator IDs
+/// Input: JSON array of function IDs
 /// Example: `[1, 2, 3]`
 #[wasm_bindgen]
-pub fn unregister_validators_batch(validator_ids_json: &str) -> Result<(), JsValue> {
+pub fn unregister_functions_batch(function_ids_json: &str) -> Result<(), JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
-            .unregister_validators_batch(validator_ids_json)
+            .unregister_functions_batch(function_ids_json)
             .map_err(|e| JsValue::from_str(&e))
     })
 }
@@ -202,7 +223,7 @@ pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
     PIPELINE.with(|p| {
         let result = p
             .borrow_mut()
-            .process_changes_phase1(input)
+            .prepare_changes(input)
             .map_err(|e| JsValue::from_str(&e))?;
         to_js(&result)
     })

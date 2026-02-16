@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createGenericStore } from '../../src'
 import type { FormWithErrors } from '../mocks'
 import { formWithErrorsFixtures } from '../mocks'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flushEffects, mountStore } from '../utils/react'
 
 const createFormWithErrorsStore = () => createGenericStore<FormWithErrors>()
 
@@ -61,7 +61,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),
@@ -114,7 +114,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),
@@ -166,7 +166,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),
@@ -244,7 +244,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),
@@ -308,7 +308,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),
@@ -372,7 +372,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),
@@ -449,7 +449,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),
@@ -530,7 +530,7 @@ describe('Integration: Error Handling & Recovery', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <FormComponent />,
       store,
       structuredClone(formWithErrorsFixtures.empty),

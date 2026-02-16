@@ -318,7 +318,7 @@ Complete listing of all test cases in the apex-state test suite, organized by di
 - [ ] provides useConcerns function
 - [ ] provides getFieldConcerns function
 
-##### describe('renderWithStore')
+##### describe('mountStore')
 - [ ] renders component with store Provider
 
 ##### describe('fireEvent')

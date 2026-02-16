@@ -7,5 +7,7 @@ export const DEFAULT_STORE_CONFIG: DeepRequired<StoreConfig> = {
   debug: {
     timing: false,
     timingThreshold: 5,
+    track: false,
   },
+  useLegacyImplementation: false,
 }

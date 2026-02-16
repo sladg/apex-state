@@ -12,7 +12,7 @@ import { createGenericStore } from '../../src'
 import type { ProductForm } from '../mocks'
 import { productFormFixtures } from '../mocks'
 import { ProductComponent } from '../utils/components'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flushEffects, mountStore } from '../utils/react'
 
 const createProductFormStore = () => createGenericStore<ProductForm>()
 
@@ -24,7 +24,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.1: shows weight field only for physical products', async () => {
-    renderWithStore(
+    mountStore(
       <ProductComponent store={store} />,
       store,
       {
@@ -56,7 +56,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.2: shows download URL field only for digital products', async () => {
-    renderWithStore(
+    mountStore(
       <ProductComponent store={store} />,
       store,
       {
@@ -84,7 +84,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.3: disables price field when product is published', async () => {
-    renderWithStore(
+    mountStore(
       <ProductComponent store={store} />,
       store,
       {
@@ -120,7 +120,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.4: updates field label based on product type', async () => {
-    renderWithStore(<ProductComponent store={store} />, store, {
+    mountStore(<ProductComponent store={store} />, store, {
       ...productFormFixtures.empty,
     })
 
@@ -134,7 +134,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.5: updates field placeholder dynamically', async () => {
-    renderWithStore(<ProductComponent store={store} />, store, {
+    mountStore(<ProductComponent store={store} />, store, {
       ...productFormFixtures.empty,
     })
 
@@ -148,7 +148,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.6: displays dynamic tooltip with field restrictions', async () => {
-    renderWithStore(<ProductComponent store={store} />, store, {
+    mountStore(<ProductComponent store={store} />, store, {
       ...productFormFixtures.empty,
     })
 
@@ -165,7 +165,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.7: makes fields read-only when product is published', async () => {
-    renderWithStore(
+    mountStore(
       <ProductComponent store={store} />,
       store,
       {
@@ -199,7 +199,7 @@ describe('Integration: Dynamic UI State from Concerns', () => {
   })
 
   it('TC4.8: re-evaluates concerns when state dependencies change', async () => {
-    renderWithStore(
+    mountStore(
       <ProductComponent store={store} />,
       store,
       {

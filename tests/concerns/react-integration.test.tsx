@@ -16,7 +16,7 @@ import { useStoreContext } from '../../src/core/context'
 import type { StoreInstance } from '../../src/core/types'
 import { createGenericStore } from '../../src/store/createStore'
 import { _ } from '../../src/utils/hashKey'
-import { flushEffects, flushSync, renderWithStore } from '../utils/react'
+import { flushEffects, flushSync, mountStore } from '../utils/react'
 import { createRenderTracker, PerformanceBenchmark } from './test-utils'
 
 interface AppState {
@@ -87,7 +87,7 @@ describe('TEST-007: React Integration', () => {
       )
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    mountStore(<TradeForm />, store, initialState, { concerns })
 
     // Wait for initial render
     await flushEffects()
@@ -138,7 +138,7 @@ describe('TEST-007: React Integration', () => {
       return <div>{strikeValue}</div>
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    mountStore(<TradeForm />, store, initialState, { concerns })
 
     await flushEffects()
 
@@ -185,7 +185,7 @@ describe('TEST-007: React Integration', () => {
       return <div>{snap.products['leg-1'].strike}</div>
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    mountStore(<TradeForm />, store, initialState, { concerns })
 
     await flushEffects()
 
@@ -251,7 +251,7 @@ describe('TEST-007: React Integration', () => {
       )
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    mountStore(<TradeForm />, store, initialState, { concerns })
 
     // Effects run synchronously, no wait needed
     renderTracker.clear()
@@ -320,7 +320,7 @@ describe('TEST-007: React Integration', () => {
       )
     }
 
-    renderWithStore(<TradeForm />, store, initialState, { concerns })
+    mountStore(<TradeForm />, store, initialState, { concerns })
 
     await flushEffects()
 

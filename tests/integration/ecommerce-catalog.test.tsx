@@ -29,7 +29,7 @@ import { useStoreContext } from '../../src/core/context'
 import { dot } from '../../src/utils/dot'
 import { _ } from '../../src/utils/hashKey'
 import { typeHelpers } from '../mocks'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flushEffects, mountStore } from '../utils/react'
 
 // ---------------------------------------------------------------------------
 // 15-level deep type hierarchy
@@ -486,7 +486,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<StrikeValidator />, store, freshFixture())
+      mountStore(<StrikeValidator />, store, freshFixture())
 
       // Initial value 1.1 should be valid
       await flushEffects()
@@ -549,7 +549,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<BarrierScheduleValidator />, store, freshFixture())
+      mountStore(<BarrierScheduleValidator />, store, freshFixture())
       await flushEffects()
 
       // Initial 1.12 is valid
@@ -602,7 +602,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<SmileValidator />, store, freshFixture())
+      mountStore(<SmileValidator />, store, freshFixture())
       await flushEffects()
 
       expect(screen.queryByTestId('smile-vol-error')).not.toBeInTheDocument()
@@ -684,7 +684,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<StrikeDisable />, store, freshFixture())
+      mountStore(<StrikeDisable />, store, freshFixture())
       await flushEffects()
 
       // Draft → not disabled
@@ -754,7 +754,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<BarrierVisibility />, store, freshFixture())
+      mountStore(<BarrierVisibility />, store, freshFixture())
       await flushEffects()
 
       // P2 leg1 has barrier type = knockout → visible
@@ -822,7 +822,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<CrisisReadonly />, store, freshFixture())
+      mountStore(<CrisisReadonly />, store, freshFixture())
       await flushEffects()
 
       expect(screen.getByTestId('strike-input')).not.toHaveAttribute('readonly')
@@ -915,7 +915,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<ComplexConditions />, store, freshFixture())
+      mountStore(<ComplexConditions />, store, freshFixture())
       await flushEffects()
 
       // draft + normal → enabled
@@ -981,7 +981,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<DynamicTooltipComponent />, store, freshFixture())
+      mountStore(<DynamicTooltipComponent />, store, freshFixture())
       await flushEffects()
 
       expect(screen.getByTestId('tooltip-text')).toHaveTextContent(
@@ -1007,7 +1007,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         return <span data-testid="notional-label">{label}</span>
       }
 
-      renderWithStore(<DynamicLabelComponent />, store, freshFixture())
+      mountStore(<DynamicLabelComponent />, store, freshFixture())
       await flushEffects()
 
       expect(screen.getByTestId('notional-label')).toHaveTextContent(
@@ -1040,7 +1040,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<DynamicPlaceholderComponent />, store, freshFixture())
+      mountStore(<DynamicPlaceholderComponent />, store, freshFixture())
       await flushEffects()
 
       expect(screen.getByTestId('strike')).toHaveAttribute(
@@ -1097,7 +1097,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<MarginCheckComponent />, store, freshFixture())
+      mountStore(<MarginCheckComponent />, store, freshFixture())
       await flushEffects()
 
       // 2M notional vs 50M limit → sufficient
@@ -1156,7 +1156,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<BarrierProximityComponent />, store, freshFixture())
+      mountStore(<BarrierProximityComponent />, store, freshFixture())
       await flushEffects()
 
       // Spot 150.2, barrier 140 → distance ~6.8% → not near
@@ -1223,7 +1223,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<CombinedConcerns />, store, freshFixture())
+      mountStore(<CombinedConcerns />, store, freshFixture())
       await flushEffects()
 
       // All should be healthy initially
@@ -1269,7 +1269,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<StrikeSync />, store, freshFixture())
+      mountStore(<StrikeSync />, store, freshFixture())
       await flushEffects()
 
       // Read initial synced value (both legs start at 1.1)
@@ -1311,7 +1311,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<HedgeFlip />, store, freshFixture())
+      mountStore(<HedgeFlip />, store, freshFixture())
       await flushEffects()
 
       // Initially hedged
@@ -1370,7 +1370,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<DeltaListener />, store, freshFixture())
+      mountStore(<DeltaListener />, store, freshFixture())
       await flushEffects()
 
       // Change leg1 delta to 0.7
@@ -1421,7 +1421,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<BatchUpdater />, store, freshFixture())
+      mountStore(<BatchUpdater />, store, freshFixture())
 
       fireEvent.click(screen.getByTestId('batch-update'))
       await flushEffects()
@@ -1526,7 +1526,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<StraddleForm />, store, freshFixture())
+      mountStore(<StraddleForm />, store, freshFixture())
       await flushEffects()
 
       // Initial: valid, enabled, synced, tooltip populated
@@ -1603,7 +1603,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      renderWithStore(<PropagationTest />, store, freshFixture())
+      mountStore(<PropagationTest />, store, freshFixture())
       await flushEffects()
 
       expect(screen.getByTestId('tooltip')).toHaveTextContent(
@@ -1651,11 +1651,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      const result = renderWithStore(
-        <DirectConcernTest />,
-        store,
-        freshFixture(),
-      )
+      const result = mountStore(<DirectConcernTest />, store, freshFixture())
       await flushEffects()
 
       // Access concern results directly from store instance
@@ -1693,11 +1689,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         )
       }
 
-      const result = renderWithStore(
-        <DeepMutationTracker />,
-        store,
-        freshFixture(),
-      )
+      const result = mountStore(<DeepMutationTracker />, store, freshFixture())
 
       expect(screen.getByTestId('source')).toHaveTextContent('market')
 

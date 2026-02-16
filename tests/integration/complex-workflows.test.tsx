@@ -12,7 +12,7 @@ import { createGenericStore } from '../../src'
 import type { WizardForm } from '../mocks'
 import { wizardFormFixtures } from '../mocks'
 import { WizardComponent } from '../utils/components'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flushEffects, mountStore } from '../utils/react'
 
 const createWizardFormStore = () => createGenericStore<WizardForm>()
 
@@ -24,7 +24,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.1: validates step fields before navigation', async () => {
-    renderWithStore(
+    mountStore(
       <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
@@ -89,7 +89,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <CustomWizard store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
@@ -104,7 +104,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.3: conditionally displays fields based on step', async () => {
-    renderWithStore(
+    mountStore(
       <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
@@ -131,7 +131,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.4: disables navigation while validation in progress', async () => {
-    renderWithStore(
+    mountStore(
       <WizardComponent store={store} delay={50} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
@@ -156,7 +156,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.5: displays progress through steps', () => {
-    renderWithStore(
+    mountStore(
       <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
@@ -166,7 +166,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.6: review step shows aggregated form data', () => {
-    renderWithStore(
+    mountStore(
       <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step3Review),
@@ -180,7 +180,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
   })
 
   it('TC6.7: back button works and validation applies on forward', async () => {
-    renderWithStore(
+    mountStore(
       <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),
@@ -218,7 +218,7 @@ describe('Integration: Complex Workflows - Multi-Step Wizard', () => {
 
   it('TC6.8: concerns and side effects work together in workflow', async () => {
     // Shared WizardComponent already handles basic validation and has next-btn
-    renderWithStore(
+    mountStore(
       <WizardComponent store={store} />,
       store,
       structuredClone(wizardFormFixtures.step1Empty),

@@ -16,8 +16,6 @@
  * - hasEdge(p1, p2): O(1)
  */
 
-import { isWasmLoaded, wasm } from '../wasm/bridge'
-
 /** Graph type for WASM mirroring. When set, addEdge/removeEdge mirror to WASM. */
 export type WasmGraphType = 'sync' | 'flip'
 
@@ -138,34 +136,6 @@ const handleComponentSplit = (
   }
 }
 
-/** Mirror an edge addition to WASM bridge if graph type is set. */
-const mirrorAddToWasm = (
-  wasmGraphType: WasmGraphType | undefined,
-  path1: string,
-  path2: string,
-): void => {
-  if (!wasmGraphType || !isWasmLoaded()) return
-  if (wasmGraphType === 'sync') {
-    wasm.registerSyncBatch([[path1, path2]])
-  } else {
-    wasm.registerFlipBatch([[path1, path2]])
-  }
-}
-
-/** Mirror an edge removal to WASM bridge if graph type is set. */
-const mirrorRemoveFromWasm = (
-  wasmGraphType: WasmGraphType | undefined,
-  path1: string,
-  path2: string,
-): void => {
-  if (!wasmGraphType || !isWasmLoaded()) return
-  if (wasmGraphType === 'sync') {
-    wasm.unregisterSyncBatch([[path1, path2]])
-  } else {
-    wasm.unregisterFlipBatch([[path1, path2]])
-  }
-}
-
 /**
  * Adds an edge between two paths.
  * If paths are in different groups, merges them (smaller into larger).
@@ -180,9 +150,6 @@ export const addEdge = (
 
   // Skip if edge already exists
   if (groups.edges.has(edgeKey)) return
-
-  // Mirror to WASM before local update
-  mirrorAddToWasm(groups.wasmGraphType, path1, path2)
 
   // Add edge
   groups.edges.add(edgeKey)
@@ -241,9 +208,6 @@ export const removeEdge = (
 
   // Skip if edge doesn't exist
   if (!groups.edges.has(edgeKey)) return
-
-  // Mirror to WASM before local update
-  mirrorRemoveFromWasm(groups.wasmGraphType, path1, path2)
 
   // Remove edge
   groups.edges.delete(edgeKey)

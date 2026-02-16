@@ -19,7 +19,7 @@ import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
 import type { ValidationStateResult } from '../../src/concerns/prebuilts'
-import { flushEffects, renderWithStore } from '../utils/react'
+import { flushEffects, mountStore } from '../utils/react'
 
 interface TestState {
   name: string
@@ -79,7 +79,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       // Runtime assertions
@@ -125,7 +125,7 @@ describe('Prebuilt Concerns Return Types', () => {
         return <div data-testid="type-check">checked</div>
       }
 
-      renderWithStore(<TypeCheckComponent />, store, initialState)
+      mountStore(<TypeCheckComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -162,7 +162,7 @@ describe('Prebuilt Concerns Return Types', () => {
       }
 
       // Name is 'John' (4 chars), should fail min(10) validation
-      renderWithStore(<ValidationErrorComponent />, store, initialState)
+      mountStore(<ValidationErrorComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -202,7 +202,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       // Status is 'active', so should not be disabled
@@ -234,7 +234,7 @@ describe('Prebuilt Concerns Return Types', () => {
         return <span data-testid="disabled">{String(field.disabledWhen)}</span>
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -268,7 +268,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       // Theme is 'light', condition checks for 'dark', so should be false
@@ -299,7 +299,7 @@ describe('Prebuilt Concerns Return Types', () => {
         return <span data-testid="visible">{String(field.visibleWhen)}</span>
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -333,7 +333,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -363,7 +363,7 @@ describe('Prebuilt Concerns Return Types', () => {
         return <span data-testid="readonly">{String(field.readonlyWhen)}</span>
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -397,7 +397,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -427,7 +427,7 @@ describe('Prebuilt Concerns Return Types', () => {
         return <span data-testid="tooltip">{field.dynamicTooltip}</span>
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -461,7 +461,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(document.querySelector('[data-testid="label"]')).toHaveTextContent(
@@ -498,7 +498,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -549,7 +549,7 @@ describe('Prebuilt Concerns Return Types', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
       await flushEffects()
 
       expect(
@@ -591,8 +591,8 @@ describe('Prebuilt Concerns Return Types', () => {
         return <div data-testid="type-check">pass</div>
       }
 
-      // Use renderWithStore options pattern for concerns registration
-      renderWithStore(<TypeCheckComponent />, store, initialState, {
+      // Use mountStore options pattern for concerns registration
+      mountStore(<TypeCheckComponent />, store, initialState, {
         concerns: {
           name: {
             validationState: { schema: z.string() },

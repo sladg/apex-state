@@ -43,14 +43,21 @@
  */
 
 import type {
+  AggregationTestState,
+  BasicTestState,
+  DeeplyNestedState,
   FormWithErrors,
+  ListenerTestState,
   NestedCart,
   OptimizationState,
+  OrderState,
   ProductForm,
   ProfileForm,
   RegistrationForm,
   ShoppingCart,
+  SyncFlipState,
   UserProfile,
+  ValidationTestState,
   WizardForm,
 } from './types'
 
@@ -363,4 +370,212 @@ export const optimizationFixtures = {
     val: 'A',
     isInternal: false,
   } satisfies OptimizationState,
+}
+
+// ---------------------------------------------------------------------------
+// V2 Integration Test Fixtures
+// ---------------------------------------------------------------------------
+
+/**
+ * Basic test state — flat, covers most v2 scenarios
+ */
+export const basicTestFixtures = {
+  empty: {
+    fieldA: '',
+    fieldB: '',
+    fieldC: 0,
+    source: '',
+    target: '',
+    boolA: false,
+    boolB: true,
+    email: '',
+    age: 0,
+    _errors: {},
+  } satisfies BasicTestState,
+
+  populated: {
+    fieldA: 'value-a',
+    fieldB: 'value-b',
+    fieldC: 42,
+    source: 'source-value',
+    target: 'target-value',
+    boolA: true,
+    boolB: false,
+    email: 'test@example.com',
+    age: 25,
+    _errors: {},
+  } satisfies BasicTestState,
+}
+
+/**
+ * Sync/Flip state — paired fields for bidirectional tests
+ */
+export const syncFlipFixtures = {
+  initial: {
+    source: 'A',
+    target: '',
+    source2: 'B',
+    target2: '',
+    flag1: false,
+    flag2: true,
+    flag3: false,
+    flag4: true,
+  } satisfies SyncFlipState,
+
+  allFalse: {
+    source: '',
+    target: '',
+    source2: '',
+    target2: '',
+    flag1: false,
+    flag2: false,
+    flag3: false,
+    flag4: false,
+  } satisfies SyncFlipState,
+}
+
+/**
+ * Validation state
+ */
+export const validationTestFixtures = {
+  empty: {
+    email: '',
+    age: 0,
+    username: '',
+    password: '',
+    confirmPassword: '',
+    _errors: {},
+  } satisfies ValidationTestState,
+
+  valid: {
+    email: 'user@example.com',
+    age: 25,
+    username: 'johndoe',
+    password: 'StrongPass123',
+    confirmPassword: 'StrongPass123',
+    _errors: {},
+  } satisfies ValidationTestState,
+
+  invalid: {
+    email: 'not-an-email',
+    age: -5,
+    username: '',
+    password: 'short',
+    confirmPassword: 'mismatch',
+    _errors: {},
+  } satisfies ValidationTestState,
+}
+
+/**
+ * Aggregation state — sources and target
+ */
+export const aggregationTestFixtures = {
+  empty: {
+    sourceA: '',
+    sourceB: '',
+    sourceC: '',
+    target: '',
+    numA: 0,
+    numB: 0,
+    numTotal: 0,
+  } satisfies AggregationTestState,
+
+  allSame: {
+    sourceA: 'shared',
+    sourceB: 'shared',
+    sourceC: 'shared',
+    target: 'shared',
+    numA: 10,
+    numB: 10,
+    numTotal: 10,
+  } satisfies AggregationTestState,
+
+  mixed: {
+    sourceA: 'alpha',
+    sourceB: 'beta',
+    sourceC: 'alpha',
+    target: '',
+    numA: 10,
+    numB: 20,
+    numTotal: 0,
+  } satisfies AggregationTestState,
+}
+
+/**
+ * Listener tracking state
+ */
+export const listenerTestFixtures = {
+  initial: {
+    user: {
+      name: 'Alice',
+      email: 'alice@example.com',
+      age: 30,
+    },
+    callCount: 0,
+    lastChange: '',
+    derived: '',
+  } satisfies ListenerTestState,
+}
+
+/**
+ * Deeply nested state — 5 levels
+ */
+export const deeplyNestedFixtures = {
+  initial: {
+    level1: {
+      value: 'L1',
+      level2: {
+        value: 'L2',
+        level3: {
+          value: 'L3',
+          level4: {
+            value: 'L4',
+            level5: {
+              value: 'L5',
+              flag: false,
+            },
+          },
+        },
+      },
+    },
+  } satisfies DeeplyNestedState,
+}
+
+/**
+ * E-commerce order state — 3 orders (lightweight for tests, not benchmarks)
+ */
+export const orderFixtures = {
+  threeOrders: {
+    orders: {
+      order_0: {
+        currency: 'USD',
+        confirmed: false,
+        status: 'pending',
+        subtotal: 100,
+        tax: 20,
+        total: 120,
+      },
+      order_1: {
+        currency: 'USD',
+        confirmed: false,
+        status: 'pending',
+        subtotal: 110,
+        tax: 22,
+        total: 132,
+      },
+      order_2: {
+        currency: 'USD',
+        confirmed: false,
+        status: 'pending',
+        subtotal: 120,
+        tax: 24,
+        total: 144,
+      },
+    },
+    invoices: {
+      inv_0: { pending: true },
+      inv_1: { pending: true },
+      inv_2: { pending: true },
+    },
+  } satisfies OrderState,
 }

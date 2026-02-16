@@ -6,8 +6,8 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 
 ### WASM-032: Missing Test Coverage (Critical)
 
-- **[Rust/Tests]** Zero integration tests for `process_changes_phase1()` + `pipeline_finalize()` round-trip refactor. All 40+ existing tests still use old `process_changes_vec()` returning `ProcessResult`. `rust/src/pipeline.rs:617-818`
-- **[Rust/Tests]** No tests for finalize edge cases: empty validators/listeners, multiple finalize calls without phase 1, `_concerns.*` path routing to concern bucket. `rust/src/pipeline.rs:761-818`
+- **[Rust/Tests]** Zero integration tests for `prepare_changes()` + `pipeline_finalize()` round-trip refactor. All 40+ existing tests still use old `process_changes_vec()` returning `ProcessResult`. `rust/src/pipeline.rs:617-818`
+- **[Rust/Tests]** No tests for finalize edge cases: empty validators/listeners, multiple finalize calls without prepare, `_concerns.*` path routing to concern bucket. `rust/src/pipeline.rs:761-818`
 - **[Rust/Tests]** No verification that concern paths have `_concerns.` prefix stripped in finalize output. `rust/src/pipeline.rs:790-802`
 - **[Rust/Tests]** No round-trip behavioral tests: BoolLogic evaluation → finalize → concern_changes applied, validator results → finalize → concern_changes applied. `rust/src/pipeline.rs:617-818`
 - **[Rust/Legacy API]** `ProcessResult` marked "deprecated" (line 34) but still actively used by all tests and returned by `process_changes_vec()`. No migration path documented. `rust/src/pipeline.rs:36-47, 420`
@@ -17,6 +17,10 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 - **[TypeScript]** `executeFullExecutionPlan()` has Cognitive Complexity 27 (limit: 20). Refactor to reduce nesting/branching. `src/pipeline/processChanges.ts:47-125`
 - **[TypeScript]** Generated WASM glue code has Cognitive Complexity 23 and forbidden `require()` import. Consider build tool configuration. `rust/pkg-node/apex_state_wasm.js:616,800`
 - **[Tests]** Integration tests use destructured `render()` instead of `screen.getByTestId()` (8 violations). `tests/integration/deeply-nested-pipeline.test.tsx`
+
+### Rust Cleanup
+
+- **[Rust]** Remove `#[allow(dead_code)]` annotations — audit usages and either wire up the dead code or delete it. Grep for all occurrences across `rust/src/`.
 
 ### Other
 

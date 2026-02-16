@@ -16,7 +16,7 @@ import {
   shoppingCartFixtures,
 } from '../mocks'
 import { CartComponent } from '../utils/components'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flushEffects, mountStore } from '../utils/react'
 
 const createShoppingCartStore = () => createGenericStore<ShoppingCart>()
 const createNestedCartStore = () => createGenericStore<NestedCart>()
@@ -29,7 +29,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.1: recalculates cart subtotal when item added', async () => {
-    renderWithStore(
+    mountStore(
       <CartComponent store={store} />,
       store,
       shoppingCartFixtures.empty,
@@ -44,7 +44,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.2: updates item subtotal when quantity changes', async () => {
-    renderWithStore(
+    mountStore(
       <CartComponent store={store} />,
       store,
       shoppingCartFixtures.singleItem,
@@ -58,7 +58,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.3: updates item subtotal when price changes', async () => {
-    renderWithStore(<CartComponent store={store} />, store, {
+    mountStore(<CartComponent store={store} />, store, {
       items: {
         'item-1': {
           name: 'Product A',
@@ -79,7 +79,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.4: updates cart subtotal when items are added/removed', async () => {
-    renderWithStore(
+    mountStore(
       <CartComponent store={store} />,
       store,
       shoppingCartFixtures.singleItem,
@@ -90,7 +90,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.5: automatically calculates tax from subtotal', async () => {
-    renderWithStore(<CartComponent store={store} />, store, {
+    mountStore(<CartComponent store={store} />, store, {
       items: {},
       subtotal: 50,
       tax: 5,
@@ -107,7 +107,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.6: automatically calculates total from subtotal + tax', async () => {
-    renderWithStore(<CartComponent store={store} />, store, {
+    mountStore(<CartComponent store={store} />, store, {
       items: {},
       subtotal: 100,
       tax: 10,
@@ -124,7 +124,7 @@ describe('Integration: Computed Values & Aggregations', () => {
   })
 
   it('TC3.7: tracks item count accurately', async () => {
-    renderWithStore(<CartComponent store={store} />, store, {
+    mountStore(<CartComponent store={store} />, store, {
       items: {
         'item-1': {
           name: 'Product A',
@@ -190,7 +190,7 @@ describe('Integration: Computed Values & Aggregations', () => {
       )
     }
 
-    renderWithStore(
+    mountStore(
       <NestedComponent />,
       nestedStore,
       nestedCartFixtures.withElectronics,

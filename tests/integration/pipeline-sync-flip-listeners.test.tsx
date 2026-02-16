@@ -7,7 +7,7 @@ import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
-import { flushEffects, renderWithStore } from '../utils/react'
+import { flushEffects, mountStore } from '../utils/react'
 
 interface TestForm {
   email: string
@@ -52,7 +52,7 @@ describe('Pipeline Integration Tests', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       email: '',
       backupEmail: '',
       isEnabled: true,
@@ -90,7 +90,7 @@ describe('Pipeline Integration Tests', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       email: '',
       backupEmail: '',
       isEnabled: true,
@@ -139,7 +139,7 @@ describe('Pipeline Integration Tests', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       email: '',
       backupEmail: '',
       isEnabled: true,

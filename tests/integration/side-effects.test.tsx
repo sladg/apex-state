@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createGenericStore } from '../../src'
 import type { UserProfile } from '../mocks'
 import { userProfileFixtures } from '../mocks'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flushEffects, mountStore } from '../utils/react'
 
 const createUserProfileStore = () => createGenericStore<UserProfile>()
 
@@ -49,7 +49,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    mountStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
     const initialTime = parseInt(
@@ -102,7 +102,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    mountStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const input = screen.getByTestId('email-input') as HTMLInputElement
 
@@ -163,7 +163,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    mountStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const input = screen.getByTestId('username-input') as HTMLInputElement
 
@@ -209,7 +209,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, {
+    mountStore(<ProfileComponent />, store, {
       username: 'john',
       email: 'john@example.com',
       age: 30,
@@ -258,7 +258,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, {
+    mountStore(<ProfileComponent />, store, {
       username: 'john',
       email: 'john@example.com',
       age: 30,
@@ -319,7 +319,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    mountStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const usernameInput = screen.getByTestId(
       'username-input',
@@ -381,7 +381,7 @@ describe('Integration: Side Effects - Listeners & Validators', () => {
       )
     }
 
-    renderWithStore(<ProfileComponent />, store, userProfileFixtures.empty)
+    mountStore(<ProfileComponent />, store, userProfileFixtures.empty)
 
     const emailInput = screen.getByTestId('email-input') as HTMLInputElement
 

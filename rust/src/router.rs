@@ -489,10 +489,7 @@ impl TopicRouter {
         let mut depth_groups: HashMap<u32, Vec<u32>> = HashMap::new();
         for &topic_id in &matched_topics {
             if let Some(meta) = self.topic_meta.get(&topic_id) {
-                depth_groups
-                    .entry(meta.depth)
-                    .or_default()
-                    .push(topic_id);
+                depth_groups.entry(meta.depth).or_default().push(topic_id);
             }
         }
 
@@ -764,9 +761,7 @@ impl TopicRouter {
             // Route to downstream topics
             if let Some(routes) = self.routes.get(&topic_id) {
                 for route in routes {
-                    let to_changes = downstream_changes
-                        .entry(route.to_topic_id)
-                        .or_default();
+                    let to_changes = downstream_changes.entry(route.to_topic_id).or_default();
                     // Pass produced changes as absolute paths (not relativized yet)
                     for &change in &relevant {
                         to_changes.push(change.clone());
@@ -784,7 +779,7 @@ impl TopicRouter {
                     continue; // Only route to shallower topics
                 }
             }
-            let entry = downstream_changes.entry(topic_id).or_insert_with(Vec::new);
+            let entry = downstream_changes.entry(topic_id).or_default();
             for change in produced_changes {
                 if !entry.iter().any(|c| c.path == change.path) {
                     entry.push(change.clone());

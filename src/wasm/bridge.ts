@@ -105,6 +105,14 @@ export interface ValidatorEntry {
   dependency_paths: string[]
 }
 
+/** A generic function registration entry (concerns, validators, listeners). */
+export interface FunctionEntry {
+  function_id: number
+  dependency_paths: string[]
+  scope: string
+  output_path?: string
+}
+
 /** Validator dispatch info for JS-side execution. */
 export interface ValidatorDispatch {
   validator_id: number
@@ -166,6 +174,24 @@ export const initWasm = (module: unknown): void => {
 
 /** Check if WASM module is loaded and ready for sync calls. */
 export const isWasmLoaded = (): boolean => wasmInstance !== null
+
+/**
+ * Check if WASM should be used for this store instance.
+ * Throws if WASM mode is requested but WASM is not loaded.
+ */
+export const shouldUseWasm = (store: {
+  _internal: { config: { useLegacyImplementation: boolean } }
+}): boolean => {
+  const useWasm = !store._internal.config.useLegacyImplementation
+
+  if (useWasm && !isWasmLoaded()) {
+    throw new Error(
+      'WASM mode requested (useLegacyImplementation: false) but WASM is not loaded. Call loadWasm() before creating the store.',
+    )
+  }
+
+  return useWasm
+}
 
 /** Reset WASM module and pipeline state (testing only). */
 export const resetWasm = (): void => {
@@ -252,9 +278,18 @@ export const wasm = {
 
   // -- Aggregation (EP2) ----------------------------------------------------
 
-  /** Register a batch of aggregations. */
-  registerAggregationBatch: (aggregations: AggregationEntry[]): void => {
-    getWasmInstance().register_aggregation_batch(JSON.stringify(aggregations))
+  /**
+   * Register aggregations from raw [target, source] pairs.
+   * Rust handles validation, grouping, and initial value computation.
+   * Returns initial changes to apply.
+   */
+  registerAggregationBatch: (pairs: [string, string][]): Change[] => {
+    const wasmModule = getWasmInstance() as any
+    const resultJson = wasmModule.register_aggregation_batch(
+      JSON.stringify(pairs),
+    ) as string
+    const wasmChanges = JSON.parse(resultJson) as WasmChange[]
+    return wasmChangesToJs(wasmChanges)
   },
 
   /** Unregister a batch of aggregations by target paths. */
@@ -264,9 +299,24 @@ export const wasm = {
 
   // -- Sync graph (EP2) -----------------------------------------------------
 
-  /** Register a batch of sync pairs. */
-  registerSyncBatch: (pairs: [string, string][]): void => {
-    getWasmInstance().register_sync_batch(JSON.stringify(pairs))
+  /**
+   * Register a batch of sync pairs.
+   * Computes initial sync changes from shadow state, updates shadow, and returns changes.
+   * Returns initial changes to apply to valtio.
+   */
+  registerSyncBatch: (pairs: [string, string][]): Change[] => {
+    const wasmModule = getWasmInstance() as any
+    const resultJson = wasmModule.register_sync_batch(
+      JSON.stringify(pairs),
+    ) as string
+
+    // Handle case where WASM returns "undefined" (incomplete implementation)
+    if (!resultJson || resultJson === 'undefined') {
+      return []
+    }
+
+    const wasmChanges = JSON.parse(resultJson) as WasmChange[]
+    return wasmChangesToJs(wasmChanges)
   },
 
   /** Unregister a batch of sync pairs. */
@@ -310,6 +360,7 @@ export const wasm = {
     changes: Change[],
   ): {
     state_changes: Change[]
+    changes: Change[] // Backwards compat alias
     validators_to_run: ValidatorDispatch[]
     execution_plan: FullExecutionPlan | null
     has_work: boolean
@@ -323,8 +374,10 @@ export const wasm = {
       has_work?: boolean
     }
 
+    const stateChanges = wasmChangesToJs(result.state_changes)
     return {
-      state_changes: wasmChangesToJs(result.state_changes),
+      state_changes: stateChanges,
+      changes: stateChanges, // Backwards compat alias
       validators_to_run: result.validators_to_run ?? [],
       execution_plan: result.execution_plan ?? null,
       has_work: result.has_work ?? false,
@@ -334,31 +387,24 @@ export const wasm = {
   /**
    * Finalize pipeline with JS changes (listeners + validators mixed) (Phase 2).
    *
-   * Partitions js_changes by _concerns. prefix, merges with pending buffers,
-   * diffs against shadow state, updates shadow, returns final changes for valtio.
+   * Merges js_changes with pending buffers, diffs against shadow state,
+   * updates shadow, returns final changes for valtio.
    *
    * Input: Single flat array mixing listener output + validator output (with _concerns. prefix)
-   * Output: { state_changes, concern_changes } - concern paths have _concerns. prefix stripped
+   * Output: { state_changes } - all changes including those with _concerns. prefix
    *
    * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
    */
-  pipelineFinalize: (
-    jsChanges: Change[],
-  ): {
-    state_changes: Change[]
-    concern_changes: Change[]
-  } => {
-    const wasmModule = getWasmInstance() as any
+  pipelineFinalize: (jsChanges: Change[]): { state_changes: Change[] } => {
+    const wasmModule = getWasmInstance()
     const result = wasmModule.pipeline_finalize(
       changesToWasm(jsChanges) as never,
     ) as unknown as {
       state_changes: WasmChange[]
-      concern_changes: WasmChange[]
     }
 
     return {
       state_changes: wasmChangesToJs(result.state_changes),
-      concern_changes: wasmChangesToJs(result.concern_changes),
     }
   },
 
@@ -434,16 +480,16 @@ export const wasm = {
     }
   },
 
-  // -- Validator registry (EP4) ---------------------------------------------
+  // -- Generic function registry (EP6) --------------------------------------
 
-  /** Register a batch of validators. */
-  registerValidatorsBatch: (validators: ValidatorEntry[]): void => {
-    getWasmInstance().register_validators_batch(JSON.stringify(validators))
+  /** Register a batch of generic functions (concerns, validators, listeners). */
+  registerFunctionsBatch: (functions: FunctionEntry[]): void => {
+    getWasmInstance().register_functions_batch(JSON.stringify(functions))
   },
 
-  /** Unregister a batch of validators by validator IDs. */
-  unregisterValidatorsBatch: (validatorIds: number[]): void => {
-    getWasmInstance().unregister_validators_batch(JSON.stringify(validatorIds))
+  /** Unregister a batch of functions by function IDs. */
+  unregisterFunctionsBatch: (functionIds: number[]): void => {
+    getWasmInstance().unregister_functions_batch(JSON.stringify(functionIds))
   },
 
   // -- Debug/testing --------------------------------------------------------

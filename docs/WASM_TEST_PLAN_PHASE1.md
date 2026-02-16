@@ -65,7 +65,7 @@ describe('FullExecutionPlan with input_change_ids', () => {
   it('should reference state_changes array by index', () => {
     // Register listener on 'user'
     // Process changes: [{ path: 'user.name', value: 'Bob' }, { path: 'user.age', value: 30 }]
-    // Call processChanges (returns Phase1Result with execution_plan)
+    // Call processChanges (returns PrepareResult with execution_plan)
     // Assert execution_plan.groups[0].dispatches[0].input_change_ids references correct indices
     // Assert indices point to state_changes array elements
   })
@@ -133,7 +133,7 @@ describe('Propagation map structure', () => {
 describe('FullExecutionPlan vs DispatchPlan (legacy)', () => {
   it('should return FullExecutionPlan from processChanges', () => {
     // Register listener
-    // Call wasm.processChanges() → Phase1Result
+    // Call wasm.processChanges() → PrepareResult
     // Assert execution_plan is FullExecutionPlan (has groups, propagation_map)
     // Assert NOT DispatchPlan (no levels array)
   })

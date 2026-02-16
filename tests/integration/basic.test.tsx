@@ -11,7 +11,7 @@ import { describe, expect, test } from 'vitest'
 import { createGenericStore } from '../../src'
 import { typeHelpers } from '../mocks'
 import { Component } from '../utils/components'
-import { renderWithStore } from '../utils/react'
+import { mountStore } from '../utils/react'
 
 describe('Integration: Core Features Working Together', () => {
   test('store with sync paths working', () => {
@@ -27,11 +27,11 @@ describe('Integration: Core Features Working Together', () => {
       syncPaths: [typeHelpers.syncPair<State>('a', 'b')],
     }
 
-    renderWithStore(
-      <Component store={store} sideEffects={sideEffects} />,
-      store,
-      { a: 1, b: 1, c: 5 },
-    )
+    mountStore(<Component store={store} sideEffects={sideEffects} />, store, {
+      a: 1,
+      b: 1,
+      c: 5,
+    })
 
     // Sync: a and b should be synced (both 1)
     expect(screen.getByTestId('a').textContent).toBe('1')
@@ -56,16 +56,12 @@ describe('Integration: Core Features Working Together', () => {
       flipPaths: [typeHelpers.flipPair<State>('flag1', 'flag2')],
     }
 
-    renderWithStore(
-      <Component store={store} sideEffects={sideEffects} />,
-      store,
-      {
-        field1: 'test',
-        field2: 'test',
-        flag1: true,
-        flag2: false,
-      },
-    )
+    mountStore(<Component store={store} sideEffects={sideEffects} />, store, {
+      field1: 'test',
+      field2: 'test',
+      flag1: true,
+      flag2: false,
+    })
 
     // Sync: fields should match
     expect(screen.getByTestId('field1').textContent).toBe('test')
@@ -82,7 +78,7 @@ describe('Integration: Core Features Working Together', () => {
     }
     const store = createGenericStore<State>()
 
-    renderWithStore(<Component store={store} />, store, { value: 'test-value' })
+    mountStore(<Component store={store} />, store, { value: 'test-value' })
 
     expect(screen.getByTestId('field-value').textContent).toBe('test-value')
     expect(screen.getByTestId('proxy-value').textContent).toBe('test-value')

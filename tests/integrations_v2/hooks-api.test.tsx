@@ -193,6 +193,101 @@ describe('Hooks API: useFieldStore, useStore, useJitStore', () => {
     })
   })
 
+  describe('useConcerns(id, registration, customConcerns?)', () => {
+    it('should register concern types for fields', () => {
+      // Create store and render component
+      // Call useConcerns('form', { fieldA: { validationState: { schema: z.string() } } })
+      // Assert concerns registered
+    })
+
+    it('should accept ConcernRegistrationMap', () => {
+      // Call useConcerns with map covering multiple fields
+      // Assert all fields have their concerns registered
+    })
+
+    it('should register BoolLogic-based concerns', () => {
+      // Call useConcerns with disabledWhen BoolLogic config
+      // Assert BoolLogic registered in WASM
+      // Assert concern evaluates on dependency change
+    })
+
+    it('should register validation concerns with Zod schema', () => {
+      // Call useConcerns with validationState + z.string().email()
+      // Assert validator registered
+      // Assert validation runs on field change
+    })
+
+    it('should register custom concerns with evaluate function', () => {
+      // Call useConcerns with custom concern having evaluate()
+      // Assert evaluate called on dependency change
+    })
+
+    it('should clean up all concerns on unmount', () => {
+      // Register concerns in component
+      // Unmount component
+      // Assert all concerns cleaned up (BoolLogic, validators, etc.)
+    })
+
+    it('should support re-registration with different config', () => {
+      // Register concerns, unmount, remount with different config
+      // Assert new config takes effect
+      // Assert old config no longer active
+    })
+
+    it('should make concern results available to useFieldStore', () => {
+      // Register validationState concern on fieldA
+      // useFieldStore('fieldA') should see validation result
+    })
+  })
+
+  describe('useSideEffects(id, effects)', () => {
+    it('should register syncPaths side effect', () => {
+      // Call useSideEffects('sync', { syncPaths: [['fieldA', 'fieldB']] })
+      // Change fieldA
+      // Assert fieldB syncs
+    })
+
+    it('should register flipPaths side effect', () => {
+      // Call useSideEffects('flip', { flipPaths: [['boolA', 'boolB']] })
+      // Change boolA
+      // Assert boolB flips
+    })
+
+    it('should register listener side effect', () => {
+      // Call useSideEffects('listeners', { listeners: [{ path, scope, fn }] })
+      // Change watched field
+      // Assert listener fn called
+    })
+
+    it('should register aggregation side effect', () => {
+      // Call useSideEffects('agg', { aggregationPairs: [...] })
+      // Change source fields
+      // Assert target updates
+    })
+
+    it('should register multiple side effect types simultaneously', () => {
+      // Call useSideEffects with syncPaths + flipPaths + listeners
+      // Assert all three work
+    })
+
+    it('should clean up all effects on unmount', () => {
+      // Register via useSideEffects in component
+      // Unmount
+      // Assert sync, flip, listeners all cleaned up
+    })
+
+    it('should support multiple useSideEffects calls with different IDs', () => {
+      // Call useSideEffects('sync', { syncPaths: [...] })
+      // Call useSideEffects('flip', { flipPaths: [...] })
+      // Both should work independently
+    })
+
+    it('should handle re-registration on remount', () => {
+      // Register effects, unmount, remount
+      // Assert effects re-registered and working
+    })
+  })
+
   describe('Hook interactions', () => {
     it('all three hooks should see same state value', () => {
       // Create store with initialState: populatedState

@@ -13,11 +13,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
 import type { GenericMeta } from '../../src/types'
-import {
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../../tests/utils/react'
+import { fireEvent, flushEffects, mountStore } from '../../tests/utils/react'
 
 const initialTestState = {
   count: 0,
@@ -55,7 +51,7 @@ describe('Pipeline integration with useJitStore', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, initialTestState)
+    mountStore(<TestComponent />, store, initialTestState)
 
     const initialRenderCount = renderCount
 
@@ -96,7 +92,7 @@ describe('Pipeline integration with useJitStore', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       count: 0,
       user: { name: 'Test' },
     })
@@ -132,7 +128,7 @@ describe('Pipeline integration with useStore', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       count: 0,
       user: { name: 'Test' },
     })
@@ -169,7 +165,7 @@ describe('Pipeline integration with useStore', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       count: 0,
       user: { name: 'Test' },
     })
@@ -197,7 +193,7 @@ describe('Pipeline integration with useStore', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, initialTestState)
+    mountStore(<TestComponent />, store, initialTestState)
 
     fireEvent.click(screen.getByText('Update Name'))
 
@@ -228,7 +224,7 @@ describe('Pipeline placeholder synchronizers', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       count: 0,
       user: { name: '' },
     })

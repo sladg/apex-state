@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
-import { flushSync, renderWithStore } from '../utils/react'
+import { flushSync, mountStore } from '../utils/react'
 
 interface AppState {
   products: {
@@ -27,8 +27,7 @@ describe('TEST-003: Batch Updates', () => {
   it('AC1: All concerns evaluate (correctness)', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -77,8 +76,7 @@ describe('TEST-003: Batch Updates', () => {
   it('AC2: Each concern evaluates at most once per update cycle', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -115,8 +113,7 @@ describe('TEST-003: Batch Updates', () => {
   it('AC4: Final state is correct after bulk update', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -162,8 +159,7 @@ describe('TEST-003: Batch Updates', () => {
   it('Performance target: < 30ms end-to-end', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -209,8 +205,7 @@ describe('TEST-003: Batch Updates', () => {
   it('Round-trip: state change → concern value propagated < 15ms', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {

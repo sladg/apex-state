@@ -8,6 +8,7 @@ import {
 import type { StoreInstance } from '../../core/types'
 import type { GenericMeta } from '../../types'
 
+/** Legacy JS implementation - uses JS graph structure */
 export const registerFlipPair = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,

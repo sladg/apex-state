@@ -5,7 +5,7 @@ import type { AggregationPair, GenericMeta } from '../../types'
 import { dot } from '../../utils/dot'
 
 /**
- * Register multiple aggregations together (follows concerns pattern)
+ * Legacy JS implementation - Register multiple aggregations together (follows concerns pattern)
  * Creates all effects in one pass, returns single cleanup function
  */
 export const registerAggregations = <

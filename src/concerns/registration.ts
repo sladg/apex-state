@@ -3,28 +3,10 @@ import { effect } from 'valtio-reactive'
 import type { StoreInstance } from '../core/types'
 import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
-import { isWasmLoaded, validatorSchemas, wasm } from '../wasm/bridge'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
-/** Check if a concern config has a `condition` field (BoolLogic concern). */
-const isBoolLogicConfig = (
-  config: Record<string, unknown>,
-): config is { condition: unknown } =>
-  'condition' in config && config['condition'] != null
-
-/** Check if a concern config is schema-based validation. */
-const isSchemaValidation = (
-  concernName: string,
-  config: Record<string, unknown>,
-): boolean =>
-  concernName === 'validationState' &&
-  'schema' in config &&
-  !('evaluate' in config)
-
-/** Sequential validator ID counter. */
-let nextValidatorId = 0
-
+/** Legacy JS implementation - uses effect() for all concerns */
 const registerConcernEffectsImpl = <
   DATA extends object,
   META extends GenericMeta,
@@ -65,51 +47,7 @@ const registerConcernEffectsImpl = <
         return
       }
 
-      // --- WASM path: BoolLogic concerns ---
-      // If WASM is loaded and the config has a `condition` field,
-      // register via WASM instead of wrapping in effect().
-      // Evaluation happens in processChanges(), not here.
-      if (isWasmLoaded() && isBoolLogicConfig(config)) {
-        const outputPath = `_concerns.${path}.${concernName}`
-        const logicId = wasm.registerBoolLogic(outputPath, config.condition)
-
-        disposeCallbacks.push(() => {
-          wasm.unregisterBoolLogic(logicId)
-        })
-        return
-      }
-
-      // --- WASM path: Schema-based validation ---
-      // If WASM is loaded and this is a validationState with schema (no custom evaluate),
-      // register via WASM for pipeline orchestration.
-      if (isWasmLoaded() && isSchemaValidation(concernName, config)) {
-        const validatorId = nextValidatorId++
-        const outputPath = `_concerns.${path}.${concernName}`
-
-        // Store Zod schema in JS (can't cross WASM boundary)
-        validatorSchemas.set(validatorId, config.schema)
-
-        // Determine dependency path: scope if provided, otherwise registration path
-        const depPaths =
-          'scope' in config && config.scope ? [config.scope as string] : [path]
-
-        // Register in WASM (reverse index for processChanges dispatch)
-        wasm.registerValidatorsBatch([
-          {
-            validator_id: validatorId,
-            output_path: outputPath,
-            dependency_paths: depPaths,
-          },
-        ])
-
-        disposeCallbacks.push(() => {
-          validatorSchemas.delete(validatorId)
-          wasm.unregisterValidatorsBatch([validatorId])
-        })
-        return
-      }
-
-      // --- JS path: Custom concerns (effect-based) ---
+      // --- Pure JS/effect-based path for ALL concerns ---
       const cacheKey = `${path}.${concernName}`
 
       // Wrap evaluation in effect() for automatic dependency tracking
@@ -125,10 +63,17 @@ const registerConcernEffectsImpl = <
           Object.assign({ state: store.state, path, value }, config)
 
         // EVALUATE concern (all state accesses inside are tracked!)
+        // If config provides custom evaluate(), use that instead of prebuilt's evaluate
         // Wrapped with timing measurement when debug.timing is enabled
+        // @FIXME: this should be coming from cocnern registration. we should have evaluate function for validation there, not here.
+        const evaluateFn =
+          'evaluate' in config && typeof config.evaluate === 'function'
+            ? config.evaluate
+            : concern.evaluate
+
         const result = store._internal.timing.run(
           'concerns',
-          () => concern.evaluate(evalProps),
+          () => evaluateFn(evalProps),
           { path, name: concernName },
         )
 
@@ -182,6 +127,7 @@ const registerConcernEffectsImpl = <
   }
 }
 
+/** Legacy implementation - uses effect() for all concerns */
 export const registerConcernEffects = <
   DATA extends object,
   META extends GenericMeta,

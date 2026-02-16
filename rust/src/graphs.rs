@@ -55,14 +55,8 @@ impl Graph {
         self.edges.insert(edge);
 
         // Update adjacency
-        self.adjacency
-            .entry(path1_id)
-            .or_default()
-            .insert(path2_id);
-        self.adjacency
-            .entry(path2_id)
-            .or_default()
-            .insert(path1_id);
+        self.adjacency.entry(path1_id).or_default().insert(path2_id);
+        self.adjacency.entry(path2_id).or_default().insert(path1_id);
 
         let g1 = self.node_to_component.get(&path1_id).copied();
         let g2 = self.node_to_component.get(&path2_id).copied();

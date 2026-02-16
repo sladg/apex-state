@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../src'
-import { flushSync, renderWithStore } from '../utils/react'
+import { flushSync, mountStore } from '../utils/react'
 
 interface AppState {
   email: string
@@ -24,7 +24,7 @@ describe('My Feature', () => {
   it('should validate email', async () => {
     const store = createAppStore()
 
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       <div data-testid="app">Test</div>,
       store,
       { email: '', password: '' },
@@ -55,7 +55,7 @@ describe('My Feature', () => {
 ### Pattern 1: State Updates
 
 ```typescript
-const { storeInstance } = renderWithStore(
+const { storeInstance } = mountStore(
   <div>Test</div>,
   store,
   initialState,
@@ -91,7 +91,7 @@ expect(tooltip).toBe('Expected tooltip text')
 ### Pattern 3: Multiple Concerns per Field
 
 ```typescript
-const { storeInstance } = renderWithStore(
+const { storeInstance } = mountStore(
   <div>Test</div>,
   store,
   { price: 100, status: 'active' },
@@ -118,7 +118,7 @@ expect(priceConcerns?.['disabledWhen']).toBe(false)
 ### Pattern 4: Cross-Field Dependencies
 
 ```typescript
-const { storeInstance } = renderWithStore(
+const { storeInstance } = mountStore(
   <div>Test</div>,
   store,
   { field1: 'value', field2: 'locked' },
@@ -311,7 +311,7 @@ All conditional concerns (`disabledWhen`, `readonlyWhen`, `visibleWhen`) support
 
 ```typescript
 it('validates required fields', async () => {
-  const { storeInstance } = renderWithStore(
+  const { storeInstance } = mountStore(
     <div>Test</div>,
     store,
     { email: '', password: '' },
@@ -348,7 +348,7 @@ it('validates required fields', async () => {
 
 ```typescript
 it('updates dynamic tooltip when dependencies change', async () => {
-  const { storeInstance } = renderWithStore(
+  const { storeInstance } = mountStore(
     <div>Test</div>,
     store,
     { firstName: 'John', lastName: 'Doe' },
@@ -378,7 +378,7 @@ it('updates dynamic tooltip when dependencies change', async () => {
 
 ```typescript
 it('disables field based on status', async () => {
-  const { storeInstance } = renderWithStore(
+  const { storeInstance } = mountStore(
     <div>Test</div>,
     store,
     { price: 100, status: 'active' },
@@ -409,7 +409,7 @@ it('disables field based on status', async () => {
 
 ```typescript
 it('propagates changes within performance budget', async () => {
-  const { storeInstance } = renderWithStore(
+  const { storeInstance } = mountStore(
     <div>Test</div>,
     store,
     { field: 'initial' },
@@ -504,7 +504,7 @@ concerns: {
 ```typescript
 it('should validate email format', async () => {
   // Setup
-  const { storeInstance } = renderWithStore(/*...*/)
+  const { storeInstance } = mountStore(/*...*/)
   await flushSync()
 
   // Action
@@ -534,11 +534,11 @@ const result = store.getFieldConcerns('field').concern
 
 ```typescript
 import { createGenericStore } from '../src'
-import { renderWithStore, flushSync } from '../utils/react'
+import { mountStore, flushSync } from '../utils/react'
 
 const store = createGenericStore<AppState>()
 
-const { storeInstance } = renderWithStore(
+const { storeInstance } = mountStore(
   <div>Test</div>,
   store,
   initialData,

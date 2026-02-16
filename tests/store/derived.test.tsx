@@ -13,11 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { StoreContext } from '../../src/core/context'
 import { createGenericStore } from '../../src/store/createStore'
 import { detectGetters, extractGetters } from '../../src/utils/deriveValues'
-import {
-  fireEvent,
-  flushEffects,
-  renderWithStore,
-} from '../../tests/utils/react'
+import { fireEvent, flushEffects, mountStore } from '../../tests/utils/react'
 import { typeHelpers } from '../mocks'
 
 /**
@@ -151,7 +147,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       expect(screen.getByTestId('fullName').textContent).toBe('John Doe')
     })
@@ -193,7 +189,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       expect(screen.getByTestId('fullName').textContent).toBe('John Doe')
 
@@ -248,7 +244,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       const initialRenderCount = renderCount
 
@@ -316,7 +312,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       // Initial values
       expect(screen.getByTestId('doubled').textContent).toBe('10')
@@ -381,7 +377,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       expect(screen.getByTestId('fullName').textContent).toBe('John Doe')
 
@@ -444,7 +440,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       // Initial: 100 + 200 = 300, with 10% tax = 330
       expect(screen.getByTestId('total').textContent).toBe('300')
@@ -495,7 +491,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       expect(screen.getByTestId('sum').textContent).toBe('7')
       expect(screen.getByTestId('product').textContent).toBe('12')
@@ -515,7 +511,7 @@ describe('Derived Values', () => {
         return <div data-testid="value">{snap.value}</div>
       }
 
-      renderWithStore(<TestComponent />, store, {
+      mountStore(<TestComponent />, store, {
         value: 'test',
       })
 
@@ -564,7 +560,7 @@ describe('Derived Values', () => {
         },
       }
 
-      renderWithStore(<TestComponent />, store, initialState)
+      mountStore(<TestComponent />, store, initialState)
 
       // After first render, check how many times getter was called
       const initialCallCount = getterCallCount

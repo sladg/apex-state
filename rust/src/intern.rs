@@ -35,6 +35,17 @@ impl InternTable {
         self.id_to_string.get(id as usize).map(|s| s.as_str())
     }
 
+    /// Get the ID for a path without interning (read-only lookup).
+    /// Returns None if the path hasn't been interned yet.
+    pub(crate) fn get_id(&self, path: &str) -> Option<u32> {
+        self.string_to_id.get(path).copied()
+    }
+
+    /// Get the path for an ID (alias for resolve, for API consistency).
+    pub(crate) fn get_path(&self, id: u32) -> Option<&str> {
+        self.resolve(id)
+    }
+
     /// Number of unique interned strings.
     pub(crate) fn count(&self) -> u32 {
         self.id_to_string.len() as u32

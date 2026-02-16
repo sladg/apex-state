@@ -11,7 +11,7 @@ import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/createStore'
-import { flushEffects, renderWithStore } from '../utils/react'
+import { flushEffects, mountStore } from '../utils/react'
 
 // Use symbol-based enum for clearer test semantics and type safety
 const SelectionSymbol = {
@@ -70,7 +70,7 @@ describe('Aggregation Behavior', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, {
+      mountStore(<TestComponent />, store, {
         allSelected: SelectionSymbol.Unselected,
         masterValue: '',
         item1: { selected: SelectionSymbol.Unselected, value: 'a' },
@@ -116,7 +116,7 @@ describe('Aggregation Behavior', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, {
+      mountStore(<TestComponent />, store, {
         allSelected: SelectionSymbol.Unselected,
         masterValue: '',
         item1: { selected: SelectionSymbol.Unselected, value: 'a' },
@@ -174,7 +174,7 @@ describe('Aggregation Behavior', () => {
       }
 
       // Start with all items Selected
-      renderWithStore(<TestComponent />, store, {
+      mountStore(<TestComponent />, store, {
         allSelected: SelectionSymbol.Unselected,
         masterValue: '',
         item1: { selected: SelectionSymbol.Selected, value: 'a' },
@@ -236,7 +236,7 @@ describe('Aggregation Behavior', () => {
       }
 
       // Start with mixed values
-      renderWithStore(<TestComponent />, store, {
+      mountStore(<TestComponent />, store, {
         allSelected: SelectionSymbol.Unselected,
         masterValue: '',
         item1: { selected: SelectionSymbol.Selected, value: 'a' },
@@ -333,7 +333,7 @@ describe('Aggregation Behavior', () => {
       }
 
       // Start with pathA and pathB already flipped (A=true, B=false)
-      renderWithStore(<TestComponent />, flipStore, {
+      mountStore(<TestComponent />, flipStore, {
         masterSwitch: false,
         pathA: true,
         pathB: false, // Flipped from pathA
@@ -414,7 +414,7 @@ describe('Aggregation Behavior', () => {
       }
 
       // Start with all different values
-      renderWithStore(<TestComponent />, noFlipStore, {
+      mountStore(<TestComponent />, noFlipStore, {
         masterSwitch: false,
         pathA: true,
         pathB: false,
@@ -481,7 +481,7 @@ describe('Aggregation Behavior', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, {
+      mountStore(<TestComponent />, store, {
         allSelected: SelectionSymbol.Unselected,
         masterValue: '',
         item1: { selected: SelectionSymbol.Unselected, value: 'a' },
@@ -542,7 +542,7 @@ describe('Aggregation Behavior', () => {
         )
       }
 
-      renderWithStore(<TestComponent />, store, {
+      mountStore(<TestComponent />, store, {
         allSelected: SelectionSymbol.Unselected,
         masterValue: '',
         item1: { selected: SelectionSymbol.Selected, value: 'a' },

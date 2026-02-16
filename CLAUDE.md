@@ -127,16 +127,20 @@ If you're storing something in TypeScript that WASM also has, ask why. Probably 
 
 ## Quick Rules (No Exceptions)
 
-### 0. Always Format Code
+### 0. Always Use Package.json Scripts
 
-**CRITICAL**: After making ANY code changes, run the appropriate lint/format commands:
+**CRITICAL**: Always use `npm run <script>` commands. Never run underlying tools directly.
+
+**Why?** Package.json encodes correct flags, targets, and paths. Direct tool usage can apply wrong configurations.
 
 **TypeScript changes:**
+
 ```bash
 npm run code:fix && npm run code:check
 ```
 
 **Rust/WASM changes:**
+
 ```bash
 npm run wasm:fmt && npm run wasm:lint && npm run wasm:check
 ```
@@ -145,7 +149,12 @@ npm run wasm:fmt && npm run wasm:lint && npm run wasm:check
 
 **DO NOT read the output** - it wastes tokens. Just run them and move on.
 
-This applies ESLint + Prettier formatting. Code must follow project style.
+**Examples of what NOT to run directly:**
+
+- ❌ `tsc --noEmit` → ✅ `npm run type-check`
+- ❌ `eslint .` → ✅ `npm run code:check`
+- ❌ `wasm-pack build` → ✅ `npm run wasm:build`
+- ❌ `cargo fmt` → ✅ `npm run wasm:fmt`
 
 ### 1. Functional Programming Only
 
@@ -214,11 +223,21 @@ rust/
 
 ### Build Process
 
+**ALWAYS use package.json scripts** — Never run underlying tools (`tsc`, `eslint`, `wasm-pack`, `cargo`, etc.) directly.
+
 ```
-1. wasm-pack build --target bundler    Compile rust/ → .wasm + JS glue + .d.ts
-2. tsup (with @rollup/plugin-wasm)     Bundle src/ + inline .wasm as base64
-3. Output: dist/index.js + dist/index.d.ts
+1. npm run wasm:build                  Compile rust/ → .wasm + JS glue + .d.ts
+   (wraps: wasm-pack build --target bundler rust)
+2. npm run build                       Bundle src/ + inline .wasm as base64
+   (wraps: tsup with @rollup/plugin-wasm)
+3. npm run type-check                  TypeScript type checking
+   (wraps: tsc --noEmit)
+4. Output: dist/index.js + dist/index.d.ts
 ```
+
+**Why?** Package.json scripts encode correct flags, paths, and configurations. Running tools directly can use wrong settings.
+
+**Why?** Package.json scripts encode the correct build targets and paths. Running tools directly can use wrong targets (e.g., `--target node` instead of `--target bundler`).
 
 ---
 
@@ -433,8 +452,8 @@ This is a performance-critical layer. Patterns matter.
 
 ### JavaScript/React Layer
 
+❌ **Never run tools directly** — Always use `npm run <script>` (tsc, eslint, wasm-pack, cargo, etc. must go through package.json)
 ❌ **Never skip running `npm run code:fix && npm run code:check` after TS changes**
-❌ **Never skip running `npm run wasm:fmt && npm run wasm:lint && npm run wasm:check` after Rust changes**
 ❌ **Never read lint/format output (wastes tokens)**
 ❌ **Never use classes or function declarations** — always arrow functions
 ❌ **Never use derive-valtio for dependency tracking** — use `effect()` from valtio-reactive
@@ -447,6 +466,7 @@ This is a performance-critical layer. Patterns matter.
 
 ### Rust/WASM Layer
 
+❌ **Never skip running `npm run wasm:fmt && npm run wasm:lint && npm run wasm:check` after Rust changes**
 ❌ **Never allocate in hot paths** — (processChanges is called frequently)
 ❌ **Never clone when you can reference** — paths are strings, internalize to IDs
 ❌ **Never hardcode assumptions about path structure** — traverse shadow state, don't assume flat
@@ -501,6 +521,19 @@ This is a performance-critical layer. Patterns matter.
    ```
 
 ❌ **Never refactor test without keeping case structure** — preserve test case names and step descriptions
+
+❌ **Never chain optional access in expect() statements** — split into two lines for better readability and debugging:
+
+   ```typescript
+   // Bad: Hard to debug, unclear error messages
+   expect(
+     storeInstance._concerns['user.email']?.['validationState'],
+   ).toBeDefined()
+
+   // Good: Clear, debuggable, better error messages
+   const validationState = storeInstance._concerns['user.email']?.['validationState']
+   expect(validationState).toBeDefined()
+   ```
 
 ### Both Layers
 

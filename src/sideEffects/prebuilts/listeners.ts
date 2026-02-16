@@ -1,7 +1,8 @@
 import type { ListenerRegistration, StoreInstance } from '../../core/types'
 import type { GenericMeta } from '../../types'
 import { getPathDepth } from '../../utils/pathUtils'
-import { isWasmLoaded, wasm } from '../../wasm/bridge'
+import { shouldUseWasm } from '../../wasm/bridge'
+import { registerListener as registerListenerWasm } from './listeners.wasm'
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -43,7 +44,8 @@ const validateScopeAndPath = (
   }
 }
 
-export const registerListener = <
+/** Legacy JS implementation - uses JS listener maps and sorted paths */
+export const registerListenerLegacy = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
 >(
@@ -82,17 +84,6 @@ export const registerListener = <
   // Update sorted paths cache
   updateSortedListenerPaths(graphs)
 
-  // Sync listener registration to WASM router (if loaded)
-  if (isWasmLoaded()) {
-    wasm.registerListenersBatch([
-      {
-        subscriber_id: subscriberId,
-        topic_path: registration.path ?? '',
-        scope_path: registration.scope ?? '',
-      },
-    ])
-  }
-
   return () => {
     const list = listeners.get(mapKey)
     if (list) {
@@ -107,10 +98,20 @@ export const registerListener = <
     }
     // Remove from flat handler map
     listenerHandlers.delete(subscriberId)
-
-    // Sync unregistration to WASM router (if loaded)
-    if (isWasmLoaded()) {
-      wasm.unregisterListenersBatch([subscriberId])
-    }
   }
+}
+
+/** Wrapper function - dispatches to WASM or legacy implementation */
+export const registerListener = <
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  store: StoreInstance<DATA, META>,
+  registration: ListenerRegistration<DATA, META>,
+): (() => void) => {
+  if (shouldUseWasm(store)) {
+    return registerListenerWasm(store, registration)
+  }
+
+  return registerListenerLegacy(store, registration)
 }

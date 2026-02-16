@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { registerListener } from '../../src/sideEffects/prebuilts/listeners'
 import { createGenericStore } from '../../src/store/createStore'
 import type { ArrayOfChanges, GenericMeta } from '../../src/types'
-import { renderWithStore } from '../utils/react'
+import { mountStore } from '../utils/react'
 
 // ---------------------------------------------------------------------------
 // Hard-coded deeply nested state (15 levels)
@@ -235,7 +235,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should register listeners at level 1', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 
@@ -253,7 +253,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should register listeners at level 5', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 
@@ -270,7 +270,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should register listeners at level 15 (deepest)', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 
@@ -292,7 +292,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should register 12 listeners scattered across all levels', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 
@@ -405,7 +405,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should verify sync paths scattered at multiple levels', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 
@@ -433,7 +433,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should verify flip paths scattered at multiple levels', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 
@@ -457,7 +457,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should track listener calls with path metadata', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 
@@ -543,7 +543,7 @@ describe('Deeply Nested Pipeline — 15 levels, scattered listeners/sync/flip', 
   it('should handle multiple trees (main branch + side branches)', () => {
     const store = createGenericStore<TestState>()
 
-    const { storeInstance } = renderWithStore(store, INITIAL_STATE, {
+    const { storeInstance } = mountStore(store, INITIAL_STATE, {
       customRender: () => <div data-testid="root">Test</div>,
     })
 

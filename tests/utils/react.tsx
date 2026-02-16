@@ -2,293 +2,242 @@
  * React Test Utilities
  *
  * Shared utilities for React component testing with apex-state stores.
- * Eliminates duplication of Provider wrapping, render helpers, and test store creation.
+ * Provides Provider wrapping, render helpers, setValue, and flush utilities.
+ *
+ * See TESTING_PATTERNS.md for usage guide.
  */
 
-import React, { ReactElement } from 'react'
+import React, { type ReactElement } from 'react'
 
-import {
-  act,
-  fireEvent as tlFireEvent,
-  render,
-  type RenderResult,
-} from '@testing-library/react'
+import { act, fireEvent as tlFireEvent, render } from '@testing-library/react'
 import { useSnapshot } from 'valtio'
-import { proxy } from 'valtio/vanilla'
-import { effect } from 'valtio-reactive'
 
 import { useStoreContext } from '../../src/core/context'
-import type { StoreInstance } from '../../src/core/types'
+import type { StoreConfig, StoreInstance } from '../../src/core/types'
+import { processChangesLegacy } from '../../src/pipeline/processChanges'
+import { processChangesWasm } from '../../src/pipeline/processChanges.wasm'
 import { createGenericStore } from '../../src/store/createStore'
-import type { DeepKey, GenericMeta } from '../../src/types'
-import { dot } from '../../src/utils/dot'
+import type {
+  ArrayOfChanges,
+  ConcernRegistrationMap,
+  DeepKey,
+  DeepValue,
+  GenericMeta,
+} from '../../src/types'
+import type { SideEffects } from '../../src/types/sideEffects'
 
-// Type helpers for store
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 type GenericStore<
   T extends object,
   META extends GenericMeta = GenericMeta,
 > = ReturnType<typeof createGenericStore<T, META>>
 
-// Type for concerns registration - inferred from store
-type ConcernsRegistration<T extends object> = Partial<
-  Record<DeepKey<T>, Record<string, any>>
->
-
-interface ConcernType {
-  name: string
-  evaluate: (props: any) => any
+/** Options for mountStore (new API) */
+interface MountStoreOptions<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+> {
+  /** Concern registrations (passed to store.useConcerns) */
+  concerns?: ConcernRegistrationMap<T>
+  /** ID for concerns registration (default: 'test') */
+  concernsId?: string
+  /** Side effects (passed to store.useSideEffects) */
+  sideEffects?: SideEffects<T, META>
+  /** ID for side effects registration (default: 'test') */
+  sideEffectsId?: string
+  /** data-testid for default root container */
+  testId?: string
+  /** Custom render function receiving snapshot state */
+  customRender?: (state: T) => React.ReactNode
 }
 
-interface ConcernRegistration {
-  id: string
-  path: string
-  concernName: string
-  concern: ConcernType
-  config: any
-  dispose: () => void
+/** Options for mountStore (old API — backward compat for v1 tests) */
+interface MountStoreOptionsLegacy<T extends object> {
+  concerns?: ConcernRegistrationMap<T>
+  concernsId?: string
 }
+
+/** Return type for mountStore */
+interface MountStoreResult<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+> {
+  storeInstance: StoreInstance<T, META>
+  setValue: <P extends DeepKey<T>>(
+    path: P,
+    value: DeepValue<T, P>,
+    meta?: META,
+  ) => void
+}
+
+// ---------------------------------------------------------------------------
+// Dual-mode test configuration
+// ---------------------------------------------------------------------------
 
 /**
- * Create a minimal test store with concerns support
- *
- * This replicates the createTestStore pattern found across concerns unit tests.
- * Provides proxy data, concerns registry, and evaluation cache.
+ * Mode configurations for dual-mode testing (Legacy JS vs WASM).
  *
  * @example
  * ```typescript
- * const store = createTestStore({ count: 0 })
- * store.useConcerns('test', {
- *   count: { validationState: { schema: z.number().min(0) } }
+ * import { MODES } from '../utils/react'
+ *
+ * describe.each(MODES)('[$name] my feature', ({ config }) => {
+ *   it('works in both modes', () => {
+ *     const store = createGenericStore<State>(config)
+ *     // ...
+ *   })
  * })
  * ```
  */
-export const createTestStore = <T extends object>(initialData: T) => {
-  const dataProxy = proxy<T>(initialData)
-  const concernsRegistry = new Map<string, ConcernRegistration[]>()
-  const evaluationCache = new Map<string, unknown>()
+export const MODES: readonly { name: string; config: StoreConfig }[] = [
+  { name: 'Legacy', config: { useLegacyImplementation: true } },
+  { name: 'WASM', config: { useLegacyImplementation: false } },
+]
 
-  const useConcerns = (
-    id: string,
-    registration: Record<string, any>,
-    concerns: Record<string, ConcernType>,
-  ) => {
-    const disposeCallbacks: (() => void)[] = []
+// ---------------------------------------------------------------------------
+// mountStore
+// ---------------------------------------------------------------------------
 
-    Object.entries(registration).forEach(([path, concernConfigs]) => {
-      if (!concernConfigs) return
-
-      Object.entries(concernConfigs).forEach(([concernName, config]) => {
-        if (!config) return
-
-        const concern = concerns[concernName as keyof typeof concerns]
-        if (!concern) return
-
-        const concernKey = `${id}:${path}:${concernName}`
-
-        const dispose = effect(() => {
-          const value = dot.get__unsafe(dataProxy, path)
-
-          const result = concern.evaluate({
-            state: dataProxy,
-            path,
-            value,
-            ...config,
-          })
-
-          evaluationCache.set(concernKey, result)
-        })
-
-        const reg: ConcernRegistration = {
-          id,
-          path,
-          concernName,
-          concern,
-          config,
-          dispose,
-        }
-
-        const pathRegs = concernsRegistry.get(path) || []
-        pathRegs.push(reg)
-        concernsRegistry.set(path, pathRegs)
-
-        disposeCallbacks.push(dispose)
-      })
-    })
-
-    return () => {
-      disposeCallbacks.forEach((dispose) => dispose())
-      concernsRegistry.forEach((regs, path) => {
-        const filtered = regs.filter((r) => r.id !== id)
-        if (filtered.length === 0) {
-          concernsRegistry.delete(path)
-        } else {
-          concernsRegistry.set(path, filtered)
-        }
-      })
-    }
-  }
-
-  const getFieldConcerns = <K extends string = string>(path: string) => {
-    const result: Record<K, unknown> = {} as Record<K, unknown>
-    const registrations = concernsRegistry.get(path) || []
-
-    registrations.forEach(({ id, path: regPath, concernName }) => {
-      const key = `${id}:${regPath}:${concernName}`
-      result[concernName as K] = evaluationCache.get(key)
-    })
-
-    return result
-  }
-
-  return {
-    proxy: dataProxy,
-    useConcerns,
-    getFieldConcerns,
-  }
-}
-
-// Overload: Old API with component (backward compatible)
-export function renderWithStore<
+// Overload: Old API with component (backward compat for v1 tests)
+export function mountStore<
   T extends object,
   META extends GenericMeta = GenericMeta,
 >(
   component: ReactElement,
   store: GenericStore<T, META>,
   initialState: T,
-  options?: {
-    concerns?: ConcernsRegistration<T>
-    concernsId?: string
-  },
-): RenderResult & { storeInstance: StoreInstance<T, META> }
+  options?: MountStoreOptionsLegacy<T>,
+): MountStoreResult<T, META>
 
-// Overload: New API without component (simpler)
-export function renderWithStore<
+// Overload: New API without component
+export function mountStore<
   T extends object,
   META extends GenericMeta = GenericMeta,
 >(
   store: GenericStore<T, META>,
   initialState: T,
-  options?: {
-    concerns?: ConcernsRegistration<T>
-    concernsId?: string
-    testId?: string
-    customRender?: (state: T) => React.ReactNode
-  },
-): RenderResult & { storeInstance: StoreInstance<T, META> }
+  options?: MountStoreOptions<T, META>,
+): MountStoreResult<T, META>
 
 /**
- * Render store with Provider
+ * Render a store with Provider, capturing storeInstance and providing setValue.
  *
  * Supports two signatures:
- * 1. Old API: renderWithStore(<Component />, store, initialState, options)
- * 2. New API: renderWithStore(store, initialState, options)
- *
- * @example
- * ```typescript
- * // New API - no component needed!
- * const { storeInstance } = renderWithStore(
- *   store,
- *   { email: '' },
- *   { concerns: { email: { validationState: { schema: z.string().email() } } } }
- * )
- *
- * // Old API - still supported
- * const { storeInstance } = renderWithStore(
- *   <MyComponent />,
- *   store,
- *   { email: '' },
- *   { concerns: { email: { validationState: { schema: z.string().email() } } } }
- * )
- * ```
+ * 1. New API: mountStore(store, initialState, options?)
+ * 2. Old API: mountStore(<Component />, store, initialState, options?)
  */
-export function renderWithStore<
+export function mountStore<
   T extends object,
   META extends GenericMeta = GenericMeta,
 >(
   componentOrStore: ReactElement | GenericStore<T, META>,
   storeOrInitialState: GenericStore<T, META> | T,
-  initialStateOrOptions: T | any,
-  optionsOrUndefined?: any,
-): RenderResult & { storeInstance: StoreInstance<T, META> } {
+  initialStateOrOptions?: T | MountStoreOptions<T, META>,
+  legacyOptions?: MountStoreOptionsLegacy<T>,
+): MountStoreResult<T, META> {
   // Detect which API is being used
   const isOldAPI = React.isValidElement(componentOrStore)
 
   let component: ReactElement | null
   let store: GenericStore<T, META>
   let initialState: T
-  let options: any
+  let options: MountStoreOptions<T, META>
 
   if (isOldAPI) {
-    // Old API: (component, store, initialState, options)
     component = componentOrStore as ReactElement
     store = storeOrInitialState as GenericStore<T, META>
     initialState = initialStateOrOptions as T
-    options = optionsOrUndefined
+    options = (legacyOptions ?? {}) as MountStoreOptions<T, META>
   } else {
-    // New API: (store, initialState, options)
     component = null
     store = componentOrStore as GenericStore<T, META>
     initialState = storeOrInitialState as T
-    options = initialStateOrOptions
+    options = (initialStateOrOptions ?? {}) as MountStoreOptions<T, META>
   }
+
   let storeInstance: StoreInstance<T, META> | null = null
 
-  // Wrapper to capture store instance and register concerns
-  function WrapperComponent({ children }: { children: React.ReactNode }) {
+  // Wrapper to capture store instance and register concerns/sideEffects
+  const WrapperComponent = ({ children }: { children: React.ReactNode }) => {
     storeInstance = useStoreContext<T, META>()
 
-    // Register concerns if provided
-    if (options?.concerns) {
-      store.useConcerns(options.concernsId || 'test', options.concerns)
+    if (options.concerns) {
+      store.useConcerns(options.concernsId ?? 'test', options.concerns)
+    }
+    if (options.sideEffects) {
+      store.useSideEffects(options.sideEffectsId ?? 'test', options.sideEffects)
     }
 
     return <>{children}</>
   }
 
-  // Choose content based on API
+  // Choose content
   let content: React.ReactNode
 
   if (component) {
-    // Old API: use provided component
     content = component
-  } else if (options?.customRender) {
-    // New API with custom render
-    function CustomRenderComponent() {
+  } else if (options.customRender) {
+    const CustomRenderComponent = () => {
       const snap = useSnapshot(storeInstance!.state) as T
       return (
-        <div data-testid={options.testId || 'test-root'}>
+        <div data-testid={options.testId ?? 'test-root'}>
           {options.customRender!(snap)}
         </div>
       )
     }
     content = <CustomRenderComponent />
   } else {
-    // New API: default simple container
-    content = <div data-testid={options?.testId || 'test-root'}>Test</div>
+    content = <div data-testid={options.testId ?? 'test-root'}>Test</div>
   }
 
-  const renderResult = render(
+  render(
     React.createElement(store.Provider, {
       initialState,
       children: <WrapperComponent>{content}</WrapperComponent>,
     }),
   )
 
+  // Helper to set values — matches store's setValue implementation.
+  // Calls processChanges directly (same pattern as production code).
+  const setValue = <P extends DeepKey<T>>(
+    path: P,
+    value: DeepValue<T, P>,
+    meta?: META,
+  ) => {
+    act(() => {
+      const changes: ArrayOfChanges<T, META> = [
+        [path, value, (meta || {}) as META],
+      ]
+      const processChanges = storeInstance!._internal.config
+        .useLegacyImplementation
+        ? processChangesLegacy
+        : processChangesWasm
+
+      processChanges(storeInstance!, changes)
+    })
+  }
+
   return {
-    ...renderResult,
     storeInstance: storeInstance!,
+    setValue,
   }
 }
 
+// ---------------------------------------------------------------------------
+// fireEvent — wrapped in act()
+// ---------------------------------------------------------------------------
+
 /**
- * Re-export fireEvent from testing-library
+ * Re-export fireEvent from testing-library, wrapped in act().
  *
- * Uses React's testing-library which properly integrates with React's synthetic event system.
- * Previously this was a custom implementation that manually dispatched DOM events,
- * but that doesn't trigger React's onChange handlers correctly.
+ * Uses React's testing-library which properly integrates with React's
+ * synthetic event system.
  */
 export const fireEvent = {
-  change: (element: Element, data: any) => {
+  change: (element: Element, data: { target: { value: string | boolean } }) => {
     act(() => {
       tlFireEvent.change(element, data)
     })
@@ -310,34 +259,27 @@ export const fireEvent = {
   },
 }
 
+// ---------------------------------------------------------------------------
+// Flush utilities
+// ---------------------------------------------------------------------------
+
 /**
  * Flush all pending updates (microtasks, macrotasks, valtio changes, React renders)
- *
- * Extracted from tests/setup.ts for explicit reuse in tests.
- * Used as a replacement for waitFor() for better performance and determinism.
  *
  * This flushes:
  * - All pending microtasks (Promises, queueMicrotask, valtio subscribers)
  * - All pending macrotasks (setTimeout, setInterval)
  * - Multiple rounds to catch cascading effects
  *
- * All async updates are wrapped in act() to prevent React warnings.
- *
  * Timing: Uses minimal timeout (20ms) to handle async validators like
  * setTimeout(resolve, 10) while keeping test overhead reasonable.
  */
 export const flushEffects = async () => {
   await act(async () => {
-    // First flush microtasks
     await Promise.resolve()
-
-    // Then allow macrotasks (setTimeout calls) to execute
-    // 20ms is enough for setTimeout(resolve, 10) + overhead
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 20)
     })
-
-    // Final microtask flush
     await Promise.resolve()
   })
 }
@@ -345,132 +287,19 @@ export const flushEffects = async () => {
 /**
  * Flush only synchronous effects (no setTimeout wait)
  *
- * Use this for performance tests where you only need React renders
- * and synchronous valtio effects, not async validators.
- *
- * This flushes:
- * - All pending microtasks (Promises, queueMicrotask, valtio subscribers)
- * - React renders and effects
- *
- * Does NOT wait for:
- * - setTimeout/setInterval callbacks (async validators)
+ * Use this for tests where you only need React renders and synchronous
+ * valtio effects, not async validators.
  *
  * @example
  * ```typescript
- * benchmark.start('render')
- * store.value = 123
- * await flushSync()  // Only ~0-2ms overhead instead of 20ms
- * const duration = benchmark.end('render')
+ * setValue('field', 'value')
+ * await flushSync()
+ * expect(storeInstance.state.field).toBe('value')
  * ```
  */
 export const flushSync = async () => {
   await act(async () => {
-    // Flush microtasks only - no setTimeout wait
     await Promise.resolve()
     await Promise.resolve()
   })
-}
-
-/**
- * Common assertions for form validation tests
- */
-export const assertions = {
-  /**
-   * Assert field value matches expected
-   */
-  fieldValue: (
-    element: HTMLInputElement | HTMLSelectElement,
-    expected: string,
-  ): boolean => {
-    return element.value === expected
-  },
-
-  /**
-   * Assert checkbox state
-   */
-  checkboxState: (element: HTMLInputElement, expected: boolean): boolean => {
-    return element.checked === expected
-  },
-
-  /**
-   * Assert element is visible (not null)
-   */
-  isVisible: (element: HTMLElement | null): boolean => {
-    return element !== null
-  },
-
-  /**
-   * Assert element is hidden (null)
-   */
-  isHidden: (element: HTMLElement | null): boolean => {
-    return element === null
-  },
-
-  /**
-   * Assert element is disabled
-   */
-  isDisabled: (element: HTMLButtonElement | HTMLInputElement): boolean => {
-    return element.disabled
-  },
-
-  /**
-   * Assert element is enabled
-   */
-  isEnabled: (element: HTMLButtonElement | HTMLInputElement): boolean => {
-    return !element.disabled
-  },
-
-  /**
-   * Assert element is readonly
-   */
-  isReadOnly: (element: HTMLInputElement): boolean => {
-    return element.readOnly
-  },
-}
-
-/**
- * DOM query helpers
- */
-export const domHelpers = {
-  /**
-   * Get all error messages in the document
-   */
-  getAllErrors: (root: HTMLElement | Document = document): string[] => {
-    const errorElements = root.querySelectorAll('[data-testid*="error"]')
-    return Array.from(errorElements).map((el) => el.textContent || '')
-  },
-
-  /**
-   * Check if form has any validation errors
-   */
-  hasErrors: (root: HTMLElement | Document = document): boolean => {
-    return root.querySelectorAll('[data-testid*="error"]').length > 0
-  },
-
-  /**
-   * Get error count
-   */
-  getErrorCount: (root: HTMLElement | Document = document): number => {
-    return root.querySelectorAll('[data-testid*="error"]').length
-  },
-
-  /**
-   * Get field by testid
-   */
-  getField: (
-    testId: string,
-    root: HTMLElement | Document = document,
-  ): HTMLInputElement => {
-    return root.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement
-  },
-
-  /**
-   * Get button by testid
-   */
-  getButton: (
-    testId: string,
-    root: HTMLElement | Document = document,
-  ): HTMLButtonElement => {
-    return root.querySelector(`[data-testid="${testId}"]`) as HTMLButtonElement
-  },
 }

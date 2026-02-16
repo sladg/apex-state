@@ -80,7 +80,7 @@ const makeSyncEdgeCleanup =
   }
 
 /**
- * Batch version of registerSyncPair. Adds all edges first, then computes
+ * Legacy batch version of registerSyncPair. Adds all edges first, then computes
  * initial sync changes across all final groups and calls processChanges once.
  * This avoids cascading effect re-evaluations when registering many pairs.
  */
@@ -120,27 +120,4 @@ export const registerSyncPairsBatch = <
   }
 
   return () => edgeCleanups.forEach((fn) => fn())
-}
-
-export const registerSyncPair = <
-  DATA extends object,
-  META extends GenericMeta = GenericMeta,
->(
-  store: StoreInstance<DATA, META>,
-  path1: string & {},
-  path2: string & {},
-): (() => void) => {
-  const { sync } = store._internal.graphs
-
-  // Add edge (implicitly adds nodes if they don't exist)
-  addEdge(sync, path1, path2)
-
-  // Find all paths in this sync group and apply sync changes
-  const component = getGroupPaths(sync, path1)
-  const changes = collectGroupSyncChanges(store, component)
-  if (changes.length > 0) {
-    processChanges(store, changes)
-  }
-
-  return makeSyncEdgeCleanup(sync, path1, path2)
 }

@@ -92,6 +92,7 @@ fn shadow_dump() -> String
 ```
 
 **Note:** After initialization, shadow state is kept in sync AUTOMATICALLY by the pipeline processing. Updates can happen at ANY level:
+
 - Leaf value: `{ path: "user.profile.email", value: "new@example.com" }`
 - Nested object: `{ path: "user.profile", value: { name: "Bob", email: "bob@example.com" } }`
 - Root level: `{ path: "user", value: { profile: {...}, role: "..." } }`
@@ -196,6 +197,7 @@ fn process_changes(changes_json: &str) -> Result<String, JsValue>
 ```
 
 **Key Points:**
+
 - **Same function signature across all phases** - complexity is internal
 - **WASM orchestrates** - decides what to evaluate and when
 - **JS executes** - runs listener handlers, applies changes
@@ -256,6 +258,7 @@ fn clear_listeners()
 Listener execution requires collaboration between WASM and JS:
 
 **Step 1: WASM prepares dispatch plan**
+
 ```rust
 /// Called internally during process_changes()
 /// Returns which listeners to call and what changes to pass them
@@ -279,6 +282,7 @@ struct ListenerDispatch {
 ```
 
 **Step 2: JS executes handlers**
+
 ```typescript
 // JS receives dispatch plan from WASM
 for (const level of dispatchPlan.levels) {
@@ -300,6 +304,7 @@ for (const level of dispatchPlan.levels) {
 ```
 
 **Step 3: WASM routes results**
+
 ```rust
 /// Routes listener-produced changes to downstream topics
 /// Called by JS after executing each depth level
@@ -665,11 +670,108 @@ export const clearAll = (): void => {
 
 ---
 
+### Two-Proxy Pattern and Change Application
+
+#### Design: Why Two Separate Proxies?
+
+The store uses **two independent valtio proxies** for different purposes:
+
+```typescript
+interface StoreInstance {
+  state: DATA                    // Application state (user data)
+  _concerns: ConcernValues       // Computed concern results
+  _internal: InternalState       // Non-reactive graphs/config
+}
+```
+
+**Why separate?**
+
+1. **Independent tracking**: React components can subscribe to `state` changes OR `_concerns` changes independently
+2. **Read/write separation**: Concerns READ from `state`, WRITE to `_concerns` (prevents infinite loops)
+3. **Efficient lookups**: The two-level `_concerns` structure allows fast access to all concerns for a path
+
+#### The `_concerns` Two-Level Structure
+
+```typescript
+type ConcernValues = Record<string, Record<string, unknown>>
+
+// Example:
+_concerns = {
+  "user.email": {
+    "validationState": { isError: false, errors: [] },
+    "disabledWhen": true
+  },
+  "user.role": {
+    "validationState": { isError: false, errors: [] }
+  }
+}
+```
+
+**Why two levels?**
+
+- **First level**: Full path to field (e.g., `"user.email"`)
+- **Second level**: Concern name (e.g., `"validationState"`, `"disabledWhen"`)
+- **Efficient access**: Get all concerns for a path: `_concerns["user.email"]`
+- **React hooks**: Subscribe to specific path+concern: `_concerns["user.email"]["validationState"]`
+
+#### Change Partitioning and Application
+
+**WASM returns unified change stream:**
+
+```typescript
+{
+  state_changes: [
+    { path: "user.name", value: "Alice" },              // → store.state
+    { path: "_concerns.user.email.validationState", ... }, // → store._concerns
+    { path: "settings.theme", value: "dark" },          // → store.state
+    { path: "_concerns.user.role.disabledWhen", ... }   // → store._concerns
+  ]
+}
+```
+
+**JS partitions by prefix:**
+
+```typescript
+// In processChangesWASM():
+for (const change of final.state_changes) {
+  if (change.path.startsWith('_concerns.')) {
+    // Strip prefix: "_concerns.user.email.validationState" → "user.email.validationState"
+    concernChanges.push({
+      path: change.path.slice('_concerns.'.length),
+      value: change.value
+    })
+  } else {
+    stateChanges.push(change)
+  }
+}
+
+// Apply to separate proxies
+applyBatch(stateChanges, store.state)       // Nested structure
+applyConcernChanges(concernChanges, store._concerns)  // Two-level structure
+```
+
+**Why can't we use a single `applyBatch`?**
+
+1. **Different proxies**: Can't apply to both `store.state` and `store._concerns` in one call
+2. **Different structures**:
+   - `store.state` uses nested objects: `state.user.email.value`
+   - `store._concerns` uses two levels: `_concerns["user.email"]["validationState"]`
+3. **Path interpretation**: `_concerns.user.email.validationState` would create wrong structure:
+   - With single apply: `_concerns.user.email.validationState` (3 levels) ❌
+   - With two-level apply: `_concerns["user.email"]["validationState"]` (2 levels) ✓
+
+**Design decision:**
+- **WASM**: Doesn't know about proxy structure, returns unified array with prefixes
+- **JS**: Knows about proxies, partitions and routes appropriately
+
+---
+
 ### Communication Patterns
 
 #### Phase 1: BoolLogic Evaluation (Current)
 
 **Registration Flow:**
+
 ```
 JS: useConcerns() mounts with BoolLogic concern
  ├─ Build output path: "_concerns.user.email.disabledWhen"
@@ -691,6 +793,7 @@ Note: WASM has NO concept of "concerns" - just paths
 ```
 
 **Change Processing Flow:**
+
 ```
 JS: User changes state via setValue("user.role", "admin")
  ├─ Call WASM: result = processChanges([{ path: "user.role", value: "admin" }])
@@ -723,6 +826,7 @@ JS: User changes state via setValue("user.role", "admin")
 ```
 
 **Example: Setting a nested object**
+
 ```
 JS: setValue("user.profile", { name: "Bob", email: "bob@example.com" })
  ├─ result = processChanges([{
@@ -744,6 +848,7 @@ JS: setValue("user.profile", { name: "Bob", email: "bob@example.com" })
 ```
 
 **Data Flow Diagram:**
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ JS Layer                                                    │
@@ -810,12 +915,14 @@ JS: setValue("user.profile", { name: "Bob", email: "bob@example.com" })
 **Boundary Crossings: 1 per state change** (processChanges - single entry point)
 
 **Key Principle: WASM is a pure evaluation engine**
+
 - Input: paths + values
 - Processing: evaluate expressions
 - Output: paths + values
 - NO knowledge of state structure, concerns, React, or any JS concepts
 
 **Key Points:**
+
 - **Path IDs are INTERNAL to WASM** - used for efficient lookups
 - **JS ↔ WASM boundary uses STRING paths** - simpler, self-documenting
 - Shadow state is a **nested tree structure**, not a flat map
@@ -828,6 +935,7 @@ JS: setValue("user.profile", { name: "Bob", email: "bob@example.com" })
 #### Phase 2+: Full Pipeline (Future)
 
 **Single Pipeline Call:**
+
 ```
 JS: processChanges([{ pathId: 42, value: "admin" }])
 │
@@ -1020,6 +1128,7 @@ BoolLogic Registry: HashMap<u32, BoolLogicMetadata>
   }
 
 Reverse Deps:       HashMap<u32, Vec<u32>>         (path ID -> [logic IDs / validator IDs])
+
 ```
 
 ---
@@ -1066,6 +1175,7 @@ Path                    → Path ID
 ### Update Patterns
 
 **1. Leaf Value Update**
+
 ```
 setValue("user.profile.email", "bob@example.com")
 
@@ -1077,6 +1187,7 @@ WASM:
 ```
 
 **2. Nested Object Update**
+
 ```
 setValue("user.profile", { name: "Bob", email: "bob@example.com" })
 
@@ -1093,6 +1204,7 @@ WASM:
 ```
 
 **3. Root Level Update**
+
 ```
 setValue("user", { profile: {...}, role: "user", settings: {...} })
 
@@ -1153,6 +1265,7 @@ JS: Provider mounts
 ```
 
 **Key Points:**
+
 - Shadow state is initialized ONCE with the full initial state
 - After init, it's kept in sync automatically by `evaluate_affected()` (Phase 1) or `process_changes()` (Phase 2+)
 - There is NO separate `shadowSet()` call
@@ -1376,6 +1489,7 @@ JS: setValue("user.profile.email", "bob@example.com")
 ```
 
 **Key Points:**
+
 - **WASM orchestrates** - decides when to call listeners, what to pass them
 - **JS executes** - runs handler functions, returns produced changes
 - **Multiple round trips** - 1 per depth level (typically 2-4)
@@ -1639,3 +1753,215 @@ This is an additive feature that can ship independently after Phase 2 (shadow st
 - Getter support in initial state objects
 - Custom concern `evaluate()` functions
 - Test suite (behavior is identical, only internals change)
+
+---
+
+## EP6: Unified Function Dispatch
+
+**Status**: ✅ Complete
+**Epic**: `tasks/WASM-EP6-UNIFIED-DISPATCH.md`
+
+### Overview
+
+EP6 unified all path-based function dispatch under a single generic `FunctionRegistry` in WASM. Previously, validators and listeners had separate registries with duplicated tracking logic. Now, WASM doesn't distinguish between function types - everything is just a function that watches paths and gets called when those paths change.
+
+### Architecture Changes
+
+#### Before EP6
+
+```
+WASM Layer:
+├─ BoolLogicRegistry     (for disabledWhen, visibleWhen, etc.)
+├─ ValidatorRegistry     (for validationState)
+│  └─ validator_rev_index
+├─ TopicRouter           (for listeners)
+└─ rev_index             (for BoolLogic)
+
+TypeScript Layer:
+├─ effect() wraps validators (valtio-reactive)
+├─ validatorSchemas Map<id, ZodSchema>
+└─ listenerHandlers Map<id, fn>
+```
+
+#### After EP6
+
+```
+WASM Layer:
+├─ BoolLogicRegistry     (static evaluation only)
+├─ FunctionRegistry      (validators + listeners + future functions)
+│  └─ function_rev_index (single unified index)
+└─ rev_index             (for BoolLogic)
+
+TypeScript Layer:
+├─ Custom concerns: effect() (valtio-reactive)
+├─ validatorSchemas Map<id, ZodSchema>
+└─ listenerHandlers Map<id, fn>
+```
+
+### Key Benefits
+
+1. **Single dispatch mechanism**: One reverse dependency index instead of multiple
+2. **No validator effects**: Validators registered as functions, called during pipeline
+3. **Cleaner boundary**: WASM doesn't care about function types
+4. **Easier to extend**: Adding new function types requires no WASM changes
+
+### Function Registry API
+
+#### Registration (TypeScript)
+
+```typescript
+// Validators
+wasm.registerFunctionsBatch([
+  {
+    function_id: 1,
+    dependency_paths: ['user.email'],
+    scope: '',  // Empty scope = full state
+    output_path: '_concerns.user.email.validationState'
+  }
+])
+
+// Listeners (same API)
+wasm.registerFunctionsBatch([
+  {
+    function_id: 100,
+    dependency_paths: ['user.profile'],
+    scope: 'user.profile',  // Scoped state
+    output_path: undefined  // No specific output path
+  }
+])
+```
+
+#### Function Metadata (Rust)
+
+```rust
+pub struct FunctionMetadata {
+    pub function_id: u32,
+    pub dependency_path_ids: HashSet<u32>,  // Interned path IDs
+    pub dependency_paths: Vec<String>,      // Original paths (debug)
+    pub scope: String,                      // "" = full state
+    pub output_path: Option<String>,        // Where to write results
+}
+```
+
+### Migration Guide
+
+#### Validators
+
+**Before:**
+
+```typescript
+const initialValidators = wasm.registerValidatorsBatch([
+  {
+    validator_id: 1,
+    output_path: '_concerns.user.email.validationState',
+    dependency_paths: ['user.email']
+  }
+])
+
+// ... run initial validators
+
+wasm.unregisterValidatorsBatch([1])
+```
+
+**After:**
+
+```typescript
+// Register via generic function API
+wasm.registerFunctionsBatch([
+  {
+    function_id: 1,
+    dependency_paths: ['user.email'],
+    scope: '',
+    output_path: '_concerns.user.email.validationState'
+  }
+])
+
+// Run initial validation manually (read from state)
+const currentValue = state.user.email
+const result = schema.safeParse(currentValue)
+// ... write initial result to _concerns
+
+// Cleanup
+wasm.unregisterFunctionsBatch([1])
+```
+
+**Key Changes:**
+
+1. `validator_id` → `function_id`
+2. Added required `scope` field (use `''` for full state)
+3. No automatic initial validation return - handle manually
+4. Same function registry for all function types
+
+#### Custom Concerns
+
+**No changes required.** Custom concerns (with custom `evaluate()` functions) continue to use valtio-reactive effects for automatic dependency tracking. Only validators and listeners use the generic function registry.
+
+### Function Types
+
+| Type | Registry | Evaluation | Dependencies | Scope |
+|------|----------|------------|--------------|-------|
+| **BoolLogic** | BoolLogicRegistry | WASM (static) | Extracted from tree | N/A |
+| **Validators** | FunctionRegistry | JS (Zod) | Explicit in config | `''` (full state) |
+| **Listeners** | FunctionRegistry | JS (user fn) | Explicit in config | Configurable |
+| **Custom Concerns** | N/A (valtio effects) | JS (evaluate fn) | Auto-tracked | N/A |
+
+### Implementation Details
+
+#### Reverse Dependency Index
+
+All functions (validators, listeners) share a single reverse dependency index:
+
+```rust
+// When path X changes:
+let affected_function_ids = function_rev_index.affected_by_path(path_id);
+
+// Call each affected function
+for function_id in affected_function_ids {
+    let meta = function_registry.get(function_id)?;
+    // Build dispatch for this function
+}
+```
+
+#### Result Routing
+
+Functions don't specify `targetProxy` in results. WASM determines where to route based on:
+
+- If path starts with `_concerns.` → concern_changes
+- Otherwise → state_changes
+
+TypeScript applies:
+
+```typescript
+applyBatch(state_changes, store.state)
+applyBatch(concern_changes, store._concerns)  // Manual path splitting
+```
+
+### Testing
+
+All existing tests pass without modification. The public API is unchanged:
+
+- ✅ 54 validator tests pass (`tests/wasm/validation-batching.test.ts`)
+- ✅ Concern registration tests pass
+- ✅ Listener tests pass
+- ✅ No behavioral changes for consumers
+
+### Files Modified
+
+**Rust (WASM):**
+
+- `rust/src/functions.rs` (new) - Generic function registry
+- `rust/src/pipeline.rs` - Use function_registry instead of validator_registry
+- `rust/src/lib.rs` - Export register/unregister_functions_batch
+
+**TypeScript:**
+
+- `src/wasm/bridge.ts` - Add FunctionEntry type, export registerFunctionsBatch
+- `src/concerns/registration.ts` - Validators use registerFunctionsBatch
+- `tests/wasm/validation-batching.test.ts` - Updated to use new API
+
+**Documentation:**
+
+- `tasks/WASM-EP6-UNIFIED-DISPATCH.md` (new) - Epic specification
+- `docs/WASM_ARCHITECTURE.md` - This section
+
+---

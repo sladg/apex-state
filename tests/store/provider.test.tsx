@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { StoreContext } from '../../src/core/context'
 import { createGenericStore } from '../../src/store/createStore'
-import { renderWithStore } from '../../tests/utils/react'
+import { mountStore } from '../../tests/utils/react'
 
 describe('Provider Component', () => {
   it('should provide store instance via context', () => {
@@ -25,7 +25,7 @@ describe('Provider Component', () => {
       return <div>{storeInstance ? 'Has Store' : 'No Store'}</div>
     }
 
-    renderWithStore(<TestComponent />, store, { value: 'test' })
+    mountStore(<TestComponent />, store, { value: 'test' })
 
     expect(screen.getByText('Has Store')).toBeTruthy()
   })
@@ -51,7 +51,7 @@ describe('Provider Component', () => {
 
     const initialState = { count: 42, name: 'Test' }
 
-    renderWithStore(<TestComponent />, store, initialState)
+    mountStore(<TestComponent />, store, initialState)
 
     expect(screen.getByTestId('count').textContent).toBe('42')
     expect(screen.getByTestId('name').textContent).toBe('Test')
@@ -72,7 +72,7 @@ describe('Provider Component', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, { value: 'test' })
+    mountStore(<TestComponent />, store, { value: 'test' })
 
     expect(screen.getByTestId('errorPath').textContent).toBe('_errors')
   })
@@ -94,7 +94,7 @@ describe('Provider Component', () => {
       )
     }
 
-    renderWithStore(<TestComponent />, store, { value: 'test' })
+    mountStore(<TestComponent />, store, { value: 'test' })
 
     expect(screen.getByTestId('errorPath').textContent).toBe('customErrors')
   })
@@ -105,7 +105,7 @@ describe('Provider Component', () => {
     }
     const store = createGenericStore<TestState>()
 
-    renderWithStore(
+    mountStore(
       <>
         <div>First Child</div>
         <div>Second Child</div>
@@ -139,7 +139,7 @@ describe('Provider Component', () => {
       </innerStore.Provider>
     )
 
-    renderWithStore(innerElement, outerStore, { outer: 'outside' })
+    mountStore(innerElement, outerStore, { outer: 'outside' })
 
     expect(screen.getByText('Nested Providers Work')).toBeTruthy()
   })
@@ -162,7 +162,7 @@ describe('Provider Component', () => {
       return <div>Instance Count: {instanceCount}</div>
     }
 
-    renderWithStore(<TestComponent />, store, {
+    mountStore(<TestComponent />, store, {
       value: 'test',
     })
 
@@ -223,7 +223,7 @@ describe('Provider Component', () => {
       },
     }
 
-    renderWithStore(<TestComponent />, store, initialState)
+    mountStore(<TestComponent />, store, initialState)
 
     expect(screen.getByTestId('name').textContent).toBe('Alice')
     expect(screen.getByTestId('age').textContent).toBe('30')

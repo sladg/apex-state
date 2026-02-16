@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { createGenericStore } from '../../src'
 import type { OptimizationState } from '../mocks'
 import { optimizationFixtures } from '../mocks'
-import { flushEffects, renderWithStore } from '../utils/react'
+import { flushEffects, mountStore } from '../utils/react'
 
 const createOptimizationStore = () => createGenericStore<OptimizationState>()
 
@@ -59,7 +59,7 @@ describe('Integration: withConcerns', () => {
     }
 
     // 3. Render
-    renderWithStore(<TestComponent />, store, { user: { name: 'A', age: 0 } })
+    mountStore(<TestComponent />, store, { user: { name: 'A', age: 0 } })
 
     // 4. Assertions
     // Name 'A' is too short -> validationState should show isError: true. It takes a tick to evaluate.
@@ -143,7 +143,7 @@ describe('Integration: withConcerns', () => {
     }
 
     // 2. Initial Render
-    renderWithStore(
+    mountStore(
       <>
         <TestComponent />
         <Control />

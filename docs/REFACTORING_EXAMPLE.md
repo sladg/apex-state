@@ -37,7 +37,7 @@ const result = store.getFieldConcerns('products.leg-1.strike')['tooltip']
 // New approach
 import { createGenericStore } from '../../src'
 import { useStoreContext } from '../../src/core/context'
-import { flushSync, renderWithStore } from '../utils/react'
+import { flushSync, mountStore } from '../utils/react'
 
 const createAppStore = () => createGenericStore<AppState>()
 
@@ -61,7 +61,7 @@ function TestComponent() {
   return <div>Test</div>
 }
 
-renderWithStore(<TestComponent />, store, initialState)
+mountStore(<TestComponent />, store, initialState)
 await flushSync()
 
 // Access via storeInstance
@@ -116,17 +116,17 @@ function TestComponent() {
   return <div>Test</div>
 }
 
-renderWithStore(<TestComponent />, store, initialState)
+mountStore(<TestComponent />, store, initialState)
 ```
 
-### 4. Access Store Instance via renderWithStore
+### 4. Access Store Instance via mountStore
 ```typescript
 // Before: Direct access
 store.proxy.field = value
 const concerns = store.getFieldConcerns('field')
 
-// After: Get properly typed storeInstance from renderWithStore
-const { storeInstance } = renderWithStore(
+// After: Get properly typed storeInstance from mountStore
+const { storeInstance } = mountStore(
   <Component />,
   store,
   initialState,

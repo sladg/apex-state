@@ -5,14 +5,17 @@
 //! evaluates affected BoolLogic expressions, and returns all changes
 //! (input + computed).
 
-use crate::aggregation::{process_aggregation_writes, Aggregation, AggregationRegistry};
+use crate::aggregation::{
+    process_aggregation_reads, process_aggregation_writes, AggregationRegistry,
+};
 use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry};
+use crate::functions::{FunctionInput, FunctionRegistry};
 use crate::graphs::Graph;
 use crate::intern::InternTable;
 use crate::rev_index::ReverseDependencyIndex;
 use crate::router::{FullExecutionPlan, TopicRouter};
 use crate::shadow::ShadowState;
-use crate::validator::{ValidatorInput, ValidatorRegistry};
+use crate::validator::ValidatorInput;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -31,14 +34,12 @@ pub(crate) struct ValidatorDispatch {
     pub dependency_values: std::collections::HashMap<String, String>,
 }
 
-/// Output wrapper for processChanges (deprecated, kept for backward compat).
+/// Output wrapper for processChanges (deprecated, kept for backward compat with tests).
 #[derive(Serialize, Deserialize, Debug)]
+#[allow(dead_code)]
 pub(crate) struct ProcessResult {
-    /// State changes only (no _concerns.* paths).
+    /// All changes including state and concerns (concern paths have _concerns. prefix).
     pub changes: Vec<Change>,
-    /// BoolLogic outputs (_concerns.* paths), separated for direct application.
-    #[serde(default)]
-    pub concern_changes: Vec<Change>,
     /// Validators to run on JS side with their dependency values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub validators_to_run: Vec<ValidatorDispatch>,
@@ -48,7 +49,7 @@ pub(crate) struct ProcessResult {
 
 /// Result from processChanges: orchestrates pipeline, buffers concern results for finalization.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct Phase1Result {
+pub(crate) struct PrepareResult {
     /// State changes (readonly context for JS listener execution, not for applying to valtio yet).
     pub state_changes: Vec<Change>,
     /// Validators to run on JS side with their dependency values.
@@ -65,10 +66,8 @@ pub(crate) struct Phase1Result {
 /// Finalize result: merged changes, diffed, ready for valtio application.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct FinalizeResult {
-    /// State changes to apply to store.state.
+    /// All changes including state and concerns (concern paths have _concerns. prefix).
     pub state_changes: Vec<Change>,
-    /// Concern changes to apply to store._concerns (paths relative to _concerns root).
-    pub concern_changes: Vec<Change>,
 }
 
 /// Owns all WASM-internal state and orchestrates change processing.
@@ -77,8 +76,8 @@ pub(crate) struct ProcessingPipeline {
     intern: InternTable,
     registry: BoolLogicRegistry,
     rev_index: ReverseDependencyIndex,
-    validator_registry: ValidatorRegistry,
-    validator_rev_index: ReverseDependencyIndex,
+    function_registry: FunctionRegistry,
+    function_rev_index: ReverseDependencyIndex,
     aggregations: AggregationRegistry,
     sync_graph: Graph,
     flip_graph: Graph,
@@ -102,8 +101,8 @@ impl ProcessingPipeline {
             intern: InternTable::new(),
             registry: BoolLogicRegistry::new(),
             rev_index: ReverseDependencyIndex::new(),
-            validator_registry: ValidatorRegistry::new(),
-            validator_rev_index: ReverseDependencyIndex::new(),
+            function_registry: FunctionRegistry::new(),
+            function_rev_index: ReverseDependencyIndex::new(),
             aggregations: AggregationRegistry::new(),
             sync_graph: Graph::new(),
             flip_graph: Graph::new(),
@@ -159,18 +158,69 @@ impl ProcessingPipeline {
     /// Register a batch of aggregations.
     ///
     /// Input: JSON array of `{ "target": "...", "sources": [...] }`
+    /// Output: JSON array of changes to initialize target values (read direction)
+    /// Register aggregations from raw [target, source] pairs.
+    ///
+    /// Rust handles:
+    /// - Circular dependency validation
+    /// - Grouping by target for multi-source aggregations
+    /// - Computing initial target values
+    ///
+    /// Input: JSON array of [target, source] pairs
+    /// Output: JSON array of initial changes
     pub(crate) fn register_aggregation_batch(
         &mut self,
-        aggregations_json: &str,
-    ) -> Result<(), String> {
-        let aggs: Vec<Aggregation> = serde_json::from_str(aggregations_json)
-            .map_err(|e| format!("Aggregation parse error: {}", e))?;
+        pairs_json: &str,
+    ) -> Result<String, String> {
+        // Parse raw pairs
+        let pairs: Vec<[String; 2]> = serde_json::from_str(pairs_json)
+            .map_err(|e| format!("Aggregation pairs parse error: {}", e))?;
 
-        for agg in aggs {
-            self.aggregations.register(agg.target, agg.sources);
+        // Collect all targets and sources for validation
+        let mut targets = std::collections::HashSet::new();
+        let mut sources = std::collections::HashSet::new();
+
+        for [target, source] in &pairs {
+            targets.insert(target.clone());
+            sources.insert(source.clone());
         }
 
-        Ok(())
+        // Validate no circular dependencies
+        for target in &targets {
+            if sources.contains(target) {
+                return Err(format!(
+                    "Circular aggregation: \"{}\" cannot be both target and source",
+                    target
+                ));
+            }
+        }
+
+        // Group by target for multi-source aggregations
+        let mut by_target: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        for [target, source] in pairs {
+            by_target.entry(target).or_default().push(source);
+        }
+
+        // Collect all source paths for initial value computation
+        let all_sources: Vec<String> = by_target
+            .values()
+            .flat_map(|sources| sources.iter().cloned())
+            .collect();
+
+        // Register all aggregations
+        for (target, sources) in by_target {
+            self.aggregations.register(target, sources);
+        }
+
+        // Compute initial values using reactive logic
+        let initial_changes =
+            process_aggregation_reads(&self.aggregations, &self.shadow, &all_sources);
+
+        // Return changes as JSON
+        serde_json::to_string(&initial_changes)
+            .map_err(|e| format!("Failed to serialize initial changes: {}", e))
     }
 
     /// Unregister a batch of aggregations.
@@ -192,19 +242,172 @@ impl ProcessingPipeline {
 
     /// Register a batch of sync pairs.
     ///
+    /// Registers pairs in sync graph, computes initial sync changes from shadow state,
+    /// updates shadow with those changes, and returns them for valtio application.
+    ///
     /// Input: JSON array of path pairs
     /// Example: `[["user.name", "profile.name"], ["user.email", "profile.email"]]`
-    pub(crate) fn register_sync_batch(&mut self, pairs_json: &str) -> Result<(), String> {
+    ///
+    /// Output: JSON array of initial changes to sync all connected components
+    /// Example: `[{ "path": "profile.name", "value_json": "\"alice\"" }]`
+    pub(crate) fn register_sync_batch(&mut self, pairs_json: &str) -> Result<String, String> {
         let pairs: Vec<[String; 2]> = serde_json::from_str(pairs_json)
             .map_err(|e| format!("Sync pairs parse error: {}", e))?;
 
-        for pair in pairs {
+        // Register pairs in graph
+        for pair in &pairs {
             let id1 = self.intern.intern(&pair[0]);
             let id2 = self.intern.intern(&pair[1]);
             self.sync_graph.add_edge_public(id1, id2);
         }
 
-        Ok(())
+        // Compute initial sync changes from shadow state
+        let initial_changes = self.compute_sync_initial_changes(&pairs)?;
+
+        // Update shadow state with sync changes
+        for change in &initial_changes {
+            self.shadow
+                .set(&change.path, &change.value_json)
+                .map_err(|e| format!("Shadow update failed: {}", e))?;
+        }
+
+        // Return changes as JSON
+        serde_json::to_string(&initial_changes)
+            .map_err(|e| format!("Failed to serialize initial changes: {}", e))
+    }
+
+    /// Compute initial sync changes for newly registered pairs.
+    ///
+    /// For each connected component, finds the most common value (excluding null/undefined)
+    /// and generates changes to sync all paths to that value.
+    fn compute_sync_initial_changes(&self, pairs: &[[String; 2]]) -> Result<Vec<Change>, String> {
+        use std::collections::{HashMap, HashSet};
+
+        // Collect all unique paths involved
+        let all_paths: HashSet<String> = pairs
+            .iter()
+            .flat_map(|[p1, p2]| vec![p1.clone(), p2.clone()])
+            .collect();
+
+        // Group paths by connected component
+        let mut processed = HashSet::new();
+        let mut components: Vec<Vec<String>> = Vec::new();
+
+        for path in &all_paths {
+            if processed.contains(path) {
+                continue;
+            }
+
+            // Get component for this path
+            let path_id = self
+                .intern
+                .get_id(path)
+                .ok_or_else(|| format!("Path not interned (should not happen): {}", path))?;
+            let component_ids = self.sync_graph.get_component_paths_public(path_id);
+
+            if component_ids.is_empty() {
+                continue;
+            }
+
+            // Convert IDs back to paths
+            let component_paths: Vec<String> = component_ids
+                .iter()
+                .filter_map(|id| self.intern.get_path(*id))
+                .map(|s| s.to_string())
+                .collect();
+
+            // Mark all paths in component as processed
+            for p in &component_paths {
+                processed.insert(p.clone());
+            }
+
+            components.push(component_paths);
+        }
+
+        // For each component, find most common value and generate sync changes
+        let mut changes = Vec::new();
+
+        for component in components {
+            // Count value occurrences (excluding null/undefined)
+            // Also track which path provided each value (for tie-breaking)
+            let mut value_counts: HashMap<String, usize> = HashMap::new();
+            let mut value_to_path: HashMap<String, String> = HashMap::new();
+
+            for path in &component {
+                if let Some(value_repr) = self.shadow.get(path) {
+                    // Serialize to JSON string
+                    let value_json = serde_json::to_string(&value_repr.to_json_value())
+                        .unwrap_or_else(|_| "null".to_string());
+
+                    // Skip null and undefined
+                    if value_json != "null" && value_json != "undefined" {
+                        *value_counts.entry(value_json.clone()).or_insert(0) += 1;
+
+                        // Track path for this value (prefer shallowest path in case of tie)
+                        value_to_path
+                            .entry(value_json.clone())
+                            .or_insert_with(|| path.clone());
+
+                        // If we find a shallower path for this value, use it instead
+                        if let Some(existing_path) = value_to_path.get(&value_json) {
+                            let existing_depth = existing_path.matches('.').count();
+                            let new_depth = path.matches('.').count();
+                            if new_depth < existing_depth {
+                                value_to_path.insert(value_json, path.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Find most common value (with tie-breaking)
+            let most_common = value_counts
+                .iter()
+                .max_by(|(value_a, count_a), (value_b, count_b)| {
+                    // First: compare counts (higher is better)
+                    match count_a.cmp(count_b) {
+                        std::cmp::Ordering::Equal => {
+                            // Tie: prefer value from shallowest path
+                            let depth_a = value_to_path
+                                .get(*value_a)
+                                .map(|p| p.matches('.').count())
+                                .unwrap_or(usize::MAX);
+                            let depth_b = value_to_path
+                                .get(*value_b)
+                                .map(|p| p.matches('.').count())
+                                .unwrap_or(usize::MAX);
+
+                            // Reverse: shallower (lower depth) is better
+                            depth_b.cmp(&depth_a)
+                        }
+                        other => other,
+                    }
+                })
+                .map(|(value, _)| value.clone());
+
+            if let Some(target_value) = most_common {
+                // Generate changes for paths that differ from the most common value
+                for path in &component {
+                    let current_value = self
+                        .shadow
+                        .get(path)
+                        .map(|v| {
+                            serde_json::to_string(&v.to_json_value())
+                                .unwrap_or_else(|_| "null".to_string())
+                        })
+                        .unwrap_or_else(|| "null".to_string());
+
+                    if current_value != target_value {
+                        changes.push(Change {
+                            path: path.clone(),
+                            value_json: target_value.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(changes)
     }
 
     /// Unregister a batch of sync pairs.
@@ -258,29 +461,55 @@ impl ProcessingPipeline {
 
     /// Register a batch of validators.
     ///
+    /// Validators are now registered via the generic function registry.
     /// Input: JSON array of `{ "validator_id": N, "output_path": "...", "dependency_paths": [...] }`
+    /// Returns: Validators to run against initial state (with dependency values from shadow).
     pub(crate) fn register_validators_batch(
         &mut self,
         validators_json: &str,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<ValidatorDispatch>, String> {
         let validators: Vec<ValidatorInput> = serde_json::from_str(validators_json)
             .map_err(|e| format!("Validators parse error: {}", e))?;
 
+        let mut initial_validators = Vec::new();
+
         for validator in validators {
-            self.validator_registry.register(
+            // Register via generic function registry
+            // Validators use empty scope (they validate at the dependency path level)
+            self.function_registry.register(
                 validator.validator_id,
-                validator.output_path,
-                validator.dependency_paths,
+                validator.dependency_paths.clone(),
+                String::new(), // Empty scope = full state
+                Some(validator.output_path.clone()),
                 &mut self.intern,
-                &mut self.validator_rev_index,
+                &mut self.function_rev_index,
             );
+
+            // Build initial validator dispatch by reading dependency values from shadow
+            let mut dependency_values = std::collections::HashMap::new();
+            for dep_path in &validator.dependency_paths {
+                if let Some(value) = self.shadow.get(dep_path) {
+                    let value_json = serde_json::to_string(&value.to_json_value())
+                        .unwrap_or_else(|_| "null".to_owned());
+                    dependency_values.insert(dep_path.clone(), value_json);
+                } else {
+                    dependency_values.insert(dep_path.clone(), "null".to_owned());
+                }
+            }
+
+            initial_validators.push(ValidatorDispatch {
+                validator_id: validator.validator_id,
+                output_path: validator.output_path,
+                dependency_values,
+            });
         }
 
-        Ok(())
+        Ok(initial_validators)
     }
 
     /// Unregister a batch of validators.
     ///
+    /// Validators are now unregistered via the generic function registry.
     /// Input: JSON array of validator IDs
     pub(crate) fn unregister_validators_batch(
         &mut self,
@@ -290,8 +519,47 @@ impl ProcessingPipeline {
             .map_err(|e| format!("Validator IDs parse error: {}", e))?;
 
         for validator_id in validator_ids {
-            self.validator_registry
-                .unregister(validator_id, &mut self.validator_rev_index);
+            self.function_registry
+                .unregister(validator_id, &mut self.function_rev_index);
+        }
+
+        Ok(())
+    }
+
+    /// Register a batch of generic functions.
+    ///
+    /// Input: JSON array of `{ "function_id": N, "dependency_paths": [...], "scope": "...", "output_path": "..." }`
+    pub(crate) fn register_functions_batch(&mut self, functions_json: &str) -> Result<(), String> {
+        let functions: Vec<FunctionInput> = serde_json::from_str(functions_json)
+            .map_err(|e| format!("Functions parse error: {}", e))?;
+
+        for function in functions {
+            self.function_registry.register(
+                function.function_id,
+                function.dependency_paths,
+                function.scope,
+                function.output_path,
+                &mut self.intern,
+                &mut self.function_rev_index,
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Unregister a batch of functions.
+    ///
+    /// Input: JSON array of function IDs
+    pub(crate) fn unregister_functions_batch(
+        &mut self,
+        function_ids_json: &str,
+    ) -> Result<(), String> {
+        let function_ids: Vec<u32> = serde_json::from_str(function_ids_json)
+            .map_err(|e| format!("Function IDs parse error: {}", e))?;
+
+        for function_id in function_ids {
+            self.function_registry
+                .unregister(function_id, &mut self.function_rev_index);
         }
 
         Ok(())
@@ -454,7 +722,6 @@ impl ProcessingPipeline {
             if diffed.is_empty() {
                 return Ok(ProcessResult {
                     changes: Vec::new(),
-                    concern_changes: Vec::new(),
                     validators_to_run: Vec::new(),
                     execution_plan: None,
                 });
@@ -516,7 +783,19 @@ impl ProcessingPipeline {
             self.shadow.set(&change.path, &change.value_json)?;
             self.mark_affected_logic(&change.path);
         }
-        self.buf_output.extend(flip_changes);
+        self.buf_output.extend(flip_changes.clone());
+
+        // Step 7.5: Process aggregation reads (sources → target recomputation)
+        // After sync/flip, check if any aggregation sources changed and recompute targets
+        let all_changed_paths: Vec<String> =
+            self.buf_output.iter().map(|c| c.path.clone()).collect();
+        let aggregation_reads =
+            process_aggregation_reads(&self.aggregations, &self.shadow, &all_changed_paths);
+        for change in &aggregation_reads {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend(aggregation_reads);
 
         // Step 8-9: Evaluate affected BoolLogic expressions
         for logic_id in &self.buf_affected_ids {
@@ -538,7 +817,7 @@ impl ProcessingPipeline {
             .buf_affected_validators
             .iter()
             .filter_map(|&validator_id| {
-                let meta = self.validator_registry.get(validator_id)?;
+                let meta = self.function_registry.get(validator_id)?;
 
                 // Gather dependency values from shadow state
                 let mut dependency_values = std::collections::HashMap::new();
@@ -554,7 +833,7 @@ impl ProcessingPipeline {
 
                 Some(ValidatorDispatch {
                     validator_id,
-                    output_path: meta.output_path.clone(),
+                    output_path: meta.output_path.clone().unwrap_or_default(),
                     dependency_values,
                 })
             })
@@ -574,12 +853,12 @@ impl ProcessingPipeline {
         };
 
         // Move buffers into result (swap with empty vecs to avoid cloning)
-        let output_changes = std::mem::take(&mut self.buf_output);
-        let concern_changes = std::mem::take(&mut self.buf_concern_changes);
+        // Merge concern changes into output_changes (keep _concerns. prefix)
+        let mut all_changes = std::mem::take(&mut self.buf_output);
+        all_changes.extend(std::mem::take(&mut self.buf_concern_changes));
 
         Ok(ProcessResult {
-            changes: output_changes,
-            concern_changes,
+            changes: all_changes,
             validators_to_run,
             execution_plan,
         })
@@ -594,8 +873,8 @@ impl ProcessingPipeline {
             for logic_id in self.rev_index.affected_by_path(path_id) {
                 self.buf_affected_ids.insert(logic_id);
             }
-            // Mark affected validators
-            for validator_id in self.validator_rev_index.affected_by_path(path_id) {
+            // Mark affected validators (now in function registry)
+            for validator_id in self.function_rev_index.affected_by_path(path_id) {
                 self.buf_affected_validators.insert(validator_id);
             }
         }
@@ -604,8 +883,8 @@ impl ProcessingPipeline {
         for logic_id in self.rev_index.affected_by_path(path_id) {
             self.buf_affected_ids.insert(logic_id);
         }
-        // Mark affected validators
-        for validator_id in self.validator_rev_index.affected_by_path(path_id) {
+        // Mark affected validators (now in function registry)
+        for validator_id in self.function_rev_index.affected_by_path(path_id) {
             self.buf_affected_validators.insert(validator_id);
         }
     }
@@ -643,10 +922,10 @@ impl ProcessingPipeline {
     /// Returns: { state_changes, validators_to_run, execution_plan, has_work }
     ///
     /// After JS executes listeners/validators, call pipeline_finalize() with their results.
-    pub(crate) fn process_changes_phase1(
+    pub(crate) fn prepare_changes(
         &mut self,
         input_changes: Vec<Change>,
-    ) -> Result<Phase1Result, String> {
+    ) -> Result<PrepareResult, String> {
         // Clear buffers
         self.buf_output.clear();
         self.buf_sync.clear();
@@ -661,7 +940,7 @@ impl ProcessingPipeline {
         let input_changes: Vec<Change> = {
             let diffed = self.diff_changes(&input_changes);
             if diffed.is_empty() {
-                return Ok(Phase1Result {
+                return Ok(PrepareResult {
                     state_changes: Vec::new(),
                     validators_to_run: Vec::new(),
                     execution_plan: None,
@@ -736,7 +1015,7 @@ impl ProcessingPipeline {
             .buf_affected_validators
             .iter()
             .filter_map(|&validator_id| {
-                let meta = self.validator_registry.get(validator_id)?;
+                let meta = self.function_registry.get(validator_id)?;
 
                 let mut dependency_values = std::collections::HashMap::new();
                 for dep_path in &meta.dependency_paths {
@@ -752,7 +1031,7 @@ impl ProcessingPipeline {
                 // Keep full path with _concerns. prefix (strip happens in finalize)
                 Some(ValidatorDispatch {
                     validator_id,
-                    output_path: meta.output_path.clone(),
+                    output_path: meta.output_path.clone().unwrap_or_default(),
                     dependency_values,
                 })
             })
@@ -784,7 +1063,7 @@ impl ProcessingPipeline {
             || !self.buf_pending_state_changes.is_empty();
 
         // Return readonly context for JS listener execution
-        Ok(Phase1Result {
+        Ok(PrepareResult {
             state_changes: self.buf_pending_state_changes.clone(),
             validators_to_run,
             execution_plan,
@@ -819,63 +1098,60 @@ impl ProcessingPipeline {
             }
         }
 
-        // Merge state changes: buffered from processChanges + JS-produced state changes
-        let mut all_state_changes = std::mem::take(&mut self.buf_pending_state_changes);
-        all_state_changes.extend(js_state_changes);
+        // --- State changes ---
+        // Phase-1 buffered changes were already diffed and applied to shadow in phase 1.
+        // Re-diffing would drop them as no-ops. Pass through directly.
+        let mut genuine_state = std::mem::take(&mut self.buf_pending_state_changes);
 
-        // Merge concern changes: pending BoolLogic (strip prefix) + JS concern bucket
-        let pending_concerns = std::mem::take(&mut self.buf_pending_concern_changes);
-        let mut all_concern_changes = Vec::new();
-
-        for change in pending_concerns {
-            // Strip _concerns. prefix from pending (registered paths have it)
-            let stripped_path = if change.path.starts_with("_concerns.") {
-                change.path["_concerns.".len()..].to_owned()
-            } else {
-                change.path.clone()
-            };
-            all_concern_changes.push(Change {
-                path: stripped_path,
-                value_json: change.value_json,
-            });
+        // Only diff JS-produced state changes (from listeners) against current shadow.
+        let diffed_js_state = self.diff_changes(&js_state_changes);
+        for change in &diffed_js_state {
+            self.shadow.set(&change.path, &change.value_json)?;
         }
-        all_concern_changes.extend(js_concern_changes);
+        genuine_state.extend(diffed_js_state);
 
-        // Diff state changes against shadow state
-        let genuine_state_changes = self.diff_changes(&all_state_changes);
+        // --- Concern changes ---
+        // Phase-1 BoolLogic results: already evaluated, pass through.
+        let pending_concerns = std::mem::take(&mut self.buf_pending_concern_changes);
+        let mut genuine_concerns: Vec<Change> = pending_concerns
+            .into_iter()
+            .map(|c| {
+                if c.path.starts_with("_concerns.") {
+                    c
+                } else {
+                    Change {
+                        path: format!("_concerns.{}", c.path),
+                        value_json: c.value_json,
+                    }
+                }
+            })
+            .collect();
 
-        // Update shadow state with genuine state changes
-        for change in &genuine_state_changes {
+        // Update shadow for phase-1 concern changes
+        for change in &genuine_concerns {
             self.shadow.set(&change.path, &change.value_json)?;
         }
 
-        // Diff concern changes against shadow state (need to add _concerns. prefix for shadow lookup)
-        let concern_changes_with_prefix: Vec<Change> = all_concern_changes
-            .iter()
+        // Only diff JS-produced concern changes (from validators) against current shadow.
+        let js_concerns_prefixed: Vec<Change> = js_concern_changes
+            .into_iter()
             .map(|c| Change {
                 path: format!("_concerns.{}", c.path),
-                value_json: c.value_json.clone(),
+                value_json: c.value_json,
             })
             .collect();
-        let genuine_concern_changes_with_prefix = self.diff_changes(&concern_changes_with_prefix);
-
-        // Update shadow state with genuine concern changes (using full _concerns. prefixed paths)
-        for change in &genuine_concern_changes_with_prefix {
+        let diffed_js_concerns = self.diff_changes(&js_concerns_prefixed);
+        for change in &diffed_js_concerns {
             self.shadow.set(&change.path, &change.value_json)?;
         }
+        genuine_concerns.extend(diffed_js_concerns);
 
-        // Strip prefix back off for return (JS expects paths without _concerns. prefix in concern_changes)
-        let genuine_concern_changes: Vec<Change> = genuine_concern_changes_with_prefix
-            .iter()
-            .map(|c| Change {
-                path: c.path["_concerns.".len()..].to_owned(),
-                value_json: c.value_json.clone(),
-            })
-            .collect();
+        // Merge state and concern changes into single array (keep _concerns. prefix)
+        let mut all_changes = genuine_state;
+        all_changes.extend(genuine_concerns);
 
         Ok(FinalizeResult {
-            state_changes: genuine_state_changes,
-            concern_changes: genuine_concern_changes,
+            state_changes: all_changes,
         })
     }
 }

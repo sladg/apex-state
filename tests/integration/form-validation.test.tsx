@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { createGenericStore } from '../../src'
 import type { RegistrationForm } from '../mocks'
 import { registrationFormFixtures } from '../mocks'
-import { fireEvent, flushEffects, renderWithStore } from '../utils/react'
+import { fireEvent, flushEffects, mountStore } from '../utils/react'
 
 const createRegistrationFormStore = () => createGenericStore<RegistrationForm>()
 
@@ -60,7 +60,7 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, {
+    mountStore(<FormComponent />, store, {
       ...registrationFormFixtures.empty,
     })
 
@@ -117,7 +117,7 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, {
+    mountStore(<FormComponent />, store, {
       ...registrationFormFixtures.empty,
     })
 
@@ -168,7 +168,7 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, {
+    mountStore(<FormComponent />, store, {
       ...registrationFormFixtures.empty,
     })
 
@@ -221,7 +221,7 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, {
+    mountStore(<FormComponent />, store, {
       ...registrationFormFixtures.empty,
     })
 
@@ -269,7 +269,7 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, {
+    mountStore(<FormComponent />, store, {
       ...registrationFormFixtures.empty,
     })
 
@@ -314,7 +314,7 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, {
+    mountStore(<FormComponent />, store, {
       ...registrationFormFixtures.empty,
     })
 
@@ -381,7 +381,7 @@ describe('Integration: Form Validation with Concerns', () => {
       )
     }
 
-    renderWithStore(<FormComponent />, store, {
+    mountStore(<FormComponent />, store, {
       ...registrationFormFixtures.empty,
     })
 

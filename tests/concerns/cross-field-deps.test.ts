@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
-import { flushSync, renderWithStore } from '../utils/react'
+import { flushSync, mountStore } from '../utils/react'
 
 interface AppState {
   products: {
@@ -26,8 +26,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('AC1: Only leg-1 disabled concern recalculates when status changes', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -76,8 +75,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('AC2: Leg-1 validationState does NOT recalculate', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -115,8 +113,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('AC3: Leg-2 concerns do NOT recalculate', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -164,8 +161,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('AC4: Correct disabled state after change', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -206,8 +202,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('Performance target: < 2ms for single concern evaluation', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
@@ -240,8 +235,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('Round-trip: cross-field dependency change → concern value available < 15ms', async () => {
     const store = createAppStore()
 
-    // eslint-disable-next-line no-restricted-syntax
-    const { storeInstance } = renderWithStore(
+    const { storeInstance } = mountStore(
       store,
       {
         products: {
