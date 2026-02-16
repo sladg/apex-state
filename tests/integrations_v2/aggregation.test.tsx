@@ -3,7 +3,7 @@
  *
  * Validates that aggregationPairs maintain multi-source → target relationships.
  * When all sources have the same value, target gets that value.
- * When sources differ, target becomes undefined/null.
+ * When sources differ, target becomes null.
  * Writing to target distributes value to all sources.
  */
 
@@ -42,10 +42,10 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       expect(storeInstance.state.target).toBe('shared')
     })
 
-    it('should set target to undefined when sources differ', async () => {
+    it('should set target to null when sources differ', async () => {
       // Register aggregation: sources=[fieldA, fieldB], target=fieldC
       // Set fieldA = 'value-a', fieldB = 'value-b'
-      // Assert fieldC === undefined (or null)
+      // Assert fieldC === null (sources disagree)
       const store = createGenericStore<AggregationTestState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
@@ -65,7 +65,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       setValue('sourceB', 'value-b')
       await flushEffects()
 
-      expect(storeInstance.state.target).toBeUndefined()
+      expect(storeInstance.state.target).toBeNull()
     })
 
     it('should keep target unchanged when 0 source paths exist', async () => {
@@ -114,7 +114,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
     it('should reactively update target when source changes to match others', async () => {
       // Register aggregation: sources=[fieldA, fieldB], target=fieldC
       // Set fieldA = 'value', fieldB = 'other'
-      // Assert fieldC === undefined (sources differ)
+      // Assert fieldC === null (sources differ)
       // Set fieldB = 'value' (now matches fieldA)
       // Assert fieldC === 'value'
       const store = createGenericStore<AggregationTestState>(config)
@@ -136,7 +136,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       setValue('sourceB', 'other')
       await flushEffects()
 
-      expect(storeInstance.state.target).toBeUndefined()
+      expect(storeInstance.state.target).toBeNull()
 
       setValue('sourceB', 'value')
       await flushEffects()
@@ -149,7 +149,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       // Both set to 'value'
       // Assert fieldC === 'value'
       // Change fieldA to 'other'
-      // Assert fieldC === undefined (sources differ)
+      // Assert fieldC === null (sources differ)
       const store = createGenericStore<AggregationTestState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
@@ -174,7 +174,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       setValue('sourceA', 'other')
       await flushEffects()
 
-      expect(storeInstance.state.target).toBeUndefined()
+      expect(storeInstance.state.target).toBeNull()
     })
 
     it('should compute initial target value on registration', async () => {
@@ -219,8 +219,8 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       )
       await flushEffects()
 
-      setValue('sourceA', null as any)
-      setValue('sourceB', null as any)
+      setValue('sourceA', null as unknown as string)
+      setValue('sourceB', null as unknown as string)
       await flushEffects()
 
       expect(storeInstance.state.target).toBeNull()
@@ -237,8 +237,14 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
         {
           sideEffects: {
             aggregations: [
-              ['target', 'nonExistentFieldA' as any],
-              ['target', 'nonExistentFieldB' as any],
+              [
+                'target',
+                'nonExistentFieldA' as unknown as keyof AggregationTestState,
+              ],
+              [
+                'target',
+                'nonExistentFieldB' as unknown as keyof AggregationTestState,
+              ],
             ],
           },
         },
@@ -344,9 +350,9 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       expect(storeInstance.state.target).toBe(targetBefore)
     })
 
-    it('should filter no-op when target already undefined and sources differ', async () => {
+    it('should filter no-op when target already null and sources differ', async () => {
       // Register aggregation: sources=[fieldA, fieldB], target=fieldC
-      // fieldC already undefined, sources differ
+      // fieldC already null, sources differ
       // Change one source (still differs)
       // Assert no unnecessary writes to fieldC
       const store = createGenericStore<AggregationTestState>(config)
@@ -368,13 +374,13 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       setValue('sourceB', 'value-b')
       await flushEffects()
 
-      expect(storeInstance.state.target).toBeUndefined()
+      expect(storeInstance.state.target).toBeNull()
 
       const targetBefore = storeInstance.state.target
       setValue('sourceA', 'different-a')
       await flushEffects()
 
-      expect(storeInstance.state.target).toBeUndefined()
+      expect(storeInstance.state.target).toBeNull()
       expect(storeInstance.state.target).toBe(targetBefore)
     })
   })
@@ -452,8 +458,8 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       setValue('numA', 10)
       await flushEffects()
 
-      expect(storeInstance.state.target).toBeUndefined()
-      expect(storeInstance.state.numTotal).toBeUndefined()
+      expect(storeInstance.state.target).toBeNull()
+      expect(storeInstance.state.numTotal).toBeNull()
     })
   })
 
@@ -482,7 +488,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.sourceC).toBe('synced')
-      expect(storeInstance.state.target).toBeUndefined()
+      expect(storeInstance.state.target).toBeNull()
 
       setValue('sourceB', 'synced')
       await flushEffects()
@@ -768,7 +774,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       setValue('numA', 20)
       await flushEffects()
 
-      expect(storeInstance.state.numTotal).toBeUndefined()
+      expect(storeInstance.state.numTotal).toBeNull()
 
       setValue('numB', 20)
       await flushEffects()

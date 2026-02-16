@@ -91,13 +91,15 @@ describe.each(MODES)('[$name] Store behavior', ({ config }) => {
 ### What It Does
 
 `setValue` mimics the production `setValue` implementation:
+
 1. Wraps change in React's `act()`
 2. Creates an `ArrayOfChanges` tuple
 3. Calls `processChanges` directly (Legacy or WASM based on config)
 
 ### Why This Pattern Is Correct
 
-**Production code** (from `createStore.ts`):
+**Production code** (from `create-store.ts`):
+
 ```typescript
 const setValue = (newValue, meta) => {
   const changes = [[path, newValue, meta]]
@@ -106,6 +108,7 @@ const setValue = (newValue, meta) => {
 ```
 
 **Test helper** (from `tests/utils/react.tsx`):
+
 ```typescript
 const setValue = (path, value, meta) => {
   act(() => {
@@ -396,6 +399,7 @@ const changes: ArrayOfChanges<BenchState, GenericMeta> = [
 ```
 
 If you find yourself reaching for `as any`, stop and ask:
+
 - Is the type wrong? Fix the type.
 - Is the data wrong? Fix the data.
 - Is the test testing something impossible? Reconsider the test.
@@ -543,6 +547,7 @@ describe('order confirmation propagates through sync and listener pipeline', () 
 **Rule of thumb:** If a test file has more than ~5 lines of setup before the first `describe`/`it`, the scaffolding should be extracted to shared fixtures.
 
 **Where things go:**
+
 - **Interfaces and types** → `tests/mocks/types.ts`
 - **State constants/fixtures** → `tests/mocks/states.ts` (or domain-specific files like `tests/mocks/ecommerce.ts`)
 - **Reusable path helpers** → `tests/mocks/paths.ts`
@@ -637,5 +642,5 @@ When writing store tests:
 
 - `tests/smoke-dual-mode.test.tsx` - Comprehensive examples
 - `tests/utils/react.tsx` - Test utility implementations
-- `src/store/createStore.ts` - Production `setValue` implementation
+- `src/store/create-store.ts` - Production `setValue` implementation
 - `src/core/types.ts` - `DebugTrack` and `DebugTrackEntry` type definitions

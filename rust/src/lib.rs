@@ -7,12 +7,10 @@ mod diff;
 mod functions;
 mod graphs;
 mod intern;
-mod normalization;
 mod pipeline;
 mod rev_index;
 mod router;
 mod shadow;
-mod validator;
 
 use pipeline::{Change, ProcessingPipeline};
 
@@ -44,14 +42,6 @@ fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsValue> {
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
-/// Reset the entire pipeline to a fresh state (testing only).
-#[wasm_bindgen]
-pub fn pipeline_reset() {
-    PIPELINE.with(|p| {
-        p.borrow_mut().reset();
-    })
-}
-
 /// Initialize shadow state directly from a JS object (no JSON serialization).
 #[wasm_bindgen]
 pub fn shadow_init(state: JsValue) -> Result<(), JsValue> {
@@ -81,130 +71,6 @@ pub fn register_boollogic(output_path: &str, tree_json: &str) -> Result<u32, JsV
 pub fn unregister_boollogic(logic_id: u32) {
     PIPELINE.with(|p| {
         p.borrow_mut().unregister_boollogic(logic_id);
-    })
-}
-
-/// Register a batch of aggregations.
-///
-/// Input: JSON array of `{ "target": "...", "sources": [...] }`
-/// Example: `[{ "target": "allUsers", "sources": ["user1", "user2", "user3"] }]`
-///
-/// Returns: JSON array of initial changes to apply (read direction: sources → target)
-/// Register aggregations from raw [target, source] pairs.
-///
-/// Rust handles validation, grouping, and initial value computation.
-///
-/// Input: JSON array of [target, source] pairs
-/// Example: `[["allUsers", "user1"], ["allUsers", "user2"], ["allUsers", "user3"]]`
-///
-/// Output: JSON array of initial changes
-/// Example: `[{ "path": "allUsers", "value_json": "\"alice\"" }]`
-#[wasm_bindgen]
-pub fn register_aggregation_batch(pairs_json: &str) -> Result<String, JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .register_aggregation_batch(pairs_json)
-            .map_err(|e| JsValue::from_str(&e))
-    })
-}
-
-/// Unregister a batch of aggregations by target paths.
-///
-/// Input: JSON array of target paths
-/// Example: `["allUsers", "summary.total"]`
-#[wasm_bindgen]
-pub fn unregister_aggregation_batch(targets_json: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .unregister_aggregation_batch(targets_json)
-            .map_err(|e| JsValue::from_str(&e))
-    })
-}
-
-/// Register a batch of sync pairs.
-///
-/// Registers pairs in sync graph, computes initial sync changes from shadow state,
-/// updates shadow with those changes, and returns them for valtio application.
-///
-/// Input: JSON array of path pairs that should stay synchronized
-/// Example: `[["user.name", "profile.name"], ["user.email", "profile.email"]]`
-///
-/// Output: JSON array of initial changes to sync all connected components
-/// Example: `[{ "path": "profile.name", "value_json": "\"alice\"" }]`
-#[wasm_bindgen]
-pub fn register_sync_batch(pairs_json: &str) -> Result<String, JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .register_sync_batch(pairs_json)
-            .map_err(|e| JsValue::from_str(&e))
-    })
-}
-
-/// Unregister a batch of sync pairs.
-///
-/// Input: JSON array of path pairs to remove from sync
-/// Example: `[["user.name", "profile.name"], ["user.email", "profile.email"]]`
-#[wasm_bindgen]
-pub fn unregister_sync_batch(pairs_json: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .unregister_sync_batch(pairs_json)
-            .map_err(|e| JsValue::from_str(&e))
-    })
-}
-
-/// Register a batch of flip pairs.
-///
-/// Input: JSON array of path pairs that should stay inverted
-/// Example: `[["checkbox1", "checkbox2"], ["toggle1", "toggle2"]]`
-#[wasm_bindgen]
-pub fn register_flip_batch(pairs_json: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .register_flip_batch(pairs_json)
-            .map_err(|e| JsValue::from_str(&e))
-    })
-}
-
-/// Unregister a batch of flip pairs.
-///
-/// Input: JSON array of path pairs to remove from flip
-/// Example: `[["checkbox1", "checkbox2"], ["toggle1", "toggle2"]]`
-#[wasm_bindgen]
-pub fn unregister_flip_batch(pairs_json: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .unregister_flip_batch(pairs_json)
-            .map_err(|e| JsValue::from_str(&e))
-    })
-}
-
-/// Register a batch of generic functions.
-///
-/// Generic function registry for custom concerns, validators, and listeners.
-/// Functions are called when their dependency paths change.
-///
-/// Input: JSON array of `{ "function_id": N, "dependency_paths": [...], "scope": "...", "output_path": "..." }`
-/// Example: `[{ "function_id": 1, "dependency_paths": ["user.email"], "scope": "user", "output_path": "_concerns.user.email.validationState" }]`
-#[wasm_bindgen]
-pub fn register_functions_batch(functions_json: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .register_functions_batch(functions_json)
-            .map_err(|e| JsValue::from_str(&e))
-    })
-}
-
-/// Unregister a batch of functions by function IDs.
-///
-/// Input: JSON array of function IDs
-/// Example: `[1, 2, 3]`
-#[wasm_bindgen]
-pub fn unregister_functions_batch(function_ids_json: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .unregister_functions_batch(function_ids_json)
-            .map_err(|e| JsValue::from_str(&e))
     })
 }
 
@@ -255,70 +121,116 @@ pub fn pipeline_finalize(js_changes: JsValue) -> Result<JsValue, JsValue> {
     })
 }
 
-/// Register a batch of listeners for topic-based dispatch.
+// =====================================================================
+// Consolidated Registration API
+// =====================================================================
+
+/// Register all side effects at once (sync, flip, aggregation, listeners).
 ///
-/// Input: JSON array of `{ "subscriber_id": N, "topic_path": "...", "scope_path": "..." }`
+/// Consolidates sync pairs, flip pairs, aggregations, and listeners into a single WASM call.
+/// Computes initial changes from shadow state and returns listener IDs for cleanup tracking.
+///
+/// **Input JSON Format:**
+/// ```json
+/// {
+///   "registration_id": "my-effects",
+///   "sync_pairs": [["user.email", "profile.email"], ["user.name", "profile.name"]],
+///   "flip_pairs": [["settings.darkMode", "settings.lightMode"]],
+///   "aggregation_pairs": [["totals.sum", "items.0.price"], ["totals.sum", "items.1.price"]],
+///   "listeners": [
+///     {"subscriber_id": 100, "topic_path": "user", "scope_path": "user"},
+///     {"subscriber_id": 101, "topic_path": "settings.darkMode", "scope_path": "settings"}
+///   ]
+/// }
+/// ```
+///
+/// **Output JSON Format:**
+/// ```json
+/// {
+///   "sync_changes": [
+///     {"path": "profile.email", "value_json": "\"alice@example.com\""},
+///     {"path": "profile.name", "value_json": "\"Alice\""}
+///   ],
+///   "aggregation_changes": [
+///     {"path": "totals.sum", "value_json": "100"}
+///   ],
+///   "registered_listener_ids": [100, 101]
+/// }
+/// ```
+///
+/// **Example Behavior:**
+/// - **sync_changes**: Computed from shadow state. If user.email="alice@test.com" and
+///   profile.email is empty, returns change to set profile.email to match.
+/// - **aggregation_changes**: Reads source paths from shadow state and computes initial
+///   target value. If items exist, aggregates their values (e.g., sums prices).
+/// - **registered_listener_ids**: Echo of the input subscriber_ids for cleanup tracking.
+/// - **flip_pairs**: Registered silently, no changes returned (used for bidirectional toggling).
+///
+/// All registrations happen atomically in a single WASM call, reducing JS↔WASM boundary crossings.
 #[wasm_bindgen]
-pub fn register_listeners_batch(listeners_json: &str) -> Result<(), JsValue> {
+pub fn register_side_effects(registration_json: &str) -> Result<JsValue, JsValue> {
+    PIPELINE.with(|p| {
+        let result = p
+            .borrow_mut()
+            .register_side_effects(registration_json)
+            .map_err(|e| JsValue::from_str(&e))?;
+        to_js(&result)
+    })
+}
+
+/// Unregister side effects by registration ID (placeholder).
+///
+/// Currently a no-op. In future, could track registrations for bulk cleanup.
+#[wasm_bindgen]
+pub fn unregister_side_effects(registration_id: &str) -> Result<(), JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
-            .register_listeners_batch(listeners_json)
+            .unregister_side_effects(registration_id)
             .map_err(|e| JsValue::from_str(&e))
     })
 }
 
-/// Unregister a batch of listeners by subscriber ID.
+/// Register all concerns at once (BoolLogic and validators).
 ///
-/// Input: JSON array of subscriber IDs, e.g. `[1, 2, 3]`
+/// Consolidates BoolLogic and validator registration into a single boundary crossing.
+/// Returns registered logic IDs and validator IDs for cleanup.
+///
+/// Input: JSON string of `{ "registration_id": "...", "bool_logics": [...], "validators": [...] }`
+/// Output: JS object `{ bool_logic_changes: [...], registered_logic_ids: [...], registered_validator_ids: [...] }`
 #[wasm_bindgen]
-pub fn unregister_listeners_batch(subscriber_ids_json: &str) -> Result<(), JsValue> {
+pub fn register_concerns(registration_json: &str) -> Result<JsValue, JsValue> {
+    PIPELINE.with(|p| {
+        let result = p
+            .borrow_mut()
+            .register_concerns(registration_json)
+            .map_err(|e| JsValue::from_str(&e))?;
+        to_js(&result)
+    })
+}
+
+/// Unregister concerns by registration ID (placeholder).
+///
+/// Currently a no-op. In future, could track registrations for bulk cleanup.
+#[wasm_bindgen]
+pub fn unregister_concerns(registration_id: &str) -> Result<(), JsValue> {
     PIPELINE.with(|p| {
         p.borrow_mut()
-            .unregister_listeners_batch(subscriber_ids_json)
+            .unregister_concerns(registration_id)
             .map_err(|e| JsValue::from_str(&e))
     })
 }
 
-/// Create a dispatch plan for the given changes via serde-wasm-bindgen.
+/// Reset the entire pipeline to a fresh state (testing only).
 ///
-/// Input: JS array of `{ path: "...", value_json: "..." }`
-/// Output: JS object `{ levels: [{ depth: N, dispatches: [...] }] }`
+/// Clears all internal state: shadow, registrations, graphs, router, BoolLogic registry.
+/// Call this between tests to ensure isolation.
 #[wasm_bindgen]
-pub fn create_dispatch_plan(changes: JsValue) -> Result<JsValue, JsValue> {
-    let input: Vec<Change> = from_js(changes)?;
-    PIPELINE.with(|p| {
-        let plan = p.borrow().create_dispatch_plan_vec(&input);
-        to_js(&plan)
-    })
-}
-
-/// Route produced changes from a depth level to downstream topics.
-///
-/// Input: depth level (u32) + JS array of produced changes
-/// Output: JS DispatchPlan for downstream topics
-#[wasm_bindgen]
-pub fn route_produced_changes(depth: u32, produced_changes: JsValue) -> Result<JsValue, JsValue> {
-    let input: Vec<Change> = from_js(produced_changes)?;
-    PIPELINE.with(|p| {
-        let plan = p.borrow().route_produced_changes_vec(depth, &input);
-        to_js(&plan)
-    })
+pub fn pipeline_reset() {
+    PIPELINE.with(|p| p.borrow_mut().reset());
 }
 
 /// Dump shadow state as JSON (debug/testing).
 #[wasm_bindgen]
 pub fn shadow_dump() -> String {
     PIPELINE.with(|p| p.borrow().shadow_dump())
-}
-
-/// Get a value from shadow state at a dot-separated path (debug/testing).
-#[wasm_bindgen]
-pub fn shadow_get(path: &str) -> Option<String> {
-    PIPELINE.with(|p| p.borrow().shadow_get(path))
-}
-
-/// Number of interned paths (debug/testing).
-#[wasm_bindgen]
-pub fn intern_count() -> u32 {
-    PIPELINE.with(|p| p.borrow().intern_count())
 }

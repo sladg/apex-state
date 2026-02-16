@@ -54,21 +54,19 @@ const buildDispatchInput = (
   stateChanges: Change[],
   extra: Map<number, Change[]>,
 ): [string, unknown, GenericMeta][] => {
-  const input: [string, unknown, GenericMeta][] = d.input_change_ids
-    .filter((id) => stateChanges[id] !== undefined)
-    .map(
-      (id) =>
-        [stateChanges[id]!.path, stateChanges[id]!.value, {}] as [
-          string,
-          unknown,
-          GenericMeta,
-        ],
-    )
+  // Single pass: filter + map combined
+  const input: [string, unknown, GenericMeta][] = []
+  for (const id of d.input_change_ids) {
+    const change = stateChanges[id]
+    if (change !== undefined) {
+      input.push([change.path, change.value, {}])
+    }
+  }
 
   const extraChanges = extra.get(d.dispatch_id)
   if (extraChanges) {
     for (const c of extraChanges) {
-      input.push([c.path, c.value, {}] as [string, unknown, GenericMeta])
+      input.push([c.path, c.value, {}])
     }
   }
 
@@ -96,12 +94,17 @@ const propagateChanges = (
   if (!targets) return
 
   for (const t of targets) {
-    const remapped = producedChanges.map((c) => ({
-      path: remapPath(c.path, t.remap_prefix),
-      value: c.value,
-    }))
-    const existing = extra.get(t.target_dispatch_id) ?? []
-    extra.set(t.target_dispatch_id, [...existing, ...remapped])
+    let existing = extra.get(t.target_dispatch_id)
+    if (!existing) {
+      existing = []
+      extra.set(t.target_dispatch_id, existing)
+    }
+    for (const c of producedChanges) {
+      existing.push({
+        path: remapPath(c.path, t.remap_prefix),
+        value: c.value,
+      })
+    }
   }
 }
 
@@ -181,9 +184,9 @@ const applyConcernChanges = (
   concerns: ConcernValues,
 ): void => {
   for (const c of changes) {
-    const parts = c.path.split('.')
-    const concernName = parts.pop()!
-    const basePath = parts.join('.')
+    const lastDot = c.path.lastIndexOf('.')
+    const basePath = c.path.slice(0, lastDot)
+    const concernName = c.path.slice(lastDot + 1)
 
     if (!concerns[basePath]) {
       concerns[basePath] = {}
@@ -227,7 +230,7 @@ const runValidators = (
 
     // Return as Change with _concerns. prefix (WASM will strip it in finalize)
     validationResults.push({
-      path: validator.output_path, // Already has _concerns. prefix from WASM
+      path: validator.output_path, // Already has _concerns. prefix
       value: {
         isError: !zodResult.success,
         errors: zodResult.success
@@ -244,36 +247,28 @@ const runValidators = (
 }
 
 // ---------------------------------------------------------------------------
-// Partition final changes by prefix and route to appropriate proxies
+// Helpers
 // ---------------------------------------------------------------------------
 
-const partitionAndApply = <DATA extends object, META extends GenericMeta>(
-  finalChanges: Change[],
-  store: StoreInstance<DATA, META>,
+const CONCERNS_PREFIX = '_concerns.'
+const CONCERNS_PREFIX_LEN = CONCERNS_PREFIX.length
+
+/** Partition changes into state vs concern changes, stripping _concerns. prefix. */
+const partitionChanges = (
+  changes: Change[],
 ): { stateChanges: Change[]; concernChanges: Change[] } => {
   const stateChanges: Change[] = []
   const concernChanges: Change[] = []
-
-  for (const change of finalChanges) {
-    if (change.path.startsWith('_concerns.')) {
-      // Strip prefix and route to _concerns proxy
+  for (const change of changes) {
+    if (change.path.startsWith(CONCERNS_PREFIX)) {
       concernChanges.push({
-        path: change.path.slice('_concerns.'.length),
+        path: change.path.slice(CONCERNS_PREFIX_LEN),
         value: change.value,
       })
     } else {
-      // Route to state proxy
       stateChanges.push(change)
     }
   }
-
-  if (stateChanges.length > 0) {
-    applyBatch(bridgeChangesToTuples(stateChanges), store.state)
-  }
-  if (concernChanges.length > 0) {
-    applyConcernChanges(concernChanges, store._concerns)
-  }
-
   return { stateChanges, concernChanges }
 }
 
@@ -281,19 +276,13 @@ const partitionAndApply = <DATA extends object, META extends GenericMeta>(
 // Record applied changes for debug tracking
 // ---------------------------------------------------------------------------
 
-const recordDebugTracking = <DATA extends object, META extends GenericMeta>(
-  trackEntry: DebugTrackEntry,
-  stateChanges: Change[],
-  concernChanges: Change[],
-  store: StoreInstance<DATA, META>,
+const pushDebugChanges = (
+  target: { path: string; value: unknown }[],
+  changes: Change[],
 ): void => {
-  for (const c of stateChanges) {
-    trackEntry.applied.push({ path: c.path, value: c.value })
+  for (const c of changes) {
+    target.push({ path: c.path, value: c.value })
   }
-  for (const c of concernChanges) {
-    trackEntry.appliedConcerns.push({ path: c.path, value: c.value })
-  }
-  store._debug!.calls.push(trackEntry)
 }
 
 // ---------------------------------------------------------------------------
@@ -325,7 +314,16 @@ export const processChangesWasm: typeof import('./process-changes').processChang
       return
     }
 
-    // 2. Execute listeners (JS-only: user functions)
+    // 2. Apply state changes FIRST (so listeners see updated state)
+    // Partition early: separate state changes from concern changes
+    const early = partitionChanges(state_changes)
+
+    // Apply state changes to valtio (so listeners see updated state)
+    if (early.stateChanges.length > 0) {
+      applyBatch(bridgeChangesToTuples(early.stateChanges), store.state)
+    }
+
+    // 3. Execute listeners (JS-only: user functions) - now with updated state
     const currentState = snapshot(store.state) as typeof store.state
     const produced = executeFullExecutionPlan(
       execution_plan,
@@ -334,22 +332,37 @@ export const processChangesWasm: typeof import('./process-changes').processChang
       currentState,
     )
 
-    // 3. Execute validators (JS-only: Zod schemas)
+    // Apply concern changes from phase 1 (BoolLogic results)
+    if (early.concernChanges.length > 0) {
+      applyConcernChanges(early.concernChanges, store._concerns)
+    }
+
+    // 4. Execute validators (JS-only: Zod schemas)
     const validationResults = runValidators(validators_to_run)
 
-    // 4. WASM Phase 2: merge, diff, update shadow
+    // 5. WASM Phase 2: merge, diff, update shadow
     // Single flat array: listener output + validator output (with _concerns. prefix)
-    const jsChanges: Change[] = [...produced, ...validationResults]
+    const jsChanges = produced.concat(validationResults)
     const final = wasm.pipelineFinalize(jsChanges)
 
-    // 5. Apply to valtio - partition by prefix and route to appropriate proxies
-    const { stateChanges, concernChanges } = partitionAndApply(
-      final.state_changes,
-      store,
-    )
+    // 6. Apply NEW changes from listeners/validators to valtio
+    // Phase 1 changes were already applied above, so filter them out
+    const late = partitionChanges(final.state_changes)
+
+    // Apply only NEW changes (listener/validator output)
+    if (late.stateChanges.length > 0) {
+      applyBatch(bridgeChangesToTuples(late.stateChanges), store.state)
+    }
+    if (late.concernChanges.length > 0) {
+      applyConcernChanges(late.concernChanges, store._concerns)
+    }
 
     // Record applied changes for debug tracking
     if (trackEntry) {
-      recordDebugTracking(trackEntry, stateChanges, concernChanges, store)
+      pushDebugChanges(trackEntry.applied, early.stateChanges)
+      pushDebugChanges(trackEntry.applied, late.stateChanges)
+      pushDebugChanges(trackEntry.appliedConcerns, early.concernChanges)
+      pushDebugChanges(trackEntry.appliedConcerns, late.concernChanges)
+      store._debug!.calls.push(trackEntry)
     }
   }

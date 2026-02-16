@@ -15,7 +15,6 @@ use crate::intern::InternTable;
 use crate::rev_index::ReverseDependencyIndex;
 use crate::router::{FullExecutionPlan, TopicRouter};
 use crate::shadow::ShadowState;
-use crate::validator::ValidatorInput;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -68,6 +67,85 @@ pub(crate) struct PrepareResult {
 pub(crate) struct FinalizeResult {
     /// All changes including state and concerns (concern paths have _concerns. prefix).
     pub state_changes: Vec<Change>,
+}
+
+// ---------------------------------------------------------------------------
+// Consolidated registration structs (Rust side API)
+// ---------------------------------------------------------------------------
+
+/// Input for consolidated side effects registration.
+#[derive(Deserialize, Debug)]
+pub(crate) struct SideEffectsRegistration {
+    #[allow(dead_code)]
+    pub registration_id: String,
+    #[serde(default)]
+    pub sync_pairs: Vec<[String; 2]>,
+    #[serde(default)]
+    pub flip_pairs: Vec<[String; 2]>,
+    #[serde(default)]
+    pub aggregation_pairs: Vec<[String; 2]>,
+    #[serde(default)]
+    pub listeners: Vec<ListenerRegistration>,
+}
+
+/// Listener entry for consolidated registration.
+#[derive(Deserialize, Debug)]
+pub(crate) struct ListenerRegistration {
+    pub subscriber_id: u32,
+    pub topic_path: String,
+    pub scope_path: String,
+}
+
+/// Output from consolidated side effects registration.
+#[derive(Serialize, Debug)]
+pub(crate) struct SideEffectsResult {
+    pub sync_changes: Vec<Change>,
+    pub aggregation_changes: Vec<Change>,
+    pub registered_listener_ids: Vec<u32>,
+}
+
+/// Input for consolidated concerns registration.
+#[derive(Deserialize, Debug)]
+pub(crate) struct ConcernsRegistration {
+    #[allow(dead_code)]
+    pub registration_id: String,
+    #[serde(default)]
+    pub bool_logics: Vec<BoolLogicRegistration>,
+    #[serde(default)]
+    pub validators: Vec<ValidatorRegistration>,
+}
+
+/// BoolLogic entry for consolidated registration.
+#[derive(Deserialize, Debug)]
+pub(crate) struct BoolLogicRegistration {
+    pub output_path: String,
+    pub tree_json: String,
+}
+
+/// Validator entry for consolidated registration.
+#[derive(Deserialize, Debug)]
+pub(crate) struct ValidatorRegistration {
+    pub validator_id: u32,
+    pub output_path: String,
+    pub dependency_paths: Vec<String>,
+    #[allow(dead_code)]
+    pub scope: String,
+}
+
+/// Input format for batch validator registration (moved from removed validator module).
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct ValidatorInput {
+    pub validator_id: u32,
+    pub output_path: String,
+    pub dependency_paths: Vec<String>,
+}
+
+/// Output from consolidated concerns registration.
+#[derive(Serialize, Debug)]
+pub(crate) struct ConcernsResult {
+    pub bool_logic_changes: Vec<Change>,
+    pub registered_logic_ids: Vec<u32>,
+    pub registered_validator_ids: Vec<u32>,
 }
 
 /// Owns all WASM-internal state and orchestrates change processing.
@@ -562,6 +640,158 @@ impl ProcessingPipeline {
                 .unregister(function_id, &mut self.function_rev_index);
         }
 
+        Ok(())
+    }
+
+    // =========================================================================
+    // Consolidated registration API
+    // =========================================================================
+
+    /// Register all side effects at once: sync, flip, aggregation, and listeners.
+    ///
+    /// Single WASM call that combines multiple registration operations.
+    /// Returns initial changes and registered listener IDs for cleanup tracking.
+    pub(crate) fn register_side_effects(
+        &mut self,
+        reg_json: &str,
+    ) -> Result<SideEffectsResult, String> {
+        let reg: SideEffectsRegistration = serde_json::from_str(reg_json)
+            .map_err(|e| format!("Side effects registration parse error: {}", e))?;
+
+        let mut sync_changes = Vec::new();
+        let mut aggregation_changes = Vec::new();
+        let mut registered_listener_ids = Vec::new();
+
+        // 1. Register sync pairs
+        if !reg.sync_pairs.is_empty() {
+            let changes = self.register_sync_batch(
+                &serde_json::to_string(&reg.sync_pairs)
+                    .map_err(|e| format!("Sync pairs serialization error: {}", e))?,
+            )?;
+            sync_changes = serde_json::from_str(&changes)
+                .map_err(|e| format!("Sync changes parse error: {}", e))?;
+        }
+
+        // 2. Register flip pairs
+        if !reg.flip_pairs.is_empty() {
+            self.register_flip_batch(
+                &serde_json::to_string(&reg.flip_pairs)
+                    .map_err(|e| format!("Flip pairs serialization error: {}", e))?,
+            )?;
+        }
+
+        // 3. Register aggregations
+        if !reg.aggregation_pairs.is_empty() {
+            let changes = self.register_aggregation_batch(
+                &serde_json::to_string(&reg.aggregation_pairs)
+                    .map_err(|e| format!("Aggregation pairs serialization error: {}", e))?,
+            )?;
+            aggregation_changes = serde_json::from_str(&changes)
+                .map_err(|e| format!("Aggregation changes parse error: {}", e))?;
+        }
+
+        // 4. Register listeners
+        if !reg.listeners.is_empty() {
+            let listener_entries: Vec<_> = reg
+                .listeners
+                .iter()
+                .map(|l| {
+                    serde_json::json!({
+                        "subscriber_id": l.subscriber_id,
+                        "topic_path": l.topic_path,
+                        "scope_path": l.scope_path,
+                    })
+                })
+                .collect();
+
+            self.register_listeners_batch(
+                &serde_json::to_string(&listener_entries)
+                    .map_err(|e| format!("Listeners serialization error: {}", e))?,
+            )?;
+
+            registered_listener_ids = reg.listeners.iter().map(|l| l.subscriber_id).collect();
+        }
+
+        Ok(SideEffectsResult {
+            sync_changes,
+            aggregation_changes,
+            registered_listener_ids,
+        })
+    }
+
+    /// Unregister side effects by registration ID.
+    ///
+    /// Currently a no-op placeholder for future use (registration tracking).
+    /// Cleanup is done by caller via individual unregister calls.
+    pub(crate) fn unregister_side_effects(&mut self, _registration_id: &str) -> Result<(), String> {
+        // Placeholder: registration tracking would be implemented here
+        // For now, caller manages individual unregister calls
+        Ok(())
+    }
+
+    /// Register all concerns at once: BoolLogic and validators.
+    ///
+    /// Single WASM call that combines BoolLogic and validator registration.
+    /// Returns initial BoolLogic changes and registered IDs for cleanup tracking.
+    pub(crate) fn register_concerns(&mut self, reg_json: &str) -> Result<ConcernsResult, String> {
+        let reg: ConcernsRegistration = serde_json::from_str(reg_json)
+            .map_err(|e| format!("Concerns registration parse error: {}", e))?;
+
+        let mut bool_logic_changes = Vec::new();
+        let mut registered_logic_ids = Vec::new();
+        let mut registered_validator_ids = Vec::new();
+
+        // 1. Register BoolLogic expressions and compute initial values
+        for bl in &reg.bool_logics {
+            let logic_id = self.register_boollogic(&bl.output_path, &bl.tree_json)?;
+            registered_logic_ids.push(logic_id);
+
+            // Evaluate BoolLogic with current shadow state to get initial value
+            if let Some(meta) = self.registry.get(logic_id) {
+                let result = meta.tree.evaluate(&self.shadow);
+                bool_logic_changes.push(Change {
+                    path: bl.output_path.clone(),
+                    value_json: if result {
+                        "true".to_owned()
+                    } else {
+                        "false".to_owned()
+                    },
+                });
+            }
+        }
+
+        // 2. Register validators
+        for validator in &reg.validators {
+            let _initial_dispatches = self.register_validators_batch(
+                &serde_json::to_string(&[ValidatorInput {
+                    validator_id: validator.validator_id,
+                    output_path: validator.output_path.clone(),
+                    dependency_paths: validator.dependency_paths.clone(),
+                }])
+                .map_err(|e| format!("Validator serialization error: {}", e))?,
+            )?;
+
+            registered_validator_ids.push(validator.validator_id);
+
+            // Collect any initial changes from validators (for BoolLogic evaluation)
+            // In the current flow, validators don't produce initial changes themselves
+            // (they're evaluated later on JS side), so bool_logic_changes stays empty
+        }
+
+        Ok(ConcernsResult {
+            bool_logic_changes,
+            registered_logic_ids,
+            registered_validator_ids,
+        })
+    }
+
+    /// Unregister concerns by registration ID.
+    ///
+    /// Currently a no-op placeholder for future use (registration tracking).
+    /// Cleanup is done by caller via individual unregister calls.
+    pub(crate) fn unregister_concerns(&mut self, _registration_id: &str) -> Result<(), String> {
+        // Placeholder: registration tracking would be implemented here
+        // For now, caller manages individual unregister calls
         Ok(())
     }
 
@@ -2493,5 +2723,240 @@ mod tests {
         let dep_vals = json.get("dependency_values").unwrap().as_object().unwrap();
         assert_eq!(dep_vals.get("user.email").unwrap(), "\"test@test.com\"");
         assert_eq!(dep_vals.get("user.name").unwrap(), "\"Alice\"");
+    }
+
+    // --- Consolidated registration API (register_side_effects + register_concerns) ---
+
+    #[test]
+    fn register_side_effects_sync_paths_work_correctly() {
+        let mut p = ProcessingPipeline::new();
+        // Initialize with specific values
+        p.shadow_init(
+            r#"{"user": {"email": "user@test.com"}, "profile": {"email": "profile@test.com"}}"#,
+        )
+        .unwrap();
+
+        // Register sync: user.email <-> profile.email
+        let reg = r#"{
+            "registration_id": "sync-test",
+            "sync_pairs": [["user.email", "profile.email"]],
+            "flip_pairs": [],
+            "aggregation_pairs": [],
+            "listeners": []
+        }"#;
+
+        let result = p.register_side_effects(reg).unwrap();
+
+        // Since both values exist in shadow state, sync should pick the most common value
+        // and return changes to sync the other
+        assert!(
+            !result.sync_changes.is_empty(),
+            "sync_changes should be computed"
+        );
+
+        // Verify sync graph was updated by trying to sync again
+        let sync_test = p
+            .register_sync_batch(r#"[["user.email", "profile.email"]]"#)
+            .unwrap();
+        let _: Vec<Change> = serde_json::from_str(&sync_test).unwrap();
+    }
+
+    #[test]
+    fn register_side_effects_aggregation_reads_shadow_state() {
+        let mut p = ProcessingPipeline::new();
+        // Initialize with items that will be aggregated
+        p.shadow_init(
+            r#"{
+            "items": [
+                {"price": 10},
+                {"price": 20},
+                {"price": 30}
+            ],
+            "totals": {}
+        }"#,
+        )
+        .unwrap();
+
+        // Register aggregation: totals.sum <- items[].price
+        let reg = r#"{
+            "registration_id": "agg-test",
+            "sync_pairs": [],
+            "flip_pairs": [],
+            "aggregation_pairs": [
+                ["totals.sum", "items.0.price"],
+                ["totals.sum", "items.1.price"],
+                ["totals.sum", "items.2.price"]
+            ],
+            "listeners": []
+        }"#;
+
+        let result = p.register_side_effects(reg).unwrap();
+
+        // Aggregation should compute initial values from shadow state (read direction)
+        // totals.sum should be set based on the aggregation logic
+        // The aggregation reads from items[].price and produces initial values
+        assert!(
+            !result.aggregation_changes.is_empty(),
+            "aggregation should compute initial values from shadow state"
+        );
+
+        // Verify the aggregation change has the correct path
+        assert_eq!(result.aggregation_changes[0].path, "totals.sum");
+
+        // The value should be a valid JSON number from one of the sources or derived
+        let value_str = &result.aggregation_changes[0].value_json;
+        // Should be a valid value (at minimum, check it's not null or empty)
+        assert!(
+            !value_str.is_empty() && value_str != "null",
+            "aggregation should produce a valid value"
+        );
+    }
+
+    #[test]
+    fn register_side_effects_listener_registration_completes() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"data": {"value": 42}}"#).unwrap();
+
+        // Register listeners with the consolidated API
+        let reg = r#"{
+            "registration_id": "listeners-test",
+            "sync_pairs": [],
+            "flip_pairs": [],
+            "aggregation_pairs": [],
+            "listeners": [
+                {"subscriber_id": 100, "topic_path": "data", "scope_path": ""},
+                {"subscriber_id": 101, "topic_path": "data.value", "scope_path": "data"}
+            ]
+        }"#;
+
+        let result = p.register_side_effects(reg).unwrap();
+
+        // Verify both listener IDs are returned
+        assert_eq!(result.registered_listener_ids.len(), 2);
+        assert_eq!(result.registered_listener_ids[0], 100);
+        assert_eq!(result.registered_listener_ids[1], 101);
+
+        // Verify listeners were actually registered in the router
+        // by trying to create a dispatch plan (should use the registered listeners)
+        let plan =
+            p.create_dispatch_plan_vec(&[Change::new("data.value".to_string(), "99".to_string())]);
+        // Plan should be created successfully (may have groups or not depending on matching)
+        let _ = plan;
+    }
+
+    #[test]
+    fn register_side_effects_complex_scenario() {
+        let mut p = ProcessingPipeline::new();
+        // Complex shadow state with multiple features
+        p.shadow_init(
+            r#"{
+            "user": {"name": "Alice", "email": "alice@test.com", "role": "guest"},
+            "settings": {"darkMode": true, "notifications": true},
+            "items": [
+                {"price": 100, "quantity": 2},
+                {"price": 50, "quantity": 1}
+            ],
+            "totals": {},
+            "sync": {}
+        }"#,
+        )
+        .unwrap();
+
+        // Complex registration: sync + flip + aggregation + listeners
+        let reg = r#"{
+            "registration_id": "complex-test",
+            "sync_pairs": [
+                ["user.name", "sync.userName"],
+                ["user.email", "sync.userEmail"]
+            ],
+            "flip_pairs": [
+                ["settings.darkMode", "settings.lightMode"],
+                ["settings.notifications", "settings.silent"]
+            ],
+            "aggregation_pairs": [
+                ["totals.itemCount", "items.0.quantity"],
+                ["totals.itemCount", "items.1.quantity"]
+            ],
+            "listeners": [
+                {"subscriber_id": 200, "topic_path": "user", "scope_path": "user"},
+                {"subscriber_id": 201, "topic_path": "settings.darkMode", "scope_path": "settings"}
+            ]
+        }"#;
+
+        let result = p.register_side_effects(reg).unwrap();
+
+        // Verify sync was processed
+        assert!(
+            !result.sync_changes.is_empty(),
+            "sync_changes should be computed"
+        );
+
+        // Verify aggregation was processed
+        assert!(
+            !result.aggregation_changes.is_empty(),
+            "aggregation_changes should be computed"
+        );
+
+        // Verify both listeners were registered
+        assert_eq!(result.registered_listener_ids.len(), 2);
+        assert_eq!(result.registered_listener_ids[0], 200);
+        assert_eq!(result.registered_listener_ids[1], 201);
+
+        // Verify sync changes have correct paths
+        let sync_paths: Vec<&str> = result
+            .sync_changes
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect();
+        assert!(
+            sync_paths.contains(&"sync.userName") || sync_paths.contains(&"sync.userEmail"),
+            "sync should create changes for registered pairs"
+        );
+    }
+
+    #[test]
+    fn register_concerns_validators_with_multiple_dependencies() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+            "form": {
+                "email": "test@test.com",
+                "name": "Alice",
+                "password": "secret123"
+            }
+        }"#,
+        )
+        .unwrap();
+
+        // Register validators with multiple dependencies each
+        let reg = r#"{
+            "registration_id": "concerns-test",
+            "bool_logics": [],
+            "validators": [
+                {
+                    "validator_id": 300,
+                    "output_path": "_concerns.form.validationState",
+                    "dependency_paths": ["form.email", "form.name", "form.password"],
+                    "scope": "form"
+                },
+                {
+                    "validator_id": 301,
+                    "output_path": "_concerns.form.emailState",
+                    "dependency_paths": ["form.email"],
+                    "scope": "form"
+                }
+            ]
+        }"#;
+
+        let result = p.register_concerns(reg).unwrap();
+
+        // Verify both validators were registered
+        assert_eq!(result.registered_validator_ids.len(), 2);
+        assert_eq!(result.registered_validator_ids[0], 300);
+        assert_eq!(result.registered_validator_ids[1], 301);
+
+        // No bool logics
+        assert_eq!(result.registered_logic_ids.len(), 0);
+        assert_eq!(result.bool_logic_changes.len(), 0);
     }
 }

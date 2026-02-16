@@ -19,13 +19,10 @@ import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import {
-  createGenericStore,
-  defaultConcerns,
-  registerListener,
-} from '../../src'
+import { createGenericStore, defaultConcerns } from '../../src'
 import type { ConcernType } from '../../src/concerns/types'
 import { useStoreContext } from '../../src/core/context'
+import { registerListenerLegacy } from '../../src/sideEffects/prebuilts/listeners'
 import { dot } from '../../src/utils/dot'
 import { _ } from '../../src/utils/hash-key'
 import { typeHelpers } from '../mocks'
@@ -1333,7 +1330,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         const [aggDelta] = store.useStore('aggregatedDelta' as const)
 
         useLayoutEffect(() => {
-          const cleanup = registerListener(storeInstance, {
+          const cleanup = registerListenerLegacy(storeInstance, {
             path: GREEKS_L1,
             scope: null,
             fn: (changes, state) => {

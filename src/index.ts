@@ -51,7 +51,7 @@ export type {
 } from './core/types'
 export {
   registerFlipPair,
-  registerListener,
+  registerListenerLegacy,
   registerSideEffects,
   registerSyncPairsBatch,
 } from './sideEffects'

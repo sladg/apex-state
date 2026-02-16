@@ -110,20 +110,15 @@ impl FunctionRegistry {
     pub(crate) fn len(&self) -> usize {
         self.functions.len()
     }
-
-    /// Check if registry is empty.
-    #[allow(dead_code)]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.functions.is_empty()
-    }
 }
 
 // ---------------------------------------------------------------------------
 // Batch registration input format
 // ---------------------------------------------------------------------------
 
-/// Input format for batch function registration.
+/// Input format for batch function registration (used for deserialization).
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub(crate) struct FunctionInput {
     pub function_id: u32,
     pub dependency_paths: Vec<String>,

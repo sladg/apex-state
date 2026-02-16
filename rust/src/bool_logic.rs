@@ -40,9 +40,6 @@ pub(crate) enum BoolLogicNode {
     In(String, Vec<Value>),
 }
 
-/// Backward-compatible alias.
-pub(crate) type BoolLogic = BoolLogicNode;
-
 impl BoolLogicNode {
     /// Evaluate this expression against a ShadowState.
     ///
@@ -130,15 +127,6 @@ impl BoolLogicNode {
             }
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Backward-compatible free function used by lib.rs
-// ---------------------------------------------------------------------------
-
-/// Evaluate a BoolLogicNode against a ValueRepr tree (free-function form).
-pub(crate) fn evaluate(logic: &BoolLogicNode, state: &ValueRepr) -> bool {
-    logic.evaluate_value(state)
 }
 
 // ---------------------------------------------------------------------------
@@ -1191,16 +1179,5 @@ mod tests {
         let state = make_state();
         assert!(get_path_value(&state, "user.nonexistent").is_none());
         assert!(get_path_value(&state, "missing.path.here").is_none());
-    }
-
-    // -----------------------------------------------------------------------
-    // Backward-compatible free-function evaluate
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_free_fn_evaluate() {
-        let state = make_state();
-        let logic = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
-        assert!(evaluate(&logic, &state));
     }
 }

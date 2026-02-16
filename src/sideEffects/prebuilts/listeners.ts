@@ -1,8 +1,6 @@
 import type { ListenerRegistration, StoreInstance } from '../../core/types'
 import type { GenericMeta } from '../../types'
 import { getPathDepth } from '../../utils/path-utils'
-import { shouldUseWasm } from '../../wasm/bridge'
-import { registerListener as registerListenerWasm } from './listeners.wasm'
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -99,19 +97,4 @@ export const registerListenerLegacy = <
     // Remove from flat handler map
     listenerHandlers.delete(subscriberId)
   }
-}
-
-/** Wrapper function - dispatches to WASM or legacy implementation */
-export const registerListener = <
-  DATA extends object,
-  META extends GenericMeta = GenericMeta,
->(
-  store: StoreInstance<DATA, META>,
-  registration: ListenerRegistration<DATA, META>,
-): (() => void) => {
-  if (shouldUseWasm(store)) {
-    return registerListenerWasm(store, registration)
-  }
-
-  return registerListenerLegacy(store, registration)
 }

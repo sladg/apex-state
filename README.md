@@ -1,31 +1,6 @@
 # @sladg/apex-state
 
----
-
-_Built with AI._
-
----
-
-Reactive state management for React where you declare what your fields need (validation, visibility, labels) and the store handles the rest.
-
-## Why
-
-Complex form state typically means scattered validation logic, conditional rendering spread across components, and hundreds of unit tests covering every edge case.
-
-Apex-state inverts this: **define behavior as static configuration, not imperative code**.
-
-The core functions (`evaluateBoolLogic`, `validationState`, etc.) are tested once. Your application config is just constants - Lego bricks snapped together. You test the bricks, not every possible tower.
-
-## How
-
-Built on [valtio](https://github.com/pmndrs/valtio) for proxy-based state and [valtio-reactive](https://github.com/jotaijs/valtio-reactive) for automatic dependency tracking.
-
-- **valtio**: Mutable-style API, immutable under the hood. Write `state.count++`, get efficient React updates.
-- **valtio-reactive**: Effects that auto-track which state paths they read. Change `state.user.name` -> only effects reading that path re-run.
-
-Concerns wrap this: you declare _what_ to compute, the library handles _when_ to recompute.
-
-## Installation
+Reactive state management for React built on [Valtio](https://github.com/pmndrs/valtio). Declare what your fields need — validation, conditional UI, sync, listeners — and the store handles the rest. Optional Rust/WASM accelerator for complex workloads (up to 367x faster).
 
 ```bash
 npm install @sladg/apex-state valtio zod react
@@ -33,7 +8,7 @@ npm install @sladg/apex-state valtio zod react
 
 ## Example
 
-```typescript
+```tsx
 import { createGenericStore } from '@sladg/apex-state'
 import { z } from 'zod'
 
@@ -47,425 +22,206 @@ type OrderState = {
 const store = createGenericStore<OrderState>()
 
 const OrderForm = () => {
-  // Register concerns - validation, conditional UI, dynamic text
-  // This is just data - a constant. No logic to test here.
-  store.useConcerns('order-form', {
+  // Declare side effects
+  store.useSideEffects('order', {
+    syncPaths: [['product.price', 'shipping.basePrice']],
+    flipPaths: [['shipping.express', 'shipping.standard']],
+  })
+
+  // Declare concerns — just data, no logic to test
+  store.useConcerns('order', {
     'product.quantity': {
       validationState: { schema: z.number().min(1).max(100) },
       disabledWhen: { condition: { IS_EQUAL: ['status', 'submitted'] } },
     },
-    'shipping.address': {
-      validationState: { schema: z.string().min(10) },
-      visibleWhen: { condition: { EXISTS: 'shipping.express' } },
-      dynamicLabel: { template: 'Address ({{shipping.express}} ? Express : Standard)' },
-    },
     'payment.cardNumber': {
       validationState: { schema: z.string().regex(/^\d{16}$/) },
       visibleWhen: { condition: { IS_EQUAL: ['payment.method', 'card'] } },
-      disabledWhen: {
-        condition: {
-          OR: [
-            { IS_EQUAL: ['status', 'submitted'] },
-            { LT: ['product.quantity', 1] },
-          ],
-        },
-      },
-      dynamicTooltip: { template: 'Pay ${{product.price}} for {{product.quantity}} items' },
     },
   })
 
-  // Access state with hooks
-  const [quantity, setQuantity] = store.useStore('product.quantity')
-  const address = store.useFieldStore('shipping.address')
-  const cardNumber = store.useFieldStore('payment.cardNumber')
-
-  // Access evaluated concerns
-  const quantityConcerns = store.useFieldConcerns('product.quantity')
-  const addressConcerns = store.useFieldConcerns('shipping.address')
-  const cardConcerns = store.useFieldConcerns('payment.cardNumber')
+  const { value, setValue, validationState, disabledWhen } =
+    store.useFieldStore('product.quantity')
 
   return (
-    <form>
-      <input
-        type="number"
-        value={quantity}
-        onChange={(e) => setQuantity(Number(e.target.value))}
-        disabled={quantityConcerns.disabledWhen}
-        className={quantityConcerns.validationState?.isError ? 'invalid' : 'valid'}
-      />
-
-      {addressConcerns.visibleWhen && (
-        <input
-          value={address.value}
-          onChange={(e) => address.setValue(e.target.value)}
-          placeholder={addressConcerns.dynamicLabel}
-        />
-      )}
-
-      {cardConcerns.visibleWhen && (
-        <input
-          value={cardNumber.value}
-          onChange={(e) => cardNumber.setValue(e.target.value)}
-          disabled={cardConcerns.disabledWhen}
-          title={cardConcerns.dynamicTooltip}
-        />
-      )}
-    </form>
+    <input
+      type="number"
+      value={value}
+      onChange={(e) => setValue(Number(e.target.value))}
+      disabled={disabledWhen}
+      className={validationState?.isError ? 'error' : ''}
+    />
   )
 }
 
-const App = () => {
-  return (
-    <store.Provider
-      initialState={{
-        product: { name: 'Widget', quantity: 1, price: 29.99 },
-        shipping: { address: '', express: false },
-        payment: { method: 'card', cardNumber: '' },
-        status: 'draft',
-      }}
-    >
-      <OrderForm />
-    </store.Provider>
-  )
-}
+const App = () => (
+  <store.Provider initialState={{
+    product: { name: 'Widget', quantity: 1, price: 29.99 },
+    shipping: { address: '', express: false },
+    payment: { method: 'card', cardNumber: '' },
+    status: 'draft',
+  }}>
+    <OrderForm />
+  </store.Provider>
+)
 ```
 
-## Concerns
+## Features
 
-Reactive computations that automatically track dependencies and re-evaluate when state changes.
+| Feature | Description | Details |
+|---|---|---|
+| **Type-safe paths** | `DeepKey<T>` / `DeepValue<T, P>` — compile-time path safety | |
+| **Concerns** | Validation, BoolLogic conditions, dynamic text | [Concerns Guide](docs/guides/CONCERNS_GUIDE.md) |
+| **Side effects** | Sync paths, flip paths, aggregations, listeners | [Side Effects Guide](docs/SIDE_EFFECTS_GUIDE.md) |
+| **WASM mode** | Rust-powered pipeline for bulk operations | [Architecture](docs/WASM_ARCHITECTURE.md) |
+| **Composable hooks** | Buffered, throttled, transformed field wrappers | [Store & Hooks](docs/guides/STORE_HOOKS.md) |
+| **Record/wildcard** | `Record<string, V>` with `[*]` wildcard paths | [Wildcard Guide](docs/WILD_FUNCTION_GUIDE.md) |
 
-| Concern              | Props                      | Returns               | Description              |
-| -------------------- | -------------------------- | --------------------- | ------------------------ |
-| `validationState`    | `{ schema: ZodSchema }`    | `{ isError, errors }` | Full validation state    |
-| `disabledWhen`       | `{ condition: BoolLogic }` | `boolean`             | Conditional disable      |
-| `readonlyWhen`       | `{ condition: BoolLogic }` | `boolean`             | Conditional readonly     |
-| `visibleWhen`        | `{ condition: BoolLogic }` | `boolean`             | Conditional visibility   |
-| `dynamicLabel`       | `{ template: string }`     | `string`              | Interpolated label       |
-| `dynamicTooltip`     | `{ template: string }`     | `string`              | Interpolated tooltip     |
-| `dynamicPlaceholder` | `{ template: string }`     | `string`              | Interpolated placeholder |
+## Architecture
 
-## BoolLogic
-
-Declarative conditions for `disabledWhen`, `readonlyWhen`, `visibleWhen`:
-
-```typescript
-{
-  IS_EQUAL: ["path", value]
-} // path === value
-{
-  EXISTS: "path"
-} // path !== undefined && path !== null
-{
-  IS_EMPTY: "path"
-} // !path or empty string/array
-{
-  GT: ["path", number]
-} // path > number
-{
-  LT: ["path", number]
-} // path < number
-{
-  GTE: ["path", number]
-} // path >= number
-{
-  LTE: ["path", number]
-} // path <= number
-{
-  IN: ["path", [values]]
-} // values.includes(path)
-{
-  AND: [conditions]
-} // all conditions true
-{
-  OR: [conditions]
-} // any condition true
-{
-  NOT: condition
-} // invert condition
+```
+setValue("email", "alice@example.com")
+  │
+  ├─[Legacy JS]──▶ sync → flip → listeners → applyBatch
+  │
+  └─[WASM/Rust]──▶ shadow state + sync + flip + BoolLogic (Rust)
+                      │
+                      ▼
+                    execute listeners + Zod validators (JS)
+                      │
+                      ▼
+                    pipelineFinalize → diff → final changes (Rust)
+  │
+  ▼
+valtio proxy → React re-render
 ```
 
-## Hooks
+**Dual-layer design:** JS/React owns reactivity and rendering. Rust/WASM owns heavy computation (graphs, diffing, pipeline orchestration). The boundary is thin: paths cross as strings, values as JSON. WASM decides the execution plan, JS executes user functions.
 
-### Store Hooks
+See [docs/WASM_ARCHITECTURE.md](docs/WASM_ARCHITECTURE.md) for the full specification.
 
-```typescript
-// useState-like access
-const [value, setValue] = store.useStore("path.to.field")
+## WASM Mode
 
-// Object API for forms
-const field = store.useFieldStore("path.to.field")
-field.value // current value
-field.setValue(v) // update value
+WASM is the default. Pass `{ useLegacyImplementation: true }` for pure JS:
 
-// Evaluated concerns for a path
-const concerns = store.useFieldConcerns("path.to.field")
-concerns.validationState // { isError: boolean, errors: ValidationError[] }
-concerns.disabledWhen // boolean
-concerns.dynamicTooltip // string
-
-// Bulk operations (non-reactive)
-const jit = store.useJitStore()
-jit.setChanges([
-  ["a", 1, {}],
-  ["b", 2, {}],
-])
-jit.getState() // snapshot
+```tsx
+const store = createGenericStore<MyState>()                                // WASM (default)
+const store = createGenericStore<MyState>({ useLegacyImplementation: true }) // Legacy JS
 ```
 
-### Composable Field Hooks
+### Performance
 
-Standalone hooks that wrap any field hook to add behavior. They compose with each other.
+Benchmarked with 60 variants across 3 Record layers, 75 syncs, 40 flips, 100 BoolLogic conditions, 85 listeners:
 
-```typescript
-import { useBufferedField, useThrottledField, useTransformedField, useKeyboardSelect } from "@sladg/apex-state"
+| Operation | Legacy | WASM | Winner |
+|---|---|---|---|
+| Single field edit | **0.5us** | 1.4us | Legacy 2.6x |
+| 7 changes + cascading listeners | 41.8ms | **0.11ms** | WASM 367x |
+| 60 bulk price changes | 596ms | **2.9ms** | WASM 207x |
+| 135 changes (full catalog refresh) | 621ms | **2.99ms** | WASM 208x |
 
-// Buffered editing - hold changes locally until commit
-const field = store.useFieldStore("user.name")
-const buffered = useBufferedField(field)
-buffered.setValue("draft") // local only
-buffered.commit() // push to store
-buffered.cancel() // revert to stored value
-buffered.isDirty // true if local !== stored
+Both modes produce **identical state** — verified across all 16 benchmark scenarios. See [docs/BENCHMARK_COMPARISON.md](docs/BENCHMARK_COMPARISON.md) for the full analysis.
 
-// Throttled updates - rate-limit setValue calls
-const price = store.useFieldStore("spotPrice")
-const throttled = useThrottledField(price, { ms: 100 })
-throttled.setValue(1.234) // immediate
-throttled.setValue(1.235) // buffered, last value wins
-// After 100ms: 1.235 is applied
+### Why WASM is faster
 
-// Value transformation - convert between storage and display formats
-const date = store.useFieldStore("user.birthdate")
-const formatted = useTransformedField(date, {
-  to: (iso) => format(new Date(iso), "MM/dd/yyyy"),
-  from: (display) => parse(display, "MM/dd/yyyy").toISOString(),
-})
-// formatted.value is "01/15/2024", store holds ISO string
+- **Pre-computed topic routing** — listener dispatch is O(1) lookup vs O(changes x listeners) string matching
+- **Shadow state diffing** — fast Rust HashMap vs valtio Proxy trap overhead
+- **Single-pass pipeline** — aggregation + sync + flip + BoolLogic in one Rust call
+- **BoolLogic in pipeline** — evaluated in Rust before listeners fire; Legacy defers to async `effect()`
 
-// Keyboard selection - type-ahead for select inputs
-const country = store.useFieldStore("user.country")
-const { onKeyDown, ...rest } = useKeyboardSelect(country, {
-  options: [
-    { value: "us", label: "United States" },
-    { value: "uk", label: "United Kingdom" },
-  ],
-})
-// User types "u" -> selects "United States"
+### Why Legacy is faster for small ops
 
-// Compose them together
-const raw = store.useFieldStore("price")
-const transformed = useTransformedField(raw, {
-  to: (cents) => (cents / 100).toFixed(2),
-  from: (dollars) => Math.round(parseFloat(dollars) * 100),
-})
-const throttled2 = useThrottledField(transformed, { ms: 50 })
+Every WASM call pays a fixed cost: JSON serialization, wasm-bindgen marshalling, and two round trips (`processChanges` + `pipelineFinalize`). When the actual work is trivial, this ~1us overhead dominates.
+
+## API Quick Reference
+
+### Store
+
+```tsx
+const {
+  Provider,        // React context — accepts initialState
+  useFieldStore,   // { value, setValue, ...concerns } for a path
+  useStore,        // [value, setValue] tuple for a path
+  useJitStore,     // { proxyValue, setChanges, getState } for bulk ops
+  useSideEffects,  // register sync/flip/aggregation/listeners
+  useConcerns,     // register validation/BoolLogic/custom concerns
+  withConcerns,    // typed concern selection
+} = createGenericStore<MyState>(config?)
 ```
 
-## Side Effects
+### Concerns
 
-Side effects react to state changes synchronously during the change processing pipeline. They run before concerns re-evaluate.
-
-```typescript
-// Register via hook
-store.useSideEffects("my-effects", {
-  // Sync paths: keep two paths in sync
-  syncPaths: [["billing.email", "shipping.email"]],
-
-  // Flip paths: inverse boolean pairs
-  flipPaths: [["isActive", "isInactive"]],
-
-  // Aggregations: derive target from sources
-  // Target is always first. Value = common value if all sources agree, else undefined.
-  aggregations: [
-    ["summary.price", "legs.0.price"],
-    ["summary.price", "legs.1.price"],
-  ],
-
-  // Listeners: react to changes under a path
-  listeners: [
-    {
-      path: "user.profile", // watch changes under this path
-      scope: "user.profile", // receive scoped state
-      fn: (changes, state) => {
-        // changes: [['name', 'Alice', {}]]  -- relative to scope
-        // state: user.profile sub-object
-        return [["audit.lastEdit", Date.now(), {}]] // return full paths
-      },
-    },
-  ],
-})
-```
-
-See `docs/SIDE_EFFECTS_GUIDE.md` for the full API reference.
-
-## Store Configuration
-
-```typescript
-const store = createGenericStore<MyState>({
-  // Max iterations for the change processing loop (default: 100)
-  maxIterations: 100,
-
-  // Debug tooling
-  debug: {
-    timing: true, // measure concern/listener execution time
-    timingThreshold: 16, // warn when an operation exceeds this (ms)
+```tsx
+useConcerns('id', {
+  'user.email': {
+    validationState: { schema: z.string().email() },
+    disabledWhen:    { condition: { IS_EQUAL: ['tosAccepted', false] } },
+    visibleWhen:     { condition: { AND: [{ EXISTS: 'user.name' }, { IS_EQUAL: ['step', 2] }] } },
   },
 })
 ```
 
-## Record and Wildcard Paths
+Built-in concerns: `validationState`, `disabledWhen`, `readonlyWhen`, `visibleWhen`, `dynamicLabel`, `dynamicTooltip`, `dynamicPlaceholder`.
 
-Types with `Record<string, V>` are supported. Dynamic keys use `[*]` wildcard notation in paths:
+BoolLogic operators: `IS_EQUAL`, `EXISTS`, `IS_EMPTY`, `GT`, `LT`, `GTE`, `LTE`, `IN`, `AND`, `OR`, `NOT`.
 
-```typescript
-type State = {
-  users: Record<string, { name: string; age: number }>
-}
+See [Concerns Guide](docs/guides/CONCERNS_GUIDE.md) for lifecycle, custom concerns, and testing.
 
-// Type-safe paths include wildcards
-type Paths = DeepKey<State>
-// 'users' | 'users.[*]' | 'users.[*].name' | 'users.[*].age'
+### Side Effects
 
-// Access with concrete keys at runtime
-const [name, setName] = store.useStore("users.alice.name")
+```tsx
+useSideEffects('id', {
+  syncPaths:    [['source', 'target']],
+  flipPaths:    [['active', 'inactive']],
+  // Aggregation: target gets the common value when all sources agree, undefined otherwise
+  // Multiple pairs with the same target form a group
+  aggregations: [['summary.price', 'legs.0.price'], ['summary.price', 'legs.1.price']],
+  listeners:    [{ path: 'orders', scope: 'orders', fn: handler }],
+})
 ```
 
-See `docs/WILDCARD_UTILITIES_EXAMPLE.md` and `docs/WILD_FUNCTION_GUIDE.md` for utility helpers.
+See [Side Effects Guide](docs/SIDE_EFFECTS_GUIDE.md) for the full API.
 
-## Advanced Utilities
-
-```typescript
-import { dot, is, applyChangesToObject, evaluateBoolLogic } from "@sladg/apex-state"
-
-// Deep path access (for performance-critical code outside React)
-dot.get(state, "user.address.street")
-dot.set(state, "user.address.street", "New Street")
-
-// Type predicates
-is.object(value)
-is.array(value)
-is.not.nil(value)
-
-// Apply changes immutably (returns new object)
-const newState = applyChangesToObject(state, [
-  ["user.name", "Bob"],
-  ["user.age", 31],
-])
-
-// Evaluate BoolLogic outside concerns
-const disabled = evaluateBoolLogic({ IS_EQUAL: ["status", "submitted"] }, state)
-```
-
-## WASM Development
-
-This project includes Rust-to-WebAssembly compilation for performance-critical features.
-
-### Prerequisites
-
-1. **Rust Toolchain** (≥1.93.0):
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-
-2. **WASM Target**:
-   ```bash
-   rustup target add wasm32-unknown-unknown
-   ```
-
-3. **wasm-pack** (≥0.11.0):
-   ```bash
-   cargo install wasm-pack
-   # OR on macOS:
-   brew install wasm-pack
-   ```
-
-### Build Workflow
+## Development
 
 ```bash
-# Navigate to Rust project
-cd rust
-
-# Development build (fast, includes debug info)
-wasm-pack build --target bundler --dev
-
-# Production build (optimized)
-wasm-pack build --target bundler --release
-
-# Run Rust tests
-cargo test
+npm install            # Install dependencies
+npm run wasm:build     # Compile Rust -> WASM
+npm run build          # Bundle TypeScript + WASM
+npm run test           # Run tests
+npm run code:check     # Lint + type check
+npm run wasm:check     # Rust lint + check
 ```
 
-Build output goes to `pkg/` directory with:
-- `*.wasm` - WebAssembly binary
-- `*.js` - JavaScript bindings
-- `*.d.ts` - TypeScript definitions
-- `package.json` - Package metadata
+### WASM Prerequisites
 
-### Development Cycle
-
-1. **Write Rust Code** (`rust/src/lib.rs`):
-   ```rust
-   use wasm_bindgen::prelude::*;
-
-   #[wasm_bindgen]
-   pub fn my_function(input: &str) -> String {
-       format!("Processed: {}", input)
-   }
-   ```
-
-2. **Build WASM Module**:
-   ```bash
-   cd rust && wasm-pack build --target bundler --dev
-   ```
-
-3. **Import in TypeScript**:
-   ```typescript
-   import init, { my_function } from '../rust/pkg/apex_state_wasm';
-
-   // Initialize WASM module
-   await init();
-
-   // Call exported functions
-   const result = my_function('hello');
-   ```
-
-4. **Test in Browser**:
-   ```bash
-   npm run dev
-   ```
-
-### Troubleshooting
-
-**Version Mismatch Errors**:
-- Use wasm-pack (not manual wasm-bindgen CLI) to ensure version alignment
-
-**Slow Builds on Linux**:
-- wasm-opt can be slow. Use development builds without optimization:
-  ```bash
-  wasm-pack build --target bundler -- --no-opt
-  ```
-
-**Missing LLD Linker**:
-- Install Rust via rustup (not package managers) to ensure wasm-ld is available
-
-**Large WASM Files**:
-- Development builds include debug symbols. Use `--release` for production:
-  ```bash
-  wasm-pack build --target bundler --release
-  ```
-
-**TypeScript Import Errors**:
-- Ensure `pkg/` is generated before importing
-- Check that Vite config supports WASM imports (already configured via `esbuild-plugin-wasm`)
+```bash
+# Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+```
 
 ## Documentation
 
-See `docs/README.md` for a full index. Key guides:
+| Document | Covers |
+|---|---|
+| [WASM Architecture](docs/WASM_ARCHITECTURE.md) | JS/WASM boundary, data flow, ownership model |
+| [Benchmark Comparison](docs/BENCHMARK_COMPARISON.md) | Legacy vs WASM performance with 16 scenarios |
+| [Concerns Guide](docs/guides/CONCERNS_GUIDE.md) | Concern lifecycle, built-ins, custom concerns |
+| [Side Effects Guide](docs/SIDE_EFFECTS_GUIDE.md) | Sync, flip, aggregation, listener API |
+| [Store & Hooks](docs/guides/STORE_HOOKS.md) | Hook reference and patterns |
+| [Debug Timing](docs/DEBUG_TIMING.md) | Performance debugging utilities |
+| [Wildcard Paths](docs/WILD_FUNCTION_GUIDE.md) | `Wild()` template utility for Record types |
+| [Record Migration](docs/RECORD_MIGRATION.md) | Migration patterns for dynamic Record types |
+| [Full Index](docs/README.md) | Complete documentation index |
 
-| Guide                           | Audience                        |
-| ------------------------------- | ------------------------------- |
-| `docs/guides/ARCHITECTURE.md`   | Core architecture and data flow |
-| `docs/guides/CONCERNS_GUIDE.md` | Building and testing concerns   |
-| `docs/guides/STORE_HOOKS.md`    | Hook reference and patterns     |
-| `docs/SIDE_EFFECTS_GUIDE.md`    | Side effects API reference      |
-| `docs/DEBUG_TIMING.md`          | Debug and performance tooling   |
+## Roadmap
+
+- **Multiple store instances** — WASM currently uses global state, limiting to one store per page. Moving to instance-scoped WASM will allow parallel independent stores.
+- **Nested sub-stores** — Allow a parent store to contain child stores, enabling component-level state that participates in the parent's pipeline (concerns, listeners, sync).
+- **Technical debt resolution** — See [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) for tracked items.
+
+## License
+
+MIT

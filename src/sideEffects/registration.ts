@@ -3,7 +3,7 @@ import type { GenericMeta } from '../types'
 import type { SideEffects } from '../types/side-effects'
 import { registerAggregations } from './prebuilts/aggregation'
 import { registerFlipPair } from './prebuilts/flip'
-import { registerListener } from './prebuilts/listeners'
+import { registerListenerLegacy } from './prebuilts/listeners'
 import { registerSyncPairsBatch } from './prebuilts/sync'
 
 const registerSideEffectsImpl = <
@@ -42,7 +42,7 @@ const registerSideEffectsImpl = <
   // Register listeners: { path, scope, fn }
   if (effects.listeners) {
     for (const listener of effects.listeners) {
-      const cleanup = registerListener(store, listener)
+      const cleanup = registerListenerLegacy(store, listener)
       cleanups.push(cleanup)
     }
   }

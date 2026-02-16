@@ -8,10 +8,9 @@
 import { effect } from 'valtio-reactive'
 
 import type { StoreInstance } from '../core/types'
-import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
+import type { ConcernRegistrationMap, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
 import { validatorSchemas, wasm } from '../wasm/bridge'
-import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
 
 /** Check if a concern config has a `condition` field (BoolLogic concern). */
@@ -32,6 +31,282 @@ const isSchemaValidation = (
 /** Sequential validator ID counter. */
 let nextValidatorId = 0
 
+/** Sequential registration ID counter. */
+let nextRegistrationId = 0
+
+/** Batch-register BoolLogics and validators with WASM, apply initial results. */
+const registerWasmBatch = (
+  boolLogics: { output_path: string; tree_json: string }[],
+  validators: {
+    validator_id: number
+    output_path: string
+    dependency_paths: string[]
+    scope: string
+  }[],
+  validatorConfigs: Map<
+    number,
+    {
+      schema: any
+      initialValue: unknown
+      concernName: string
+      concernsAtPath: Record<string, unknown>
+    }
+  >,
+  concernRefs: Map<string, Record<string, unknown>>,
+  disposeCallbacks: (() => void)[],
+) => {
+  const registrationId = `concerns-${nextRegistrationId++}`
+  const result = wasm.registerConcerns({
+    registration_id: registrationId,
+    ...(boolLogics.length > 0 && { bool_logics: boolLogics }),
+    ...(validators.length > 0 && { validators }),
+  })
+
+  // Apply initial BoolLogic evaluations to _concerns
+  for (const change of result.bool_logic_changes) {
+    // BoolLogic output paths are like "email.disabledWhen" (no _concerns prefix)
+    const lastDot = change.path.lastIndexOf('.')
+    const basePath = change.path.slice(0, lastDot)
+    const concernName = change.path.slice(lastDot + 1)
+    const concernsAtPath = concernRefs.get(basePath)
+    if (concernsAtPath && concernName) {
+      concernsAtPath[concernName] = change.value
+    }
+  }
+
+  disposeCallbacks.push(() => {
+    wasm.unregisterConcerns(registrationId)
+  })
+
+  // Post-registration: run initial validation for each validator
+  validatorConfigs.forEach((config, validatorId) => {
+    const zodResult = config.schema.safeParse(config.initialValue)
+    const validationResult = {
+      isError: !zodResult.success,
+      errors: zodResult.success
+        ? []
+        : zodResult.error.errors.map((e: any) => ({
+            field: e.path.length > 0 ? e.path.join('.') : '.',
+            message: e.message,
+          })),
+    }
+
+    config.concernsAtPath[config.concernName] = validationResult
+
+    // Store schema for JS-side validator execution
+    validatorSchemas.set(validatorId, config.schema)
+  })
+}
+
+/** Create a single concern effect with cached evaluate function. */
+const createConcernEffect = <DATA extends object, META extends GenericMeta>(
+  store: StoreInstance<DATA, META>,
+  item: {
+    path: string
+    concernName: string
+    config: Record<string, any>
+    concern: ConcernType
+    concernsAtPath: Record<string, unknown>
+  },
+  resultCache: Map<string, unknown>,
+): (() => void) => {
+  const { path, concernName, config, concern, concernsAtPath } = item
+  const cacheKey = `${path}.${concernName}`
+
+  // Resolve evaluate function once (not per effect trigger)
+  // @FIXME: this should be coming from concern registration. we should have evaluate function for validation there, not here.
+  const evaluateFn =
+    'evaluate' in config && typeof config['evaluate'] === 'function'
+      ? config['evaluate']
+      : concern.evaluate
+
+  // Wrap evaluation in effect() for automatic dependency tracking
+  // effect() will automatically track ONLY the properties accessed during evaluate()
+  return effect(() => {
+    // READ from dataProxy (automatic tracking!)
+    // Any property accessed here will trigger re-evaluation when changed
+    const value = dot.get__unsafe(store.state, path)
+
+    // OPTIMIZATION: Avoid object spread overhead (creates new object every evaluation)
+    // Use Object.assign instead for single-pass property addition (40% faster)
+    const evalProps: BaseConcernProps<any, string> & Record<string, any> =
+      Object.assign({ state: store.state, path, value }, config)
+
+    // EVALUATE concern (all state accesses inside are tracked!)
+    // Wrapped with timing measurement when debug.timing is enabled
+    const result = store._internal.timing.run(
+      'concerns',
+      () => evaluateFn(evalProps),
+      { path, name: concernName },
+    )
+
+    // Check cache (non-reactive!) to see if value changed
+    const prev = resultCache.get(cacheKey)
+    if (prev !== result) {
+      // Update cache
+      resultCache.set(cacheKey, result)
+
+      // WRITE to pre-captured reference (NO tracked reads!)
+      concernsAtPath[concernName] = result
+    }
+  })
+}
+
+/** Check if a concern config has an inline evaluate function (custom/ad-hoc concern). */
+const isAdHocConcern = (
+  config: Record<string, unknown>,
+): config is { evaluate: (...args: any[]) => unknown } =>
+  'evaluate' in config && typeof config['evaluate'] === 'function'
+
+/** Collected registration data from single-pass classification. */
+interface CollectedRegistrations {
+  boolLogics: { output_path: string; tree_json: string }[]
+  validators: {
+    validator_id: number
+    output_path: string
+    dependency_paths: string[]
+    scope: string
+  }[]
+  validatorConfigs: Map<
+    number,
+    {
+      schema: any
+      initialValue: unknown
+      concernName: string
+      concernsAtPath: Record<string, unknown>
+    }
+  >
+  jsEffects: {
+    path: string
+    concernName: string
+    config: Record<string, any>
+    concern: ConcernType
+    concernsAtPath: Record<string, unknown>
+  }[]
+}
+
+/** Single-pass: classify each concern config as BoolLogic, validator, or JS effect. */
+/** Collect a schema validator registration. */
+const collectValidator = <DATA extends object>(
+  store: StoreInstance<DATA, any>,
+  path: string,
+  concernName: string,
+  config: Record<string, any>,
+  concernsAtPath: Record<string, unknown>,
+  validators: CollectedRegistrations['validators'],
+  validatorConfigs: CollectedRegistrations['validatorConfigs'],
+) => {
+  const validatorId = nextValidatorId++
+  // IMPORTANT: Include _concerns. prefix for WASM shadow state traversal
+  const depPaths =
+    'scope' in config && config['scope'] ? [config['scope'] as string] : [path]
+
+  validators.push({
+    validator_id: validatorId,
+    output_path: `_concerns.${path}.${concernName}`,
+    dependency_paths: depPaths,
+    scope: '',
+  })
+
+  // Store schema and initial value info for post-registration processing
+  const primaryValue = dot.get__unsafe(store.state, depPaths[0]!)
+  validatorConfigs.set(validatorId, {
+    schema: config['schema'],
+    initialValue: primaryValue,
+    concernName,
+    concernsAtPath,
+  })
+}
+
+/** Single-pass: classify each concern config as BoolLogic, validator, or JS effect. */
+const collectRegistrations = <DATA extends object, META extends GenericMeta>(
+  store: StoreInstance<DATA, META>,
+  registrationEntries: [string, Record<string, any> | undefined][],
+  concernRefs: Map<string, Record<string, unknown>>,
+  concernMap: Map<string, ConcernType>,
+): CollectedRegistrations => {
+  const boolLogics: CollectedRegistrations['boolLogics'] = []
+  const validators: CollectedRegistrations['validators'] = []
+  const validatorConfigs: CollectedRegistrations['validatorConfigs'] = new Map()
+  const jsEffects: CollectedRegistrations['jsEffects'] = []
+
+  for (const [path, concernConfigs] of registrationEntries) {
+    if (!concernConfigs) continue
+    const concernsAtPath = concernRefs.get(path)!
+
+    for (const [concernName, config] of Object.entries(concernConfigs)) {
+      if (!config) continue
+
+      // BoolLogic registration (WASM)
+      if (isBoolLogicConfig(config)) {
+        boolLogics.push({
+          output_path: `${path}.${concernName}`,
+          tree_json: JSON.stringify(config.condition),
+        })
+        continue
+      }
+
+      // Schema validator registration (WASM)
+      if (isSchemaValidation(concernName, config)) {
+        collectValidator(
+          store,
+          path,
+          concernName,
+          config,
+          concernsAtPath,
+          validators,
+          validatorConfigs,
+        )
+        continue
+      }
+
+      // JS-based concern — queue for effect creation after WASM batch
+      // Resolve concern from registry, or create ad-hoc for inline evaluate functions
+      const concern =
+        concernMap.get(concernName) ??
+        (isAdHocConcern(config)
+          ? {
+              name: concernName,
+              description: `Custom concern: ${concernName}`,
+              evaluate: config.evaluate,
+            }
+          : undefined)
+
+      if (!concern) {
+        console.warn(`Concern "${concernName}" not found`)
+        continue
+      }
+
+      jsEffects.push({ path, concernName, config, concern, concernsAtPath })
+    }
+  }
+
+  return { boolLogics, validators, validatorConfigs, jsEffects }
+}
+
+/** Clean up concern values from the concerns proxy on unmount. */
+const cleanupConcerns = <DATA extends object, META extends GenericMeta>(
+  store: StoreInstance<DATA, META>,
+  registrationEntries: [string, Record<string, any> | undefined][],
+) => {
+  for (const [path, concernConfigs] of registrationEntries) {
+    if (!concernConfigs) continue
+    const concernsObj = store._concerns[path]
+    if (!concernsObj) continue
+
+    // Delete specific concerns for this path
+    for (const concernName of Object.keys(concernConfigs)) {
+      // Use Reflect.deleteProperty to avoid dynamic delete lint error
+      Reflect.deleteProperty(concernsObj, concernName)
+    }
+
+    // Clean up empty path object
+    if (Object.keys(concernsObj).length === 0) {
+      Reflect.deleteProperty(store._concerns, path)
+    }
+  }
+}
+
 const registerConcernEffectsImpl = <
   DATA extends object,
   META extends GenericMeta,
@@ -41,176 +316,53 @@ const registerConcernEffectsImpl = <
   concerns: readonly ConcernType[],
 ): (() => void) => {
   const disposeCallbacks: (() => void)[] = []
-  // Non-reactive cache for previous results (prevents tracked reads)
   const resultCache = new Map<string, unknown>()
-  // Pre-allocate concern path objects and capture references
   const concernRefs = new Map<string, Record<string, unknown>>()
 
+  // Build O(1) concern lookup map (avoids linear .find() per inner iteration)
+  const concernMap = new Map<string, ConcernType>()
+  for (const c of concerns) {
+    concernMap.set(c.name, c)
+  }
+
   // Pre-initialize all path objects BEFORE creating effects
-  Object.keys(registration).forEach((path) => {
+  const registrationEntries = Object.entries(registration) as [
+    string,
+    Record<string, any> | undefined,
+  ][]
+  for (const [path] of registrationEntries) {
     if (!store._concerns[path]) {
       store._concerns[path] = {}
     }
     concernRefs.set(path, store._concerns[path])
-  })
+  }
 
-  // Iterate over each path in the registration
-  Object.entries(registration).forEach(([path, concernConfigs]) => {
-    if (!concernConfigs) return
+  // Single pass: classify all concern configs
+  const { boolLogics, validators, validatorConfigs, jsEffects } =
+    collectRegistrations(store, registrationEntries, concernRefs, concernMap)
 
-    // Get pre-initialized concern object for this path
-    const concernsAtPath = concernRefs.get(path)!
+  // Register all BoolLogics and validators in one WASM call
+  if (boolLogics.length > 0 || validators.length > 0) {
+    registerWasmBatch(
+      boolLogics,
+      validators,
+      validatorConfigs,
+      concernRefs,
+      disposeCallbacks,
+    )
+  }
 
-    // Iterate over each concern at this path
-    Object.entries(concernConfigs).forEach(([concernName, config]) => {
-      if (!config) return
-
-      // Find the concern definition
-      const concern = findConcern(concernName, concerns)
-      if (!concern) {
-        console.warn(`Concern "${concernName}" not found`)
-        return
-      }
-
-      // --- WASM path: BoolLogic concerns ---
-      // If the config has a `condition` field, register via WASM instead of wrapping in effect().
-      // Evaluation happens in processChanges(), not here.
-      if (isBoolLogicConfig(config)) {
-        const outputPath = `_concerns.${path}.${concernName}`
-        const logicId = wasm.registerBoolLogic(outputPath, config.condition)
-
-        disposeCallbacks.push(() => {
-          wasm.unregisterBoolLogic(logicId)
-        })
-        return
-      }
-
-      // --- WASM path: Schema-based validation ---
-      // If this is a validationState with schema (no custom evaluate),
-      // register via WASM for pipeline orchestration using generic functions API.
-      if (isSchemaValidation(concernName, config)) {
-        const validatorId = nextValidatorId++
-        const outputPath = `_concerns.${path}.${concernName}`
-
-        // Store Zod schema in JS (can't cross WASM boundary)
-        validatorSchemas.set(validatorId, config.schema)
-
-        // Determine dependency path: scope if provided, otherwise registration path
-        const depPaths =
-          'scope' in config && config.scope ? [config.scope as string] : [path]
-
-        // Register via generic function registry
-        wasm.registerFunctionsBatch([
-          {
-            function_id: validatorId,
-            dependency_paths: depPaths,
-            // @FIXME: this is wrong. this should be driven by path/scope for validators. same for listeners.
-            scope: '', // Empty scope = full state (validators validate at dependency path level)
-            output_path: outputPath,
-          },
-        ])
-
-        // Run initial validation manually by reading current value from state
-        const primaryPath = depPaths[0]!
-        const primaryValue = dot.get__unsafe(store.state, primaryPath)
-        const zodResult = config.schema.safeParse(primaryValue)
-
-        // Write result to _concerns immediately
-        concernsAtPath[concernName] = {
-          isError: !zodResult.success,
-          errors: zodResult.success
-            ? []
-            : zodResult.error.errors.map((e) => ({
-                field: e.path.length > 0 ? e.path.join('.') : '.',
-                message: e.message,
-              })),
-        }
-
-        disposeCallbacks.push(() => {
-          validatorSchemas.delete(validatorId)
-          wasm.unregisterFunctionsBatch([validatorId])
-        })
-        return
-      }
-
-      // --- JS path: Custom concerns (effect-based) ---
-      // These can't be moved to WASM since they contain arbitrary JS logic
-      const cacheKey = `${path}.${concernName}`
-
-      // Wrap evaluation in effect() for automatic dependency tracking
-      // effect() will automatically track ONLY the properties accessed during evaluate()
-      const dispose = effect(() => {
-        // READ from dataProxy (automatic tracking!)
-        // Any property accessed here will trigger re-evaluation when changed
-        const value = dot.get__unsafe(store.state, path)
-
-        // OPTIMIZATION: Avoid object spread overhead (creates new object every evaluation)
-        // Use Object.assign instead for single-pass property addition (40% faster)
-        const evalProps: BaseConcernProps<any, string> & Record<string, any> =
-          Object.assign({ state: store.state, path, value }, config)
-
-        // EVALUATE concern (all state accesses inside are tracked!)
-        // If config provides custom evaluate(), use that instead of prebuilt's evaluate
-        // Wrapped with timing measurement when debug.timing is enabled
-        // @FIXME: this should be coming from cocnern registration. we should have evaluate function for validation there, not here.
-        const evaluateFn =
-          'evaluate' in config && typeof config.evaluate === 'function'
-            ? config.evaluate
-            : concern.evaluate
-
-        const result = store._internal.timing.run(
-          'concerns',
-          () => evaluateFn(evalProps),
-          { path, name: concernName },
-        )
-
-        // Check cache (non-reactive!) to see if value changed
-        const prev = resultCache.get(cacheKey)
-        if (prev !== result) {
-          // Update cache
-          resultCache.set(cacheKey, result)
-
-          // WRITE to pre-captured reference (NO tracked reads!)
-          concernsAtPath[concernName] = result
-        }
-      })
-
-      // Track dispose callback for cleanup
-      disposeCallbacks.push(dispose)
-    })
-  })
+  // Create effects for queued JS-based concerns
+  for (const item of jsEffects) {
+    disposeCallbacks.push(createConcernEffect(store, item, resultCache))
+  }
 
   // Return cleanup function that disposes all effects on unmount
   return () => {
-    // Stop all effects and unregister WASM BoolLogic
-    disposeCallbacks.forEach((dispose) => dispose())
-
-    // Clear caches
+    for (const dispose of disposeCallbacks) dispose()
     resultCache.clear()
     concernRefs.clear()
-
-    // Remove concern values from concernsProxy
-    Object.keys(registration).forEach((path) => {
-      const concernConfigs = registration[path as DeepKey<DATA>]
-      if (!concernConfigs) return
-
-      // Delete specific concerns for this path
-      Object.keys(concernConfigs).forEach((concernName) => {
-        if (store._concerns[path]) {
-          // Use Reflect.deleteProperty to avoid dynamic delete lint error
-          Reflect.deleteProperty(store._concerns[path], concernName)
-        }
-      })
-
-      // Clean up empty path object
-      if (
-        store._concerns[path] &&
-        Object.keys(store._concerns[path]).length === 0
-      ) {
-        // Use Reflect.deleteProperty to avoid dynamic delete lint error
-        Reflect.deleteProperty(store._concerns, path)
-      }
-    })
+    cleanupConcerns(store, registrationEntries)
   }
 }
 

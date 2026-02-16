@@ -121,6 +121,52 @@ export interface ValidatorDispatch {
 }
 
 // ---------------------------------------------------------------------------
+// Consolidated registration types
+// ---------------------------------------------------------------------------
+
+/** Consolidated registration input for side effects (sync, flip, aggregation, listeners). */
+export interface SideEffectsRegistration {
+  registration_id: string
+  sync_pairs?: [string, string][]
+  flip_pairs?: [string, string][]
+  aggregation_pairs?: [string, string][]
+  listeners?: {
+    subscriber_id: number
+    topic_path: string
+    scope_path: string
+  }[]
+}
+
+/** Consolidated registration output from side effects registration. */
+export interface SideEffectsResult {
+  sync_changes: Change[]
+  aggregation_changes: Change[]
+  registered_listener_ids: number[]
+}
+
+/** Consolidated registration input for concerns (BoolLogic and validators). */
+export interface ConcernsRegistration {
+  registration_id: string
+  bool_logics?: {
+    output_path: string
+    tree_json: string
+  }[]
+  validators?: {
+    validator_id: number
+    output_path: string
+    dependency_paths: string[]
+    scope: string
+  }[]
+}
+
+/** Consolidated registration output from concerns registration. */
+export interface ConcernsResult {
+  bool_logic_changes: Change[]
+  registered_logic_ids: number[]
+  registered_validator_ids: number[]
+}
+
+// ---------------------------------------------------------------------------
 // Internal WASM change format (path + value_json string)
 // ---------------------------------------------------------------------------
 
@@ -195,8 +241,10 @@ export const shouldUseWasm = (store: {
 
 /** Reset WASM module and pipeline state (testing only). */
 export const resetWasm = (): void => {
-  if (wasmInstance) {
-    wasmInstance.pipeline_reset()
+  try {
+    wasmInstance?.pipeline_reset()
+  } catch {
+    // Instance may not be loaded — safe to ignore
   }
   wasmInstance = null
   loadingPromise = null
@@ -262,12 +310,6 @@ export const wasm = {
   shadowDump: (): unknown =>
     JSON.parse(getWasmInstance().shadow_dump()) as unknown,
 
-  /** Get a value from shadow state at a dot-path (debug/testing). */
-  shadowGet: (path: string): unknown => {
-    const json = getWasmInstance().shadow_get(path)
-    return json !== undefined ? (JSON.parse(json) as unknown) : undefined
-  },
-
   // -- BoolLogic ------------------------------------------------------------
 
   /** Register a BoolLogic expression. Returns logic_id for cleanup. */
@@ -277,73 +319,6 @@ export const wasm = {
   /** Unregister a BoolLogic expression by logic_id. */
   unregisterBoolLogic: (logicId: number): void => {
     getWasmInstance().unregister_boollogic(logicId)
-  },
-
-  // -- Aggregation (EP2) ----------------------------------------------------
-
-  /**
-   * Register aggregations from raw [target, source] pairs.
-   * Rust handles validation, grouping, and initial value computation.
-   * Returns initial changes to apply.
-   */
-  registerAggregationBatch: (pairs: [string, string][]): Change[] => {
-    const wasmModule = getWasmInstance() as any
-    const resultJson = wasmModule.register_aggregation_batch(
-      JSON.stringify(pairs),
-    ) as string
-    const wasmChanges = JSON.parse(resultJson) as WasmChange[]
-    return wasmChangesToJs(wasmChanges)
-  },
-
-  /** Unregister a batch of aggregations by target paths. */
-  unregisterAggregationBatch: (targets: string[]): void => {
-    getWasmInstance().unregister_aggregation_batch(JSON.stringify(targets))
-  },
-
-  // -- Sync graph (EP2) -----------------------------------------------------
-
-  /**
-   * Register a batch of sync pairs.
-   * Computes initial sync changes from shadow state, updates shadow, and returns changes.
-   * Returns initial changes to apply to valtio.
-   */
-  registerSyncBatch: (pairs: [string, string][]): Change[] => {
-    const wasmModule = getWasmInstance() as any
-    const resultJson = wasmModule.register_sync_batch(
-      JSON.stringify(pairs),
-    ) as string
-
-    // Handle case where WASM returns "undefined" (incomplete implementation)
-    if (!resultJson || resultJson === 'undefined') {
-      return []
-    }
-
-    const wasmChanges = JSON.parse(resultJson) as WasmChange[]
-    return wasmChangesToJs(wasmChanges)
-  },
-
-  /** Unregister a batch of sync pairs. */
-  unregisterSyncBatch: (pairs: [string, string][]): void => {
-    getWasmInstance().unregister_sync_batch(JSON.stringify(pairs))
-  },
-
-  // -- Flip graph (EP2) -----------------------------------------------------
-
-  /** Register a batch of flip pairs. */
-  registerFlipBatch: (pairs: [string, string][]): void => {
-    getWasmInstance().register_flip_batch(JSON.stringify(pairs))
-  },
-
-  /** Unregister a batch of flip pairs. */
-  unregisterFlipBatch: (pairs: [string, string][]): void => {
-    getWasmInstance().unregister_flip_batch(JSON.stringify(pairs))
-  },
-
-  // -- Pipeline (EP2) -------------------------------------------------------
-
-  /** Reset the pipeline to a fresh state (testing only). */
-  pipelineReset: (): void => {
-    getWasmInstance().pipeline_reset()
   },
 
   // -- Process changes (Phase 1) ------------------------------------------------
@@ -411,92 +386,73 @@ export const wasm = {
     }
   },
 
-  // -- Listener dispatch (EP3) ----------------------------------------------
+  // -- Consolidated registration (combined calls) ---------------------------
 
-  /** Register a batch of listeners for topic-based dispatch. */
-  registerListenersBatch: (listeners: ListenerEntry[]): void => {
-    getWasmInstance().register_listeners_batch(JSON.stringify(listeners))
-  },
-
-  /** Unregister a batch of listeners by subscriber IDs. */
-  unregisterListenersBatch: (subscriberIds: number[]): void => {
-    getWasmInstance().unregister_listeners_batch(JSON.stringify(subscriberIds))
-  },
-
-  /** Create a dispatch plan for the given changes (serde-wasm-bindgen). */
-  createDispatchPlan: (changes: Change[]): DispatchPlan => {
-    const raw = getWasmInstance().create_dispatch_plan(
-      changesToWasm(changes) as never,
+  /**
+   * Register all side effects at once (sync, flip, aggregation, listeners).
+   * Single WASM call combining sync pairs, flip pairs, aggregations, and listeners.
+   * Returns initial changes to apply from sync/aggregation + listener IDs for cleanup.
+   */
+  registerSideEffects: (reg: SideEffectsRegistration): SideEffectsResult => {
+    const wasmModule = getWasmInstance() as any
+    const resultJson = wasmModule.register_side_effects(
+      JSON.stringify(reg),
     ) as unknown as {
-      levels: {
-        depth: number
-        dispatches: {
-          subscriber_id: number
-          scope_path: string
-          changes: WasmChange[]
-        }[]
-      }[]
+      sync_changes: WasmChange[]
+      aggregation_changes: WasmChange[]
+      registered_listener_ids: number[]
     }
-
     return {
-      levels: raw.levels.map((level) => ({
-        depth: level.depth,
-        dispatches: level.dispatches.map((d) => ({
-          subscriber_id: d.subscriber_id,
-          scope_path: d.scope_path,
-          changes: wasmChangesToJs(d.changes),
-        })),
-      })),
+      sync_changes: wasmChangesToJs(resultJson.sync_changes),
+      aggregation_changes: wasmChangesToJs(resultJson.aggregation_changes),
+      registered_listener_ids: resultJson.registered_listener_ids,
     }
   },
 
-  /** Route produced changes from a depth level to downstream topics (serde-wasm-bindgen). */
-  routeProducedChanges: (
-    depth: number,
-    producedChanges: Change[],
-  ): DispatchPlan | null => {
-    const raw = getWasmInstance().route_produced_changes(
-      depth,
-      changesToWasm(producedChanges) as never,
+  /**
+   * Unregister side effects by registration ID (placeholder).
+   * Currently a no-op; in future could track registrations.
+   */
+  unregisterSideEffects: (registrationId: string): void => {
+    getWasmInstance().unregister_side_effects(registrationId)
+  },
+
+  /**
+   * Register all concerns at once (BoolLogic and validators).
+   * Single WASM call combining BoolLogic and validator registration.
+   * Returns registered logic IDs and validator IDs.
+   */
+  registerConcerns: (reg: ConcernsRegistration): ConcernsResult => {
+    const wasmModule = getWasmInstance() as any
+    const resultJson = wasmModule.register_concerns(
+      JSON.stringify(reg),
     ) as unknown as {
-      levels: {
-        depth: number
-        dispatches: {
-          subscriber_id: number
-          scope_path: string
-          changes: WasmChange[]
-        }[]
-      }[]
-    } | null
-
-    if (!raw || raw.levels.length === 0) return null
-
+      bool_logic_changes: WasmChange[]
+      registered_logic_ids: number[]
+      registered_validator_ids: number[]
+    }
     return {
-      levels: raw.levels.map((level) => ({
-        depth: level.depth,
-        dispatches: level.dispatches.map((d) => ({
-          subscriber_id: d.subscriber_id,
-          scope_path: d.scope_path,
-          changes: wasmChangesToJs(d.changes),
-        })),
-      })),
+      bool_logic_changes: wasmChangesToJs(resultJson.bool_logic_changes),
+      registered_logic_ids: resultJson.registered_logic_ids,
+      registered_validator_ids: resultJson.registered_validator_ids,
     }
   },
 
-  // -- Generic function registry (EP6) --------------------------------------
-
-  /** Register a batch of generic functions (concerns, validators, listeners). */
-  registerFunctionsBatch: (functions: FunctionEntry[]): void => {
-    getWasmInstance().register_functions_batch(JSON.stringify(functions))
+  /**
+   * Unregister concerns by registration ID (placeholder).
+   * Currently a no-op; in future could track registrations.
+   */
+  unregisterConcerns: (registrationId: string): void => {
+    getWasmInstance().unregister_concerns(registrationId)
   },
 
-  /** Unregister a batch of functions by function IDs. */
-  unregisterFunctionsBatch: (functionIds: number[]): void => {
-    getWasmInstance().unregister_functions_batch(JSON.stringify(functionIds))
+  // -- Pipeline lifecycle ---------------------------------------------------
+
+  /**
+   * Reset the entire WASM pipeline to a fresh state (testing only).
+   * Clears all internal state: shadow, registrations, graphs, router, BoolLogic registry.
+   */
+  pipelineReset: (): void => {
+    getWasmInstance().pipeline_reset()
   },
-
-  // -- Debug/testing --------------------------------------------------------
-
-  /** Number of interned paths (debug/testing). */
-  internCount: (): number => getWasmInstance().intern_count(),
 }

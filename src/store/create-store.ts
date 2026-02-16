@@ -62,9 +62,12 @@ export const createGenericStore = <
   ): {
     value: DeepValue<DATA, P>
     setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
-  } => {
-    const { value, setValue } = _useFieldValue(path)
-    return { value, setValue }
+  } & Record<string, unknown> => {
+    const { store, value, setValue } = _useFieldValue(path)
+    const concernsSnap = useSnapshot(store._concerns)
+    const allConcerns = (concernsSnap[path] || {}) as Record<string, unknown>
+
+    return { value, setValue, ...allConcerns }
   }
 
   const useStore = <P extends DeepKey<DATA>>(

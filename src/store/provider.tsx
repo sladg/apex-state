@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { proxy, ref } from 'valtio'
 
@@ -17,7 +17,7 @@ import { deepMerge } from '../utils/deep-merge'
 import { createTiming } from '../utils/timing'
 import { isWasmLoaded, loadWasm, wasm } from '../wasm/bridge'
 
-const createInternalState = <
+export const createInternalState = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
 >(
@@ -53,10 +53,27 @@ export const createProvider = <
   const resolvedConfig = deepMerge(DEFAULT_STORE_CONFIG, storeConfig)
 
   const Provider = ({ initialState, children }: ProviderProps<DATA>) => {
+    // Track if shadow state has been initialized (only init once)
+    const shadowInitialized = useRef(false)
+
     // Initialize wasmReady based on config and current WASM load state
     const [wasmReady, setWasmReady] = useState(
       resolvedConfig.useLegacyImplementation || isWasmLoaded(),
     )
+
+    // CRITICAL FIX: If WASM is already loaded, initialize shadow state immediately
+    // BEFORE store creation, so registration hooks can compute initial sync changes.
+    // Reset the pipeline first to clear stale registrations (sync pairs, BoolLogic, etc.)
+    // from previous Provider mounts — each Provider represents a fresh store.
+    if (
+      !resolvedConfig.useLegacyImplementation &&
+      isWasmLoaded() &&
+      !shadowInitialized.current
+    ) {
+      wasm.pipelineReset()
+      wasm.shadowInit(initialState as Record<string, unknown>)
+      shadowInitialized.current = true
+    }
 
     const store = useMemo<StoreInstance<DATA, META>>(() => {
       const debugTrack: DebugTrack | null = resolvedConfig.debug.track
@@ -98,7 +115,12 @@ export const createProvider = <
       const initWasm = async () => {
         await loadWasm()
 
-        wasm.shadowInit(initialState as Record<string, unknown>)
+        // Only init shadow if not already done (e.g., by synchronous path above)
+        if (!shadowInitialized.current) {
+          wasm.pipelineReset()
+          wasm.shadowInit(initialState as Record<string, unknown>)
+          shadowInitialized.current = true
+        }
 
         setWasmReady(true)
       }

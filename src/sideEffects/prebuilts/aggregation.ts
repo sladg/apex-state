@@ -68,17 +68,17 @@ export const registerAggregations = <
     const dispose = effect(() => {
       // Early exit: stop as soon as we find a mismatch
       if (sourcePaths.length === 0) {
-        dot.set__unsafe(store.state, targetPath, undefined)
+        dot.set__unsafe(store.state, targetPath, null)
         return
       }
 
       // Check if all source paths have equal values
       const allEqual = dot.same(store.state, ...sourcePaths)
 
-      // Set target: value if all equal, undefined otherwise
+      // Set target: value if all equal, null otherwise
       const result = allEqual
         ? dot.get__unsafe(store.state, sourcePaths[0]!)
-        : undefined
+        : null
 
       dot.set__unsafe(store.state, targetPath, result)
     })

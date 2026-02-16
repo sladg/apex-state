@@ -93,14 +93,7 @@ export const processListeners = <DATA extends object, META extends GenericMeta>(
     if (current !== change[1]) {
       effectiveChanges.push(change)
     } else {
-      console.log(
-        '[LISTENER NO-OP]',
-        change[0],
-        'current:',
-        JSON.stringify(current),
-        'new:',
-        JSON.stringify(change[1]),
-      )
+      // Do nothing. Changes are same.
     }
   }
 

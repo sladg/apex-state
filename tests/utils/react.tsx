@@ -10,21 +10,32 @@
 import React, { type ReactElement } from 'react'
 
 import { act, fireEvent as tlFireEvent, render } from '@testing-library/react'
-import { useSnapshot } from 'valtio'
+import { proxy, ref, useSnapshot } from 'valtio'
 
+import type { ConcernType } from '../../src/concerns'
+import { defaultConcerns } from '../../src/concerns'
+import { registerConcernEffects as registerConcernEffectsLegacy } from '../../src/concerns/registration'
+import { registerConcernEffects as registerConcernEffectsWasm } from '../../src/concerns/registration.wasm'
 import { useStoreContext } from '../../src/core/context'
+import { DEFAULT_STORE_CONFIG } from '../../src/core/defaults'
 import type { StoreConfig, StoreInstance } from '../../src/core/types'
 import { processChangesLegacy } from '../../src/pipeline/process-changes'
 import { processChangesWasm } from '../../src/pipeline/process-changes.wasm'
+import { registerSideEffects as registerSideEffectsLegacy } from '../../src/sideEffects/registration'
+import { registerSideEffects as registerSideEffectsWasm } from '../../src/sideEffects/registration.wasm'
 import { createGenericStore } from '../../src/store/create-store'
+import { createInternalState } from '../../src/store/provider'
 import type {
   ArrayOfChanges,
   ConcernRegistrationMap,
   DeepKey,
+  DeepRequired,
   DeepValue,
   GenericMeta,
 } from '../../src/types'
 import type { SideEffects } from '../../src/types/side-effects'
+import { deepMerge } from '../../src/utils/deep-merge'
+import { isWasmLoaded, wasm } from '../../src/wasm/bridge'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +82,8 @@ interface MountStoreResult<
     value: DeepValue<T, P>,
     meta?: META,
   ) => void
+  /** Batch change API — mirrors useJitStore().setChanges */
+  setChanges: (changes: ArrayOfChanges<T, META>) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -193,12 +206,32 @@ export function mountStore<
     content = <div data-testid={options.testId ?? 'test-root'}>Test</div>
   }
 
+  // Pre-initialize WASM shadow state before render so Provider's synchronous
+  // path works. Without this, Provider returns null (blocking on async WASM load)
+  // and storeInstance is never captured.
+  // We detect WASM mode by checking if the store's Provider would use WASM:
+  // createGenericStore passes config to createProvider which resolves defaults.
+  // Default is useLegacyImplementation: false, so if WASM is loaded, init shadow.
+  if (isWasmLoaded()) {
+    wasm.shadowInit(initialState as Record<string, unknown>)
+  }
+
   render(
     React.createElement(store.Provider, {
       initialState,
       children: <WrapperComponent>{content}</WrapperComponent>,
     }),
   )
+
+  // Guard: if storeInstance is still null, Provider didn't render children.
+  // This happens when WASM mode is enabled but WASM hasn't been loaded yet.
+  if (!storeInstance) {
+    throw new Error(
+      '[mountStore] storeInstance is null after render. ' +
+        'If using WASM mode, ensure WASM is loaded before calling mountStore ' +
+        '(call initWasm() in beforeAll/beforeEach).',
+    )
+  }
 
   // Helper to set values — matches store's setValue implementation.
   // Calls processChanges directly (same pattern as production code).
@@ -220,9 +253,23 @@ export function mountStore<
     })
   }
 
+  // Batch change API — mirrors useJitStore().setChanges exactly.
+  // Routes to legacy or WASM based on store config.
+  const setChanges = (changes: ArrayOfChanges<T, META>) => {
+    act(() => {
+      const processChanges = storeInstance!._internal.config
+        .useLegacyImplementation
+        ? processChangesLegacy
+        : processChangesWasm
+
+      processChanges(storeInstance!, changes)
+    })
+  }
+
   return {
     storeInstance: storeInstance!,
     setValue,
+    setChanges,
   }
 }
 
@@ -302,4 +349,109 @@ export const flushSync = async () => {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+// ---------------------------------------------------------------------------
+// createTestStore — React-free store construction for benchmarks
+// ---------------------------------------------------------------------------
+
+/** Options for createTestStore */
+interface CreateTestStoreOptions<
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+> {
+  concerns?: ConcernRegistrationMap<T>
+  sideEffects?: SideEffects<T, META>
+  sideEffectsId?: string
+}
+
+/**
+ * Create a store instance WITHOUT React rendering.
+ *
+ * Constructs the store instance directly (proxy, _concerns, _internal),
+ * initializes WASM shadow state if needed, and registers concerns/side effects.
+ * Use this for benchmarks where React render + act() causes vitest bench NaN.
+ *
+ * @example
+ * ```typescript
+ * const { storeInstance, processChanges } = createTestStore<State>(
+ *   { useLegacyImplementation: false },
+ *   buildInitialState(),
+ *   { concerns: myConcerns, sideEffects: myEffects },
+ * )
+ * // Use processChanges(storeInstance, changes) directly
+ * ```
+ */
+export const createTestStore = <
+  T extends object,
+  META extends GenericMeta = GenericMeta,
+>(
+  config: StoreConfig,
+  initialState: T,
+  options?: CreateTestStoreOptions<T, META>,
+): {
+  storeInstance: StoreInstance<T, META>
+  processChanges: (
+    store: StoreInstance<T, META>,
+    changes: ArrayOfChanges<T, META>,
+  ) => void
+} => {
+  const resolvedConfig = deepMerge(
+    DEFAULT_STORE_CONFIG,
+    config,
+  ) as DeepRequired<StoreConfig>
+
+  // Initialize WASM shadow state if in WASM mode
+  if (!resolvedConfig.useLegacyImplementation) {
+    if (!isWasmLoaded()) {
+      throw new Error(
+        '[createTestStore] WASM mode requested but WASM is not loaded. ' +
+          'Call initWasm() in beforeAll/beforeEach first.',
+      )
+    }
+    wasm.shadowInit(initialState as Record<string, unknown>)
+  }
+
+  const storeInstance: StoreInstance<T, META> = {
+    state: proxy(initialState),
+    _concerns: proxy({} as Record<string, Record<string, unknown>>),
+    _internal: ref(createInternalState<T, META>(resolvedConfig)),
+    _debug: null,
+  }
+
+  // Register concerns
+  if (options?.concerns) {
+    const registerConcerns = resolvedConfig.useLegacyImplementation
+      ? registerConcernEffectsLegacy
+      : registerConcernEffectsWasm
+    registerConcerns(
+      storeInstance,
+      options.concerns,
+      defaultConcerns as readonly ConcernType<any, any>[],
+    )
+  }
+
+  // Register side effects
+  if (options?.sideEffects) {
+    const registerSE = resolvedConfig.useLegacyImplementation
+      ? registerSideEffectsLegacy
+      : registerSideEffectsWasm
+    registerSE(
+      storeInstance,
+      options.sideEffectsId ?? 'test',
+      options.sideEffects,
+    )
+  }
+
+  const processChanges = resolvedConfig.useLegacyImplementation
+    ? processChangesLegacy
+    : processChangesWasm
+
+  return {
+    storeInstance,
+    processChanges: processChanges as (
+      store: StoreInstance<T, META>,
+      changes: ArrayOfChanges<T, META>,
+    ) => void,
+  }
 }

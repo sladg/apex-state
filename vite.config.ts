@@ -23,7 +23,7 @@ export default defineConfig({
       'tests/reference/**',
     ],
     // Stop on first failure
-    bail: 1,
+    // bail: 1,
     // Ensure deterministic test ordering
     sequence: {
       shuffle: false,

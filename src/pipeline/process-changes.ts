@@ -11,6 +11,7 @@ import { snapshot } from 'valtio'
 
 import type { DebugTrackEntry, StoreInstance } from '../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../types'
+import { dot } from '../utils/dot'
 import { applyBatch } from './apply-batch'
 import {
   processAggregationWrites,
@@ -32,8 +33,19 @@ const processChangesJS = <
 ): void => {
   const { processing } = store._internal
 
+  // Early no-op filter: skip changes where value === current state
+  // Reads from valtio proxy directly (cheaper than snapshot)
+  const filtered: ArrayOfChanges<DATA, META> = []
+  for (const change of initialChanges) {
+    const current = dot.get__unsafe(store.state, change[0] as string)
+    if (current !== change[1]) {
+      filtered.push(change)
+    }
+  }
+  if (filtered.length === 0) return
+
   // Use queue as the mutable batch - processors write to it directly
-  processing.queue = [...initialChanges]
+  processing.queue = [...filtered]
 
   // Get current state snapshot for processing
   const currentState = snapshot(store.state) as DATA
@@ -47,6 +59,21 @@ const processChangesJS = <
 
   // 3. Flip: invert boolean values across paired paths
   processFlipPaths(processing.queue, store)
+
+  // Post-expansion no-op filter: sync/flip can produce changes that match current state
+  // Filter before listeners to avoid unnecessary listener dispatch and sorting
+  const preListenerQueue: ArrayOfChanges<DATA, META> = []
+  for (const change of processing.queue) {
+    const current = dot.get__unsafe(store.state, change[0] as string)
+    if (current !== change[1]) {
+      preListenerQueue.push(change)
+    }
+  }
+  if (preListenerQueue.length === 0) {
+    processing.queue = []
+    return
+  }
+  processing.queue = preListenerQueue
 
   // 4. Listeners: reactive side effects
   processListeners(processing.queue, store, currentState)

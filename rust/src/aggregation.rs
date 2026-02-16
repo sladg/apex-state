@@ -56,6 +56,7 @@ impl AggregationRegistry {
     }
 
     /// Unregister a single aggregation by target path.
+    #[allow(dead_code)]
     pub(crate) fn unregister(&mut self, target: &str) {
         // Remove from reverse index
         if let Some(agg) = self.aggregations.get(target) {
@@ -93,19 +94,6 @@ impl AggregationRegistry {
         }
 
         None
-    }
-
-    /// Clear all aggregations (for testing).
-    #[allow(dead_code)]
-    pub(crate) fn clear(&mut self) {
-        self.aggregations.clear();
-        self.source_to_targets.clear();
-    }
-
-    /// Get all aggregations (for computing initial values).
-    #[allow(dead_code)]
-    pub(crate) fn all(&self) -> impl Iterator<Item = &Aggregation> {
-        self.aggregations.values()
     }
 
     /// Get affected aggregation targets for a set of changed paths.
@@ -265,9 +253,8 @@ pub(crate) fn process_aggregation_reads(
                 if all_equal {
                     first_value.clone()
                 } else {
-                    // Sources disagree → undefined (not null)
-                    // Bridge converts "undefined" to JS undefined
-                    "undefined".to_string()
+                    // Sources disagree → null (valid JSON)
+                    "null".to_string()
                 }
             };
 

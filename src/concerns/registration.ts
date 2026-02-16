@@ -2,6 +2,7 @@ import { effect } from 'valtio-reactive'
 
 import type { StoreInstance } from '../core/types'
 import type { ConcernRegistrationMap, DeepKey, GenericMeta } from '../types'
+import { evaluateBoolLogic } from '../utils/bool-logic'
 import { dot } from '../utils/dot'
 import { findConcern } from './registry'
 import type { BaseConcernProps, ConcernType } from './types'
@@ -41,10 +42,27 @@ const registerConcernEffectsImpl = <
       if (!config) return
 
       // Find the concern definition
-      const concern = findConcern(concernName, concerns)
+      let concern = findConcern(concernName, concerns)
       if (!concern) {
-        console.warn(`Concern "${concernName}" not found`)
-        return
+        // Support custom/ad-hoc concerns that provide an inline evaluate function
+        if ('evaluate' in config && typeof config.evaluate === 'function') {
+          concern = {
+            name: concernName,
+            description: `Custom concern: ${concernName}`,
+            evaluate: config.evaluate,
+          }
+        } else if ('condition' in config && config.condition) {
+          // Support ad-hoc BoolLogic concerns with a condition but no prebuilt match
+          concern = {
+            name: concernName,
+            description: `Ad-hoc BoolLogic concern: ${concernName}`,
+            evaluate: (props: any) =>
+              evaluateBoolLogic(props.condition, props.state),
+          }
+        } else {
+          console.warn(`Concern "${concernName}" not found`)
+          return
+        }
       }
 
       // --- Pure JS/effect-based path for ALL concerns ---
