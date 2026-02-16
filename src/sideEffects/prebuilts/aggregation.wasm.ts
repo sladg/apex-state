@@ -5,7 +5,7 @@
  * WASM handles: validation, grouping, initial value computation.
  */
 
-import { applyBatch } from '../../pipeline/applyBatch'
+import { applyBatch } from '../../pipeline/apply-batch'
 import { wasm } from '../../wasm/bridge'
 
 export const registerAggregations: typeof import('./aggregation').registerAggregations =

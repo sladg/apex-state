@@ -6,7 +6,7 @@
  *       and pipeline preprocessing for write direction (target → sources)
  */
 
-export { processAggregationWrites } from './aggregationWrites'
-export { processFlipPaths } from './flipPaths'
+export { processAggregationWrites } from './aggregation-writes'
+export { processFlipPaths } from './flip-paths'
 export { processListeners } from './listeners'
-export { processSyncPaths } from './syncPaths'
+export { processSyncPaths } from './sync-paths'

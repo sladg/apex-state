@@ -15,7 +15,7 @@
  * ```
  */
 
-import type { DeepKey } from './deepKey'
+import type { DeepKey } from './deep-key'
 
 /**
  * Helper: Extract path from first {{path}} in string

@@ -37,8 +37,11 @@ fn from_js<T: serde::de::DeserializeOwned>(val: JsValue) -> Result<T, JsValue> {
 }
 
 /// Helper: convert a Rust type to JsValue via serde-wasm-bindgen.
+/// Uses serialize_maps_as_objects so HashMap becomes a plain JS object (not a Map).
 fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsValue> {
-    serde_wasm_bindgen::to_value(val).map_err(|e| JsValue::from_str(&e.to_string()))
+    let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+    val.serialize(&serializer)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Reset the entire pipeline to a fresh state (testing only).

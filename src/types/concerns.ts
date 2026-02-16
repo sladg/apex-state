@@ -5,7 +5,7 @@
  * their return types for proper type-safe concern registration and reading.
  */
 
-import type { DeepKey } from './deepKey'
+import type { DeepKey } from './deep-key'
 
 /**
  * Extract the return type from a concern's evaluate function

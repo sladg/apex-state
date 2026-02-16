@@ -21,27 +21,27 @@ export type {
   StoreConfig,
   StoreInstance,
 } from './core/types'
-export { createGenericStore } from './store/createStore'
+export { createGenericStore } from './store/create-store'
 
 // Standalone hooks - composable field utilities
 export {
   type BufferedField,
   type FieldInput,
   useBufferedField,
-} from './hooks/useBufferedField'
+} from './hooks/use-buffered-field'
 export {
   type KeyboardSelectConfig,
   type SelectOption,
   useKeyboardSelect,
-} from './hooks/useKeyboardSelect'
+} from './hooks/use-keyboard-select'
 export {
   type ThrottleConfig,
   useThrottledField,
-} from './hooks/useThrottledField'
+} from './hooks/use-throttled-field'
 export {
   type TransformConfig,
   useTransformedField,
-} from './hooks/useTransformedField'
+} from './hooks/use-transformed-field'
 
 // Graph builders for side-effect registration
 export type {
@@ -92,7 +92,7 @@ export * as prebuilts from './concerns/prebuilts'
 export type {
   ValidationError,
   ValidationStateResult,
-} from './concerns/prebuilts/validationState'
+} from './concerns/prebuilts/validation-state'
 
 // Utilities for custom concern builders
 /**
@@ -100,7 +100,7 @@ export type {
  * Evaluates boolean logic expressions against state objects.
  * Used when building custom conditional concerns.
  */
-export { evaluateBoolLogic } from './utils/boolLogic'
+export { evaluateBoolLogic } from './utils/bool-logic'
 
 /**
  * @for-custom-concerns
@@ -119,7 +119,7 @@ export { extractPlaceholders, interpolateTemplate } from './utils/interpolation'
 // gradually replaced by the concerns pattern which provides better reactivity
 // and type safety.
 
-export type { SideEffects } from './types/sideEffects'
+export type { SideEffects } from './types/side-effects'
 
 // =============================================================================
 // ADVANCED: DIRECT PATH ACCESS
@@ -138,7 +138,7 @@ export type { SideEffects } from './types/sideEffects'
  * ```
  */
 export { dot } from './utils/dot'
-export { _, hashKey } from './utils/hashKey'
+export { _, hashKey } from './utils/hash-key'
 
 /**
  * @advanced
@@ -166,4 +166,4 @@ export { is } from './utils/is'
  * const newState = applyChangesToObject(state, [['user.name', 'Bob']])
  * ```
  */
-export { applyChangesToObject } from './utils/applyChanges'
+export { applyChangesToObject } from './utils/apply-changes'

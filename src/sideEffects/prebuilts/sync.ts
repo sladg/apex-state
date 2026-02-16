@@ -1,4 +1,4 @@
-import type { PathGroups } from '../../core/pathGroups'
+import type { PathGroups } from '../../core/path-groups'
 import {
   addEdge,
   getGroupPaths,
@@ -6,9 +6,9 @@ import {
   hasEdge,
   hasPath,
   removeEdge,
-} from '../../core/pathGroups'
+} from '../../core/path-groups'
 import type { StoreInstance } from '../../core/types'
-import { processChanges } from '../../pipeline/processChanges'
+import { processChanges } from '../../pipeline/process-changes'
 import type { ArrayOfChanges, GenericMeta } from '../../types'
 import { dot } from '../../utils/dot'
 import { is } from '../../utils/is'

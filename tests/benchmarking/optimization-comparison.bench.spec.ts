@@ -15,7 +15,7 @@
 import { proxy } from 'valtio/vanilla'
 import { beforeAll, bench, describe } from 'vitest'
 
-import { createPathGroups } from '../../src/core/pathGroups'
+import { createPathGroups } from '../../src/core/path-groups'
 import type { StoreInstance } from '../../src/core/types'
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'

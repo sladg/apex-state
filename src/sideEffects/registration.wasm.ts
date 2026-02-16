@@ -7,9 +7,10 @@
 
 import type { StoreInstance } from '../core/types'
 import type { GenericMeta } from '../types'
-import type { SideEffects } from '../types/sideEffects'
+import type { SideEffects } from '../types/side-effects'
 import { registerAggregations as registerAggregationsWasm } from './prebuilts/aggregation.wasm'
 import { registerFlipPair as registerFlipPairWasm } from './prebuilts/flip.wasm'
+import { registerListener as registerListenerWasm } from './prebuilts/listeners.wasm'
 import { registerSyncPairsBatch as registerSyncPairsBatchWasm } from './prebuilts/sync.wasm'
 
 const registerSideEffectsImpl = <
@@ -43,6 +44,15 @@ const registerSideEffectsImpl = <
   if (effects.aggregations) {
     const cleanup = registerAggregationsWasm(store, id, effects.aggregations)
     cleanups.push(cleanup)
+  }
+
+  // Register listeners: { path, scope, fn }
+  // WASM handles topic routing and dispatch ordering
+  if (effects.listeners) {
+    for (const listener of effects.listeners) {
+      const cleanup = registerListenerWasm(store, listener)
+      cleanups.push(cleanup)
+    }
   }
 
   // Store cleanup reference

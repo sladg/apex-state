@@ -13,14 +13,14 @@
 import { proxy } from 'valtio/vanilla'
 import { beforeAll, bench, describe } from 'vitest'
 
-import { addEdge, createPathGroups } from '../../src/core/pathGroups'
+import { addEdge, createPathGroups } from '../../src/core/path-groups'
 import type {
   ListenerHandlerRef,
   ListenerRegistration,
   StoreInstance,
 } from '../../src/core/types'
 import type { ArrayOfChanges, GenericMeta } from '../../src/types'
-import { getPathDepth } from '../../src/utils/pathUtils'
+import { getPathDepth } from '../../src/utils/path-utils'
 import { createTiming } from '../../src/utils/timing'
 import { initWasm, resetWasm } from '../../src/wasm/bridge'
 

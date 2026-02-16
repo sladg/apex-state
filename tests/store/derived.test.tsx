@@ -11,8 +11,8 @@ import { useSnapshot } from 'valtio'
 import { describe, expect, it } from 'vitest'
 
 import { StoreContext } from '../../src/core/context'
-import { createGenericStore } from '../../src/store/createStore'
-import { detectGetters, extractGetters } from '../../src/utils/deriveValues'
+import { createGenericStore } from '../../src/store/create-store'
+import { detectGetters, extractGetters } from '../../src/utils/derive-values'
 import { fireEvent, flushEffects, mountStore } from '../../tests/utils/react'
 import { typeHelpers } from '../mocks'
 

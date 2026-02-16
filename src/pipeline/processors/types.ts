@@ -3,7 +3,7 @@
  */
 
 import type { ArrayOfChanges, GenericMeta } from '../../types'
-import type { AnyChange } from '../normalizeChanges.types'
+import type { AnyChange } from '../normalize-changes.types'
 
 // =============================================================================
 // Listener Types

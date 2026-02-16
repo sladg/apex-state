@@ -16,10 +16,10 @@
 import { proxy } from 'valtio/vanilla'
 import { bench, describe } from 'vitest'
 
-import { addEdge, createPathGroups } from '../../src/core/pathGroups'
+import { addEdge, createPathGroups } from '../../src/core/path-groups'
 import type { StoreInstance } from '../../src/core/types'
-import { normalizeChangesForGroups } from '../../src/pipeline/normalizeChanges'
-import { processChanges } from '../../src/pipeline/processChanges'
+import { normalizeChangesForGroups } from '../../src/pipeline/normalize-changes'
+import { processChanges } from '../../src/pipeline/process-changes'
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'
 import { typeHelpers } from '../mocks/helpers'

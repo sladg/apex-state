@@ -265,7 +265,9 @@ pub(crate) fn process_aggregation_reads(
                 if all_equal {
                     first_value.clone()
                 } else {
-                    "null".to_string()
+                    // Sources disagree → undefined (not null)
+                    // Bridge converts "undefined" to JS undefined
+                    "undefined".to_string()
                 }
             };
 

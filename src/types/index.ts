@@ -8,13 +8,13 @@
  * - Advanced type filters and mappings
  */
 
-export type * from './boolLogic'
+export type * from './bool-logic'
 export type * from './changes'
 export type * from './concerns'
-export type * from './deepKey'
-export type * from './deepKeyFiltered'
-export type * from './deepValue'
-export type * from './hashKey'
+export type * from './deep-key'
+export type * from './deep-key-filtered'
+export type * from './deep-value'
+export type * from './hash-key'
 export type * from './meta'
-export type * from './pathsOfSameValue'
+export type * from './paths-of-same-value'
 export type * from './utils'

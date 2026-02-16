@@ -1,6 +1,6 @@
 import type { ListenerRegistration, StoreInstance } from '../../core/types'
 import type { GenericMeta } from '../../types'
-import { getPathDepth } from '../../utils/pathUtils'
+import { getPathDepth } from '../../utils/path-utils'
 import { shouldUseWasm } from '../../wasm/bridge'
 import { registerListener as registerListenerWasm } from './listeners.wasm'
 

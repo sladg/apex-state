@@ -16,29 +16,29 @@
  */
 
 // Validation
-import { disabledWhen } from './disabledWhen'
-import { dynamicLabel } from './dynamicLabel'
-import { dynamicPlaceholder } from './dynamicPlaceholder'
-import { dynamicTooltip } from './dynamicTooltip'
-import { readonlyWhen } from './readonlyWhen'
-import { validationState } from './validationState'
-import { visibleWhen } from './visibleWhen'
+import { disabledWhen } from './disabled-when'
+import { dynamicLabel } from './dynamic-label'
+import { dynamicPlaceholder } from './dynamic-placeholder'
+import { dynamicTooltip } from './dynamic-tooltip'
+import { readonlyWhen } from './readonly-when'
+import { validationState } from './validation-state'
+import { visibleWhen } from './visible-when'
 
 export {
   type ValidationError,
   validationState,
   type ValidationStateResult,
-} from './validationState'
+} from './validation-state'
 
 // Conditional state
-export { disabledWhen } from './disabledWhen'
-export { readonlyWhen } from './readonlyWhen'
-export { visibleWhen } from './visibleWhen'
+export { disabledWhen } from './disabled-when'
+export { readonlyWhen } from './readonly-when'
+export { visibleWhen } from './visible-when'
 
 // Dynamic text
-export { dynamicLabel } from './dynamicLabel'
-export { dynamicPlaceholder } from './dynamicPlaceholder'
-export { dynamicTooltip } from './dynamicTooltip'
+export { dynamicLabel } from './dynamic-label'
+export { dynamicPlaceholder } from './dynamic-placeholder'
+export { dynamicTooltip } from './dynamic-tooltip'
 
 /**
  * All pre-built concerns as a tuple (for use with findConcern)

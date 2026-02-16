@@ -234,7 +234,10 @@ const changesToWasm = (changes: Change[]): WasmChange[] =>
 const wasmChangesToJs = (wasmChanges: WasmChange[]): Change[] =>
   wasmChanges.map((c) => ({
     path: c.path,
-    value: JSON.parse(c.value_json) as unknown,
+    value:
+      c.value_json === 'undefined'
+        ? undefined
+        : (JSON.parse(c.value_json) as unknown),
   }))
 
 // ---------------------------------------------------------------------------

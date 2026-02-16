@@ -27,7 +27,7 @@ import {
 import type { ConcernType } from '../../src/concerns/types'
 import { useStoreContext } from '../../src/core/context'
 import { dot } from '../../src/utils/dot'
-import { _ } from '../../src/utils/hashKey'
+import { _ } from '../../src/utils/hash-key'
 import { typeHelpers } from '../mocks'
 import { fireEvent, flushEffects, mountStore } from '../utils/react'
 

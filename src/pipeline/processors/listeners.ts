@@ -8,8 +8,8 @@
 import type { StoreInstance } from '../../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../../types'
 import { dot } from '../../utils/dot'
-import { getPathDepth } from '../../utils/pathUtils'
-import { AnyChange } from '../normalizeChanges'
+import { getPathDepth } from '../../utils/path-utils'
+import { AnyChange } from '../normalize-changes'
 import { queueChange } from '../queue'
 import type { ProcessListenerArgs } from './types'
 
@@ -61,11 +61,16 @@ const filterAndRelativize = (
     return result
   }
 
-  // Non-root listener: filter children and convert to relative paths
+  // Non-root listener: include exact match and children, convert children to relative paths
   const prefix = listenerPath + '.'
   for (const change of changes) {
-    if (change[0].startsWith(prefix)) {
+    if (change[0] === listenerPath) {
+      // Exact path match: pass through with the full path
+      result.push([change[0], change[1], change[2]])
+    } else if (change[0].startsWith(prefix)) {
       result.push([change[0].slice(prefix.length), change[1], change[2]])
+    } else {
+      // Change doesn't match this listener's path — skip
     }
   }
 
@@ -80,8 +85,29 @@ export const processListeners = <DATA extends object, META extends GenericMeta>(
   const { listeners, sortedListenerPaths } = store._internal.graphs
   const { queue } = store._internal.processing
 
+  // Filter out no-op changes (value unchanged from current state)
+  // This prevents listeners from firing when setValue is called with the same value
+  const effectiveChanges: AnyChange[] = []
+  for (const change of changes as AnyChange[]) {
+    const current = dot.get__unsafe(currentState, change[0])
+    if (current !== change[1]) {
+      effectiveChanges.push(change)
+    } else {
+      console.log(
+        '[LISTENER NO-OP]',
+        change[0],
+        'current:',
+        JSON.stringify(current),
+        'new:',
+        JSON.stringify(change[1]),
+      )
+    }
+  }
+
+  if (effectiveChanges.length === 0) return
+
   // Sort changes by path depth (deepest first)
-  const sortedChanges = ([...changes] as AnyChange[]).sort(
+  const sortedChanges = effectiveChanges.sort(
     (a, b) => getPathDepth(b[0]) - getPathDepth(a[0]),
   )
 

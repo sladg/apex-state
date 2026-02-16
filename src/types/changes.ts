@@ -18,8 +18,8 @@
  * ```
  */
 
-import type { DeepKey } from './deepKey'
-import type { DeepValue } from './deepValue'
+import type { DeepKey } from './deep-key'
+import type { DeepValue } from './deep-value'
 import type { GenericMeta } from './meta'
 
 /**

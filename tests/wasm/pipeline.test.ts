@@ -294,6 +294,33 @@ describe('WASM Pipeline Integration', () => {
     })
   })
 
+  describe('pipelineReset', () => {
+    it.todo('should clear all BoolLogic registrations')
+    // TODO: Register BoolLogic, verify it fires, call pipelineReset(), re-init shadow, verify it no longer fires
+  })
+
+  describe('unregistration lifecycle', () => {
+    it.todo('should stop aggregation after unregisterAggregationBatch')
+    // TODO: Register aggregation target→sources, unregister, verify write no longer distributes
+
+    it.todo('should stop sync after unregisterSyncBatch')
+    // TODO: Register sync pair, unregister, verify change no longer propagates
+
+    it.todo('should stop flip after unregisterFlipBatch')
+    // TODO: Register flip pair, unregister, verify boolean no longer inverts
+
+    it.todo('should reject circular aggregation dependencies')
+    // TODO: registerAggregationBatch with A→B and B→A, expect throw /Circular aggregation/
+  })
+
+  describe('large batch stress', () => {
+    it.todo('should process 50+ changes through pipeline with BoolLogic')
+    // TODO: Init 60 fields, register BoolLogic on 2, send 55 changes, verify all state + concern changes
+
+    it.todo('should process 50+ changes with sync + flip')
+    // TODO: Init 60 fields + sync pair + flip pair, send 52 changes, verify sync/flip propagation at scale
+  })
+
   describe('value types', () => {
     it('should handle string values', () => {
       const result = wasm.processChanges([

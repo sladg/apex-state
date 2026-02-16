@@ -7,9 +7,9 @@
 import { proxy } from 'valtio/vanilla'
 import { beforeAll, bench, describe } from 'vitest'
 
-import { addEdge, createPathGroups } from '../../src/core/pathGroups'
+import { addEdge, createPathGroups } from '../../src/core/path-groups'
 import type { StoreInstance } from '../../src/core/types'
-import { processChanges as processChangesEntry } from '../../src/pipeline/processChanges'
+import { processChanges as processChangesEntry } from '../../src/pipeline/process-changes'
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'
 import type { Change } from '../../src/wasm/bridge'

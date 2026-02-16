@@ -994,6 +994,18 @@ impl ProcessingPipeline {
         }
         self.buf_output.extend(flip_changes);
 
+        // Step 7.5: Process aggregation reads (sources → target recomputation)
+        // After sync/flip, check if any aggregation sources changed and recompute targets
+        let all_changed_paths: Vec<String> =
+            self.buf_output.iter().map(|c| c.path.clone()).collect();
+        let aggregation_reads =
+            process_aggregation_reads(&self.aggregations, &self.shadow, &all_changed_paths);
+        for change in &aggregation_reads {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend(aggregation_reads);
+
         // Step 8-9: Evaluate affected BoolLogic expressions
         for logic_id in &self.buf_affected_ids {
             if let Some(meta) = self.registry.get(*logic_id) {
@@ -1180,6 +1192,15 @@ mod tests {
         p
     }
 
+    /// Helper to extract concern changes from ProcessResult (those starting with _concerns.)
+    fn get_concern_changes(result: &ProcessResult) -> Vec<&Change> {
+        result
+            .changes
+            .iter()
+            .filter(|c| c.path.starts_with("_concerns."))
+            .collect()
+    }
+
     // --- basic change processing ---
 
     #[test]
@@ -1249,8 +1270,9 @@ mod tests {
         assert_eq!(parsed.changes.len(), 1);
         assert_eq!(parsed.changes[0].path, "user.role");
 
-        assert_eq!(parsed.concern_changes.len(), 1);
-        let bl_change = &parsed.concern_changes[0];
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 1);
+        let bl_change = concern_changes[0];
         assert_eq!(bl_change.path, "_concerns.user.email.disabledWhen");
         assert_eq!(bl_change.value_json, "true");
     }
@@ -1272,8 +1294,9 @@ mod tests {
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
         assert_eq!(parsed.changes.len(), 1);
-        assert_eq!(parsed.concern_changes.len(), 1);
-        let bl_change = &parsed.concern_changes[0];
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 1);
+        let bl_change = concern_changes[0];
         assert_eq!(bl_change.path, "_concerns.user.email.disabledWhen");
         assert_eq!(bl_change.value_json, "false");
     }
@@ -1326,13 +1349,10 @@ mod tests {
 
         // 1 input change + 3 concern changes
         assert_eq!(parsed.changes.len(), 1);
-        assert_eq!(parsed.concern_changes.len(), 3);
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 3);
 
-        let bl_paths: Vec<&str> = parsed
-            .concern_changes
-            .iter()
-            .map(|c| c.path.as_str())
-            .collect();
+        let bl_paths: Vec<&str> = concern_changes.iter().map(|c| c.path.as_str()).collect();
         assert!(bl_paths.contains(&"_concerns.user.email.disabledWhen"));
         assert!(bl_paths.contains(&"_concerns.user.email.readonlyWhen"));
         assert!(bl_paths.contains(&"_concerns.user.name.visibleWhen"));
@@ -1355,8 +1375,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        let bl = parsed
-            .concern_changes
+        let concern_changes = get_concern_changes(&parsed);
+        let bl = concern_changes
             .iter()
             .find(|c| c.path.contains("visibleWhen"))
             .unwrap();
@@ -1382,8 +1402,8 @@ mod tests {
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
         // Should trigger BoolLogic since user.role is a descendant of user
-        let bl = parsed
-            .concern_changes
+        let concern_changes = get_concern_changes(&parsed);
+        let bl = concern_changes
             .iter()
             .find(|c| c.path.contains("disabledWhen"));
         assert!(bl.is_some());
@@ -1409,7 +1429,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed.changes.len(), 1);
-        assert_eq!(parsed.concern_changes.len(), 1);
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 1);
 
         // Unregister
         p.unregister_boollogic(id);
@@ -1420,7 +1441,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed.changes.len(), 1);
-        assert_eq!(parsed.concern_changes.len(), 0);
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 0);
     }
 
     #[test]
@@ -1968,8 +1990,9 @@ mod tests {
         assert_eq!(parsed.changes.len(), 2);
         assert_eq!(parsed.changes[0].path, "user.role");
         assert_eq!(parsed.changes[1].path, "profile.role");
-        assert_eq!(parsed.concern_changes.len(), 1);
-        let bl = &parsed.concern_changes[0];
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 1);
+        let bl = concern_changes[0];
         assert_eq!(bl.path, "_concerns.user.email.disabledWhen");
         assert_eq!(bl.value_json, "true");
     }
@@ -1998,17 +2021,14 @@ mod tests {
 
         // Input + sync (state changes) + 2 BoolLogics (concern changes)
         assert_eq!(parsed.changes.len(), 2);
-        assert_eq!(parsed.concern_changes.len(), 2);
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 2);
 
-        let bl_paths: Vec<&str> = parsed
-            .concern_changes
-            .iter()
-            .map(|c| c.path.as_str())
-            .collect();
+        let bl_paths: Vec<&str> = concern_changes.iter().map(|c| c.path.as_str()).collect();
         assert!(bl_paths.contains(&"_concerns.field1.visibleWhen"));
         assert!(bl_paths.contains(&"_concerns.field2.visibleWhen"));
 
-        for change in &parsed.concern_changes {
+        for change in &concern_changes {
             assert_eq!(change.value_json, "true");
         }
     }
@@ -2045,11 +2065,8 @@ mod tests {
         assert!(paths.contains(&"b"), "Missing b (sync)");
         assert!(paths.contains(&"c"), "Missing c (flip)");
 
-        let concern_paths: Vec<&str> = parsed
-            .concern_changes
-            .iter()
-            .map(|c| c.path.as_str())
-            .collect();
+        let concern_changes = get_concern_changes(&parsed);
+        let concern_paths: Vec<&str> = concern_changes.iter().map(|c| c.path.as_str()).collect();
         assert!(
             concern_paths.contains(&"_concerns.x.disabledWhen"),
             "Missing BoolLogic"
@@ -2154,9 +2171,10 @@ mod tests {
 
         // Should have: input + sync (state) + BoolLogic (concern)
         assert_eq!(parsed.changes.len(), 2);
-        assert_eq!(parsed.concern_changes.len(), 1);
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 1);
 
-        let bl_change = &parsed.concern_changes[0];
+        let bl_change = concern_changes[0];
         assert_eq!(bl_change.path, "_concerns.field.disabledWhen");
         assert_eq!(bl_change.value_json, "true");
     }
@@ -2182,9 +2200,10 @@ mod tests {
 
         // Should have: 2 aggregated state changes + 1 concern change
         assert_eq!(parsed.changes.len(), 2);
-        assert_eq!(parsed.concern_changes.len(), 1);
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 1);
 
-        let bl = &parsed.concern_changes[0];
+        let bl = concern_changes[0];
         assert!(bl.path.contains("visibleWhen"));
         assert_eq!(bl.value_json, "true");
     }
@@ -2371,7 +2390,8 @@ mod tests {
 
         // Should have: 1 state change, 0 concern changes (BoolLogic not affected), 1 validator
         assert_eq!(parsed.changes.len(), 1);
-        assert_eq!(parsed.concern_changes.len(), 0); // BoolLogic depends on user.role, not user.email
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 0); // BoolLogic depends on user.role, not user.email
         assert_eq!(parsed.validators_to_run.len(), 1);
 
         // Now change user.role (triggers BoolLogic, not validator)
@@ -2382,12 +2402,10 @@ mod tests {
 
         // Should have: 1 state change, 1 concern change (BoolLogic), 0 validators
         assert_eq!(parsed.changes.len(), 1);
-        assert_eq!(parsed.concern_changes.len(), 1);
-        assert_eq!(
-            parsed.concern_changes[0].path,
-            "_concerns.user.email.disabledWhen"
-        );
-        assert_eq!(parsed.concern_changes[0].value_json, "true");
+        let concern_changes = get_concern_changes(&parsed);
+        assert_eq!(concern_changes.len(), 1);
+        assert_eq!(concern_changes[0].path, "_concerns.user.email.disabledWhen");
+        assert_eq!(concern_changes[0].value_json, "true");
         assert_eq!(parsed.validators_to_run.len(), 0); // Validator depends on user.email, not user.role
     }
 
@@ -2403,7 +2421,8 @@ mod tests {
 
         // Should be filtered out by diff engine (always-on)
         assert_eq!(result.changes.len(), 0);
-        assert_eq!(result.concern_changes.len(), 0);
+        let concern_changes = get_concern_changes(&result);
+        assert_eq!(concern_changes.len(), 0);
     }
 
     #[test]
@@ -2433,7 +2452,8 @@ mod tests {
 
         // Should early exit with empty result (diff always-on)
         assert_eq!(result.changes.len(), 0);
-        assert_eq!(result.concern_changes.len(), 0);
+        let concern_changes = get_concern_changes(&result);
+        assert_eq!(concern_changes.len(), 0);
         assert_eq!(result.validators_to_run.len(), 0);
         assert!(result.execution_plan.is_none());
     }
@@ -2453,5 +2473,25 @@ mod tests {
         assert_eq!(result.changes.len(), 1);
         assert_eq!(result.changes[0].path, "user.age");
         assert_eq!(result.changes[0].value_json, "25");
+    }
+
+    // --- ValidatorDispatch serialization ---
+
+    #[test]
+    fn validator_dispatch_serializes_dependency_values() {
+        let mut deps = std::collections::HashMap::new();
+        deps.insert("user.email".to_string(), "\"test@test.com\"".to_string());
+        deps.insert("user.name".to_string(), "\"Alice\"".to_string());
+
+        let dispatch = ValidatorDispatch {
+            validator_id: 1,
+            output_path: "_concerns.user.email.validationState".to_string(),
+            dependency_values: deps,
+        };
+
+        let json = serde_json::to_value(&dispatch).unwrap();
+        let dep_vals = json.get("dependency_values").unwrap().as_object().unwrap();
+        assert_eq!(dep_vals.get("user.email").unwrap(), "\"test@test.com\"");
+        assert_eq!(dep_vals.get("user.name").unwrap(), "\"Alice\"");
     }
 }

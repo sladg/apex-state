@@ -5,7 +5,7 @@
  */
 
 import type { ArrayOfChanges, GenericMeta } from '../../src/types'
-import type { FlipPair, SyncPair } from '../../src/types/pathsOfSameValue'
+import type { FlipPair, SyncPair } from '../../src/types/paths-of-same-value'
 
 /**
  * Type-safe test helpers for dynamic paths

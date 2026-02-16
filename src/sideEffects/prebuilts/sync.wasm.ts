@@ -4,10 +4,10 @@
  * Registers sync pairs in WASM, which computes initial sync changes from shadow state.
  */
 
-import { processChanges } from '../../pipeline/processChanges'
+import { processChanges } from '../../pipeline/process-changes'
 import { wasm } from '../../wasm/bridge'
 
-export const registerSyncPairsBatch: typeof import('./sync').registerSyncPairsBatchLegacy =
+export const registerSyncPairsBatch: typeof import('./sync').registerSyncPairsBatch =
   (store, pairs) => {
     // WASM registers pairs, computes initial sync changes from shadow state,
     // updates shadow, and returns the changes

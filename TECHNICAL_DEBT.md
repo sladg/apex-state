@@ -22,6 +22,21 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 
 - **[Rust]** Remove `#[allow(dead_code)]` annotations — audit usages and either wire up the dead code or delete it. Grep for all occurrences across `rust/src/`.
 
+### WASM Single-Pipeline Limitation (Critical Architecture)
+
+- **[WASM/Architecture]** Single global `thread_local! PIPELINE` in Rust means only ONE WASM-mode store can exist at a time. `shadowInit()` overwrites the entire shadow state — a second Provider mount clobbers the first. Multiple concurrent WASM stores are NOT supported. `rust/src/lib.rs:30-32`, `src/store/Provider.tsx:101`
+- **[WASM/Architecture]** No store ID or namespace in any WASM API call. All registrations (boollogic, listeners, validators, sync/flip graphs) go into the single global pipeline. Multi-store would require per-store pipeline instances or namespaced paths.
+
+### concern_changes Removal Fallout
+
+- **[Rust/Tests]** `ProcessResult.concern_changes` field was removed (all changes now in single `changes` vec), but 26 tests still reference it. Being fixed. `rust/src/pipeline.rs`
+- **[Rust/Tests]** `FinalizeResult` also lost `concern_changes` — concern changes now keep `_concerns.` prefix in `state_changes`. Tests and docs referencing the old split need updating. `rust/src/pipeline.rs:68-71`
+- **[JS/Tests]** Some WASM tests referenced `result.concern_changes` — fixed in validation-batching.test.ts. Pattern: filter `state_changes` by `_concerns.` prefix.
+
+### WASM Bridge Sentinel Collision Risk
+
+- **[JS/WASM boundary]** `wasmChangesToJs` uses raw string `"undefined"` as sentinel for JS `undefined`. If a user sets a field to the literal string `"undefined"` or `"null"`, it would be misinterpreted. Should use escaped sentinels (e.g., `@undefined`, `@null`) with a proper encode/decode protocol at the boundary. `src/wasm/bridge.ts:238`, `rust/src/aggregation.rs:268`
+
 ### Other
 
 - **[JS]** Old WASM test files (`tests/wasm/bool_logic.test.ts`, `tests/wasm/shadow.test.ts`) import removed APIs (`evaluateBoolLogic`, `initShadowState`, `getShadowValue`, `updateShadowValue`, `dumpShadowState`). Rewrite to use current `registerBoolLogic()` + `processChanges()` API.

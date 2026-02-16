@@ -10,7 +10,7 @@
 import { proxy } from 'valtio/vanilla'
 import { beforeAll, beforeEach, bench, describe } from 'vitest'
 
-import { createPathGroups } from '../../src/core/pathGroups'
+import { createPathGroups } from '../../src/core/path-groups'
 import type { StoreInstance } from '../../src/core/types'
 import type { GenericMeta } from '../../src/types'
 import { createTiming } from '../../src/utils/timing'
@@ -38,7 +38,7 @@ beforeAll(async () => {
 // Shared test setup: 50 listeners across 15 depth levels
 // ---------------------------------------------------------------------------
 
-const TOTAL_LISTENERS = 50
+const _TOTAL_LISTENERS = 50
 const DEPTH_LEVELS = 15
 const ROOT_LISTENERS = 10 // At least 10 root listeners
 

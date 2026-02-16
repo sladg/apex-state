@@ -15,7 +15,7 @@ import type {
   GenericMeta,
 } from '../types'
 import type { Timing } from '../utils/timing'
-import type { FlipGraph, SyncGraph } from './graphTypes'
+import type { FlipGraph, SyncGraph } from './graph-types'
 
 /**
  * Debug configuration for development tooling

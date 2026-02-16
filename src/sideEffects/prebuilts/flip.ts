@@ -4,7 +4,7 @@ import {
   hasEdge,
   hasPath,
   removeEdge,
-} from '../../core/pathGroups'
+} from '../../core/path-groups'
 import type { StoreInstance } from '../../core/types'
 import type { GenericMeta } from '../../types'
 

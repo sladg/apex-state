@@ -14,9 +14,9 @@ import { useSnapshot } from 'valtio'
 
 import { useStoreContext } from '../../src/core/context'
 import type { StoreConfig, StoreInstance } from '../../src/core/types'
-import { processChangesLegacy } from '../../src/pipeline/processChanges'
-import { processChangesWasm } from '../../src/pipeline/processChanges.wasm'
-import { createGenericStore } from '../../src/store/createStore'
+import { processChangesLegacy } from '../../src/pipeline/process-changes'
+import { processChangesWasm } from '../../src/pipeline/process-changes.wasm'
+import { createGenericStore } from '../../src/store/create-store'
 import type {
   ArrayOfChanges,
   ConcernRegistrationMap,
@@ -24,7 +24,7 @@ import type {
   DeepValue,
   GenericMeta,
 } from '../../src/types'
-import type { SideEffects } from '../../src/types/sideEffects'
+import type { SideEffects } from '../../src/types/side-effects'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -160,7 +160,7 @@ export function mountStore<
 
   let storeInstance: StoreInstance<T, META> | null = null
 
-  // Wrapper to capture store instance and register concerns/sideEffects
+  // Wrapper to capture store instance and register concerns/side-effects
   const WrapperComponent = ({ children }: { children: React.ReactNode }) => {
     storeInstance = useStoreContext<T, META>()
 
