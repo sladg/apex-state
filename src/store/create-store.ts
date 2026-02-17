@@ -5,13 +5,13 @@ import { snapshot, useSnapshot } from 'valtio'
 import type { ConcernType } from '../concerns'
 import { defaultConcerns } from '../concerns'
 import { registerConcernEffects as registerConcernEffectsLegacy } from '../concerns/registration'
-import { registerConcernEffects as registerConcernEffectsWasm } from '../concerns/registration.wasm'
+import { registerConcernEffects as registerConcernEffectsWasm } from '../concerns/registration.wasm-impl'
 import { useStoreContext } from '../core/context'
 import type { StoreConfig } from '../core/types'
 import { processChangesLegacy } from '../pipeline/process-changes'
-import { processChangesWasm } from '../pipeline/process-changes.wasm'
+import { processChangesWasm } from '../pipeline/process-changes.wasm-impl'
 import { registerSideEffects as registerSideEffectsLegacy } from '../sideEffects/registration'
-import { registerSideEffects as registerSideEffectsWasm } from '../sideEffects/registration.wasm'
+import { registerSideEffects as registerSideEffectsWasm } from '../sideEffects/registration.wasm-impl'
 import type {
   ArrayOfChanges,
   ConcernRegistrationMap,

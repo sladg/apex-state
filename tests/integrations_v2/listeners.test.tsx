@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import { registerSideEffects as registerSideEffectsLegacy } from '../../src/sideEffects/registration'
-import { registerSideEffects as registerSideEffectsWasm } from '../../src/sideEffects/registration.wasm'
+import { registerSideEffects as registerSideEffectsWasm } from '../../src/sideEffects/registration.wasm-impl'
 import type { BasicTestState, ListenerTestState } from '../mocks'
 import { basicTestFixtures, listenerTestFixtures } from '../mocks'
 import { flushEffects, flushSync, MODES, mountStore } from '../utils/react'

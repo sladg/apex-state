@@ -11,7 +11,7 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 
 ### Code Quality (from npm run code:check)
 
-- **[TypeScript]** `executeFullExecutionPlan()` has Cognitive Complexity 27 (limit: 20). Refactor to reduce nesting/branching. `src/pipeline/processChanges.ts:47-125`
+- ~~**[TypeScript]** `executeFullExecutionPlan()` Cognitive Complexity 27~~ — RESOLVED. Logic extracted into `buildDispatchInput`, `propagateChanges`, `remapPath`, `partitionChanges`. `eslint` passes clean.
 - **[TypeScript]** Generated WASM glue code has Cognitive Complexity 23 and forbidden `require()` import. Consider build tool configuration. `rust/pkg-node/apex_state_wasm.js:616,800`
 - ~~**[Tests]** Integration tests use destructured `render()` instead of `screen.getByTestId()`~~ — RESOLVED. The referenced file was replaced by v2 tests that use `screen` throughout.
 
