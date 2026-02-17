@@ -173,8 +173,9 @@ See [Concerns Guide](docs/guides/CONCERNS_GUIDE.md) for lifecycle, custom concer
 useSideEffects('id', {
   syncPaths:    [['source', 'target']],
   flipPaths:    [['active', 'inactive']],
-  // Aggregation: target gets the common value when all sources agree, undefined otherwise
-  // Multiple pairs with the same target form a group
+  // Aggregation: target reflects the common value when all sources agree, null otherwise.
+  // Multiple pairs with the same target form a group.
+  // Currently supports consensus (all-equal) mode only — SUM, AVG, COUNT planned (see Roadmap).
   aggregations: [['summary.price', 'legs.0.price'], ['summary.price', 'legs.1.price']],
   listeners:    [{ path: 'orders', scope: 'orders', fn: handler }],
 })
@@ -218,7 +219,7 @@ cargo install wasm-pack
 
 ## Roadmap
 
-- **Multiple store instances** — WASM currently uses global state, limiting to one store per page. Moving to instance-scoped WASM will allow parallel independent stores.
+- **Aggregation modes** — Aggregations currently use consensus (all-equal) mode. Planned: `SUM`, `AVG`, `COUNT`, `MIN`, `MAX`, and custom reducer functions, declared per-target alongside the source pairs.
 - **Nested sub-stores** — Allow a parent store to contain child stores, enabling component-level state that participates in the parent's pipeline (concerns, listeners, sync).
 - **Technical debt resolution** — See [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) for tracked items.
 

@@ -230,10 +230,17 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       // Register aggregation with non-existent source paths
       // Assert no errors thrown
       // Assert target remains unchanged
-      const store = createGenericStore<AggregationTestState>(config)
+      // Use extended type where fields exist in the type but NOT in initial state,
+      // testing that runtime handles missing shadow state values gracefully
+      type ExtendedState = AggregationTestState & {
+        nonExistentFieldA: string
+        nonExistentFieldB: string
+      }
+
+      const store = createGenericStore<ExtendedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        { ...aggregationTestFixtures.empty },
+        { ...aggregationTestFixtures.empty } as ExtendedState,
         {
           sideEffects: {
             aggregations: [
@@ -249,6 +256,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
         setValue('sourceA', 'changed')
       }).not.toThrow()
 
+      // Sources don't exist → target cleared to undefined in both modes
       expect(storeInstance.state.target).toBeUndefined()
     })
   })

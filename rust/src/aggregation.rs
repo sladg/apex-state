@@ -12,7 +12,7 @@
 //! 3. If yes: generate changes for all source paths with same value
 //! 4. Remove original target change from output
 
-use crate::pipeline::Change;
+use crate::pipeline::{Change, UNDEFINED_SENTINEL_JSON};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -228,33 +228,34 @@ pub(crate) fn process_aggregation_reads(
                 })
                 .collect();
 
-            // Skip if any source doesn't exist
-            if source_values.iter().any(|v| v.is_none()) {
-                continue;
-            }
-
-            // Unwrap safely (we checked all are Some)
-            let values: Vec<String> = source_values.into_iter().map(|v| v.unwrap()).collect();
-
-            // Check if all values are equal (excluding null/undefined)
-            let non_null_values: Vec<&String> = values
-                .iter()
-                .filter(|v| *v != "null" && *v != "undefined")
-                .collect();
-
-            let desired_value = if non_null_values.is_empty() {
-                // All values are null/undefined
-                "null".to_string()
+            // If any source doesn't exist in shadow state, clear target to undefined
+            // (sources were removed, aggregation should be cleared)
+            let desired_value = if source_values.iter().any(|v| v.is_none()) {
+                UNDEFINED_SENTINEL_JSON.to_string()
             } else {
-                // Check if all non-null values are equal
-                let first_value = non_null_values[0];
-                let all_equal = non_null_values.iter().all(|v| *v == first_value);
+                // Unwrap safely (we checked all are Some)
+                let values: Vec<String> = source_values.into_iter().map(|v| v.unwrap()).collect();
 
-                if all_equal {
-                    first_value.clone()
+                // Filter out undefined sentinel (missing/blank) — null is a valid value
+                let present_values: Vec<&String> = values
+                    .iter()
+                    .filter(|v| *v != UNDEFINED_SENTINEL_JSON)
+                    .collect();
+
+                if present_values.is_empty() {
+                    // All values are undefined (missing) → clear target
+                    UNDEFINED_SENTINEL_JSON.to_string()
                 } else {
-                    // Sources disagree → null (valid JSON)
-                    "null".to_string()
+                    let first_value = present_values[0];
+                    let all_equal = present_values.iter().all(|v| *v == first_value);
+
+                    if all_equal {
+                        // All present values agree (including null)
+                        first_value.clone()
+                    } else {
+                        // Sources disagree → null
+                        "null".to_string()
+                    }
                 }
             };
 
@@ -495,8 +496,10 @@ mod tests {
 
         let changes = process_aggregation_reads(&registry, &shadow, &sources);
 
-        // Should skip if any source is missing
-        assert_eq!(changes.len(), 0);
+        // Missing sources → target set to undefined sentinel
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "allChecked");
+        assert_eq!(changes[0].value_json, UNDEFINED_SENTINEL_JSON);
     }
 
     #[test]
@@ -510,9 +513,8 @@ mod tests {
 
         let changes = process_aggregation_reads(&registry, &shadow, &sources);
 
-        assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].path, "allChecked");
-        assert_eq!(changes[0].value_json, "null");
+        // Empty sources with empty changed_paths → no affected targets → no changes
+        assert_eq!(changes.len(), 0);
     }
 
     #[test]

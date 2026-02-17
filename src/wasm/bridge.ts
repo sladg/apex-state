@@ -14,6 +14,7 @@
 
 import type { z } from 'zod'
 
+import { createFastJson } from '../utils/json'
 import { getWasmInstance } from './lifecycle'
 
 // ---------------------------------------------------------------------------
@@ -159,21 +160,26 @@ interface WasmChange {
 // Helpers — conversion between JS Change[] and WASM WasmChange[]
 // ---------------------------------------------------------------------------
 
+/**
+ * Sentinel for JS `undefined` crossing the WASM boundary.
+ * JSON has no `undefined` concept, so we encode it as a JSON string sentinel.
+ * Never collides with user data — no sane user value matches this marker.
+ */
+const UNDEFINED_SENTINEL_JSON = '"__APEX_UNDEFINED__"'
+
+const { stringify: fastStringify, parse: fastParse } = createFastJson([
+  { value: undefined, encoded: UNDEFINED_SENTINEL_JSON },
+])
+
 /** Convert JS Change[] to WASM's { path, value_json }[] for serde-wasm-bindgen. */
 const changesToWasm = (changes: Change[]): WasmChange[] =>
-  changes.map((c) => ({
-    path: c.path,
-    value_json: JSON.stringify(c.value),
-  }))
+  changes.map(({ path, value }) => ({ path, value_json: fastStringify(value) }))
 
 /** Convert WASM's { path, value_json }[] back to JS Change[]. */
 const wasmChangesToJs = (wasmChanges: WasmChange[]): Change[] =>
-  wasmChanges.map((c) => ({
-    path: c.path,
-    value:
-      c.value_json === 'undefined'
-        ? undefined
-        : (JSON.parse(c.value_json) as unknown),
+  wasmChanges.map(({ path, value_json }) => ({
+    path,
+    value: fastParse(value_json),
   }))
 
 // ---------------------------------------------------------------------------

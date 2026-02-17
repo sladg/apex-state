@@ -874,9 +874,9 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
     expect(paths).toContain('items.b.price')
     expect(paths).toContain('totals.price')
 
-    // Aggregation excludes null from all-equal check: [20, null] → only non-null is 20 → 20
+    // null is a valid value: [20, null] → sources disagree → null
     const totalsChange = findChange(changes, 'totals.price')
-    expect(totalsChange?.value).toBe(20)
+    expect(totalsChange?.value).toBeNull()
   })
 
   // Setup: enabled = true, disabled = false

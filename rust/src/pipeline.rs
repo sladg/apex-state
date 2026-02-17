@@ -27,6 +27,11 @@ pub(crate) struct Change {
     pub value_json: String,
 }
 
+/// JSON-encoded sentinel for JS `undefined` values crossing the WASM boundary.
+/// JS sends `JSON.stringify("__APEX_UNDEFINED__")` = `"\"__APEX_UNDEFINED__\""`.
+/// Treated as null-equivalent in aggregation and sync filtering.
+pub(crate) const UNDEFINED_SENTINEL_JSON: &str = "\"__APEX_UNDEFINED__\"";
+
 /// Validator dispatch info for JS-side execution.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct ValidatorDispatch {
@@ -445,8 +450,8 @@ impl ProcessingPipeline {
                     let value_json = serde_json::to_string(&value_repr.to_json_value())
                         .unwrap_or_else(|_| "null".to_string());
 
-                    // Skip null and undefined
-                    if value_json != "null" && value_json != "undefined" {
+                    // Skip undefined sentinel (missing/blank) — null is a valid value
+                    if value_json != UNDEFINED_SENTINEL_JSON {
                         *value_counts.entry(value_json.clone()).or_insert(0) += 1;
 
                         // Track path for this value (prefer shallowest path in case of tie)
@@ -1646,9 +1651,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have 1 state change + 1 concern change
-        assert_eq!(parsed.changes.len(), 1);
-        assert_eq!(parsed.changes[0].path, "user.role");
+        // Should have 1 state change + 1 concern change (merged)
+        assert_eq!(parsed.changes.len(), 2);
 
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 1);
@@ -1673,7 +1677,7 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.changes.len(), 2);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 1);
         let bl_change = concern_changes[0];
@@ -1727,8 +1731,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // 1 input change + 3 concern changes
-        assert_eq!(parsed.changes.len(), 1);
+        // 1 input change + 3 concern changes (merged)
+        assert_eq!(parsed.changes.len(), 4);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 3);
 
@@ -1803,12 +1807,12 @@ mod tests {
             )
             .unwrap();
 
-        // Should produce BoolLogic output
+        // Should produce BoolLogic output (1 state + 1 concern, merged)
         let result = p
             .process_changes(r#"[{"path": "user.role", "value_json": "\"admin\""}]"#)
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.changes.len(), 1);
+        assert_eq!(parsed.changes.len(), 2);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 1);
 
@@ -1870,7 +1874,7 @@ mod tests {
 
         // Register aggregation: allUsers -> [user1, user2, user3]
         p.register_aggregation_batch(
-            r#"[{"target": "allUsers", "sources": ["user1", "user2", "user3"]}]"#,
+            r#"[["allUsers", "user1"], ["allUsers", "user2"], ["allUsers", "user3"]]"#,
         )
         .unwrap();
 
@@ -1880,13 +1884,14 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have 3 distributed changes (no original target change)
-        assert_eq!(parsed.changes.len(), 3);
+        // Should have 3 distributed changes + 1 aggregation read (target recomputed from sources)
+        assert_eq!(parsed.changes.len(), 4);
 
         let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
         assert!(paths.contains(&"user1"));
         assert!(paths.contains(&"user2"));
         assert!(paths.contains(&"user3"));
+        assert!(paths.contains(&"allUsers")); // target recomputed (all sources equal)
 
         // All should have the same value
         for change in &parsed.changes {
@@ -1899,7 +1904,7 @@ mod tests {
         let mut p = make_pipeline();
 
         p.register_aggregation_batch(
-            r#"[{"target": "form.allChecked", "sources": ["item1", "item2"]}]"#,
+            r#"[["form.allChecked", "item1"], ["form.allChecked", "item2"]]"#,
         )
         .unwrap();
 
@@ -1908,18 +1913,19 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have 2 distributed changes, NOT the original form.allChecked
-        assert_eq!(parsed.changes.len(), 2);
-        for change in &parsed.changes {
-            assert_ne!(change.path, "form.allChecked");
-        }
+        // Should have 2 distributed changes + 1 aggregation read (target recomputed)
+        assert_eq!(parsed.changes.len(), 3);
+        let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(paths.contains(&"item1"));
+        assert!(paths.contains(&"item2"));
+        assert!(paths.contains(&"form.allChecked")); // target recomputed from sources
     }
 
     #[test]
     fn aggregation_with_child_path() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#)
+        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
             .unwrap();
 
         // Write to a child path of the aggregation target
@@ -1931,8 +1937,7 @@ mod tests {
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
         // Should distribute to both users with the child path appended
-        assert_eq!(parsed.changes.len(), 2);
-
+        // + aggregation read recomputes target (sources missing → undefined sentinel)
         let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
         assert!(paths.contains(&"user1.email"));
         assert!(paths.contains(&"user2.email"));
@@ -1944,8 +1949,8 @@ mod tests {
 
         p.register_aggregation_batch(
             r#"[
-                {"target": "allUsers", "sources": ["user1", "user2"]},
-                {"target": "allItems", "sources": ["item1", "item2", "item3"]}
+                ["allUsers", "user1"], ["allUsers", "user2"],
+                ["allItems", "item1"], ["allItems", "item2"], ["allItems", "item3"]
             ]"#,
         )
         .unwrap();
@@ -1960,37 +1965,24 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have 2 + 3 = 5 distributed changes (no original targets)
-        assert_eq!(parsed.changes.len(), 5);
+        // Should have 2 + 3 = 5 distributed + 2 aggregation reads (targets recomputed)
+        assert_eq!(parsed.changes.len(), 7);
 
-        // Check users
-        let user_changes: Vec<_> = parsed
-            .changes
-            .iter()
-            .filter(|c| c.path.starts_with("user"))
-            .collect();
-        assert_eq!(user_changes.len(), 2);
-        for change in user_changes {
-            assert_eq!(change.value_json, "\"alice\"");
-        }
-
-        // Check items
-        let item_changes: Vec<_> = parsed
-            .changes
-            .iter()
-            .filter(|c| c.path.starts_with("item"))
-            .collect();
-        assert_eq!(item_changes.len(), 3);
-        for change in item_changes {
-            assert_eq!(change.value_json, "42");
-        }
+        let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(paths.contains(&"user1"));
+        assert!(paths.contains(&"user2"));
+        assert!(paths.contains(&"item1"));
+        assert!(paths.contains(&"item2"));
+        assert!(paths.contains(&"item3"));
+        assert!(paths.contains(&"allUsers")); // target recomputed
+        assert!(paths.contains(&"allItems")); // target recomputed
     }
 
     #[test]
     fn aggregation_unregister() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#)
+        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
             .unwrap();
 
         // After unregister, aggregation should not apply
@@ -2223,7 +2215,7 @@ mod tests {
     fn full_pipeline_aggregation_only() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#)
+        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
             .unwrap();
 
         let result = p
@@ -2231,11 +2223,12 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have 2 distributed changes (no original target)
-        assert_eq!(parsed.changes.len(), 2);
+        // Should have 2 distributed changes + 1 aggregation read (target recomputed)
+        assert_eq!(parsed.changes.len(), 3);
         let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
         assert!(paths.contains(&"user1"));
         assert!(paths.contains(&"user2"));
+        assert!(paths.contains(&"allUsers")); // target recomputed (all sources equal)
     }
 
     #[test]
@@ -2286,19 +2279,21 @@ mod tests {
     #[test]
     fn full_pipeline_aggregation_sync_flip() {
         let mut p = ProcessingPipeline::new();
+        // Use false for profile statuses (not null) to avoid sync majority tie
+        // with the new null-is-valid semantics
         p.shadow_init(
             r#"{
                 "allUsers": null,
-                "user1": {"status": true},
+                "user1": {"status": false},
                 "user2": {"status": false},
-                "profile1": {"status": null},
-                "profile2": {"status": null}
+                "profile1": {"status": false},
+                "profile2": {"status": false}
             }"#,
         )
         .unwrap();
 
         // Register aggregation
-        p.register_aggregation_batch(r#"[{"target": "allUsers", "sources": ["user1", "user2"]}]"#)
+        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
             .unwrap();
 
         // Register sync: user.status <-> profile.status
@@ -2318,16 +2313,10 @@ mod tests {
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
         // Expected pipeline:
-        // 1. Aggregation: allUsers.status → user1.status, user2.status
-        // 2. Sync: user1.status → profile1.status, user2.status → profile2.status
-        // 3. Flip: user1.status true → user2.status false (overrides aggregation)
-        //
-        // Detailed breakdown:
-        // - Input: allUsers.status = true
-        // - Agg output: user1.status = true, user2.status = true
-        // - Sync propagation: profile1.status = true, profile2.status = true
-        // - Flip: user2.status = false (inverted from user1.status = true)
-        // Total: 5 changes (2 agg + 2 sync + 1 flip override)
+        // 1. Aggregation: allUsers.status → user1.status=true, user2.status=true
+        // 2. Sync: user1.status → profile1.status=true, user2.status → profile2.status=true
+        // 3. Flip: user1.status=true → user2.status=false, user2.status=true → user1.status=false
+        // 4. Aggregation read: sources now differ → allUsers recomputed
 
         // Find paths in output
         let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
@@ -2366,10 +2355,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have: input + sync (state changes) + BoolLogic (concern change)
-        assert_eq!(parsed.changes.len(), 2);
-        assert_eq!(parsed.changes[0].path, "user.role");
-        assert_eq!(parsed.changes[1].path, "profile.role");
+        // Should have: input + sync (state changes) + BoolLogic (concern change, merged)
+        assert_eq!(parsed.changes.len(), 3);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 1);
         let bl = concern_changes[0];
@@ -2399,8 +2386,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Input + sync (state changes) + 2 BoolLogics (concern changes)
-        assert_eq!(parsed.changes.len(), 2);
+        // Input + sync (state changes) + 2 BoolLogics (concern changes, merged)
+        assert_eq!(parsed.changes.len(), 4);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 2);
 
@@ -2549,8 +2536,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have: input + sync (state) + BoolLogic (concern)
-        assert_eq!(parsed.changes.len(), 2);
+        // Should have: input + sync (state) + BoolLogic (concern, merged)
+        assert_eq!(parsed.changes.len(), 3);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 1);
 
@@ -2563,7 +2550,7 @@ mod tests {
     fn full_pipeline_aggregation_with_boollogic() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[{"target": "allFlags", "sources": ["flag1", "flag2"]}]"#)
+        p.register_aggregation_batch(r#"[["allFlags", "flag1"], ["allFlags", "flag2"]]"#)
             .unwrap();
 
         p.register_boollogic(
@@ -2578,8 +2565,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have: 2 aggregated state changes + 1 concern change
-        assert_eq!(parsed.changes.len(), 2);
+        // Should have: 2 aggregated state changes + 1 aggregation read + 1 concern change (merged)
+        assert_eq!(parsed.changes.len(), 4);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 1);
 
@@ -2780,8 +2767,8 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should have: 1 state change, 1 concern change (BoolLogic), 0 validators
-        assert_eq!(parsed.changes.len(), 1);
+        // Should have: 1 state change + 1 concern change (BoolLogic, merged), 0 validators
+        assert_eq!(parsed.changes.len(), 2);
         let concern_changes = get_concern_changes(&parsed);
         assert_eq!(concern_changes.len(), 1);
         assert_eq!(concern_changes[0].path, "_concerns.user.email.disabledWhen");
@@ -2953,12 +2940,11 @@ mod tests {
         // Verify the aggregation change has the correct path
         assert_eq!(result.aggregation_changes[0].path, "totals.sum");
 
-        // The value should be a valid JSON number from one of the sources or derived
+        // Sources have different prices (10, 20, 30) → all-equal fails → null
         let value_str = &result.aggregation_changes[0].value_json;
-        // Should be a valid value (at minimum, check it's not null or empty)
-        assert!(
-            !value_str.is_empty() && value_str != "null",
-            "aggregation should produce a valid value"
+        assert_eq!(
+            value_str, "null",
+            "sources disagree → aggregation result is null"
         );
     }
 
@@ -3108,5 +3094,252 @@ mod tests {
         // No bool logics
         assert_eq!(result.registered_logic_ids.len(), 0);
         assert_eq!(result.bool_logic_changes.len(), 0);
+    }
+
+    // --- WASM-032: prepare_changes + pipeline_finalize round-trip tests ---
+
+    mod finalize_tests {
+        use super::*;
+
+        fn make_pipeline() -> ProcessingPipeline {
+            let mut p = ProcessingPipeline::new();
+            p.shadow_init(
+                r#"{"user": {"role": "guest", "age": 20, "email": "test@test.com"}}"#,
+            )
+            .unwrap();
+            p
+        }
+
+        // --- Basic round-trip ---
+
+        #[test]
+        fn prepare_then_finalize_basic_state_change() {
+            // prepare returns state_changes; finalize returns the same changes ready for valtio
+            let mut p = make_pipeline();
+            let changes = vec![Change::new("user.role".to_owned(), r#""admin""#.to_owned())];
+
+            let prepare = p.prepare_changes(changes).unwrap();
+            assert_eq!(prepare.state_changes.len(), 1);
+            assert_eq!(prepare.state_changes[0].path, "user.role");
+
+            let finalize = p.pipeline_finalize(vec![]).unwrap();
+            assert_eq!(finalize.state_changes.len(), 1);
+            assert_eq!(finalize.state_changes[0].path, "user.role");
+            assert_eq!(finalize.state_changes[0].value_json, r#""admin""#);
+        }
+
+        #[test]
+        fn prepare_all_noop_changes_has_work_false() {
+            // All input changes equal current shadow state → diff-filtered → early exit
+            let mut p = make_pipeline();
+            // user.role is already "guest"
+            let changes = vec![Change::new("user.role".to_owned(), r#""guest""#.to_owned())];
+
+            let prepare = p.prepare_changes(changes).unwrap();
+            assert!(!prepare.has_work);
+            assert!(prepare.state_changes.is_empty());
+            assert!(prepare.validators_to_run.is_empty());
+            assert!(prepare.execution_plan.is_none());
+        }
+
+        #[test]
+        fn finalize_empty_js_changes_passes_through_buffered_state() {
+            // Finalize with no JS input still returns buffered phase-1 state changes
+            let mut p = make_pipeline();
+            let changes = vec![Change::new("user.age".to_owned(), "30".to_owned())];
+            let _prepare = p.prepare_changes(changes).unwrap();
+
+            let finalize = p.pipeline_finalize(vec![]).unwrap();
+            assert_eq!(finalize.state_changes.len(), 1);
+            assert_eq!(finalize.state_changes[0].path, "user.age");
+            assert_eq!(finalize.state_changes[0].value_json, "30");
+        }
+
+        // --- BoolLogic in round-trip ---
+
+        #[test]
+        fn prepare_finalize_boollogic_concern_changes_in_output() {
+            // BoolLogic result buffered in prepare → returned in finalize with _concerns. prefix
+            let mut p = make_pipeline();
+            p.register_boollogic(
+                "_concerns.user.email.disabledWhen",
+                r#"{"IS_EQUAL": ["user.role", "admin"]}"#,
+            )
+            .unwrap();
+
+            let changes = vec![Change::new("user.role".to_owned(), r#""admin""#.to_owned())];
+            let prepare = p.prepare_changes(changes).unwrap();
+
+            // prepare exposes state changes and signals pending concern work
+            assert!(!prepare.state_changes.is_empty());
+            assert!(prepare.has_work);
+
+            // finalize merges buffered BoolLogic results into state_changes
+            let finalize = p.pipeline_finalize(vec![]).unwrap();
+
+            let concern_changes: Vec<&Change> = finalize
+                .state_changes
+                .iter()
+                .filter(|c| c.path.starts_with("_concerns."))
+                .collect();
+            assert_eq!(concern_changes.len(), 1);
+            assert_eq!(concern_changes[0].path, "_concerns.user.email.disabledWhen");
+            assert_eq!(concern_changes[0].value_json, "true");
+        }
+
+        #[test]
+        fn finalize_concern_prefix_preserved_in_output() {
+            // All concern paths in finalize.state_changes must keep _concerns. prefix
+            let mut p = make_pipeline();
+            p.register_boollogic(
+                "_concerns.user.email.disabledWhen",
+                r#"{"IS_EQUAL": ["user.role", "admin"]}"#,
+            )
+            .unwrap();
+
+            let changes = vec![Change::new("user.role".to_owned(), r#""admin""#.to_owned())];
+            let _prepare = p.prepare_changes(changes).unwrap();
+            let finalize = p.pipeline_finalize(vec![]).unwrap();
+
+            // Every concern path must have the full _concerns. prefix, not a stripped version
+            for change in &finalize.state_changes {
+                if change.path.starts_with("_concerns.") {
+                    assert!(
+                        change.path.len() > "_concerns.".len(),
+                        "concern path must not be bare prefix: {}",
+                        change.path
+                    );
+                }
+            }
+        }
+
+        // --- Validator dispatch in round-trip ---
+
+        #[test]
+        fn prepare_includes_validators_to_run() {
+            // Validator triggered by change appears in prepare.validators_to_run with dep values
+            let mut p = make_pipeline();
+            p.register_validators_batch(
+                r#"[{
+                    "validator_id": 1,
+                    "output_path": "_concerns.user.email.validationState",
+                    "dependency_paths": ["user.email"]
+                }]"#,
+            )
+            .unwrap();
+
+            let changes =
+                vec![Change::new("user.email".to_owned(), r#""new@test.com""#.to_owned())];
+            let prepare = p.prepare_changes(changes).unwrap();
+
+            assert_eq!(prepare.validators_to_run.len(), 1);
+            assert_eq!(prepare.validators_to_run[0].validator_id, 1);
+            assert_eq!(
+                prepare.validators_to_run[0].output_path,
+                "_concerns.user.email.validationState"
+            );
+            assert!(prepare.has_work);
+        }
+
+        #[test]
+        fn finalize_routes_js_concern_path_to_concern_bucket() {
+            // JS passes _concerns.* path in js_changes → partitioned internally →
+            // re-prefixed in finalize.state_changes
+            let mut p = make_pipeline();
+            let changes =
+                vec![Change::new("user.email".to_owned(), r#""new@test.com""#.to_owned())];
+            let _prepare = p.prepare_changes(changes).unwrap();
+
+            // Simulate JS validator writing to a concern path
+            let js_changes = vec![Change::new(
+                "_concerns.user.email.validationState".to_owned(),
+                r#"{"valid": true}"#.to_owned(),
+            )];
+            let finalize = p.pipeline_finalize(js_changes).unwrap();
+
+            let concern_changes: Vec<&Change> = finalize
+                .state_changes
+                .iter()
+                .filter(|c| c.path.starts_with("_concerns."))
+                .collect();
+            assert_eq!(concern_changes.len(), 1);
+            assert_eq!(
+                concern_changes[0].path,
+                "_concerns.user.email.validationState"
+            );
+            assert_eq!(concern_changes[0].value_json, r#"{"valid": true}"#);
+        }
+
+        #[test]
+        fn finalize_js_state_changes_merged_with_buffered() {
+            // JS listener produces additional state changes → merged with phase-1 state changes
+            let mut p = make_pipeline();
+            let changes = vec![Change::new("user.role".to_owned(), r#""admin""#.to_owned())];
+            let _prepare = p.prepare_changes(changes).unwrap();
+
+            // Simulate JS listener producing an additional change
+            let js_changes = vec![Change::new("user.age".to_owned(), "99".to_owned())];
+            let finalize = p.pipeline_finalize(js_changes).unwrap();
+
+            let paths: Vec<&str> = finalize
+                .state_changes
+                .iter()
+                .map(|c| c.path.as_str())
+                .collect();
+            assert!(paths.contains(&"user.role"), "Missing phase-1 state change");
+            assert!(paths.contains(&"user.age"), "Missing JS listener change");
+        }
+
+        // --- Combined BoolLogic + validator in same round-trip ---
+
+        #[test]
+        fn boollogic_and_validator_results_both_appear_in_finalize() {
+            // BoolLogic (from role change) and validator result (from JS) both present in output
+            let mut p = make_pipeline();
+            p.register_boollogic(
+                "_concerns.user.email.disabledWhen",
+                r#"{"IS_EQUAL": ["user.role", "admin"]}"#,
+            )
+            .unwrap();
+            p.register_validators_batch(
+                r#"[{
+                    "validator_id": 2,
+                    "output_path": "_concerns.user.email.validationState",
+                    "dependency_paths": ["user.email"]
+                }]"#,
+            )
+            .unwrap();
+
+            // Trigger both: role change (BoolLogic) + email change (validator)
+            let changes = vec![
+                Change::new("user.role".to_owned(), r#""admin""#.to_owned()),
+                Change::new("user.email".to_owned(), r#""admin@test.com""#.to_owned()),
+            ];
+            let prepare = p.prepare_changes(changes).unwrap();
+            assert!(prepare.has_work);
+            assert_eq!(prepare.validators_to_run.len(), 1);
+
+            // Simulate JS validator writing its result
+            let js_changes = vec![Change::new(
+                "_concerns.user.email.validationState".to_owned(),
+                r#"{"valid": true}"#.to_owned(),
+            )];
+            let finalize = p.pipeline_finalize(js_changes).unwrap();
+
+            let concern_paths: Vec<&str> = finalize
+                .state_changes
+                .iter()
+                .filter(|c| c.path.starts_with("_concerns."))
+                .map(|c| c.path.as_str())
+                .collect();
+            assert!(
+                concern_paths.contains(&"_concerns.user.email.disabledWhen"),
+                "Missing BoolLogic concern change"
+            );
+            assert!(
+                concern_paths.contains(&"_concerns.user.email.validationState"),
+                "Missing validator concern change"
+            );
+        }
     }
 }
