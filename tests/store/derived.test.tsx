@@ -14,7 +14,7 @@ import { StoreContext } from '../../src/core/context'
 import { createGenericStore } from '../../src/store/create-store'
 import { detectGetters, extractGetters } from '../../src/utils/derive-values'
 import { fireEvent, flushEffects, mountStore } from '../../tests/utils/react'
-import { typeHelpers } from '../mocks'
+import { deepGetterFixtures, typeHelpers } from '../mocks'
 
 /**
  * Type helpers for derived state with getters.
@@ -56,7 +56,9 @@ describe('Derived Values', () => {
 
       expect(base).toEqual({ firstName: 'John', lastName: 'Doe' })
       expect(Object.keys(computed)).toContain('fullName')
-      expect(typeof computed['fullName']).toBe('function')
+      expect(typeof computed['fullName']).toBe('object')
+      expect(typeof computed['fullName']?.get).toBe('function')
+      expect(computed['fullName']?.parentPath).toBe('')
     })
 
     it('should handle objects without getters', () => {
@@ -516,6 +518,131 @@ describe('Derived Values', () => {
       })
 
       expect(screen.getByTestId('value').textContent).toBe('test')
+    })
+
+    it('should handle 10 getters across nesting levels 0-5 with duplicate names, cross-level deps, and selective re-rendering', async () => {
+      // 10 getters across 6 nesting levels:
+      // - 5 share the name "summary" (levels 0,1,2,3,5)
+      // - l3.summary reads l4.product (cross-level getter dependency)
+      // - render counting verifies selective re-rendering
+      const initialState = deepGetterFixtures.standard
+
+      const store = createGenericStore<typeof initialState>()
+
+      // Track render counts per component to verify selective re-rendering
+      let rootRenders = 0
+      let deepRenders = 0
+
+      // Component that only reads root-level getters (s0, total)
+      const RootComponent = () => {
+        rootRenders++
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const [_a, setA] = store.useStore('a')
+
+        const s0 = (snap as unknown as { summary: string }).summary
+        const total = (snap as unknown as { total: number }).total
+
+        return (
+          <div>
+            <span data-testid="s0">{s0}</span>
+            <span data-testid="total">{total}</span>
+            <span data-testid="root-renders">{rootRenders}</span>
+            <button data-testid="change-a" onClick={() => setA(99)}>
+              Change A
+            </button>
+          </div>
+        )
+      }
+
+      // Component that only reads deep getters (product, s3, s5)
+      const DeepComponent = () => {
+        deepRenders++
+        const storeInstance = useContext(StoreContext)
+        const snap = useSnapshot(storeInstance!.state)
+        const [_e, setE] = store.useStore('l1.l2.l3.l4.e')
+
+        const s1 = (snap.l1 as unknown as { summary: string }).summary
+        const doubled = (snap.l1 as unknown as { doubled: number }).doubled
+        const s2 = (snap.l1.l2 as unknown as { summary: string }).summary
+        const s3 = (snap.l1.l2.l3 as unknown as { summary: string }).summary
+        const product = (snap.l1.l2.l3.l4 as unknown as { product: number })
+          .product
+        const s5 = (snap.l1.l2.l3.l4.l5 as unknown as { summary: string })
+          .summary
+
+        return (
+          <div>
+            <span data-testid="s1">{s1}</span>
+            <span data-testid="doubled">{doubled}</span>
+            <span data-testid="s2">{s2}</span>
+            <span data-testid="s3">{s3}</span>
+            <span data-testid="product">{product}</span>
+            <span data-testid="s5">{s5}</span>
+            <span data-testid="deep-renders">{deepRenders}</span>
+            <button data-testid="change-e" onClick={() => setE(77)}>
+              Change E
+            </button>
+          </div>
+        )
+      }
+
+      const Wrapper = () => (
+        <>
+          <RootComponent />
+          <DeepComponent />
+        </>
+      )
+
+      mountStore(<Wrapper />, store, initialState)
+
+      // --- Initial values: all 10 getters compute correctly ---
+      // 5 "summary" getters — each bound to its own parent context
+      expect(screen.getByTestId('s0').textContent).toBe('root:1')
+      expect(screen.getByTestId('total').textContent).toBe('3') // 1 + 2
+      expect(screen.getByTestId('s1').textContent).toBe('l1:2')
+      expect(screen.getByTestId('doubled').textContent).toBe('4') // 2 * 2
+      expect(screen.getByTestId('s2').textContent).toBe('l2:3')
+      // l3.summary reads its own d AND l4.product (cross-level getter dep)
+      expect(screen.getByTestId('s3').textContent).toBe('l3:4+product=50')
+      expect(screen.getByTestId('product').textContent).toBe('50') // 5 * 10
+      expect(screen.getByTestId('s5').textContent).toBe('l5:6')
+
+      const rootRendersAfterMount = rootRenders
+      const deepRendersAfterMount = deepRenders
+
+      // --- Change root `a` → updates s0 and total ---
+      fireEvent.click(screen.getByTestId('change-a'))
+      await flushEffects()
+
+      expect(screen.getByTestId('s0').textContent).toBe('root:99')
+      expect(screen.getByTestId('total').textContent).toBe('101') // 99 + 2
+      // Deep getters unchanged
+      expect(screen.getByTestId('s1').textContent).toBe('l1:2')
+      expect(screen.getByTestId('s3').textContent).toBe('l3:4+product=50')
+      expect(screen.getByTestId('s5').textContent).toBe('l5:6')
+
+      // Root component re-rendered (its deps changed)
+      expect(rootRenders).toBeGreaterThan(rootRendersAfterMount)
+      const rootRendersAfterA = rootRenders
+
+      // --- Change deep `l1.l2.l3.l4.e` → updates product AND l3.summary (cross-level) ---
+      fireEvent.click(screen.getByTestId('change-e'))
+      await flushEffects()
+
+      expect(screen.getByTestId('product').textContent).toBe('770') // 77 * 10
+      // l3.summary cascades: it reads l4.product which changed
+      expect(screen.getByTestId('s3').textContent).toBe('l3:4+product=770')
+      // Other summary getters unchanged
+      expect(screen.getByTestId('s0').textContent).toBe('root:99')
+      expect(screen.getByTestId('s1').textContent).toBe('l1:2')
+      expect(screen.getByTestId('s2').textContent).toBe('l2:3')
+      expect(screen.getByTestId('s5').textContent).toBe('l5:6')
+
+      // Deep component re-rendered (product and s3 changed)
+      expect(deepRenders).toBeGreaterThan(deepRendersAfterMount)
+      // Root component should NOT have re-rendered for a deep change
+      expect(rootRenders).toBe(rootRendersAfterA)
     })
 
     it('should verify getter recalculation behavior (cache vs recompute)', async () => {

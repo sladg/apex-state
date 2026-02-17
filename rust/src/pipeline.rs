@@ -9,6 +9,7 @@ use crate::aggregation::{
     process_aggregation_reads, process_aggregation_writes, AggregationRegistry,
 };
 use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry};
+use crate::clear_paths::ClearPathsRegistry;
 use crate::functions::{FunctionInput, FunctionRegistry};
 use crate::graphs::Graph;
 use crate::intern::InternTable;
@@ -74,10 +75,16 @@ pub(crate) struct FinalizeResult {
 // Consolidated registration structs (Rust side API)
 // ---------------------------------------------------------------------------
 
+/// Input for a clear-path rule from JS.
+#[derive(Deserialize, Debug)]
+pub(crate) struct ClearPathInput {
+    pub triggers: Vec<String>,
+    pub targets: Vec<String>,
+}
+
 /// Input for consolidated side effects registration.
 #[derive(Deserialize, Debug)]
 pub(crate) struct SideEffectsRegistration {
-    #[allow(dead_code)]
     pub registration_id: String,
     #[serde(default)]
     pub sync_pairs: Vec<[String; 2]>,
@@ -85,6 +92,8 @@ pub(crate) struct SideEffectsRegistration {
     pub flip_pairs: Vec<[String; 2]>,
     #[serde(default)]
     pub aggregation_pairs: Vec<[String; 2]>,
+    #[serde(default)]
+    pub clear_paths: Vec<ClearPathInput>,
     #[serde(default)]
     pub listeners: Vec<ListenerRegistration>,
 }
@@ -169,6 +178,7 @@ pub(crate) struct ProcessingPipeline {
     function_registry: FunctionRegistry,
     function_rev_index: ReverseDependencyIndex,
     aggregations: AggregationRegistry,
+    clear_registry: ClearPathsRegistry,
     sync_graph: Graph,
     flip_graph: Graph,
     router: TopicRouter,
@@ -198,6 +208,7 @@ impl ProcessingPipeline {
             function_registry: FunctionRegistry::new(),
             function_rev_index: ReverseDependencyIndex::new(),
             aggregations: AggregationRegistry::new(),
+            clear_registry: ClearPathsRegistry::new(),
             sync_graph: Graph::new(),
             flip_graph: Graph::new(),
             router: TopicRouter::new(),
@@ -709,7 +720,12 @@ impl ProcessingPipeline {
                 .map_err(|e| format!("Aggregation changes parse error: {}", e))?;
         }
 
-        // 4. Register listeners
+        // 4. Register clear paths
+        for cp in &reg.clear_paths {
+            self.register_clear_paths(&reg.registration_id, &cp.triggers, &cp.targets)?;
+        }
+
+        // 5. Register listeners
         if !reg.listeners.is_empty() {
             let listener_entries: Vec<_> = reg
                 .listeners
@@ -740,11 +756,10 @@ impl ProcessingPipeline {
 
     /// Unregister side effects by registration ID.
     ///
-    /// Currently a no-op placeholder for future use (registration tracking).
-    /// Cleanup is done by caller via individual unregister calls.
-    pub(crate) fn unregister_side_effects(&mut self, _registration_id: &str) -> Result<(), String> {
-        // Placeholder: registration tracking would be implemented here
-        // For now, caller manages individual unregister calls
+    /// Cleans up clear-path rules for this registration ID.
+    /// Other side-effect cleanup is managed by the caller.
+    pub(crate) fn unregister_side_effects(&mut self, registration_id: &str) -> Result<(), String> {
+        self.unregister_clear_paths(registration_id);
         Ok(())
     }
 
@@ -914,6 +929,22 @@ impl ProcessingPipeline {
         }
     }
 
+    /// Register clear-path rules.
+    pub(crate) fn register_clear_paths(
+        &mut self,
+        registration_id: &str,
+        triggers: &[String],
+        targets: &[String],
+    ) -> Result<(), String> {
+        self.clear_registry
+            .register(registration_id, triggers, targets, &mut self.intern)
+    }
+
+    /// Unregister clear-path rules by registration ID.
+    pub(crate) fn unregister_clear_paths(&mut self, registration_id: &str) {
+        self.clear_registry.unregister(registration_id);
+    }
+
     /// Register a batch of listeners for topic-based dispatch.
     pub(crate) fn register_listeners_batch(&mut self, listeners_json: &str) -> Result<(), String> {
         self.router.register_listeners_batch(listeners_json)
@@ -1008,7 +1039,7 @@ impl ProcessingPipeline {
 
         // Step 3: Apply aggregated changes to shadow state and collect affected paths
         // Only process genuine changes (diff against shadow before applying)
-        let mut genuine_changes = Vec::new();
+        let mut genuine_path_ids: Vec<u32> = Vec::new();
         for change in &changes {
             // Check if this aggregated change is a no-op against current shadow state
             let current = self.shadow.get(&change.path);
@@ -1019,7 +1050,7 @@ impl ProcessingPipeline {
                     // Can't parse → treat as genuine change
                     self.shadow.set(&change.path, &change.value_json)?;
                     self.buf_output.push(change.clone());
-                    genuine_changes.push(change.clone());
+                    genuine_path_ids.push(self.intern.intern(&change.path));
                     self.mark_affected_logic(&change.path);
                     continue;
                 }
@@ -1029,15 +1060,28 @@ impl ProcessingPipeline {
             if crate::diff::is_different(&current, &new_value) {
                 self.shadow.set(&change.path, &change.value_json)?;
                 self.buf_output.push(change.clone());
-                genuine_changes.push(change.clone());
+                genuine_path_ids.push(self.intern.intern(&change.path));
                 self.mark_affected_logic(&change.path);
             }
         }
 
+        // Step 3.5: Clear paths — "when X changes, set Y to null"
+        // Only original genuine changes (Step 3) feed into clear processing (no self-cascading)
+        let clear_changes =
+            self.clear_registry
+                .process(&genuine_path_ids, &mut self.intern, &mut self.shadow);
+        for change in &clear_changes {
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend(clear_changes.clone());
+
         // Step 4-5: Process sync paths and update shadow state
         // Must process ALL aggregated changes (not just genuine ones) because even if
         // a change is a no-op for path A, it might need to sync to path B that differs
-        self.process_sync_paths_into(&changes);
+        // Include clear changes so sync sees cleared paths
+        let mut changes_for_sync = changes.clone();
+        changes_for_sync.extend(clear_changes.clone());
+        self.process_sync_paths_into(&changes_for_sync);
         // Drain buf_sync to avoid borrow conflict with self.shadow/self.mark_affected_logic
         let sync_changes: Vec<Change> = self.buf_sync.drain(..).collect();
         for change in &sync_changes {
@@ -1047,9 +1091,9 @@ impl ProcessingPipeline {
         self.buf_output.extend_from_slice(&sync_changes);
 
         // Step 6-7: Process flip paths and update shadow state
-        // Must process ALL aggregated changes + sync outputs (not just genuine ones)
-        // because even if a change is a no-op for path A, it might need to flip to path B that differs
+        // Must process ALL aggregated changes + clear changes + sync outputs
         let mut changes_for_flip = changes.clone();
+        changes_for_flip.extend(clear_changes);
         changes_for_flip.extend(sync_changes.clone());
         self.process_flip_paths_into(&changes_for_flip);
         let flip_changes: Vec<Change> = self.buf_flip.drain(..).collect();
@@ -1248,6 +1292,7 @@ impl ProcessingPipeline {
         let changes = process_aggregation_writes(&self.aggregations, input_changes);
 
         // Step 3: Apply aggregated changes to shadow state
+        let mut genuine_path_ids: Vec<u32> = Vec::new();
         for change in &changes {
             let current = self.shadow.get(&change.path);
             let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
@@ -1256,6 +1301,7 @@ impl ProcessingPipeline {
                 Err(_) => {
                     self.shadow.set(&change.path, &change.value_json)?;
                     self.buf_output.push(change.clone());
+                    genuine_path_ids.push(self.intern.intern(&change.path));
                     self.mark_affected_logic(&change.path);
                     continue;
                 }
@@ -1264,12 +1310,26 @@ impl ProcessingPipeline {
             if crate::diff::is_different(&current, &new_value) {
                 self.shadow.set(&change.path, &change.value_json)?;
                 self.buf_output.push(change.clone());
+                genuine_path_ids.push(self.intern.intern(&change.path));
                 self.mark_affected_logic(&change.path);
             }
         }
 
+        // Step 3.5: Clear paths — "when X changes, set Y to null"
+        // Only original genuine changes (Step 3) feed into clear processing (no self-cascading)
+        let clear_changes =
+            self.clear_registry
+                .process(&genuine_path_ids, &mut self.intern, &mut self.shadow);
+        for change in &clear_changes {
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend(clear_changes.clone());
+
         // Step 4-5: Process sync paths
-        self.process_sync_paths_into(&changes);
+        // Include clear changes so sync sees cleared paths
+        let mut changes_for_sync = changes.clone();
+        changes_for_sync.extend(clear_changes.clone());
+        self.process_sync_paths_into(&changes_for_sync);
         let sync_changes: Vec<Change> = self.buf_sync.drain(..).collect();
         for change in &sync_changes {
             self.shadow.set(&change.path, &change.value_json)?;
@@ -1278,7 +1338,9 @@ impl ProcessingPipeline {
         self.buf_output.extend_from_slice(&sync_changes);
 
         // Step 6-7: Process flip paths
+        // Include clear changes + sync changes
         let mut changes_for_flip = changes.clone();
+        changes_for_flip.extend(clear_changes);
         changes_for_flip.extend(sync_changes.clone());
         self.process_flip_paths_into(&changes_for_flip);
         let flip_changes: Vec<Change> = self.buf_flip.drain(..).collect();

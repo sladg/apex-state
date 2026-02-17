@@ -39,6 +39,9 @@ const registerSideEffectsImpl = <
     cleanups.push(cleanup)
   }
 
+  // Register clear paths: not supported in legacy mode (requires WASM)
+  // clearPaths rules are silently ignored in legacy implementation
+
   // Register listeners: { path, scope, fn }
   if (effects.listeners) {
     for (const listener of effects.listeners) {

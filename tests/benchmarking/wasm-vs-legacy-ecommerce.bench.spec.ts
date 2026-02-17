@@ -16,7 +16,6 @@
  */
 import { bench, describe } from 'vitest'
 
-import { initWasm, isWasmLoaded } from '../../src/wasm/bridge'
 import {
   buildConcernRegistrations,
   buildEcommerceState,
@@ -24,17 +23,6 @@ import {
   SCENARIOS,
 } from '../mocks/ecommerce-bench'
 import { createTestStore, MODES } from '../utils/react'
-
-// ---------------------------------------------------------------------------
-// WASM initialization — top-level await required because vitest bench
-// does NOT run beforeAll/beforeEach hooks before bench() callbacks,
-// and setup.ts afterEach calls resetWasm() which would wipe state.
-// ---------------------------------------------------------------------------
-
-if (!isWasmLoaded()) {
-  const wasmModule = await import('../../rust/pkg/apex_state_wasm.js')
-  initWasm(wasmModule)
-}
 
 // ---------------------------------------------------------------------------
 // Benchmarks — describe.each(MODES) runs same code for Legacy and WASM

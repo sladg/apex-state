@@ -6,8 +6,23 @@
  */
 
 import type { ListenerRegistration } from '../core/types'
+import type { DeepKey } from './deep-key'
 import type { GenericMeta } from './meta'
 import type { AggregationPair, FlipPair, SyncPair } from './paths-of-same-value'
+
+/**
+ * Clear path rule - "when trigger paths change, set target paths to null"
+ *
+ * Format: [triggers[], targets[], options?]
+ * - triggers: paths that activate the rule
+ * - targets: paths to set to null
+ * - expandMatch: if true, [*] in targets expands to ALL keys (not just matched key)
+ */
+export type ClearPathRule<DATA extends object> = [
+  DeepKey<DATA>[],
+  DeepKey<DATA>[],
+  { expandMatch?: boolean }?,
+]
 
 /**
  * Side effects configuration for useSideEffects hook
@@ -79,6 +94,14 @@ export interface SideEffects<
    * Multiple pairs can point to same target for multi-source aggregation
    */
   aggregations?: AggregationPair<DATA>[]
+
+  /**
+   * Clear paths - "when X changes, set Y to null"
+   * Format: [triggers[], targets[], { expandMatch?: boolean }?]
+   * - Default: [*] in target correlates with trigger's [*] (same key)
+   * - expandMatch: true → [*] in target expands to ALL keys
+   */
+  clearPaths?: ClearPathRule<DATA>[]
 
   /**
    * Listeners - react to state changes with scoped state

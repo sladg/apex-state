@@ -13,7 +13,7 @@
  * └─────────────────────────────────────────────────────────────────────┘
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import type { BasicTestState } from '../mocks'
@@ -21,10 +21,6 @@ import { basicTestFixtures } from '../mocks'
 import { MODES, mountStore } from '../utils/react'
 
 describe.each(MODES)('[$name] Store Creation & Configuration', ({ config }) => {
-  beforeEach(() => {
-    // Create fresh store for each test
-  })
-
   describe('Default configuration', () => {
     it('should create store with default config', () => {
       // Call createGenericStore() with no arguments

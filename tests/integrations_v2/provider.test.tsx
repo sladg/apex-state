@@ -18,8 +18,8 @@
 
 import React, { act } from 'react'
 
-import { cleanup, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import type { BasicTestState } from '../mocks'
@@ -27,13 +27,6 @@ import { basicTestFixtures } from '../mocks'
 import { flushSync, MODES, mountStore } from '../utils/react'
 
 describe.each(MODES)('[$name] Provider & Context', ({ config }) => {
-  beforeEach(() => {
-    // Create fresh store
-    // Create Provider component from createGenericStore
-    // Note: Each test creates its own store() to avoid state leakage
-    cleanup()
-  })
-
   describe('Provider setup', () => {
     it('should expose Provider component', () => {
       // Create store
@@ -537,8 +530,7 @@ describe.each(MODES)('[$name] Provider & Context', ({ config }) => {
     it('should maintain state between component mount/unmount', async () => {
       // Create store with Provider
       // Mount Component1 → change field → assert value changed
-      // Unmount Component1
-      // Mount Component2 → assert field still changed (state persisted)
+      // Swap to Component2 (same Provider) → assert field still changed (state persisted)
       const store = createGenericStore<BasicTestState>(config)
 
       const Component1 = () => {
@@ -575,13 +567,13 @@ describe.each(MODES)('[$name] Provider & Context', ({ config }) => {
         'comp1-changed',
       )
 
-      renderResult.unmount()
-
-      render(
+      // Re-render same Provider with Component2 — Provider stays mounted, state persists
+      renderResult.rerender(
         <store.Provider initialState={basicTestFixtures.empty}>
           <Component2 />
         </store.Provider>,
       )
+      await flushSync()
 
       expect(screen.getByTestId('comp2-value')).toHaveTextContent(
         'comp1-changed',

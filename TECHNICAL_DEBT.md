@@ -12,6 +12,11 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 - **[Rust/Tests]** No round-trip behavioral tests: BoolLogic evaluation → finalize → concern_changes applied, validator results → finalize → concern_changes applied. `rust/src/pipeline.rs:617-818`
 - **[Rust/Legacy API]** `ProcessResult` marked "deprecated" (line 34) but still actively used by all tests and returned by `process_changes_vec()`. No migration path documented. `rust/src/pipeline.rs:36-47, 420`
 
+### Getter Dependency Tracking (Performance)
+
+- **[JS/Valtio]** Getters on proxied state objects have no selective dependency tracking. `subscribe()` fires on ANY proxy mutation, causing `useSnapshot` re-renders even when getter dependencies didn't change. `extractGetters()` exists (`src/utils/derive-values.ts`) but is not plugged into a derive/computed system. Needs a proper computed value mechanism (e.g., `derive()` from valtio/utils, or WASM-side computation).
+- **[JS/Valtio]** `extractGetters` and `detectGetters` in `src/utils/derive-values.ts` are unused dead code. Either plug them into the Provider/store creation flow or remove them.
+
 ### Code Quality (from npm run code:check)
 
 - **[TypeScript]** `executeFullExecutionPlan()` has Cognitive Complexity 27 (limit: 20). Refactor to reduce nesting/branching. `src/pipeline/processChanges.ts:47-125`
@@ -22,10 +27,6 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 
 - **[Rust]** Remove `#[allow(dead_code)]` annotations — audit usages and either wire up the dead code or delete it. Grep for all occurrences across `rust/src/`.
 
-### WASM Single-Pipeline Limitation (Critical Architecture)
-
-- **[WASM/Architecture]** Single global `thread_local! PIPELINE` in Rust means only ONE WASM-mode store can exist at a time. `shadowInit()` overwrites the entire shadow state — a second Provider mount clobbers the first. Multiple concurrent WASM stores are NOT supported. `rust/src/lib.rs:30-32`, `src/store/Provider.tsx:101`
-- **[WASM/Architecture]** No store ID or namespace in any WASM API call. All registrations (boollogic, listeners, validators, sync/flip graphs) go into the single global pipeline. Multi-store would require per-store pipeline instances or namespaced paths.
 
 ### concern_changes Removal Fallout
 
@@ -36,6 +37,10 @@ Opportunities for improvement tracked during development. Reviewed and prioritiz
 ### WASM Bridge Sentinel Collision Risk
 
 - **[JS/WASM boundary]** `wasmChangesToJs` uses raw string `"undefined"` as sentinel for JS `undefined`. If a user sets a field to the literal string `"undefined"` or `"null"`, it would be misinterpreted. Should use escaped sentinels (e.g., `@undefined`, `@null`) with a proper encode/decode protocol at the boundary. `src/wasm/bridge.ts:238`, `rust/src/aggregation.rs:268`
+
+### Concern Type Safety
+
+- **[Types/Concerns]** Concern types in tests and prebuilts are not properly generic — some use `BoolLogic<any>` or untyped config objects as workarounds. All concern registrations (tests + prebuilts) should use fully typed generics tied to the store's state type, eliminating `any` casts. `src/concerns/prebuilts/`, `tests/integration/`, `tests/integrations_v2/`
 
 ### Other
 
@@ -62,6 +67,8 @@ Each item follows this pattern:
 ---
 
 ## Completed Items
+
+- **[WASM Architecture]** Single global `thread_local! PIPELINE` replaced with `PIPELINES: HashMap<u32, ProcessingPipeline>` — RESOLVED. Each store now gets its own isolated pipeline via `createWasmPipeline()`. Multiple concurrent Providers no longer interfere. `rust/src/lib.rs`, `src/wasm/bridge.ts`
 
 - **[WASM Architecture]** `extractBoolLogicInputPaths` moved to Rust — RESOLVED. Function no longer needed; registration now directly passes `config.condition` to `registerBoolLogic()`.
 - **[JS/WASM boundary]** Concern results from `processChanges()` applied to `_concerns` — RESOLVED. Implementation at `src/pipeline/processChanges.ts:189-193`.

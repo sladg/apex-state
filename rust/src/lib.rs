@@ -1,8 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 mod aggregation;
 mod bool_logic;
+mod clear_paths;
 mod diff;
 mod functions;
 mod graphs;
@@ -27,7 +29,36 @@ pub fn main() {
 }
 
 thread_local! {
-    static PIPELINE: RefCell<ProcessingPipeline> = RefCell::new(ProcessingPipeline::new());
+    static PIPELINES: RefCell<HashMap<u32, ProcessingPipeline>> = RefCell::new(HashMap::new());
+    static NEXT_ID: Cell<u32> = const { Cell::new(1) };
+}
+
+/// Helper: run a closure with a mutable reference to the pipeline for `id`.
+fn with_pipeline<F, R>(id: u32, f: F) -> Result<R, JsValue>
+where
+    F: FnOnce(&mut ProcessingPipeline) -> Result<R, String>,
+{
+    PIPELINES.with(|p| {
+        let mut map = p.borrow_mut();
+        let pipeline = map
+            .get_mut(&id)
+            .ok_or_else(|| JsValue::from_str(&format!("Pipeline {} not found", id)))?;
+        f(pipeline).map_err(|e| JsValue::from_str(&e))
+    })
+}
+
+/// Helper: run a closure with an immutable reference to the pipeline for `id`.
+fn with_pipeline_ref<F, R>(id: u32, f: F) -> Result<R, JsValue>
+where
+    F: FnOnce(&ProcessingPipeline) -> R,
+{
+    PIPELINES.with(|p| {
+        let map = p.borrow();
+        let pipeline = map
+            .get(&id)
+            .ok_or_else(|| JsValue::from_str(&format!("Pipeline {} not found", id)))?;
+        Ok(f(pipeline))
+    })
 }
 
 /// Helper: convert a JsValue to a Rust type via serde-wasm-bindgen.
@@ -43,15 +74,37 @@ fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsValue> {
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+// =====================================================================
+// Pipeline lifecycle
+// =====================================================================
+
+/// Create a new isolated pipeline instance. Returns the pipeline ID.
+#[wasm_bindgen]
+pub fn pipeline_create() -> u32 {
+    let id = NEXT_ID.with(|n| {
+        let current = n.get();
+        n.set(current + 1);
+        current
+    });
+    PIPELINES.with(|p| {
+        p.borrow_mut().insert(id, ProcessingPipeline::new());
+    });
+    id
+}
+
+/// Destroy a pipeline instance, freeing all its state.
+#[wasm_bindgen]
+pub fn pipeline_destroy(pipeline_id: u32) {
+    PIPELINES.with(|p| {
+        p.borrow_mut().remove(&pipeline_id);
+    });
+}
+
 /// Initialize shadow state directly from a JS object (no JSON serialization).
 #[wasm_bindgen]
-pub fn shadow_init(state: JsValue) -> Result<(), JsValue> {
+pub fn shadow_init(pipeline_id: u32, state: JsValue) -> Result<(), JsValue> {
     let value: serde_json::Value = from_js(state)?;
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .shadow_init_value(value)
-            .map_err(|e| JsValue::from_str(&e))
-    })
+    with_pipeline(pipeline_id, |p| p.shadow_init_value(value))
 }
 
 /// Register a BoolLogic expression. Returns logic_id for cleanup.
@@ -59,19 +112,22 @@ pub fn shadow_init(state: JsValue) -> Result<(), JsValue> {
 /// - `output_path`: full concern path, e.g. `_concerns.user.email.disabledWhen`
 /// - `tree_json`: JSON string of the BoolLogic tree, e.g. `{"IS_EQUAL": ["user.role", "admin"]}`
 #[wasm_bindgen]
-pub fn register_boollogic(output_path: &str, tree_json: &str) -> Result<u32, JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .register_boollogic(output_path, tree_json)
-            .map_err(|e| JsValue::from_str(&e))
+pub fn register_boollogic(
+    pipeline_id: u32,
+    output_path: &str,
+    tree_json: &str,
+) -> Result<u32, JsValue> {
+    with_pipeline(pipeline_id, |p| {
+        p.register_boollogic(output_path, tree_json)
     })
 }
 
 /// Unregister a BoolLogic expression by its logic_id.
 #[wasm_bindgen]
-pub fn unregister_boollogic(logic_id: u32) {
-    PIPELINE.with(|p| {
-        p.borrow_mut().unregister_boollogic(logic_id);
+pub fn unregister_boollogic(pipeline_id: u32, logic_id: u32) -> Result<(), JsValue> {
+    with_pipeline(pipeline_id, |p| {
+        p.unregister_boollogic(logic_id);
+        Ok(())
     })
 }
 
@@ -88,14 +144,11 @@ pub fn unregister_boollogic(logic_id: u32) {
 /// Input: JS array of `{ path: "...", value_json: "..." }`
 /// Output: JS object `{ state_changes: [...], validators_to_run: [...], execution_plan: {...}, has_work: bool }`
 #[wasm_bindgen]
-pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
+pub fn process_changes(pipeline_id: u32, changes: JsValue) -> Result<JsValue, JsValue> {
     let input: Vec<Change> = from_js(changes)?;
-    PIPELINE.with(|p| {
-        let result = p
-            .borrow_mut()
-            .prepare_changes(input)
-            .map_err(|e| JsValue::from_str(&e))?;
-        to_js(&result)
+    with_pipeline(pipeline_id, |p| {
+        let result = p.prepare_changes(input)?;
+        to_js(&result).map_err(|e| e.as_string().unwrap_or_default())
     })
 }
 
@@ -111,14 +164,11 @@ pub fn process_changes(changes: JsValue) -> Result<JsValue, JsValue> {
 ///   - concern_changes have _concerns. prefix stripped (paths relative to _concerns root)
 ///   - Both state_changes and concern_changes are diffed (no-ops filtered out)
 #[wasm_bindgen]
-pub fn pipeline_finalize(js_changes: JsValue) -> Result<JsValue, JsValue> {
+pub fn pipeline_finalize(pipeline_id: u32, js_changes: JsValue) -> Result<JsValue, JsValue> {
     let changes: Vec<Change> = from_js(js_changes)?;
-    PIPELINE.with(|p| {
-        let result = p
-            .borrow_mut()
-            .pipeline_finalize(changes)
-            .map_err(|e| JsValue::from_str(&e))?;
-        to_js(&result)
+    with_pipeline(pipeline_id, |p| {
+        let result = p.pipeline_finalize(changes)?;
+        to_js(&result).map_err(|e| e.as_string().unwrap_or_default())
     })
 }
 
@@ -169,13 +219,13 @@ pub fn pipeline_finalize(js_changes: JsValue) -> Result<JsValue, JsValue> {
 ///
 /// All registrations happen atomically in a single WASM call, reducing JS↔WASM boundary crossings.
 #[wasm_bindgen]
-pub fn register_side_effects(registration_json: &str) -> Result<JsValue, JsValue> {
-    PIPELINE.with(|p| {
-        let result = p
-            .borrow_mut()
-            .register_side_effects(registration_json)
-            .map_err(|e| JsValue::from_str(&e))?;
-        to_js(&result)
+pub fn register_side_effects(
+    pipeline_id: u32,
+    registration_json: &str,
+) -> Result<JsValue, JsValue> {
+    with_pipeline(pipeline_id, |p| {
+        let result = p.register_side_effects(registration_json)?;
+        to_js(&result).map_err(|e| e.as_string().unwrap_or_default())
     })
 }
 
@@ -183,12 +233,8 @@ pub fn register_side_effects(registration_json: &str) -> Result<JsValue, JsValue
 ///
 /// Currently a no-op. In future, could track registrations for bulk cleanup.
 #[wasm_bindgen]
-pub fn unregister_side_effects(registration_id: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .unregister_side_effects(registration_id)
-            .map_err(|e| JsValue::from_str(&e))
-    })
+pub fn unregister_side_effects(pipeline_id: u32, registration_id: &str) -> Result<(), JsValue> {
+    with_pipeline(pipeline_id, |p| p.unregister_side_effects(registration_id))
 }
 
 /// Register all concerns at once (BoolLogic and validators).
@@ -199,13 +245,10 @@ pub fn unregister_side_effects(registration_id: &str) -> Result<(), JsValue> {
 /// Input: JSON string of `{ "registration_id": "...", "bool_logics": [...], "validators": [...] }`
 /// Output: JS object `{ bool_logic_changes: [...], registered_logic_ids: [...], registered_validator_ids: [...] }`
 #[wasm_bindgen]
-pub fn register_concerns(registration_json: &str) -> Result<JsValue, JsValue> {
-    PIPELINE.with(|p| {
-        let result = p
-            .borrow_mut()
-            .register_concerns(registration_json)
-            .map_err(|e| JsValue::from_str(&e))?;
-        to_js(&result)
+pub fn register_concerns(pipeline_id: u32, registration_json: &str) -> Result<JsValue, JsValue> {
+    with_pipeline(pipeline_id, |p| {
+        let result = p.register_concerns(registration_json)?;
+        to_js(&result).map_err(|e| e.as_string().unwrap_or_default())
     })
 }
 
@@ -213,12 +256,8 @@ pub fn register_concerns(registration_json: &str) -> Result<JsValue, JsValue> {
 ///
 /// Currently a no-op. In future, could track registrations for bulk cleanup.
 #[wasm_bindgen]
-pub fn unregister_concerns(registration_id: &str) -> Result<(), JsValue> {
-    PIPELINE.with(|p| {
-        p.borrow_mut()
-            .unregister_concerns(registration_id)
-            .map_err(|e| JsValue::from_str(&e))
-    })
+pub fn unregister_concerns(pipeline_id: u32, registration_id: &str) -> Result<(), JsValue> {
+    with_pipeline(pipeline_id, |p| p.unregister_concerns(registration_id))
 }
 
 /// Reset the entire pipeline to a fresh state (testing only).
@@ -226,12 +265,23 @@ pub fn unregister_concerns(registration_id: &str) -> Result<(), JsValue> {
 /// Clears all internal state: shadow, registrations, graphs, router, BoolLogic registry.
 /// Call this between tests to ensure isolation.
 #[wasm_bindgen]
-pub fn pipeline_reset() {
-    PIPELINE.with(|p| p.borrow_mut().reset());
+pub fn pipeline_reset(pipeline_id: u32) {
+    with_pipeline(pipeline_id, |p| {
+        p.reset();
+        Ok(())
+    })
+    .ok();
+}
+
+/// Reset ALL pipelines and the ID counter (testing only).
+#[wasm_bindgen]
+pub fn pipeline_reset_all() {
+    PIPELINES.with(|p| p.borrow_mut().clear());
+    NEXT_ID.with(|n| n.set(1));
 }
 
 /// Dump shadow state as JSON (debug/testing).
 #[wasm_bindgen]
-pub fn shadow_dump() -> String {
-    PIPELINE.with(|p| p.borrow().shadow_dump())
+pub fn shadow_dump(pipeline_id: u32) -> Result<String, JsValue> {
+    with_pipeline_ref(pipeline_id, |p| p.shadow_dump())
 }

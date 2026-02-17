@@ -70,6 +70,40 @@ The separation between `proxy` and `ref` is the reason React renders only when u
 
 Keep these generics untouched; they enforce invariants across the public API.
 
+## Valtio Pitfalls
+
+### `proxy()` mutates the original object
+
+`proxy(obj)` uses `obj` as the Proxy target. Mutations through the proxy write directly to the original object:
+
+```typescript
+const original = { fieldA: '' }
+const p = proxy(original)
+p.fieldA = 'changed'
+original.fieldA // → 'changed' (mutated!)
+```
+
+**Consequence:** Never pass shared/singleton objects to `proxy()`. The Provider deep-clones `initialState` before proxying to prevent caller objects from being tainted. Tests must not rely on fixture mutation for state persistence.
+
+**Consequence:** `structuredClone()` fails on proxy-tainted objects (`DataCloneError`), since valtio adds non-cloneable internal metadata.
+
+### Getters on proxy: no dependency tracking
+
+Valtio preserves JS getters on proxied objects — they re-evaluate correctly when accessed:
+
+```typescript
+const state = proxy({
+  firstName: 'John',
+  get fullName() { return this.firstName + '!' }
+})
+state.firstName = 'Jane'
+state.fullName // → 'Jane!' (re-evaluated)
+```
+
+**However, getters have no selective dependency tracking.** Valtio's `subscribe()` fires on ANY mutation to the proxy, not just properties the getter reads. In React, `useSnapshot` will trigger a re-render for every state change, and the getter re-evaluates even if its dependencies didn't change.
+
+**Current status:** Getters are optimized via `valtio-reactive`'s `computed()`. The Provider extracts getters from `initialState` using `extractGetters`, then re-attaches them as `computed()` proxies with selective dependency tracking — each getter only re-evaluates when its actual dependencies change. Cleanup is GC-based: `computed()` internally creates `watch()` subscriptions with no explicit dispose API; these are collected once the referenced `stateProxy` becomes unreachable (e.g., after Provider unmount).
+
 ## Performance Notes
 
 - Valtio batches writes in the same tick; the executor applies them once, then `effect()` coalesces concern evaluations.

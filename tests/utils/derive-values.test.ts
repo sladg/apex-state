@@ -181,7 +181,7 @@ describe('extractGetters', () => {
     expect(computed).toEqual({})
   })
 
-  it('should return computed function that works with snapshots', () => {
+  it('should return computed getter that works with context binding', () => {
     const obj = {
       a: 1,
       b: 2,
@@ -190,7 +190,8 @@ describe('extractGetters', () => {
       },
     }
     const { computed } = extractGetters(obj)
-    expect(computed['sum']!({ a: 5, b: 10 })).toBe(15)
+    expect(computed['sum']!.get.call({ a: 5, b: 10 })).toBe(15)
+    expect(computed['sum']!.parentPath).toBe('')
   })
 
   it('should handle multiple getters', () => {
@@ -206,8 +207,8 @@ describe('extractGetters', () => {
     const { base, computed } = extractGetters(obj)
     expect(base).toEqual({ value: 10 })
     expect(Object.keys(computed).sort()).toEqual(['doubled', 'tripled'])
-    expect(computed['doubled']!({ value: 5 })).toBe(10)
-    expect(computed['tripled']!({ value: 5 })).toBe(15)
+    expect(computed['doubled']!.get.call({ value: 5 })).toBe(10)
+    expect(computed['tripled']!.get.call({ value: 5 })).toBe(15)
   })
 
   it('should preserve nested objects in base', () => {
@@ -237,7 +238,7 @@ describe('extractGetters', () => {
     const { base, computed } = extractGetters(obj)
     expect(base).toEqual({ items: [1, 2, 3] })
     expect(Object.keys(computed)).toEqual(['sum'])
-    expect(computed['sum']!({ items: [1, 2, 3] })).toBe(6)
+    expect(computed['sum']!.get.call({ items: [1, 2, 3] })).toBe(6)
   })
 
   it('should skip non-enumerable properties', () => {
@@ -260,7 +261,29 @@ describe('extractGetters', () => {
     }
     const { base, computed } = extractGetters(obj)
     expect(base).toEqual({ enabled: true })
-    expect(computed['status']!({ enabled: false })).toBe('off')
+    expect(computed['status']!.get.call({ enabled: false })).toBe('off')
+  })
+
+  it('should extract nested getters with dot-path keys', () => {
+    const obj = {
+      user: {
+        firstName: 'John',
+        lastName: 'Doe',
+        get fullName() {
+          return `${this.firstName} ${this.lastName}`
+        },
+      },
+    }
+    const { base, computed } = extractGetters(obj)
+    expect(base).toEqual({ user: { firstName: 'John', lastName: 'Doe' } })
+    expect(Object.keys(computed)).toEqual(['user.fullName'])
+    expect(computed['user.fullName']!.parentPath).toBe('user')
+    expect(
+      computed['user.fullName']!.get.call({
+        firstName: 'Jane',
+        lastName: 'Smith',
+      }),
+    ).toBe('Jane Smith')
   })
 
   it('should handle null values', () => {
@@ -272,7 +295,7 @@ describe('extractGetters', () => {
     }
     const { base, computed } = extractGetters(obj)
     expect(base).toEqual({ value: null })
-    expect(computed['hasValue']!({ value: null })).toBe(false)
-    expect(computed['hasValue']!({ value: 42 })).toBe(true)
+    expect(computed['hasValue']!.get.call({ value: null })).toBe(false)
+    expect(computed['hasValue']!.get.call({ value: 42 })).toBe(true)
   })
 })

@@ -12,17 +12,14 @@ import * as matchers from '@testing-library/jest-dom/matchers'
 import { cleanup, fireEvent as rtlFireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, expect } from 'vitest'
 
-import { initWasm, isWasmLoaded, resetWasm } from '../src/wasm/bridge'
+import { loadWasm, resetWasm } from '../src/wasm/lifecycle'
 
 // Enable jest-dom matchers for vitest
 expect.extend(matchers)
 
 // Initialize WASM for all tests
 beforeEach(async () => {
-  if (!isWasmLoaded()) {
-    const wasmModule = await import('../rust/pkg/apex_state_wasm.js')
-    initWasm(wasmModule)
-  }
+  await loadWasm()
 })
 
 // Suppress React act() warnings for valtio async updates
@@ -39,7 +36,8 @@ console.error = (...args: unknown[]) => {
   originalError.apply(console, args)
 }
 
-// Cleanup after each test (React + WASM)
+// Cleanup after each test: React FIRST (so useLayoutEffect cleanups can call WASM),
+// then reset WASM (so the next test starts with a clean pipeline).
 afterEach(() => {
   cleanup()
   resetWasm()

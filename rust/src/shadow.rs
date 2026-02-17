@@ -147,6 +147,20 @@ impl ShadowState {
         serde_json::to_string(&self.root.to_json_value()).unwrap_or_else(|_| "{}".to_owned())
     }
 
+    /// Check if the value at the given path is null or missing.
+    pub(crate) fn is_null(&self, path: &str) -> bool {
+        matches!(self.get(path), None | Some(ValueRepr::Null))
+    }
+
+    /// Get the keys of an Object at the given path.
+    /// Returns None if the value is not an object or the path doesn't exist.
+    pub(crate) fn get_object_keys(&self, path: &str) -> Option<Vec<String>> {
+        match self.get(path) {
+            Some(ValueRepr::Object(map)) => Some(map.keys().cloned().collect()),
+            _ => None,
+        }
+    }
+
     /// Get a mutable reference to the root (for direct manipulation in pipeline).
     pub(crate) fn root(&self) -> &ValueRepr {
         &self.root
@@ -209,6 +223,21 @@ impl ShadowState {
                 } else {
                     Self::set_at(child, rest, value)
                 }
+            }
+            // Null/undefined → promote to Object so nested paths can be created.
+            // This handles the case where e.g. `form: undefined` gets populated
+            // via a change like `form.email.value = "x"`.
+            ValueRepr::Null => {
+                let mut map = HashMap::new();
+                if rest.is_empty() {
+                    map.insert(key.to_owned(), value);
+                } else {
+                    let mut child = ValueRepr::Object(HashMap::new());
+                    Self::set_at(&mut child, rest, value)?;
+                    map.insert(key.to_owned(), child);
+                }
+                *node = ValueRepr::Object(map);
+                Ok(())
             }
             _ => Err(format!("Cannot traverse through primitive at '{}'", key)),
         }
@@ -476,5 +505,28 @@ mod tests {
     fn set_invalid_json_fails() {
         let mut state = ShadowState::new();
         assert!(state.set("a", "not json").is_err());
+    }
+
+    #[test]
+    fn set_through_null_promotes_to_object() {
+        // form: null → set form.email.value → creates intermediate objects
+        let mut state = make_state(r#"{"form": null}"#);
+        state.set("form.email.value", "\"hello\"").unwrap();
+        let val = state.get("form.email.value").unwrap();
+        assert_eq!(val.to_json_value(), serde_json::json!("hello"));
+        // form is now an object with key "email"
+        let keys = state.get_object_keys("form").unwrap();
+        assert_eq!(keys, vec!["email"]);
+    }
+
+    #[test]
+    fn set_through_missing_key_creates_path() {
+        // form doesn't exist → set form.email.value → creates everything
+        let mut state = make_state(r#"{}"#);
+        state.set("form.email.value", "\"world\"").unwrap();
+        let val = state.get("form.email.value").unwrap();
+        assert_eq!(val.to_json_value(), serde_json::json!("world"));
+        let keys = state.get_object_keys("form").unwrap();
+        assert_eq!(keys, vec!["email"]);
     }
 }

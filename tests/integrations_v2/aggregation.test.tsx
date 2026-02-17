@@ -237,14 +237,8 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
         {
           sideEffects: {
             aggregations: [
-              [
-                'target',
-                'nonExistentFieldA' as unknown as keyof AggregationTestState,
-              ],
-              [
-                'target',
-                'nonExistentFieldB' as unknown as keyof AggregationTestState,
-              ],
+              ['target', 'nonExistentFieldA'],
+              ['target', 'nonExistentFieldB'],
             ],
           },
         },

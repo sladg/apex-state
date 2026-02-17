@@ -105,7 +105,7 @@ import { wasm } from './wasm/bridge'
 - Valtio proxies (state, _concerns)
 - React hooks and components
 - Function references: `Map<id, handler>`, `Map<id, schema>`
-- Getter functions (evaluated at render time)
+- Getter functions (evaluated at render time) — **Pitfall:** no dependency tracking, re-evaluate on every access. See `docs/guides/ARCHITECTURE.md` § Valtio Pitfalls.
 - Custom concern evaluate() functions
 - Zod schema instances
 

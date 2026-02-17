@@ -10,7 +10,7 @@ import { effect } from 'valtio-reactive'
 import type { StoreInstance } from '../core/types'
 import type { ConcernRegistrationMap, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
-import { validatorSchemas, wasm } from '../wasm/bridge'
+import type { WasmPipeline } from '../wasm/bridge'
 import type { BaseConcernProps, ConcernType } from './types'
 
 /** Check if a concern config has a `boolLogic` field (BoolLogic concern). */
@@ -42,6 +42,7 @@ let nextRegistrationId = 0
 
 /** Batch-register BoolLogics, validators, and ValueLogics with WASM, apply initial results. */
 const registerWasmBatch = (
+  pipeline: WasmPipeline,
   boolLogics: { output_path: string; tree_json: string }[],
   validators: {
     validator_id: number
@@ -63,7 +64,7 @@ const registerWasmBatch = (
   disposeCallbacks: (() => void)[],
 ) => {
   const registrationId = `concerns-${nextRegistrationId++}`
-  const result = wasm.registerConcerns({
+  const result = pipeline.registerConcerns({
     registration_id: registrationId,
     ...(boolLogics.length > 0 && { bool_logics: boolLogics }),
     ...(validators.length > 0 && { validators }),
@@ -94,7 +95,7 @@ const registerWasmBatch = (
   }
 
   disposeCallbacks.push(() => {
-    wasm.unregisterConcerns(registrationId)
+    pipeline.unregisterConcerns(registrationId)
   })
 
   // Post-registration: run initial validation for each validator
@@ -112,8 +113,8 @@ const registerWasmBatch = (
 
     config.concernsAtPath[config.concernName] = validationResult
 
-    // Store schema for JS-side validator execution
-    validatorSchemas.set(validatorId, config.schema)
+    // Store schema in per-pipeline storage for JS-side validator execution
+    pipeline.validatorSchemas.set(validatorId, config.schema)
   })
 }
 
@@ -400,6 +401,7 @@ const registerConcernEffectsImpl = <
     valueLogics.length > 0
   ) {
     registerWasmBatch(
+      store._internal.pipeline!,
       boolLogics,
       validators,
       valueLogics,

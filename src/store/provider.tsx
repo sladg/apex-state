@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { proxy, ref } from 'valtio'
 
@@ -14,8 +14,12 @@ import type {
 } from '../core/types'
 import type { DeepRequired, GenericMeta } from '../types'
 import { deepMerge } from '../utils/deep-merge'
+import {
+  attachComputedGetters,
+  prepareInitialState,
+} from '../utils/derive-values'
 import { createTiming } from '../utils/timing'
-import { isWasmLoaded, loadWasm, wasm } from '../wasm/bridge'
+import { initPipeline, isWasmLoaded, loadWasm } from '../wasm/lifecycle'
 
 export const createInternalState = <
   DATA extends object,
@@ -41,6 +45,7 @@ export const createInternalState = <
   },
   timing: createTiming(config.debug),
   config,
+  pipeline: null,
 })
 
 export const createProvider = <
@@ -51,31 +56,31 @@ export const createProvider = <
 ) => {
   // Resolve config with defaults at factory time
   const resolvedConfig = deepMerge(DEFAULT_STORE_CONFIG, storeConfig)
+  const isLegacy = resolvedConfig.useLegacyImplementation
 
-  const Provider = ({ initialState, children }: ProviderProps<DATA>) => {
-    // Track if shadow state has been initialized (only init once)
-    const shadowInitialized = useRef(false)
+  const Provider = ({
+    initialState: rawInitialState,
+    children,
+  }: ProviderProps<DATA>) => {
+    const [wasmReady, setWasmReady] = useState(isLegacy || isWasmLoaded())
 
-    // Initialize wasmReady based on config and current WASM load state
-    const [wasmReady, setWasmReady] = useState(
-      resolvedConfig.useLegacyImplementation || isWasmLoaded(),
+    // Prepare getter-free initial state once (used by both useMemo and useEffect)
+    const prepared = useMemo(
+      () => prepareInitialState(rawInitialState),
+      // Only initialize once - ignore changes to initialState after mount
+      [],
     )
 
-    // CRITICAL FIX: If WASM is already loaded, initialize shadow state immediately
-    // BEFORE store creation, so registration hooks can compute initial sync changes.
-    // Reset the pipeline first to clear stale registrations (sync pairs, BoolLogic, etc.)
-    // from previous Provider mounts — each Provider represents a fresh store.
-    if (
-      !resolvedConfig.useLegacyImplementation &&
-      isWasmLoaded() &&
-      !shadowInitialized.current
-    ) {
-      wasm.pipelineReset()
-      wasm.shadowInit(initialState as Record<string, unknown>)
-      shadowInitialized.current = true
-    }
-
     const store = useMemo<StoreInstance<DATA, META>>(() => {
+      const internal = createInternalState<DATA, META>(resolvedConfig)
+
+      // CRITICAL: If WASM is already loaded, create pipeline and init shadow state
+      // BEFORE proxy creation, so registration hooks can compute initial sync changes.
+      // Each Provider gets its own isolated pipeline (no global reset needed).
+      if (!isLegacy && isWasmLoaded()) {
+        initPipeline(internal, prepared.initialState)
+      }
+
       const debugTrack: DebugTrack | null = resolvedConfig.debug.track
         ? {
             calls: [],
@@ -85,10 +90,13 @@ export const createProvider = <
           }
         : null
 
+      const stateProxy = proxy(prepared.initialState)
+      attachComputedGetters(stateProxy, prepared.getterMap)
+
       return {
         // state: Application data (tracked by valtio)
         // User actions WRITE to this, effects READ from this
-        state: proxy(initialState),
+        state: stateProxy,
 
         // _concerns: Computed concern values (tracked by valtio)
         // Effects WRITE to this, UI components READ from this
@@ -96,39 +104,37 @@ export const createProvider = <
 
         // _internal: Graphs, registrations, processing (NOT tracked)
         // Wrapped in ref() to prevent tracking even if store is later wrapped in a proxy
-        _internal: ref(createInternalState<DATA, META>(resolvedConfig)),
+        _internal: ref(internal),
 
         // _debug: Tracking data for testing/debugging (only when debug.track enabled)
         _debug: debugTrack ? ref(debugTrack) : null,
       }
-      // Only initialize once - ignore changes to initialState after mount
     }, [])
 
-    // Load WASM and initialize shadow state (blocking in WASM mode)
+    // Load WASM asynchronously if not already loaded (production first-render path)
     useEffect(() => {
-      if (resolvedConfig.useLegacyImplementation) {
-        // Legacy mode - no WASM needed
-        return
+      if (isLegacy || isWasmLoaded()) return
+
+      loadWasm()
+        .then(() => {
+          initPipeline(
+            store._internal,
+            prepared.initialState as Record<string, unknown>,
+          )
+          setWasmReady(true)
+        })
+        .catch((error) => {
+          console.error('[apex-state] Failed to load WASM:', error)
+          throw error
+        })
+    }, [])
+
+    // Cleanup: destroy pipeline on unmount
+    useEffect(() => {
+      return () => {
+        store._internal.pipeline?.destroy()
+        store._internal.pipeline = null
       }
-
-      // WASM mode - load WASM and initialize shadow state
-      const initWasm = async () => {
-        await loadWasm()
-
-        // Only init shadow if not already done (e.g., by synchronous path above)
-        if (!shadowInitialized.current) {
-          wasm.pipelineReset()
-          wasm.shadowInit(initialState as Record<string, unknown>)
-          shadowInitialized.current = true
-        }
-
-        setWasmReady(true)
-      }
-
-      initWasm().catch((error) => {
-        console.error('[apex-state] Failed to load WASM:', error)
-        throw error
-      })
     }, [])
 
     // Block rendering until WASM is ready (if using WASM mode)

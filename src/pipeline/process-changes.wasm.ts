@@ -14,8 +14,7 @@ import type {
 } from '../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../types'
 import { dot } from '../utils/dot'
-import type { Change, FullExecutionPlan } from '../wasm/bridge'
-import { validatorSchemas, wasm } from '../wasm/bridge'
+import type { Change, FullExecutionPlan, WasmPipeline } from '../wasm/bridge'
 import { applyBatch } from './apply-batch'
 
 // ---------------------------------------------------------------------------
@@ -205,11 +204,12 @@ const runValidators = (
     output_path: string
     dependency_values: Record<string, string>
   }[],
+  pipeline: WasmPipeline,
 ): Change[] => {
   const validationResults: Change[] = []
 
   for (const validator of validatorsToRun) {
-    const schema = validatorSchemas.get(validator.validator_id)
+    const schema = pipeline.validatorSchemas.get(validator.validator_id)
     if (!schema) continue
 
     // Parse dependency values from JSON strings
@@ -291,6 +291,8 @@ const pushDebugChanges = (
 
 export const processChangesWasm: typeof import('./process-changes').processChanges =
   (store, initialChanges) => {
+    const pipeline = store._internal.pipeline!
+
     // Convert to bridge format
     const bridgeChanges = tuplesToBridgeChanges(initialChanges)
 
@@ -306,7 +308,7 @@ export const processChangesWasm: typeof import('./process-changes').processChang
 
     // 1. WASM Phase 1: aggregation → sync → flip → BoolLogic
     const { state_changes, execution_plan, validators_to_run, has_work } =
-      wasm.processChanges(bridgeChanges)
+      pipeline.processChanges(bridgeChanges)
 
     // Early exit if WASM signals no work to do
     if (!has_work) {
@@ -338,12 +340,12 @@ export const processChangesWasm: typeof import('./process-changes').processChang
     }
 
     // 4. Execute validators (JS-only: Zod schemas)
-    const validationResults = runValidators(validators_to_run)
+    const validationResults = runValidators(validators_to_run, pipeline)
 
     // 5. WASM Phase 2: merge, diff, update shadow
     // Single flat array: listener output + validator output (with _concerns. prefix)
     const jsChanges = produced.concat(validationResults)
-    const final = wasm.pipelineFinalize(jsChanges)
+    const final = pipeline.pipelineFinalize(jsChanges)
 
     // 6. Apply NEW changes from listeners/validators to valtio
     // Phase 1 changes were already applied above, so filter them out

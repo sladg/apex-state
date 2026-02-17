@@ -14,11 +14,11 @@
  * Each test runs twice: once with useLegacyImplementation: true, once with false.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { _, createGenericStore } from '../src'
-import { loadWasm } from '../src/wasm/bridge'
+import { basicTestFixtures } from './mocks/fixtures'
 import { flushSync, mountStore } from './utils/react'
 
 // ---------------------------------------------------------------------------
@@ -66,13 +66,8 @@ const MODES = [
 ] as const
 
 // ---------------------------------------------------------------------------
-// Setup: Load WASM before tests
+// Test Suite
 // ---------------------------------------------------------------------------
-
-beforeEach(async () => {
-  // Pre-load WASM so Provider doesn't block during tests
-  await loadWasm()
-})
 
 // ---------------------------------------------------------------------------
 // Test Suite: Basic State Mutations
@@ -547,6 +542,44 @@ describe.each(MODES)('[$name] Listeners', ({ config }) => {
     expect(lastReceivedName).toBeDefined()
     // The changes array contains the incoming delta
     expect(lastReceivedChanges.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Test Suite: Fixture Contamination Guard
+// ---------------------------------------------------------------------------
+
+describe.each(MODES)('[$name] Fixture Contamination Guard', ({ config }) => {
+  // These two tests MUST run sequentially. The first mutates state through
+  // valtio proxy; the second verifies the original fixture is untouched.
+
+  it('should use shared fixture and mutate state via proxy', async () => {
+    const store = createGenericStore<typeof basicTestFixtures.empty>(config)
+
+    const { storeInstance, setValue } = mountStore(
+      store,
+      basicTestFixtures.empty,
+    )
+
+    await flushSync()
+
+    // Mutate state through the store
+    setValue('fieldA', 'contaminated')
+    setValue('fieldC', 999)
+    await flushSync()
+
+    // Store state should reflect mutations
+    expect(storeInstance.state.fieldA).toBe('contaminated')
+    expect(storeInstance.state.fieldC).toBe(999)
+  })
+
+  it('should find the original fixture unmodified after previous test', () => {
+    // If proxy(initialState) mutated the original object, these would fail
+    expect(basicTestFixtures.empty.fieldA).toBe('')
+    expect(basicTestFixtures.empty.fieldC).toBe(0)
+    expect(basicTestFixtures.empty.source).toBe('')
+    expect(basicTestFixtures.empty.boolA).toBe(false)
+    expect(basicTestFixtures.empty.boolB).toBe(true)
   })
 })
 

@@ -10,7 +10,6 @@ import { applyBatch } from '../pipeline/apply-batch'
 import { processChanges } from '../pipeline/process-changes'
 import type { GenericMeta } from '../types'
 import type { SideEffects } from '../types/side-effects'
-import { wasm } from '../wasm/bridge'
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -32,6 +31,15 @@ export const registerSideEffects = <
   const syncPairs: [string, string][] = effects.syncPaths ?? []
   const flipPairs: [string, string][] = effects.flipPaths ?? []
   const aggregationPairs: [string, string][] = effects.aggregations ?? []
+
+  // Transform clearPaths: public API format → WASM format
+  // When expandMatch: true, rewrite [*] → [**] in target paths
+  const clearPaths = effects.clearPaths?.map(([triggers, targets, opts]) => ({
+    triggers: triggers as string[],
+    targets: (opts?.expandMatch
+      ? (targets as string[]).map((t) => t.replace(/\[\*\]/g, '[**]'))
+      : targets) as string[],
+  }))
 
   // Build listeners array
   const listeners = effects.listeners?.map((listener) => {
@@ -67,12 +75,14 @@ export const registerSideEffects = <
   })
 
   // Single consolidated WASM call with all side effects
+  const pipeline = store._internal.pipeline!
   const registrationId = `sideEffects-${id}`
-  const result = wasm.registerSideEffects({
+  const result = pipeline.registerSideEffects({
     registration_id: registrationId,
     ...(syncPairs.length > 0 && { sync_pairs: syncPairs }),
     ...(flipPairs.length > 0 && { flip_pairs: flipPairs }),
     ...(aggregationPairs.length > 0 && { aggregation_pairs: aggregationPairs }),
+    ...(clearPaths && clearPaths.length > 0 && { clear_paths: clearPaths }),
     ...(listeners && listeners.length > 0 && { listeners }),
   })
 
@@ -96,7 +106,7 @@ export const registerSideEffects = <
 
   // Create cleanup function
   const cleanup = () => {
-    wasm.unregisterSideEffects(registrationId)
+    pipeline.unregisterSideEffects(registrationId)
 
     // Clean up listener handlers
     effects.listeners?.forEach((_listener, index) => {

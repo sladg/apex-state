@@ -15,6 +15,7 @@ import type {
   GenericMeta,
 } from '../types'
 import type { Timing } from '../utils/timing'
+import type { WasmPipeline } from '../wasm/bridge'
 import type { FlipGraph, SyncGraph } from './graph-types'
 
 /**
@@ -185,6 +186,8 @@ export interface InternalState<
   processing: ProcessingState<DATA, META>
   timing: Timing
   config: DeepRequired<StoreConfig>
+  /** Per-store WASM pipeline instance (null when using legacy implementation). */
+  pipeline: WasmPipeline | null
 }
 
 export type ConcernValues = Record<string, Record<string, unknown>>

@@ -35,7 +35,8 @@ import type {
 } from '../../src/types'
 import type { SideEffects } from '../../src/types/side-effects'
 import { deepMerge } from '../../src/utils/deep-merge'
-import { isWasmLoaded, wasm } from '../../src/wasm/bridge'
+import { createWasmPipeline } from '../../src/wasm/bridge'
+import { isWasmLoaded } from '../../src/wasm/lifecycle'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -206,15 +207,12 @@ export function mountStore<
     content = <div data-testid={options.testId ?? 'test-root'}>Test</div>
   }
 
-  // Pre-initialize WASM shadow state before render so Provider's synchronous
+  // Pre-initialize WASM pipeline before render so Provider's synchronous
   // path works. Without this, Provider returns null (blocking on async WASM load)
   // and storeInstance is never captured.
-  // We detect WASM mode by checking if the store's Provider would use WASM:
-  // createGenericStore passes config to createProvider which resolves defaults.
-  // Default is useLegacyImplementation: false, so if WASM is loaded, init shadow.
-  if (isWasmLoaded()) {
-    wasm.shadowInit(initialState as Record<string, unknown>)
-  }
+  // Note: Provider.useMemo will create its own pipeline. This pre-init is not needed
+  // anymore since Provider handles pipeline creation internally via createWasmPipeline().
+  // The Provider's initPipeline() call handles this now.
 
   render(
     React.createElement(store.Provider, {
@@ -401,7 +399,8 @@ export const createTestStore = <
     config,
   ) as DeepRequired<StoreConfig>
 
-  // Initialize WASM shadow state if in WASM mode
+  // Initialize WASM pipeline if in WASM mode
+  const internal = createInternalState<T, META>(resolvedConfig)
   if (!resolvedConfig.useLegacyImplementation) {
     if (!isWasmLoaded()) {
       throw new Error(
@@ -409,13 +408,15 @@ export const createTestStore = <
           'Call initWasm() in beforeAll/beforeEach first.',
       )
     }
-    wasm.shadowInit(initialState as Record<string, unknown>)
+    const pipeline = createWasmPipeline()
+    pipeline.shadowInit(initialState as Record<string, unknown>)
+    internal.pipeline = pipeline
   }
 
   const storeInstance: StoreInstance<T, META> = {
     state: proxy(initialState),
     _concerns: proxy({} as Record<string, Record<string, unknown>>),
-    _internal: ref(createInternalState<T, META>(resolvedConfig)),
+    _internal: ref(internal),
     _debug: null,
   }
 

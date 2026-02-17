@@ -1,24 +1,20 @@
 /**
- * WASM Bridge - Thin wrapper over Rust/WASM exports
+ * WASM Bridge — Thin namespace over Rust/WASM exports.
  *
  * Uses serde-wasm-bindgen for hot-path functions (processChanges,
- * createDispatchPlan, routeProducedChanges, shadowInit) — JS objects
- * cross the boundary directly without JSON string intermediary.
+ * shadowInit) — JS objects cross the boundary directly without JSON
+ * string intermediary. Registration functions still use JSON strings
+ * (cold path, simpler).
  *
- * Registration functions still use JSON strings (cold path, simpler).
- *
- * WASM must be loaded once before use via `loadWasm()`:
- * - In production: called in `<Provider />` setup
- * - In tests: called in `beforeEach` / `beforeAll`
- *
- * After loading, all bridge functions are synchronous.
+ * Loading is handled by `wasm/lifecycle.ts`. After loading, all bridge
+ * functions are synchronous.
  *
  * @module wasm/bridge
  */
 
 import type { z } from 'zod'
 
-import type * as WasmExports from '../../rust/pkg/apex_state_wasm'
+import { getWasmInstance } from './lifecycle'
 
 // ---------------------------------------------------------------------------
 // Types — exported for downstream use
@@ -56,29 +52,6 @@ export interface FullExecutionPlan {
   groups: DispatchGroup[]
   /** propagation_map[dispatch_id] = targets to forward produced changes to. */
   propagation_map: PropagationTarget[][]
-}
-
-// ---------------------------------------------------------------------------
-// Legacy types — kept for backward compat with createDispatchPlan/routeProducedChanges
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use FullExecutionPlan instead. */
-export interface ListenerDispatch {
-  subscriber_id: number
-  scope_path: string
-  changes: Change[]
-  ancestors?: string[]
-}
-
-/** @deprecated Use FullExecutionPlan instead. */
-export interface DispatchLevel {
-  depth: number
-  dispatches: ListenerDispatch[]
-}
-
-/** @deprecated Use FullExecutionPlan instead. */
-export interface DispatchPlan {
-  levels: DispatchLevel[]
 }
 
 // ---------------------------------------------------------------------------
@@ -124,12 +97,13 @@ export interface ValidatorDispatch {
 // Consolidated registration types
 // ---------------------------------------------------------------------------
 
-/** Consolidated registration input for side effects (sync, flip, aggregation, listeners). */
+/** Consolidated registration input for side effects (sync, flip, aggregation, clear, listeners). */
 export interface SideEffectsRegistration {
   registration_id: string
   sync_pairs?: [string, string][]
   flip_pairs?: [string, string][]
   aggregation_pairs?: [string, string][]
+  clear_paths?: { triggers: string[]; targets: string[] }[]
   listeners?: {
     subscriber_id: number
     topic_path: string
@@ -182,98 +156,6 @@ interface WasmChange {
 }
 
 // ---------------------------------------------------------------------------
-// Module loading
-// ---------------------------------------------------------------------------
-
-let wasmInstance: typeof WasmExports | null = null
-let loadingPromise: Promise<void> | null = null
-
-/**
- * Load the WASM module (async, call once at startup).
- * In production: dynamic import of bundler target.
- * In tests: use `initWasm()` to inject the node target synchronously.
- * Returns the loaded WASM instance for inspection/testing.
- */
-export const loadWasm = async (): Promise<typeof WasmExports> => {
-  if (wasmInstance) return wasmInstance
-  if (loadingPromise) {
-    await loadingPromise
-    return wasmInstance!
-  }
-
-  loadingPromise = (async () => {
-    const wasmModule = (await import(
-      /* @vite-ignore */
-      '../../rust/pkg/apex_state_wasm.js'
-    )) as unknown as typeof WasmExports & { default?: () => Promise<void> }
-    if (typeof wasmModule.default === 'function') {
-      await wasmModule.default()
-    }
-    wasmInstance = wasmModule
-  })()
-
-  await loadingPromise
-  return wasmInstance!
-}
-
-/**
- * Inject a pre-loaded WASM module (for testing with nodejs target).
- * Synchronous — no async loading needed.
- */
-export const initWasm = (module: unknown): void => {
-  wasmInstance = module as typeof WasmExports
-}
-
-/** Check if WASM module is loaded and ready for sync calls. */
-export const isWasmLoaded = (): boolean => wasmInstance !== null
-
-/**
- * Check if WASM should be used for this store instance.
- * Throws if WASM mode is requested but WASM is not loaded.
- */
-export const shouldUseWasm = (store: {
-  _internal: { config: { useLegacyImplementation: boolean } }
-}): boolean => {
-  const useWasm = !store._internal.config.useLegacyImplementation
-
-  if (useWasm && !isWasmLoaded()) {
-    throw new Error(
-      'WASM mode requested (useLegacyImplementation: false) but WASM is not loaded. Call loadWasm() before creating the store.',
-    )
-  }
-
-  return useWasm
-}
-
-/** Reset WASM module and pipeline state (testing only). */
-export const resetWasm = (): void => {
-  try {
-    wasmInstance?.pipeline_reset()
-  } catch {
-    // Instance may not be loaded — safe to ignore
-  }
-  wasmInstance = null
-  loadingPromise = null
-}
-
-const getWasmInstance = (): typeof WasmExports => {
-  if (!wasmInstance) {
-    throw new Error('WASM not loaded. Call loadWasm() first.')
-  }
-  return wasmInstance
-}
-
-// ---------------------------------------------------------------------------
-// Validator schema storage (Zod schemas can't cross WASM boundary)
-// ---------------------------------------------------------------------------
-
-/**
- * JS-side validator schema storage.
- * Maps validator_id (from WASM) to ZodSchema for execution.
- */
-export const validatorSchemas = new Map<number, z.ZodSchema>()
-
-// ---------------------------------------------------------------------------
 // Helpers — conversion between JS Change[] and WASM WasmChange[]
 // ---------------------------------------------------------------------------
 
@@ -295,176 +177,160 @@ const wasmChangesToJs = (wasmChanges: WasmChange[]): Change[] =>
   }))
 
 // ---------------------------------------------------------------------------
-// WASM namespace — Single export boundary
+// ProcessChanges result type
+// ---------------------------------------------------------------------------
+
+/** Result of processChanges (Phase 1). */
+export interface ProcessChangesResult {
+  state_changes: Change[]
+  changes: Change[] // Backwards compat alias
+  validators_to_run: ValidatorDispatch[]
+  execution_plan: FullExecutionPlan | null
+  has_work: boolean
+}
+
+// ---------------------------------------------------------------------------
+// WasmPipeline — per-store isolated pipeline instance
 // ---------------------------------------------------------------------------
 
 /**
- * All WASM functions accessible through this single namespace.
- * This is the primary interface for crossing the JS↔WASM boundary.
- *
- * Usage: `import { wasm } from './wasm/bridge'` then `wasm.processChanges(...)`
+ * An isolated WASM pipeline instance.
+ * Each store gets its own pipeline so multiple Providers don't interfere.
+ * All methods are pre-bound to the pipeline's ID — consumers never pass IDs.
  */
-export const wasm = {
-  // -- Shadow state ---------------------------------------------------------
+export interface WasmPipeline {
+  readonly id: number
+  shadowInit: (state: object) => void
+  shadowDump: () => unknown
+  processChanges: (changes: Change[]) => ProcessChangesResult
+  pipelineFinalize: (jsChanges: Change[]) => { state_changes: Change[] }
+  registerSideEffects: (reg: SideEffectsRegistration) => SideEffectsResult
+  unregisterSideEffects: (registrationId: string) => void
+  registerConcerns: (reg: ConcernsRegistration) => ConcernsResult
+  unregisterConcerns: (registrationId: string) => void
+  registerBoolLogic: (outputPath: string, tree: unknown) => number
+  unregisterBoolLogic: (logicId: number) => void
+  pipelineReset: () => void
+  destroy: () => void
+  /** Per-instance storage for Zod schemas (can't cross WASM boundary). */
+  validatorSchemas: Map<number, z.ZodSchema>
+}
 
-  /** Initialize shadow state from a JS object (no JSON serialization — direct JsValue). */
-  shadowInit: (state: Record<string, unknown>): void => {
-    getWasmInstance().shadow_init(state as never)
-  },
+/**
+ * Create a new isolated WASM pipeline instance.
+ * Each store should call this once and store the result.
+ * Call pipeline.destroy() on cleanup.
+ */
+export const createWasmPipeline = (): WasmPipeline => {
+  const wasm = getWasmInstance()
+  const id = wasm.pipeline_create()
+  const schemas = new Map<number, z.ZodSchema>()
 
-  /** Dump shadow state as JS object (debug/testing). */
-  shadowDump: (): unknown =>
-    JSON.parse(getWasmInstance().shadow_dump()) as unknown,
+  return {
+    id,
 
-  // -- BoolLogic ------------------------------------------------------------
+    shadowInit: (state) => {
+      wasm.shadow_init(id, state)
+    },
 
-  /** Register a BoolLogic expression. Returns logic_id for cleanup. */
-  registerBoolLogic: (outputPath: string, tree: unknown): number =>
-    getWasmInstance().register_boollogic(outputPath, JSON.stringify(tree)),
+    shadowDump: () => JSON.parse(wasm.shadow_dump(id)) as unknown,
 
-  /** Unregister a BoolLogic expression by logic_id. */
-  unregisterBoolLogic: (logicId: number): void => {
-    getWasmInstance().unregister_boollogic(logicId)
-  },
+    processChanges: (changes) => {
+      const result = wasm.process_changes(
+        id,
+        changesToWasm(changes) as never,
+      ) as unknown as {
+        state_changes: WasmChange[]
+        validators_to_run?: ValidatorDispatch[]
+        execution_plan?: FullExecutionPlan
+        has_work?: boolean
+      }
 
-  // -- Process changes (Phase 1) ------------------------------------------------
+      const stateChanges = wasmChangesToJs(result.state_changes)
+      return {
+        state_changes: stateChanges,
+        changes: stateChanges,
+        validators_to_run: result.validators_to_run ?? [],
+        execution_plan: result.execution_plan ?? null,
+        has_work: result.has_work ?? false,
+      }
+    },
 
-  /**
-   * Process a batch of state changes through the WASM pipeline (Phase 1).
-   *
-   * Always diffs incoming changes against shadow state to filter out no-ops before
-   * entering the pipeline. Early exits if all changes are no-ops.
-   *
-   * Updates shadow state during processing (needed for BoolLogic evaluation).
-   * Returns readonly context for JS listener execution + validators + execution plan + work flag.
-   *
-   * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
-   */
-  processChanges: (
-    changes: Change[],
-  ): {
-    state_changes: Change[]
-    changes: Change[] // Backwards compat alias
-    validators_to_run: ValidatorDispatch[]
-    execution_plan: FullExecutionPlan | null
-    has_work: boolean
-  } => {
-    const result = getWasmInstance().process_changes(
-      changesToWasm(changes) as never,
-    ) as unknown as {
-      state_changes: WasmChange[]
-      validators_to_run?: ValidatorDispatch[]
-      execution_plan?: FullExecutionPlan
-      has_work?: boolean
-    }
+    pipelineFinalize: (jsChanges) => {
+      const result = wasm.pipeline_finalize(
+        id,
+        changesToWasm(jsChanges) as never,
+      ) as unknown as {
+        state_changes: WasmChange[]
+      }
 
-    const stateChanges = wasmChangesToJs(result.state_changes)
-    return {
-      state_changes: stateChanges,
-      changes: stateChanges, // Backwards compat alias
-      validators_to_run: result.validators_to_run ?? [],
-      execution_plan: result.execution_plan ?? null,
-      has_work: result.has_work ?? false,
-    }
-  },
+      return {
+        state_changes: wasmChangesToJs(result.state_changes),
+      }
+    },
 
-  /**
-   * Finalize pipeline with JS changes (listeners + validators mixed) (Phase 2).
-   *
-   * Merges js_changes with pending buffers, diffs against shadow state,
-   * updates shadow, returns final changes for valtio.
-   *
-   * Input: Single flat array mixing listener output + validator output (with _concerns. prefix)
-   * Output: { state_changes } - all changes including those with _concerns. prefix
-   *
-   * Uses serde-wasm-bindgen: passes JS objects directly (no JSON.stringify wrapper).
-   */
-  pipelineFinalize: (jsChanges: Change[]): { state_changes: Change[] } => {
-    const wasmModule = getWasmInstance()
-    const result = wasmModule.pipeline_finalize(
-      changesToWasm(jsChanges) as never,
-    ) as unknown as {
-      state_changes: WasmChange[]
-    }
+    registerSideEffects: (reg) => {
+      const resultJson = wasm.register_side_effects(
+        id,
+        JSON.stringify(reg),
+      ) as unknown as {
+        sync_changes: WasmChange[]
+        aggregation_changes: WasmChange[]
+        registered_listener_ids: number[]
+      }
+      return {
+        sync_changes: wasmChangesToJs(resultJson.sync_changes),
+        aggregation_changes: wasmChangesToJs(resultJson.aggregation_changes),
+        registered_listener_ids: resultJson.registered_listener_ids,
+      }
+    },
 
-    return {
-      state_changes: wasmChangesToJs(result.state_changes),
-    }
-  },
+    unregisterSideEffects: (registrationId) => {
+      wasm.unregister_side_effects(id, registrationId)
+    },
 
-  // -- Consolidated registration (combined calls) ---------------------------
+    registerConcerns: (reg) => {
+      const resultJson = wasm.register_concerns(
+        id,
+        JSON.stringify(reg),
+      ) as unknown as {
+        bool_logic_changes: WasmChange[]
+        registered_logic_ids: number[]
+        registered_validator_ids: number[]
+        value_logic_changes: WasmChange[]
+        registered_value_logic_ids: number[]
+      }
+      return {
+        bool_logic_changes: wasmChangesToJs(resultJson.bool_logic_changes),
+        registered_logic_ids: resultJson.registered_logic_ids,
+        registered_validator_ids: resultJson.registered_validator_ids,
+        value_logic_changes: wasmChangesToJs(
+          resultJson.value_logic_changes ?? [],
+        ),
+        registered_value_logic_ids: resultJson.registered_value_logic_ids ?? [],
+      }
+    },
 
-  /**
-   * Register all side effects at once (sync, flip, aggregation, listeners).
-   * Single WASM call combining sync pairs, flip pairs, aggregations, and listeners.
-   * Returns initial changes to apply from sync/aggregation + listener IDs for cleanup.
-   */
-  registerSideEffects: (reg: SideEffectsRegistration): SideEffectsResult => {
-    const wasmModule = getWasmInstance() as any
-    const resultJson = wasmModule.register_side_effects(
-      JSON.stringify(reg),
-    ) as unknown as {
-      sync_changes: WasmChange[]
-      aggregation_changes: WasmChange[]
-      registered_listener_ids: number[]
-    }
-    return {
-      sync_changes: wasmChangesToJs(resultJson.sync_changes),
-      aggregation_changes: wasmChangesToJs(resultJson.aggregation_changes),
-      registered_listener_ids: resultJson.registered_listener_ids,
-    }
-  },
+    unregisterConcerns: (registrationId) => {
+      wasm.unregister_concerns(id, registrationId)
+    },
 
-  /**
-   * Unregister side effects by registration ID (placeholder).
-   * Currently a no-op; in future could track registrations.
-   */
-  unregisterSideEffects: (registrationId: string): void => {
-    getWasmInstance().unregister_side_effects(registrationId)
-  },
+    registerBoolLogic: (outputPath, tree) =>
+      wasm.register_boollogic(id, outputPath, JSON.stringify(tree)),
 
-  /**
-   * Register all concerns at once (BoolLogic and validators).
-   * Single WASM call combining BoolLogic and validator registration.
-   * Returns registered logic IDs and validator IDs.
-   */
-  registerConcerns: (reg: ConcernsRegistration): ConcernsResult => {
-    const wasmModule = getWasmInstance() as any
-    const resultJson = wasmModule.register_concerns(
-      JSON.stringify(reg),
-    ) as unknown as {
-      bool_logic_changes: WasmChange[]
-      registered_logic_ids: number[]
-      registered_validator_ids: number[]
-      value_logic_changes: WasmChange[]
-      registered_value_logic_ids: number[]
-    }
-    return {
-      bool_logic_changes: wasmChangesToJs(resultJson.bool_logic_changes),
-      registered_logic_ids: resultJson.registered_logic_ids,
-      registered_validator_ids: resultJson.registered_validator_ids,
-      value_logic_changes: wasmChangesToJs(
-        resultJson.value_logic_changes ?? [],
-      ),
-      registered_value_logic_ids: resultJson.registered_value_logic_ids ?? [],
-    }
-  },
+    unregisterBoolLogic: (logicId) => {
+      wasm.unregister_boollogic(id, logicId)
+    },
 
-  /**
-   * Unregister concerns by registration ID (placeholder).
-   * Currently a no-op; in future could track registrations.
-   */
-  unregisterConcerns: (registrationId: string): void => {
-    getWasmInstance().unregister_concerns(registrationId)
-  },
+    pipelineReset: () => {
+      wasm.pipeline_reset(id)
+    },
 
-  // -- Pipeline lifecycle ---------------------------------------------------
+    destroy: () => {
+      wasm.pipeline_destroy(id)
+      schemas.clear()
+    },
 
-  /**
-   * Reset the entire WASM pipeline to a fresh state (testing only).
-   * Clears all internal state: shadow, registrations, graphs, router, BoolLogic registry.
-   */
-  pipelineReset: (): void => {
-    getWasmInstance().pipeline_reset()
-  },
+    validatorSchemas: schemas,
+  }
 }
