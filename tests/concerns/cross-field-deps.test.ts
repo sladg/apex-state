@@ -39,13 +39,13 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
           },
           'products.leg-2.strike': {
             validationState: { schema: z.number().min(0) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
             },
           },
         },
@@ -88,7 +88,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
           },
         },
@@ -126,13 +126,13 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
           },
           'products.leg-2.strike': {
             validationState: { schema: z.number().min(0) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
             },
           },
         },
@@ -173,12 +173,12 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
         concerns: {
           'products.leg-1.strike': {
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
           },
           'products.leg-2.strike': {
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
             },
           },
         },
@@ -214,7 +214,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
         concerns: {
           'products.leg-1.strike': {
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
           },
         },
@@ -247,12 +247,12 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
         concerns: {
           'products.leg-1.strike': {
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
           },
           'products.leg-2.strike': {
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
             },
           },
         },

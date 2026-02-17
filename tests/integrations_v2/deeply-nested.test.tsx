@@ -703,7 +703,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
           concerns: {
             'level1.level2.level3.level4.level5': {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.level2.level3.level4.level5.flag', true],
                 },
               },
@@ -735,7 +735,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
           concerns: {
             'level1.level2.level3.level4.level5': {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.value', 'trigger'],
                 },
               },
@@ -766,7 +766,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
           concerns: {
             'level1.level2.level3': {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.value', 'published'],
                 },
               },
@@ -797,7 +797,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
           concerns: {
             'level1.level2.level3.level4.level5': {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.level2.level3.level4.level5.flag', false],
                 },
               },
@@ -845,7 +845,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
                 }),
               },
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.level2.level3.level4.level5.flag', true],
                 },
               },
@@ -889,21 +889,21 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
           concerns: {
             'level1.level2.level3': {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.value', 'trigger'],
                 },
               },
             },
             'level1.level2.level3.level4': {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.value', 'trigger'],
                 },
               },
             },
             'level1.level2.level3.level4.level5': {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: ['level1.value', 'trigger'],
                 },
               },

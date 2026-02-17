@@ -344,7 +344,7 @@ describe.each(MODES)('[$name] Concerns: disabledWhen', ({ config }) => {
       { email: '', age: 0 },
       {
         concerns: {
-          email: { disabledWhen: { condition: { IS_EQUAL: ['age', 0] } } },
+          email: { disabledWhen: { boolLogic: { IS_EQUAL: ['age', 0] } } },
         },
       },
     )
@@ -373,7 +373,7 @@ describe.each(MODES)('[$name] Concerns: disabledWhen', ({ config }) => {
         concerns: {
           email: {
             disabledWhen: {
-              condition: {
+              boolLogic: {
                 AND: [{ IS_EQUAL: ['age', 0] }, { IS_EQUAL: ['email', ''] }],
               },
             },
@@ -575,7 +575,7 @@ describe.each(MODES)('[$name] Cross-Feature Integration', ({ config }) => {
             schema: z.string().email(),
           },
           disabledWhen: {
-            condition: {
+            boolLogic: {
               IS_EQUAL: ['isValid', false],
             },
           },

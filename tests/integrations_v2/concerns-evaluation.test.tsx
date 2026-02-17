@@ -43,7 +43,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               disabledWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'published'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'published'] },
               },
             },
           },
@@ -72,7 +72,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               disabledWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'published'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'published'] },
               },
             },
           },
@@ -102,7 +102,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               disabledWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'published'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'published'] },
               },
             },
           },
@@ -142,7 +142,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   AND: [
                     { IS_EQUAL: ['fieldB', 'approved'] },
                     { NOT: { IS_EQUAL: ['fieldC', 1] } },
@@ -200,7 +200,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldC: {
               visibleWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'physical'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'physical'] },
               },
             },
           },
@@ -228,7 +228,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldC: {
               visibleWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'physical'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'physical'] },
               },
             },
           },
@@ -259,7 +259,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             source: {
               visibleWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'digital'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'digital'] },
               },
             },
           },
@@ -292,7 +292,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               visibleWhen: {
-                condition: { NOT: { IS_EQUAL: ['fieldB', 'none'] } },
+                boolLogic: { NOT: { IS_EQUAL: ['fieldB', 'none'] } },
               },
             },
           },
@@ -328,7 +328,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               readonlyWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'published'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'published'] },
               },
             },
           },
@@ -356,7 +356,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               readonlyWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'published'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'published'] },
               },
             },
           },
@@ -384,12 +384,12 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               readonlyWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'crisis'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'crisis'] },
               },
             },
             fieldC: {
               readonlyWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'crisis'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'crisis'] },
               },
             },
           },
@@ -739,7 +739,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               booleanCheck: {
-                condition: { IS_EQUAL: ['fieldB', 'active'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'active'] },
               },
               customCalculation: {
                 evaluate: ({ state }: any) => {
@@ -854,7 +854,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
                 },
               },
               disabledWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'locked'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'locked'] },
               },
             },
           },
@@ -886,10 +886,10 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               disabledWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'active'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'active'] },
               },
               visibleWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'active'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'active'] },
               },
             },
           },
@@ -992,7 +992,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               disabledWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'target'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'target'] },
               },
             },
           },
@@ -1021,7 +1021,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               visibleWhen: {
-                condition: { EXISTS: 'fieldB' },
+                boolLogic: { EXISTS: 'fieldB' },
               },
             },
           },
@@ -1046,7 +1046,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               readonlyWhen: {
-                condition: { IS_EMPTY: 'fieldB' },
+                boolLogic: { IS_EMPTY: 'fieldB' },
               },
             },
           },
@@ -1074,16 +1074,16 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             source: {
               gtConcern: {
-                condition: { GT: ['fieldC', 50] },
+                boolLogic: { GT: ['fieldC', 50] },
               },
               ltConcern: {
-                condition: { LT: ['fieldC', 100] },
+                boolLogic: { LT: ['fieldC', 100] },
               },
               gteConcern: {
-                condition: { GTE: ['fieldC', 50] },
+                boolLogic: { GTE: ['fieldC', 50] },
               },
               lteConcern: {
-                condition: { LTE: ['fieldC', 100] },
+                boolLogic: { LTE: ['fieldC', 100] },
               },
             },
           },
@@ -1117,7 +1117,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               inCheck: {
-                condition: { IN: ['fieldB', ['a', 'b', 'c']] },
+                boolLogic: { IN: ['fieldB', ['a', 'b', 'c']] },
               },
             },
           },
@@ -1146,7 +1146,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             source: {
               complexLogic: {
-                condition: {
+                boolLogic: {
                   OR: [
                     {
                       AND: [
@@ -1193,7 +1193,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             fieldA: {
               disabledWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'active'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'active'] },
               },
             },
           },
@@ -1220,7 +1220,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
           concerns: {
             source: {
               visibleWhen: {
-                condition: { IS_EQUAL: ['fieldB', 'show'] },
+                boolLogic: { IS_EQUAL: ['fieldB', 'show'] },
               },
             },
           },
@@ -1246,7 +1246,7 @@ describe.each(MODES)('[$name] Concerns: BoolLogic-Driven UI', ({ config }) => {
         concerns: {
           fieldA: {
             disabledWhen: {
-              condition: { IS_EQUAL: ['fieldB', 'locked'] },
+              boolLogic: { IS_EQUAL: ['fieldB', 'locked'] },
             },
           },
         },

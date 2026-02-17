@@ -50,7 +50,7 @@ describe('TEST-007: React Integration', () => {
       [`products.${_('leg-1')}.strike`]: {
         validationState: { schema: z.number().min(0).max(200) },
         disabledWhen: {
-          condition: {
+          boolLogic: {
             IS_EQUAL: [`products.${_('leg-1')}.status`, 'locked'],
           },
         },
@@ -214,7 +214,7 @@ describe('TEST-007: React Integration', () => {
       [`products.${_('leg-1')}.strike`]: {
         validationState: { schema: z.number().min(0).max(200) },
         disabledWhen: {
-          condition: {
+          boolLogic: {
             IS_EQUAL: [`products.${_('leg-1')}.status`, 'locked'],
           },
         },

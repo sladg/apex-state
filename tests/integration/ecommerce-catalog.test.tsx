@@ -626,7 +626,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         store.useConcerns('strike-disabled', {
           [STRIKE_L1]: {
             disabledWhen: {
-              condition: {
+              boolLogic: {
                 OR: [
                   {
                     IS_EQUAL: [STATUS_P1, 'approved'],
@@ -710,7 +710,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         store.useConcerns('barrier-vis', {
           [BARRIER_LEVEL_P2_L1]: {
             visibleWhen: {
-              condition: {
+              boolLogic: {
                 NOT: { IS_EQUAL: [BARRIER_TYPE_P2_L1, 'none'] },
               },
             },
@@ -781,7 +781,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         store.useConcerns('crisis-readonly', {
           [STRIKE_L1]: {
             readonlyWhen: {
-              condition: {
+              boolLogic: {
                 IS_EQUAL: ['globalMarket.regime' as const, 'crisis'],
               },
             },
@@ -840,7 +840,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
         store.useConcerns('complex-conditions', {
           [NOTIONAL_L1]: {
             disabledWhen: {
-              condition: {
+              boolLogic: {
                 AND: [
                   {
                     NOT: {
@@ -1176,7 +1176,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
                 schema: z.number().positive('Notional must be positive'),
               },
               disabledWhen: {
-                condition: {
+                boolLogic: {
                   IS_EQUAL: [STATUS_P1, 'executed'],
                 },
               },
@@ -1457,7 +1457,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
                 .max(5, 'Strike unreasonable'),
             },
             disabledWhen: {
-              condition: {
+              boolLogic: {
                 OR: [
                   {
                     IS_EQUAL: [STATUS_P1, 'approved'],
@@ -1569,7 +1569,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
               template: `Moneyness vs spot {{${MARKET_DATA_SPOT_L1}}}`,
             },
             disabledWhen: {
-              condition: {
+              boolLogic: {
                 GT: [MARKET_DATA_SPOT_L1, 2],
               },
             },
@@ -1634,7 +1634,7 @@ describe('Integration: E-commerce Catalog – Deep Nesting & Full Feature Covera
               schema: z.string().min(1, 'Status required'),
             },
             disabledWhen: {
-              condition: {
+              boolLogic: {
                 IS_EQUAL: [STATUS_P1, 'approved'],
               },
             },

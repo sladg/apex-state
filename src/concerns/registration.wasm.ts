@@ -13,11 +13,17 @@ import { dot } from '../utils/dot'
 import { validatorSchemas, wasm } from '../wasm/bridge'
 import type { BaseConcernProps, ConcernType } from './types'
 
-/** Check if a concern config has a `condition` field (BoolLogic concern). */
+/** Check if a concern config has a `boolLogic` field (BoolLogic concern). */
 const isBoolLogicConfig = (
   config: Record<string, unknown>,
-): config is { condition: unknown } =>
-  'condition' in config && config['condition'] != null
+): config is { boolLogic: unknown } =>
+  'boolLogic' in config && config['boolLogic'] != null
+
+/** Check if a concern config has a `value_logic` field (ValueLogic concern). */
+const isValueLogicConfig = (
+  config: Record<string, unknown>,
+): config is { valueLogic: unknown } =>
+  'valueLogic' in config && config['valueLogic'] != null
 
 /** Check if a concern config is schema-based validation. */
 const isSchemaValidation = (
@@ -34,7 +40,7 @@ let nextValidatorId = 0
 /** Sequential registration ID counter. */
 let nextRegistrationId = 0
 
-/** Batch-register BoolLogics and validators with WASM, apply initial results. */
+/** Batch-register BoolLogics, validators, and ValueLogics with WASM, apply initial results. */
 const registerWasmBatch = (
   boolLogics: { output_path: string; tree_json: string }[],
   validators: {
@@ -43,6 +49,7 @@ const registerWasmBatch = (
     dependency_paths: string[]
     scope: string
   }[],
+  valueLogics: { output_path: string; tree_json: string }[],
   validatorConfigs: Map<
     number,
     {
@@ -60,11 +67,23 @@ const registerWasmBatch = (
     registration_id: registrationId,
     ...(boolLogics.length > 0 && { bool_logics: boolLogics }),
     ...(validators.length > 0 && { validators }),
+    ...(valueLogics.length > 0 && { value_logics: valueLogics }),
   })
 
   // Apply initial BoolLogic evaluations to _concerns
   for (const change of result.bool_logic_changes) {
     // BoolLogic output paths are like "email.disabledWhen" (no _concerns prefix)
+    const lastDot = change.path.lastIndexOf('.')
+    const basePath = change.path.slice(0, lastDot)
+    const concernName = change.path.slice(lastDot + 1)
+    const concernsAtPath = concernRefs.get(basePath)
+    if (concernsAtPath && concernName) {
+      concernsAtPath[concernName] = change.value
+    }
+  }
+
+  // Apply initial ValueLogic evaluations to _concerns (same path pattern)
+  for (const change of result.value_logic_changes) {
     const lastDot = change.path.lastIndexOf('.')
     const basePath = change.path.slice(0, lastDot)
     const concernName = change.path.slice(lastDot + 1)
@@ -167,6 +186,7 @@ interface CollectedRegistrations {
     dependency_paths: string[]
     scope: string
   }[]
+  valueLogics: { output_path: string; tree_json: string }[]
   validatorConfigs: Map<
     number,
     {
@@ -218,17 +238,82 @@ const collectValidator = <DATA extends object>(
   })
 }
 
-/** Single-pass: classify each concern config as BoolLogic, validator, or JS effect. */
+/** Classify a single concern config and push to the appropriate bucket. */
+const classifyConcern = <DATA extends object>(
+  store: StoreInstance<DATA, any>,
+  path: string,
+  concernName: string,
+  config: Record<string, any>,
+  concernsAtPath: Record<string, unknown>,
+  concernMap: Map<string, ConcernType>,
+  result: CollectedRegistrations,
+) => {
+  // BoolLogic registration (WASM)
+  if (isBoolLogicConfig(config)) {
+    result.boolLogics.push({
+      output_path: `${path}.${concernName}`,
+      tree_json: JSON.stringify(config.boolLogic),
+    })
+    return
+  }
+
+  // ValueLogic registration (WASM)
+  if (isValueLogicConfig(config)) {
+    result.valueLogics.push({
+      output_path: `${path}.${concernName}`,
+      tree_json: JSON.stringify(config.valueLogic),
+    })
+    return
+  }
+
+  // Schema validator registration (WASM)
+  if (isSchemaValidation(concernName, config)) {
+    collectValidator(
+      store,
+      path,
+      concernName,
+      config,
+      concernsAtPath,
+      result.validators,
+      result.validatorConfigs,
+    )
+    return
+  }
+
+  // JS-based concern — queue for effect creation after WASM batch
+  // Resolve concern from registry, or create ad-hoc for inline evaluate functions
+  const concern =
+    concernMap.get(concernName) ??
+    (isAdHocConcern(config)
+      ? {
+          name: concernName,
+          description: `Custom concern: ${concernName}`,
+          evaluate: config.evaluate,
+        }
+      : undefined)
+
+  if (!concern) {
+    console.warn(`Concern "${concernName}" not found`)
+    return
+  }
+
+  result.jsEffects.push({ path, concernName, config, concern, concernsAtPath })
+}
+
+/** Single-pass: classify each concern config as BoolLogic, ValueLogic, validator, or JS effect. */
 const collectRegistrations = <DATA extends object, META extends GenericMeta>(
   store: StoreInstance<DATA, META>,
   registrationEntries: [string, Record<string, any> | undefined][],
   concernRefs: Map<string, Record<string, unknown>>,
   concernMap: Map<string, ConcernType>,
 ): CollectedRegistrations => {
-  const boolLogics: CollectedRegistrations['boolLogics'] = []
-  const validators: CollectedRegistrations['validators'] = []
-  const validatorConfigs: CollectedRegistrations['validatorConfigs'] = new Map()
-  const jsEffects: CollectedRegistrations['jsEffects'] = []
+  const result: CollectedRegistrations = {
+    boolLogics: [],
+    validators: [],
+    valueLogics: [],
+    validatorConfigs: new Map(),
+    jsEffects: [],
+  }
 
   for (const [path, concernConfigs] of registrationEntries) {
     if (!concernConfigs) continue
@@ -236,52 +321,19 @@ const collectRegistrations = <DATA extends object, META extends GenericMeta>(
 
     for (const [concernName, config] of Object.entries(concernConfigs)) {
       if (!config) continue
-
-      // BoolLogic registration (WASM)
-      if (isBoolLogicConfig(config)) {
-        boolLogics.push({
-          output_path: `${path}.${concernName}`,
-          tree_json: JSON.stringify(config.condition),
-        })
-        continue
-      }
-
-      // Schema validator registration (WASM)
-      if (isSchemaValidation(concernName, config)) {
-        collectValidator(
-          store,
-          path,
-          concernName,
-          config,
-          concernsAtPath,
-          validators,
-          validatorConfigs,
-        )
-        continue
-      }
-
-      // JS-based concern — queue for effect creation after WASM batch
-      // Resolve concern from registry, or create ad-hoc for inline evaluate functions
-      const concern =
-        concernMap.get(concernName) ??
-        (isAdHocConcern(config)
-          ? {
-              name: concernName,
-              description: `Custom concern: ${concernName}`,
-              evaluate: config.evaluate,
-            }
-          : undefined)
-
-      if (!concern) {
-        console.warn(`Concern "${concernName}" not found`)
-        continue
-      }
-
-      jsEffects.push({ path, concernName, config, concern, concernsAtPath })
+      classifyConcern(
+        store,
+        path,
+        concernName,
+        config,
+        concernsAtPath,
+        concernMap,
+        result,
+      )
     }
   }
 
-  return { boolLogics, validators, validatorConfigs, jsEffects }
+  return result
 }
 
 /** Clean up concern values from the concerns proxy on unmount. */
@@ -338,14 +390,19 @@ const registerConcernEffectsImpl = <
   }
 
   // Single pass: classify all concern configs
-  const { boolLogics, validators, validatorConfigs, jsEffects } =
+  const { boolLogics, validators, valueLogics, validatorConfigs, jsEffects } =
     collectRegistrations(store, registrationEntries, concernRefs, concernMap)
 
-  // Register all BoolLogics and validators in one WASM call
-  if (boolLogics.length > 0 || validators.length > 0) {
+  // Register all BoolLogics, validators, and ValueLogics in one WASM call
+  if (
+    boolLogics.length > 0 ||
+    validators.length > 0 ||
+    valueLogics.length > 0
+  ) {
     registerWasmBatch(
       boolLogics,
       validators,
+      valueLogics,
       validatorConfigs,
       concernRefs,
       disposeCallbacks,

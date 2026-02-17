@@ -554,7 +554,7 @@ export const buildConcernRegistrations =
       const concernName = parts.pop()!
       const basePath = parts.join('.')
       if (!map[basePath]) map[basePath] = {}
-      map[basePath]![concernName] = { condition: reg.tree }
+      map[basePath]![concernName] = { boolLogic: reg.tree }
     }
     return map as ConcernRegistrationMap<EcommerceBenchState>
   }

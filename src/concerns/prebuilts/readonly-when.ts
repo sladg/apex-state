@@ -10,7 +10,7 @@
  * ```typescript
  * store.useConcerns('my-concerns', {
  *   'productId': {
- *     readonlyWhen: { condition: { IS_EQUAL: ['order.status', 'completed'] } }
+ *     readonlyWhen: { boolLogic: { IS_EQUAL: ['order.status', 'completed'] } }
  *   }
  * })
  * // Returns: true if order status is 'completed', false otherwise
@@ -20,11 +20,11 @@
 import { evaluateBoolLogic } from '../../utils/bool-logic'
 import type { BoolLogic, ConcernType } from '../types'
 
-export const readonlyWhen: ConcernType<{ condition: BoolLogic<any> }, boolean> =
+export const readonlyWhen: ConcernType<{ boolLogic: BoolLogic<any> }, boolean> =
   {
     name: 'readonlyWhen',
     description: 'Boolean logic for readonly state',
     evaluate: (props) => {
-      return evaluateBoolLogic(props.condition, props.state)
+      return evaluateBoolLogic(props.boolLogic, props.state)
     },
   }

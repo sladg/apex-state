@@ -182,7 +182,7 @@ describe('Prebuilt Concerns Return Types', () => {
         store.useConcerns('test', {
           name: {
             disabledWhen: {
-              condition: { IS_EQUAL: ['status', 'inactive'] },
+              boolLogic: { IS_EQUAL: ['status', 'inactive'] },
             },
           },
         })
@@ -222,7 +222,7 @@ describe('Prebuilt Concerns Return Types', () => {
         store.useConcerns('test', {
           name: {
             disabledWhen: {
-              condition: { IS_EQUAL: ['status', 'active'] },
+              boolLogic: { IS_EQUAL: ['status', 'active'] },
             },
           },
         })
@@ -251,7 +251,7 @@ describe('Prebuilt Concerns Return Types', () => {
         store.useConcerns('test', {
           'settings.notifications': {
             visibleWhen: {
-              condition: { IS_EQUAL: ['settings.theme', 'dark'] },
+              boolLogic: { IS_EQUAL: ['settings.theme', 'dark'] },
             },
           },
         })
@@ -287,7 +287,7 @@ describe('Prebuilt Concerns Return Types', () => {
         store.useConcerns('test', {
           'settings.notifications': {
             visibleWhen: {
-              condition: { IS_EQUAL: ['settings.theme', 'light'] },
+              boolLogic: { IS_EQUAL: ['settings.theme', 'light'] },
             },
           },
         })
@@ -316,7 +316,7 @@ describe('Prebuilt Concerns Return Types', () => {
         store.useConcerns('test', {
           age: {
             readonlyWhen: {
-              condition: { IS_EQUAL: ['status', 'inactive'] },
+              boolLogic: { IS_EQUAL: ['status', 'inactive'] },
             },
           },
         })
@@ -351,7 +351,7 @@ describe('Prebuilt Concerns Return Types', () => {
         store.useConcerns('test', {
           age: {
             readonlyWhen: {
-              condition: { IS_EQUAL: ['status', 'active'] },
+              boolLogic: { IS_EQUAL: ['status', 'active'] },
             },
           },
         })
@@ -521,7 +521,7 @@ describe('Prebuilt Concerns Return Types', () => {
               schema: z.string().min(1),
             },
             disabledWhen: {
-              condition: { IS_EQUAL: ['status', 'inactive'] },
+              boolLogic: { IS_EQUAL: ['status', 'inactive'] },
             },
             dynamicTooltip: {
               template: 'Current: {{name}}',
@@ -596,7 +596,7 @@ describe('Prebuilt Concerns Return Types', () => {
         concerns: {
           name: {
             validationState: { schema: z.string() },
-            disabledWhen: { condition: { IS_EQUAL: ['status', 'active'] } },
+            disabledWhen: { boolLogic: { IS_EQUAL: ['status', 'active'] } },
           },
         },
       })

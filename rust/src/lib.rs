@@ -11,6 +11,7 @@ mod pipeline;
 mod rev_index;
 mod router;
 mod shadow;
+mod value_logic;
 
 use pipeline::{Change, ProcessingPipeline};
 

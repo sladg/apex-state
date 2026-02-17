@@ -144,7 +144,7 @@ export interface SideEffectsResult {
   registered_listener_ids: number[]
 }
 
-/** Consolidated registration input for concerns (BoolLogic and validators). */
+/** Consolidated registration input for concerns (BoolLogic, validators, and ValueLogic). */
 export interface ConcernsRegistration {
   registration_id: string
   bool_logics?: {
@@ -157,6 +157,10 @@ export interface ConcernsRegistration {
     dependency_paths: string[]
     scope: string
   }[]
+  value_logics?: {
+    output_path: string
+    tree_json: string
+  }[]
 }
 
 /** Consolidated registration output from concerns registration. */
@@ -164,6 +168,8 @@ export interface ConcernsResult {
   bool_logic_changes: Change[]
   registered_logic_ids: number[]
   registered_validator_ids: number[]
+  value_logic_changes: Change[]
+  registered_value_logic_ids: number[]
 }
 
 // ---------------------------------------------------------------------------
@@ -430,11 +436,17 @@ export const wasm = {
       bool_logic_changes: WasmChange[]
       registered_logic_ids: number[]
       registered_validator_ids: number[]
+      value_logic_changes: WasmChange[]
+      registered_value_logic_ids: number[]
     }
     return {
       bool_logic_changes: wasmChangesToJs(resultJson.bool_logic_changes),
       registered_logic_ids: resultJson.registered_logic_ids,
       registered_validator_ids: resultJson.registered_validator_ids,
+      value_logic_changes: wasmChangesToJs(
+        resultJson.value_logic_changes ?? [],
+      ),
+      registered_value_logic_ids: resultJson.registered_value_logic_ids ?? [],
     }
   },
 

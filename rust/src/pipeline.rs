@@ -15,6 +15,7 @@ use crate::intern::InternTable;
 use crate::rev_index::ReverseDependencyIndex;
 use crate::router::{FullExecutionPlan, TopicRouter};
 use crate::shadow::ShadowState;
+use crate::value_logic::{ValueLogicNode, ValueLogicRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -113,6 +114,15 @@ pub(crate) struct ConcernsRegistration {
     pub bool_logics: Vec<BoolLogicRegistration>,
     #[serde(default)]
     pub validators: Vec<ValidatorRegistration>,
+    #[serde(default)]
+    pub value_logics: Vec<ValueLogicRegistration>,
+}
+
+/// ValueLogic entry for consolidated registration.
+#[derive(Deserialize, Debug)]
+pub(crate) struct ValueLogicRegistration {
+    pub output_path: String,
+    pub tree_json: String,
 }
 
 /// BoolLogic entry for consolidated registration.
@@ -146,6 +156,8 @@ pub(crate) struct ConcernsResult {
     pub bool_logic_changes: Vec<Change>,
     pub registered_logic_ids: Vec<u32>,
     pub registered_validator_ids: Vec<u32>,
+    pub value_logic_changes: Vec<Change>,
+    pub registered_value_logic_ids: Vec<u32>,
 }
 
 /// Owns all WASM-internal state and orchestrates change processing.
@@ -167,6 +179,10 @@ pub(crate) struct ProcessingPipeline {
     buf_affected_ids: HashSet<u32>,
     buf_concern_changes: Vec<Change>,
     buf_affected_validators: HashSet<u32>,
+    // ValueLogic registry and reverse dependency index
+    value_logic_registry: ValueLogicRegistry,
+    value_logic_rev_index: ReverseDependencyIndex,
+    buf_affected_value_logics: HashSet<u32>,
     // Pending changes for round-trip refactor (EP5)
     buf_pending_state_changes: Vec<Change>,
     buf_pending_concern_changes: Vec<Change>,
@@ -191,6 +207,9 @@ impl ProcessingPipeline {
             buf_affected_ids: HashSet::with_capacity(16),
             buf_concern_changes: Vec::with_capacity(16),
             buf_affected_validators: HashSet::with_capacity(16),
+            value_logic_registry: ValueLogicRegistry::new(),
+            value_logic_rev_index: ReverseDependencyIndex::new(),
+            buf_affected_value_logics: HashSet::with_capacity(16),
             buf_pending_state_changes: Vec::with_capacity(64),
             buf_pending_concern_changes: Vec::with_capacity(16),
         }
@@ -772,16 +791,40 @@ impl ProcessingPipeline {
             )?;
 
             registered_validator_ids.push(validator.validator_id);
+        }
 
-            // Collect any initial changes from validators (for BoolLogic evaluation)
-            // In the current flow, validators don't produce initial changes themselves
-            // (they're evaluated later on JS side), so bool_logic_changes stays empty
+        // 3. Register ValueLogic expressions and compute initial values
+        let mut value_logic_changes = Vec::new();
+        let mut registered_value_logic_ids = Vec::new();
+
+        for vl in &reg.value_logics {
+            let tree: ValueLogicNode = serde_json::from_str(&vl.tree_json)
+                .map_err(|e| format!("ValueLogic parse error: {}", e))?;
+
+            let vl_id = self.value_logic_registry.register(
+                vl.output_path.clone(),
+                tree,
+                &mut self.intern,
+                &mut self.value_logic_rev_index,
+            );
+            registered_value_logic_ids.push(vl_id);
+
+            // Evaluate ValueLogic with current shadow state to get initial value
+            if let Some(meta) = self.value_logic_registry.get(vl_id) {
+                let result = meta.tree.evaluate(&self.shadow);
+                value_logic_changes.push(Change {
+                    path: vl.output_path.clone(),
+                    value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
+                });
+            }
         }
 
         Ok(ConcernsResult {
             bool_logic_changes,
             registered_logic_ids,
             registered_validator_ids,
+            value_logic_changes,
+            registered_value_logic_ids,
         })
     }
 
@@ -943,6 +986,7 @@ impl ProcessingPipeline {
         self.buf_affected_ids.clear();
         self.buf_concern_changes.clear();
         self.buf_affected_validators.clear();
+        self.buf_affected_value_logics.clear();
 
         // Step 0: Diff pre-pass (always-on)
         let input_changes: Vec<Change> = {
@@ -1042,6 +1086,17 @@ impl ProcessingPipeline {
             }
         }
 
+        // Step 8b: Evaluate affected ValueLogic expressions
+        for vl_id in &self.buf_affected_value_logics {
+            if let Some(meta) = self.value_logic_registry.get(*vl_id) {
+                let result = meta.tree.evaluate(&self.shadow);
+                self.buf_concern_changes.push(Change {
+                    path: meta.output_path.clone(),
+                    value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
+                });
+            }
+        }
+
         // Step 10: Collect affected validators with their dependency values
         let validators_to_run: Vec<ValidatorDispatch> = self
             .buf_affected_validators
@@ -1094,7 +1149,7 @@ impl ProcessingPipeline {
         })
     }
 
-    /// Mark all BoolLogic expressions and validators affected by a change at the given path.
+    /// Mark all BoolLogic expressions, ValueLogic expressions, and validators affected by a change at the given path.
     fn mark_affected_logic(&mut self, path: &str) {
         let affected_paths = self.shadow.affected_paths(path);
         for affected_path in &affected_paths {
@@ -1107,6 +1162,10 @@ impl ProcessingPipeline {
             for validator_id in self.function_rev_index.affected_by_path(path_id) {
                 self.buf_affected_validators.insert(validator_id);
             }
+            // Mark affected ValueLogic
+            for vl_id in self.value_logic_rev_index.affected_by_path(path_id) {
+                self.buf_affected_value_logics.insert(vl_id);
+            }
         }
         let path_id = self.intern.intern(path);
         // Mark affected BoolLogic
@@ -1116,6 +1175,10 @@ impl ProcessingPipeline {
         // Mark affected validators (now in function registry)
         for validator_id in self.function_rev_index.affected_by_path(path_id) {
             self.buf_affected_validators.insert(validator_id);
+        }
+        // Mark affected ValueLogic
+        for vl_id in self.value_logic_rev_index.affected_by_path(path_id) {
+            self.buf_affected_value_logics.insert(vl_id);
         }
     }
 
@@ -1163,6 +1226,7 @@ impl ProcessingPipeline {
         self.buf_affected_ids.clear();
         self.buf_concern_changes.clear();
         self.buf_affected_validators.clear();
+        self.buf_affected_value_logics.clear();
         self.buf_pending_state_changes.clear();
         self.buf_pending_concern_changes.clear();
 
@@ -1248,6 +1312,17 @@ impl ProcessingPipeline {
                     } else {
                         "false".to_owned()
                     },
+                });
+            }
+        }
+
+        // Step 8b: Evaluate affected ValueLogic expressions
+        for vl_id in &self.buf_affected_value_logics {
+            if let Some(meta) = self.value_logic_registry.get(*vl_id) {
+                let result = meta.tree.evaluate(&self.shadow);
+                self.buf_concern_changes.push(Change {
+                    path: meta.output_path.clone(),
+                    value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
                 });
             }
         }

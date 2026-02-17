@@ -51,13 +51,13 @@ const registerConcernEffectsImpl = <
             description: `Custom concern: ${concernName}`,
             evaluate: config.evaluate,
           }
-        } else if ('condition' in config && config.condition) {
-          // Support ad-hoc BoolLogic concerns with a condition but no prebuilt match
+        } else if ('boolLogic' in config && config.boolLogic) {
+          // Support ad-hoc BoolLogic concerns with a boolLogic but no prebuilt match
           concern = {
             name: concernName,
             description: `Ad-hoc BoolLogic concern: ${concernName}`,
             evaluate: (props: any) =>
-              evaluateBoolLogic(props.condition, props.state),
+              evaluateBoolLogic(props.boolLogic, props.state),
           }
         } else {
           console.warn(`Concern "${concernName}" not found`)

@@ -61,7 +61,7 @@ describe('TEST-001: Selective Re-calculation', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0).max(200) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
             dynamicTooltip: {
               template: 'Leg 1 Strike: {{products.leg-1.strike}}',
@@ -70,7 +70,7 @@ describe('TEST-001: Selective Re-calculation', () => {
           'products.leg-2.strike': {
             validationState: { schema: z.number().min(0).max(200) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-2.status', 'locked'] },
             },
             dynamicTooltip: {
               template: 'Leg 2 Strike: {{products.leg-2.strike}}',
@@ -134,7 +134,7 @@ describe('TEST-001: Selective Re-calculation', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0).max(200) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
             dynamicTooltip: {
               template: 'Leg 1 Strike: {{products.leg-1.strike}}',
@@ -185,7 +185,7 @@ describe('TEST-001: Selective Re-calculation', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0).max(200) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
             dynamicTooltip: {
               template: 'Leg 1 Strike: {{products.leg-1.strike}}',
@@ -238,7 +238,7 @@ describe('TEST-001: Selective Re-calculation', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0).max(200) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
             dynamicTooltip: {
               template: 'Leg 1 Strike: {{products.leg-1.strike}}',
@@ -286,7 +286,7 @@ describe('TEST-001: Selective Re-calculation', () => {
           'products.leg-1.strike': {
             validationState: { schema: z.number().min(0).max(200) },
             disabledWhen: {
-              condition: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
+              boolLogic: { IS_EQUAL: ['products.leg-1.status', 'locked'] },
             },
             dynamicTooltip: {
               template: 'Leg 1 Strike: {{products.leg-1.strike}}',
