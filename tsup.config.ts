@@ -8,6 +8,7 @@ export default defineConfig({
   splitting: false,
   clean: true,
   sourcemap: true,
+  platform: 'browser',
   external: ['react', 'zod', 'valtio'],
   esbuildPlugins: [wasmLoader({ mode: 'embedded' })],
 })

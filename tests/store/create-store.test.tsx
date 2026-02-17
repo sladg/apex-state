@@ -1,7 +1,8 @@
 /**
  * Tests for createGenericStore
  *
- * Verifies basic store creation, Provider component, and valtio proxy setup
+ * Verifies basic store creation, Provider component, and valtio proxy setup.
+ * Type-level tests live in create-store.test-d.tsx.
  */
 
 import { screen } from '@testing-library/react'

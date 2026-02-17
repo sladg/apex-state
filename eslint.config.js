@@ -107,6 +107,7 @@ export default defineConfig([
       'tests/**/*.test.ts',
       'tests/**/*.test.tsx',
       'tests/**/*.test-d.ts',
+      'tests/**/*.test-d.tsx',
       'tests/**/*.bench.ts',
       'tests/**/*.bench.spec.ts',
       'tests/mocks/**',

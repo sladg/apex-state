@@ -55,6 +55,7 @@ jobs:
           path: |
             dist/
             package.json
+            README.md
 
   publish:
     needs: release
