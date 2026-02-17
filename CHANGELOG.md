@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.0.1](https://github.com/sladg/apex-state/compare/v3.0.0...v3.0.1)
+
+* fix: set npm publish access to public for scoped package [[c04a01210ad138513a334e441e9943a8685d0d04](https://github.com/sladg/apex-state/commit/c04a01210ad138513a334e441e9943a8685d0d04))]
+
+
 ## [v3.0.0](https://github.com/sladg/apex-state/compare/v0.0.1...v3.0.0)
 
 * fix: rename .wasm.ts files to .wasm-impl.ts to avoid esbuild wasm plugin conflict [[d3b9a36ddcb8bb884df24f252abf3cc9ab3d7567](https://github.com/sladg/apex-state/commit/d3b9a36ddcb8bb884df24f252abf3cc9ab3d7567))]
@@ -58,6 +63,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix: set npm publish access to public for scoped package [[c04a01210ad138513a334e441e9943a8685d0d04](https://github.com/sladg/apex-state/commit/c04a01210ad138513a334e441e9943a8685d0d04))]
 * fix: rename .wasm.ts files to .wasm-impl.ts to avoid esbuild wasm plugin conflict [[d3b9a36ddcb8bb884df24f252abf3cc9ab3d7567](https://github.com/sladg/apex-state/commit/d3b9a36ddcb8bb884df24f252abf3cc9ab3d7567))]
 * feat: JSON serialization optimization, CI publishing, aggregation refactor [[85edf22c00b470f61df5f0ea58f214d22b3de9e2](https://github.com/sladg/apex-state/commit/85edf22c00b470f61df5f0ea58f214d22b3de9e2))]
 * refactor(rust): audit #[allow(dead_code)] annotations, fix clippy warnings [[7151ca6bf89ccadd2c64df7331e8b5be50692123](https://github.com/sladg/apex-state/commit/7151ca6bf89ccadd2c64df7331e8b5be50692123))]
