@@ -12,7 +12,7 @@ import * as matchers from '@testing-library/jest-dom/matchers'
 import { cleanup, fireEvent as rtlFireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, expect } from 'vitest'
 
-import { loadWasm, resetWasm } from '../src/wasm/lifecycle'
+import { loadWasm } from '../src/wasm/lifecycle'
 
 // Enable jest-dom matchers for vitest
 expect.extend(matchers)
@@ -36,11 +36,9 @@ console.error = (...args: unknown[]) => {
   originalError.apply(console, args)
 }
 
-// Cleanup after each test: React FIRST (so useLayoutEffect cleanups can call WASM),
-// then reset WASM (so the next test starts with a clean pipeline).
+// Cleanup after each test: React component unmounts call pipeline.destroy() automatically.
 afterEach(() => {
   cleanup()
-  resetWasm()
 })
 
 /**

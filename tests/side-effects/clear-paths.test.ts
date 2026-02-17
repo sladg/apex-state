@@ -12,16 +12,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { createWasmPipeline, type WasmPipeline } from '../../src/wasm/bridge'
 
-let pipeline: WasmPipeline
-
-/** Helper: process changes and return state_changes array */
-const processChanges = (
-  changes: { path: string; value: unknown }[],
-): { path: string; value: unknown }[] => {
-  const result = pipeline.processChanges(changes)
-  return result.state_changes
-}
-
 /** Helper: find change by path */
 const findChange = (
   changes: { path: string; value: unknown }[],
@@ -33,10 +23,10 @@ const getPaths = (changes: { path: string; value: unknown }[]) =>
   changes.map((c) => c.path)
 
 describe('ClearPaths: Concrete triggers and targets', () => {
+  let pipeline: WasmPipeline
   beforeEach(() => {
     pipeline = createWasmPipeline()
   })
-
   afterEach(() => {
     pipeline.destroy()
   })
@@ -64,9 +54,9 @@ describe('ClearPaths: Concrete triggers and targets', () => {
       ],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new@test.com' },
-    ])
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.email')
     expect(paths).toContain('form.errors')
@@ -94,9 +84,9 @@ describe('ClearPaths: Concrete triggers and targets', () => {
       clear_paths: [{ triggers: ['form.email'], targets: ['form.errors'] }],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'form.email', value: 'same@test.com' },
-    ])
+    ]).state_changes
     expect(changes).toHaveLength(0)
   })
 
@@ -115,7 +105,9 @@ describe('ClearPaths: Concrete triggers and targets', () => {
       clear_paths: [{ triggers: ['form.email'], targets: ['form.errors'] }],
     })
 
-    const changes = processChanges([{ path: 'form.email', value: 'new@b.com' }])
+    const changes = pipeline.processChanges([
+      { path: 'form.email', value: 'new@b.com' },
+    ]).state_changes
     expect(changes).toHaveLength(1)
     const firstChange = changes[0]
     expect(firstChange).toBeDefined()
@@ -142,7 +134,9 @@ describe('ClearPaths: Concrete triggers and targets', () => {
       ],
     })
 
-    const changes = processChanges([{ path: 'form.email', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'form.email', value: 'new' },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.email')
     expect(paths).toContain('form.errors')
@@ -168,10 +162,10 @@ describe('ClearPaths: Concrete triggers and targets', () => {
       ],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'a', value: 'x2' },
       { path: 'b', value: 'y2' },
-    ])
+    ]).state_changes
     const targetCount = changes.filter((c) => c.path === 'target').length
     expect(targetCount).toBe(1)
   })
@@ -191,7 +185,9 @@ describe('ClearPaths: Concrete triggers and targets', () => {
       clear_paths: [{ triggers: ['form.email'], targets: ['form.errors'] }],
     })
 
-    const changes = processChanges([{ path: 'form.email', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'form.email', value: 'new' },
+    ]).state_changes
     const errorsChange = findChange(changes, 'form.errors')
     expect(errorsChange).toBeDefined()
     expect(errorsChange?.value).toBeNull()
@@ -199,6 +195,14 @@ describe('ClearPaths: Concrete triggers and targets', () => {
 })
 
 describe('Wildcard triggers with correlated targets ([*])', () => {
+  let pipeline: WasmPipeline
+  beforeEach(() => {
+    pipeline = createWasmPipeline()
+  })
+  afterEach(() => {
+    pipeline.destroy()
+  })
+
   // Setup: form.fields.email = { value: "old", error: "invalid" }
   //        form.fields.name  = { value: "Alice", error: "too short" }
   // Clear rule: triggers=["form.fields.[*].value"], targets=["form.fields.[*].error"]
@@ -228,9 +232,9 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
       ],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new@test.com' },
-    ])
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.value')
     expect(paths).toContain('form.fields.email.error')
@@ -267,9 +271,9 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
       ],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'app.section1.fieldA.value', value: 'new' },
-    ])
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('app.section1.fieldA.error')
     expect(paths).not.toContain('app.section1.fieldB.error')
@@ -305,7 +309,9 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
       ],
     })
 
-    const changes = processChanges([{ path: 'items.row1.input', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'items.row1.input', value: 'new' },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('items.row1.input')
     // warning doesn't exist → treated as null → no clear change produced
@@ -334,7 +340,9 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
       ],
     })
 
-    const changes = processChanges([{ path: 'items.row1.input', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'items.row1.input', value: 'new' },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('items.row1.input')
     expect(paths).not.toContain('items.row1.warning')
@@ -359,10 +367,10 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
       ],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new1' },
       { path: 'form.fields.name.value', value: 'new2' },
-    ])
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
     expect(paths).toContain('form.fields.name.error')
@@ -370,6 +378,14 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
 })
 
 describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () => {
+  let pipeline: WasmPipeline
+  beforeEach(() => {
+    pipeline = createWasmPipeline()
+  })
+  afterEach(() => {
+    pipeline.destroy()
+  })
+
   // Setup: form.fields.email = { value: "old", error: "e1" }
   //        form.fields.name  = { value: "old", error: "e2" }
   //        form.fields.age   = { value: "old", error: "e3" }
@@ -400,9 +416,9 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
       ],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new' },
-    ])
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
     expect(paths).toContain('form.fields.name.error')
@@ -438,7 +454,9 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
       ],
     })
 
-    const changes = processChanges([{ path: 'form.email', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'form.email', value: 'new' },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
     expect(paths).toContain('form.fields.name.error')
@@ -469,9 +487,9 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
       ],
     })
 
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new' },
-    ])
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.value')
     // email.error doesn't exist, name.error is null → neither produces a clear change
@@ -504,7 +522,9 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
       ],
     })
 
-    const changes = processChanges([{ path: 'form.submit', value: true }])
+    const changes = pipeline.processChanges([
+      { path: 'form.submit', value: true },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.submit')
     // email.error and age.error have values → cleared
@@ -534,7 +554,9 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
       ],
     })
 
-    const changes = processChanges([{ path: 'form.email', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'form.email', value: 'new' },
+    ]).state_changes
     expect(changes).toHaveLength(1)
     const firstChange = changes[0]
     expect(firstChange).toBeDefined()
@@ -543,6 +565,14 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
 })
 
 describe('Undefined/null parent paths with [**] expansion', () => {
+  let pipeline: WasmPipeline
+  beforeEach(() => {
+    pipeline = createWasmPipeline()
+  })
+  afterEach(() => {
+    pipeline.destroy()
+  })
+
   // Setup: form.fields is undefined/null initially, errors exist elsewhere
   // Clear rule: triggers=["form.submit"], targets=["form.fields.[**].error"]
   //
@@ -564,7 +594,7 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     })
 
     // First: populate form.fields with some children
-    processChanges([
+    pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'test@test.com' },
       { path: 'form.fields.email.error', value: 'invalid' },
       { path: 'form.fields.name.value', value: 'Alice' },
@@ -572,7 +602,9 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     ])
 
     // Now trigger the clear — [**] should expand to email and name
-    const changes = processChanges([{ path: 'form.submit', value: true }])
+    const changes = pipeline.processChanges([
+      { path: 'form.submit', value: true },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.submit')
     expect(paths).toContain('form.fields.email.error')
@@ -601,10 +633,14 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     })
 
     // Populate form.fields via nested path changes
-    processChanges([{ path: 'form.fields.email.error', value: 'required' }])
+    pipeline.processChanges([
+      { path: 'form.fields.email.error', value: 'required' },
+    ])
 
     // Trigger clear — [**] should find "email" key
-    const changes = processChanges([{ path: 'form.submit', value: true }])
+    const changes = pipeline.processChanges([
+      { path: 'form.submit', value: true },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
 
@@ -621,7 +657,7 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     })
 
     // Populate structure first (no clear rules registered yet)
-    processChanges([
+    pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'old' },
       { path: 'form.fields.email.error', value: 'invalid' },
     ])
@@ -638,9 +674,9 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     })
 
     // Trigger: change email.value → should clear email.error
-    const changes = processChanges([
+    const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new@test.com' },
-    ])
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.value')
     expect(paths).toContain('form.fields.email.error')
@@ -675,24 +711,24 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     })
 
     // First: trigger fires but target.path is undefined → no clears, no crash
-    const changes1 = processChanges([
+    const changes1 = pipeline.processChanges([
       { path: 'source.items.row1.value', value: 'new1' },
-    ])
+    ]).state_changes
     const paths1 = getPaths(changes1)
     expect(paths1).toContain('source.items.row1.value')
     // No target paths cleared (target.path doesn't exist)
     expect(paths1).toHaveLength(1)
 
     // Now populate the target structure
-    processChanges([
+    pipeline.processChanges([
       { path: 'target.path.row1.nested.a.value', value: 'v1' },
       { path: 'target.path.row1.nested.b.value', value: 'v2' },
     ])
 
     // Trigger again — [*] binds "row1", [**] expands nested keys ["a", "b"]
-    const changes2 = processChanges([
+    const changes2 = pipeline.processChanges([
       { path: 'source.items.row1.value', value: 'new2' },
-    ])
+    ]).state_changes
     const paths2 = getPaths(changes2)
     expect(paths2).toContain('source.items.row1.value')
     expect(paths2).toContain('target.path.row1.nested.a.value')
@@ -706,6 +742,14 @@ describe('Undefined/null parent paths with [**] expansion', () => {
 })
 
 describe('Pipeline ordering (Step 3.5) — interaction with other side-effects', () => {
+  let pipeline: WasmPipeline
+  beforeEach(() => {
+    pipeline = createWasmPipeline()
+  })
+  afterEach(() => {
+    pipeline.destroy()
+  })
+
   // Setup: form.errors = "err", mirror.errors = "err"
   // Clear rule: triggers=["form.email"], targets=["form.errors"]
   // Sync pair: ["form.errors", "mirror.errors"]
@@ -727,7 +771,9 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
       clear_paths: [{ triggers: ['form.email'], targets: ['form.errors'] }],
     })
 
-    const changes = processChanges([{ path: 'form.email', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'form.email', value: 'new' },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.errors')
     expect(paths).toContain('mirror.errors')
@@ -788,7 +834,9 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
       ],
     })
 
-    const changes = processChanges([{ path: 'a', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'a', value: 'new' },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('a')
     expect(paths).toContain('b')
@@ -819,7 +867,9 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
       ],
     })
 
-    const changes = processChanges([{ path: 'items.a.price', value: 20 }])
+    const changes = pipeline.processChanges([
+      { path: 'items.a.price', value: 20 },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('items.b.price')
     expect(paths).toContain('totals.price')
@@ -845,7 +895,9 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
       clear_paths: [{ triggers: ['toggle'], targets: ['enabled'] }],
     })
 
-    const changes = processChanges([{ path: 'toggle', value: true }])
+    const changes = pipeline.processChanges([
+      { path: 'toggle', value: true },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('toggle')
     expect(paths).toContain('enabled')
@@ -858,6 +910,14 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
 })
 
 describe('Registration and validation', () => {
+  let pipeline: WasmPipeline
+  beforeEach(() => {
+    pipeline = createWasmPipeline()
+  })
+  afterEach(() => {
+    pipeline.destroy()
+  })
+
   // Register clearPaths alongside sync/flip/aggregation
   // Verify: processing a trigger change produces expected clears
   it('should register via registerSideEffects consolidated API', () => {
@@ -867,7 +927,9 @@ describe('Registration and validation', () => {
       clear_paths: [{ triggers: ['form.email'], targets: ['form.errors'] }],
     })
 
-    const changes = processChanges([{ path: 'form.email', value: 'new' }])
+    const changes = pipeline.processChanges([
+      { path: 'form.email', value: 'new' },
+    ]).state_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.errors')
   })
@@ -881,7 +943,9 @@ describe('Registration and validation', () => {
     })
 
     // First: verify clear works
-    const changes1 = processChanges([{ path: 'form.email', value: 'new1' }])
+    const changes1 = pipeline.processChanges([
+      { path: 'form.email', value: 'new1' },
+    ]).state_changes
     expect(getPaths(changes1)).toContain('form.errors')
 
     // Unregister
@@ -892,7 +956,9 @@ describe('Registration and validation', () => {
     pipeline.shadowInit({ form: { email: 'new1', errors: 'err2' } })
 
     // Second: verify clear stopped
-    const changes2 = processChanges([{ path: 'form.email', value: 'new2' }])
+    const changes2 = pipeline.processChanges([
+      { path: 'form.email', value: 'new2' },
+    ]).state_changes
     expect(getPaths(changes2)).not.toContain('form.errors')
   })
 

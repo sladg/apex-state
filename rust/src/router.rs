@@ -20,6 +20,7 @@ struct TopicMeta {
 }
 
 /// Metadata for a single subscriber.
+#[allow(dead_code)] // Fields used via WASM export chain
 struct SubscriberMeta {
     topic_id: u32,
     scope_path: String,
@@ -28,6 +29,7 @@ struct SubscriberMeta {
 
 /// Pre-computed downstream route between topics.
 #[derive(Clone)]
+#[allow(dead_code)] // Fields used via WASM export chain
 struct Route {
     from_topic_id: u32,
     to_topic_id: u32,
@@ -272,6 +274,7 @@ impl TopicRouter {
     }
 
     /// Maximum depth across all registered topics.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn max_depth(&self) -> u32 {
         self.topic_meta.values().map(|m| m.depth).max().unwrap_or(0)
     }
@@ -336,6 +339,7 @@ impl TopicRouter {
 
     /// Unregister a batch of subscribers by ID. Removes topics with no remaining
     /// subscribers and recomputes topology if needed.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn unregister_listeners_batch(
         &mut self,
         subscriber_ids_json: &str,
@@ -701,6 +705,7 @@ impl TopicRouter {
     }
 
     /// Create a dispatch plan from a JSON string of changes.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn create_dispatch_plan_json(&self, changes_json: &str) -> Result<String, String> {
         let changes: Vec<Change> = serde_json::from_str(changes_json)
             .map_err(|e| format!("Changes parse error: {}", e))?;
@@ -718,6 +723,7 @@ impl TopicRouter {
     /// For each topic at the given depth that has routes, pass its produced
     /// changes to downstream (shallower) topics. Returns a new DispatchPlan
     /// for the downstream topics, or an empty plan if no routing is needed.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn route_produced_changes(
         &self,
         depth: u32,
@@ -852,6 +858,7 @@ impl TopicRouter {
     }
 
     /// Route produced changes from JSON and return a JSON dispatch plan.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn route_produced_changes_json(
         &self,
         depth: u32,

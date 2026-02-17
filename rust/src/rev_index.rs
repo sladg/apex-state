@@ -57,7 +57,7 @@ impl ReverseDependencyIndex {
     }
 
     /// Number of tracked path entries.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn path_count(&self) -> usize {
         self.path_to_entity.len()
     }

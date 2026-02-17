@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 // ---------------------------------------------------------------------------
 
 /// Metadata stored per registered function.
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields read via WASM export chain (invisible to clippy)
 pub(crate) struct FunctionMetadata {
     /// JS-assigned function ID.
     pub function_id: u32,
@@ -93,6 +93,7 @@ impl FunctionRegistry {
     }
 
     /// Unregister a function and clean up reverse index entries.
+    #[allow(dead_code)] // Called via WASM exports (invisible to clippy)
     pub(crate) fn unregister(&mut self, function_id: u32, rev_index: &mut ReverseDependencyIndex) {
         if self.functions.remove(&function_id).is_some() {
             rev_index.remove(function_id);
@@ -100,13 +101,13 @@ impl FunctionRegistry {
     }
 
     /// Get metadata for a given function_id.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Called via WASM exports (invisible to clippy)
     pub(crate) fn get(&self, function_id: u32) -> Option<&FunctionMetadata> {
         self.functions.get(&function_id)
     }
 
     /// Number of registered functions.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.functions.len()
     }
@@ -118,7 +119,7 @@ impl FunctionRegistry {
 
 /// Input format for batch function registration (used for deserialization).
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Deserialized via WASM exports (invisible to clippy)
 pub(crate) struct FunctionInput {
     pub function_id: u32,
     pub dependency_paths: Vec<String>,

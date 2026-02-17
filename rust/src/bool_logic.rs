@@ -266,7 +266,7 @@ impl BoolLogicRegistry {
     }
 
     /// Number of registered expressions.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.logics.len()
     }

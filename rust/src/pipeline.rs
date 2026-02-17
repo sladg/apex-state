@@ -37,7 +37,7 @@ pub(crate) struct ValidatorDispatch {
 
 /// Output wrapper for processChanges (deprecated, kept for backward compat with tests).
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Used via WASM exports (invisible to clippy)
 pub(crate) struct ProcessResult {
     /// All changes including state and concerns (concern paths have _concerns. prefix).
     pub changes: Vec<Change>,
@@ -117,8 +117,6 @@ pub(crate) struct SideEffectsResult {
 /// Input for consolidated concerns registration.
 #[derive(Deserialize, Debug)]
 pub(crate) struct ConcernsRegistration {
-    #[allow(dead_code)]
-    pub registration_id: String,
     #[serde(default)]
     pub bool_logics: Vec<BoolLogicRegistration>,
     #[serde(default)]
@@ -147,8 +145,6 @@ pub(crate) struct ValidatorRegistration {
     pub validator_id: u32,
     pub output_path: String,
     pub dependency_paths: Vec<String>,
-    #[allow(dead_code)]
-    pub scope: String,
 }
 
 /// Input format for batch validator registration (moved from removed validator module).
@@ -232,6 +228,7 @@ impl ProcessingPipeline {
     }
 
     /// Initialize shadow state from a JSON string.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn shadow_init(&mut self, state_json: &str) -> Result<(), String> {
         self.shadow.init(state_json)
     }
@@ -334,6 +331,7 @@ impl ProcessingPipeline {
     /// Unregister a batch of aggregations.
     ///
     /// Input: JSON array of target paths
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn unregister_aggregation_batch(
         &mut self,
         targets_json: &str,
@@ -521,6 +519,7 @@ impl ProcessingPipeline {
     /// Unregister a batch of sync pairs.
     ///
     /// Input: JSON array of path pairs to remove
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn unregister_sync_batch(&mut self, pairs_json: &str) -> Result<(), String> {
         let pairs: Vec<[String; 2]> = serde_json::from_str(pairs_json)
             .map_err(|e| format!("Sync pairs parse error: {}", e))?;
@@ -554,6 +553,7 @@ impl ProcessingPipeline {
     /// Unregister a batch of flip pairs.
     ///
     /// Input: JSON array of path pairs to remove from flip
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn unregister_flip_batch(&mut self, pairs_json: &str) -> Result<(), String> {
         let pairs: Vec<[String; 2]> = serde_json::from_str(pairs_json)
             .map_err(|e| format!("Flip pairs parse error: {}", e))?;
@@ -619,6 +619,7 @@ impl ProcessingPipeline {
     ///
     /// Validators are now unregistered via the generic function registry.
     /// Input: JSON array of validator IDs
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn unregister_validators_batch(
         &mut self,
         validator_ids_json: &str,
@@ -637,6 +638,7 @@ impl ProcessingPipeline {
     /// Register a batch of generic functions.
     ///
     /// Input: JSON array of `{ "function_id": N, "dependency_paths": [...], "scope": "...", "output_path": "..." }`
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn register_functions_batch(&mut self, functions_json: &str) -> Result<(), String> {
         let functions: Vec<FunctionInput> = serde_json::from_str(functions_json)
             .map_err(|e| format!("Functions parse error: {}", e))?;
@@ -658,6 +660,7 @@ impl ProcessingPipeline {
     /// Unregister a batch of functions.
     ///
     /// Input: JSON array of function IDs
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn unregister_functions_batch(
         &mut self,
         function_ids_json: &str,
@@ -951,6 +954,7 @@ impl ProcessingPipeline {
     }
 
     /// Unregister a batch of listeners by subscriber IDs.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn unregister_listeners_batch(
         &mut self,
         subscriber_ids_json: &str,
@@ -959,11 +963,13 @@ impl ProcessingPipeline {
     }
 
     /// Create a dispatch plan for changes (JSON string path, used by Rust tests).
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn create_dispatch_plan(&self, changes_json: &str) -> Result<String, String> {
         self.router.create_dispatch_plan_json(changes_json)
     }
 
     /// Create a dispatch plan from a pre-parsed Vec (serde-wasm-bindgen path).
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn create_dispatch_plan_vec(
         &self,
         changes: &[Change],
@@ -972,6 +978,7 @@ impl ProcessingPipeline {
     }
 
     /// Route produced changes from a depth level to downstream topics (JSON string path).
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn route_produced_changes(
         &self,
         depth: u32,
@@ -982,6 +989,7 @@ impl ProcessingPipeline {
     }
 
     /// Route produced changes from a pre-parsed Vec (serde-wasm-bindgen path).
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn route_produced_changes_vec(
         &self,
         depth: u32,
@@ -991,6 +999,7 @@ impl ProcessingPipeline {
     }
 
     /// Process a batch of changes from a JSON string (legacy path, used by Rust tests).
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn process_changes(&mut self, changes_json: &str) -> Result<String, String> {
         let input_changes: Vec<Change> = serde_json::from_str(changes_json)
             .map_err(|e| format!("Changes parse error: {}", e))?;
@@ -999,6 +1008,7 @@ impl ProcessingPipeline {
     }
 
     /// Process a batch of changes from a pre-parsed Vec (serde-wasm-bindgen path).
+    #[allow(dead_code)] // Called via WASM export chain
     ///
     /// Uses pre-allocated buffers to avoid per-call allocations.
     ///
@@ -1232,6 +1242,7 @@ impl ProcessingPipeline {
     }
 
     /// Get a value from shadow state at path (debug/testing).
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn shadow_get(&self, path: &str) -> Option<String> {
         self.shadow.get(path).map(|v| {
             serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_owned())
@@ -1239,6 +1250,7 @@ impl ProcessingPipeline {
     }
 
     /// Number of interned paths (debug/testing).
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn intern_count(&self) -> u32 {
         self.intern.count()
     }
@@ -1543,6 +1555,7 @@ impl Default for ProcessingPipeline {
 
 // Re-export for lib.rs boundary
 impl Change {
+    #[allow(dead_code)] // Called via WASM export chain
     pub fn new(path: String, value_json: String) -> Self {
         Self { path, value_json }
     }

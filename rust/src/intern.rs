@@ -47,11 +47,13 @@ impl InternTable {
     }
 
     /// Number of unique interned strings.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn count(&self) -> u32 {
         self.id_to_string.len() as u32
     }
 
     /// Clear all interned strings. Invalidates all previously issued IDs.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn clear(&mut self) {
         self.string_to_id.clear();
         self.id_to_string.clear();

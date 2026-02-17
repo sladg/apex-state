@@ -56,7 +56,7 @@ impl AggregationRegistry {
     }
 
     /// Unregister a single aggregation by target path.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Called via WASM exports (invisible to clippy)
     pub(crate) fn unregister(&mut self, target: &str) {
         // Remove from reverse index
         if let Some(agg) = self.aggregations.get(target) {

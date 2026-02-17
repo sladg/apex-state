@@ -5,7 +5,7 @@
  * bridge.ts imports `getWasmInstance()` to power the `wasm` namespace.
  *
  * - Production: `loadWasm()` called in `<Provider />` setup
- * - Tests: `loadWasm()` called in `beforeEach`, `resetWasm()` in `afterEach`
+ * - Tests: `loadWasm()` called in `beforeEach`
  *
  * @module wasm/lifecycle
  */
@@ -63,17 +63,6 @@ export const initPipeline = (
   const pipeline = createWasmPipeline()
   pipeline.shadowInit(initialState)
   internal.pipeline = pipeline
-}
-
-/** Reset WASM module and pipeline state (testing only). */
-export const resetWasm = (): void => {
-  try {
-    wasmInstance?.pipeline_reset_all()
-  } catch {
-    // Instance may not be loaded — safe to ignore
-  }
-  wasmInstance = null
-  loadingPromise = null
 }
 
 // ---------------------------------------------------------------------------

@@ -80,6 +80,7 @@ impl ShadowState {
     }
 
     /// Initialize shadow state from a JSON string.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn init(&mut self, state_json: &str) -> Result<(), String> {
         let json: serde_json::Value =
             serde_json::from_str(state_json).map_err(|e| format!("JSON parse error: {}", e))?;

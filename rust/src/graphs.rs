@@ -125,12 +125,14 @@ impl Graph {
 
     /// Remove an edge between two path IDs (public wrapper).
     /// If removal splits a component, creates new components via BFS.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn remove_edge_public(&mut self, path1_id: u32, path2_id: u32) {
         self.remove_edge(path1_id, path2_id);
     }
 
     /// Remove an edge between two path IDs.
     /// If removal splits a component, creates new components via BFS.
+    #[allow(dead_code)] // Called via WASM export chain
     fn remove_edge(&mut self, path1_id: u32, path2_id: u32) {
         // Create canonical edge representation
         let edge = if path1_id < path2_id {
@@ -179,6 +181,7 @@ impl Graph {
     }
 
     /// Remove an isolated node from the graph.
+    #[allow(dead_code)] // Called via WASM export chain
     fn remove_isolated_node(&mut self, node: u32) {
         if let Some(comp_id) = self.node_to_component.get(&node).copied() {
             self.component_to_nodes
@@ -193,6 +196,7 @@ impl Graph {
     }
 
     /// BFS traversal to collect all reachable nodes from a starting node.
+    #[allow(dead_code)] // Called via WASM export chain
     fn bfs_collect(&self, start: u32) -> HashSet<u32> {
         let mut visited = HashSet::new();
         let mut queue = vec![start];
@@ -215,6 +219,7 @@ impl Graph {
 
     /// Handle component split after edge removal.
     /// If node2 is no longer reachable from node1, creates new component.
+    #[allow(dead_code)] // Called via WASM export chain
     fn handle_component_split(&mut self, node1: u32, node2: u32) {
         let reachable = self.bfs_collect(node1);
 
@@ -262,11 +267,13 @@ impl Graph {
     }
 
     /// Check if a path ID exists in the graph.
+    #[allow(dead_code)] // Called via WASM export chain
     fn has_node(&self, node: u32) -> bool {
         self.node_to_component.contains_key(&node)
     }
 
     /// Clear all edges and components.
+    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn clear(&mut self) {
         *self = Self::new();
     }
