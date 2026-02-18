@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.0.4](https://github.com/sladg/apex-state/compare/v3.0.3...v3.0.4)
+
+* fix(provider): restore WASM pipeline after React StrictMode cleanup [[fbd3c4eb54382729a29624a3af178c04839ae24d](https://github.com/sladg/apex-state/commit/fbd3c4eb54382729a29624a3af178c04839ae24d))]
+
+
 ## [v3.0.3](https://github.com/sladg/apex-state/compare/v3.0.2...v3.0.3)
 
 * fix: aggregation undefined sentinel and concern type safety [[74cb2b05a422c5daafe8574a0cff62aa587e1e83](https://github.com/sladg/apex-state/commit/74cb2b05a422c5daafe8574a0cff62aa587e1e83))]
@@ -73,6 +78,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix(provider): restore WASM pipeline after React StrictMode cleanup [[fbd3c4eb54382729a29624a3af178c04839ae24d](https://github.com/sladg/apex-state/commit/fbd3c4eb54382729a29624a3af178c04839ae24d))]
 * fix: aggregation undefined sentinel and concern type safety [[74cb2b05a422c5daafe8574a0cff62aa587e1e83](https://github.com/sladg/apex-state/commit/74cb2b05a422c5daafe8574a0cff62aa587e1e83))]
 * fix(build): set platform to browser for browser-compatible WASM embedding [[f6c6c222b59500444e0d234954669463654645d4](https://github.com/sladg/apex-state/commit/f6c6c222b59500444e0d234954669463654645d4))]
 * fix: set npm publish access to public for scoped package [[c04a01210ad138513a334e441e9943a8685d0d04](https://github.com/sladg/apex-state/commit/c04a01210ad138513a334e441e9943a8685d0d04))]
