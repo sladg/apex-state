@@ -253,8 +253,8 @@ pub(crate) fn process_aggregation_reads(
                         // All present values agree (including null)
                         first_value.clone()
                     } else {
-                        // Sources disagree → null
-                        "null".to_string()
+                        // Sources disagree → undefined (clear the target)
+                        UNDEFINED_SENTINEL_JSON.to_string()
                     }
                 }
             };
@@ -453,8 +453,10 @@ mod tests {
 
         let changes = process_aggregation_reads(&registry, &shadow, &sources);
 
-        // Values differ → target stays null (no change needed)
-        assert_eq!(changes.len(), 0);
+        // Values differ → target was null, now becomes undefined (sources disagree → clear target)
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "allChecked");
+        assert_eq!(changes[0].value_json, UNDEFINED_SENTINEL_JSON);
     }
 
     #[test]
@@ -562,11 +564,13 @@ mod tests {
     }
 
     #[test]
-    fn test_initial_values_no_op_filter_null() {
+    fn test_initial_values_no_op_filter_undefined() {
         let mut shadow = ShadowState::new();
-        // Target already null, sources differ
+        // Target already undefined (sentinel), sources differ
         shadow
-            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item3": true}"#)
+            .init(
+                r#"{"allChecked": "__APEX_UNDEFINED__", "item1": true, "item2": false, "item3": true}"#,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
@@ -579,7 +583,7 @@ mod tests {
 
         let changes = process_aggregation_reads(&registry, &shadow, &sources);
 
-        // Should not create a change (target is null, sources differ → computed value is null)
+        // Target already undefined, sources differ → computed = undefined → no-op
         assert_eq!(changes.len(), 0);
     }
 
@@ -640,8 +644,8 @@ mod tests {
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
-        // Values differ → target becomes null
-        assert_eq!(changes[0].value_json, "null");
+        // Values differ → target becomes undefined (sources disagree)
+        assert_eq!(changes[0].value_json, UNDEFINED_SENTINEL_JSON);
     }
 
     #[test]
@@ -700,8 +704,8 @@ mod tests {
         // Since item2 object itself changed, sources now differ
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
-        // Objects will differ, so target becomes null
-        assert_eq!(changes[0].value_json, "null");
+        // Objects will differ, so target becomes undefined (sources disagree)
+        assert_eq!(changes[0].value_json, UNDEFINED_SENTINEL_JSON);
     }
 
     #[test]

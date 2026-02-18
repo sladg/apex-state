@@ -44,6 +44,7 @@ import { flushEffects, MODES, mountStore } from '../utils/react'
  * Returns { exceeded: boolean, current: number, limit: number }
  */
 const thresholdCheck: ConcernType<
+  'thresholdCheck',
   { currentPath: string; limit: number },
   { exceeded: boolean; current: number; limit: number }
 > = {

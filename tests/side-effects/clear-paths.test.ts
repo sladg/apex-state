@@ -874,9 +874,9 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
     expect(paths).toContain('items.b.price')
     expect(paths).toContain('totals.price')
 
-    // null is a valid value: [20, null] → sources disagree → null
+    // null is a valid value: [20, null] → sources disagree → undefined (clear target)
     const totalsChange = findChange(changes, 'totals.price')
-    expect(totalsChange?.value).toBeNull()
+    expect(totalsChange?.value).toBeUndefined()
   })
 
   // Setup: enabled = true, disabled = false

@@ -7,7 +7,6 @@
 
 import type { StoreInstance } from '../core/types'
 import { applyBatch } from '../pipeline/apply-batch'
-import { processChanges } from '../pipeline/process-changes'
 import type { GenericMeta } from '../types'
 import type { SideEffects } from '../types/side-effects'
 
@@ -86,14 +85,17 @@ export const registerSideEffects = <
     ...(listeners && listeners.length > 0 && { listeners }),
   })
 
-  // Apply sync changes to valtio
+  // Apply sync changes directly to valtio state.
+  // IMPORTANT: Do NOT route through processChanges() here. The Rust register_sync_batch()
+  // already updated shadow state for initial sync changes. Routing through processChanges()
+  // would cause the diff pre-pass to see "no change" (shadow already updated), return
+  // has_work=false, and skip writing to valtio. Use applyBatch() directly, same as
+  // aggregation_changes below, so valtio state matches shadow state.
   if (result.sync_changes.length > 0) {
-    const syncChanges = result.sync_changes.map((c) => [
-      c.path,
-      c.value,
-      { isSyncPathChange: true },
-    ]) as any
-    processChanges(store, syncChanges)
+    applyBatch(
+      result.sync_changes.map((c) => [c.path, c.value, {}]) as any,
+      store.state,
+    )
   }
 
   // Apply aggregation changes directly to state

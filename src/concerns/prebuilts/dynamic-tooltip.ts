@@ -20,7 +20,11 @@
 import { interpolateTemplate } from '../../utils/interpolation'
 import type { ConcernType } from '../types'
 
-export const dynamicTooltip: ConcernType<{ template: string }, string> = {
+export const dynamicTooltip: ConcernType<
+  'dynamicTooltip',
+  { template: string },
+  string
+> = {
   name: 'dynamicTooltip',
   description: 'Template string interpolation for tooltips',
   evaluate: (props) => {

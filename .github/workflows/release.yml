@@ -34,14 +34,23 @@ jobs:
 
       - run: npm ci
 
-      - name: Build WASM
+      - name: Check & Lint Rust
+        run: npm run wasm:fmt:check && npm run wasm:lint
+
+      - name: Test Rust
+        run: npm run wasm:test
+
+      - name: Build Rust
         run: npm run wasm:build
 
-      - name: Build
-        run: npm run build
-
-      - name: Lint & Type Check
+      - name: Lint & Type Check JS
         run: npm run code:check
+
+      - name: Test JS
+        run: npm run test:all
+
+      - name: Build JS
+        run: npm run build
 
       - name: Release
         id: release

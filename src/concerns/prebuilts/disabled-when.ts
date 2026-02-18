@@ -1,11 +1,14 @@
 import { evaluateBoolLogic } from '../../utils/bool-logic'
 import type { BoolLogic, ConcernType } from '../types'
 
-export const disabledWhen: ConcernType<{ boolLogic: BoolLogic<any> }, boolean> =
-  {
-    name: 'disabledWhen',
-    description: 'Boolean logic for disabled state',
-    evaluate: (props) => {
-      return evaluateBoolLogic(props.boolLogic, props.state)
-    },
-  }
+export const disabledWhen: ConcernType<
+  'disabledWhen',
+  { boolLogic: BoolLogic<any> },
+  boolean
+> = {
+  name: 'disabledWhen',
+  description: 'Boolean logic for disabled state',
+  evaluate: (props) => {
+    return evaluateBoolLogic(props.boolLogic, props.state)
+  },
+}

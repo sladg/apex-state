@@ -28,7 +28,8 @@ import { createProvider } from './provider'
 export const createGenericStore = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
-  CONCERNS extends readonly any[] = typeof defaultConcerns,
+  CONCERNS extends readonly ConcernType<string, any, any>[] =
+    typeof defaultConcerns,
 >(
   config?: StoreConfig,
 ) => {
@@ -126,14 +127,19 @@ export const createGenericStore = <
     }, [store, id, effects])
   }
 
-  const useConcerns = (
+  const useConcerns = <
+    CUSTOM extends readonly ConcernType<string, any, any>[] = readonly [],
+  >(
     id: string,
-    registration: ConcernRegistrationMap<DATA>,
-    customConcerns?: readonly ConcernType<any, any>[],
+    registration: ConcernRegistrationMap<
+      DATA,
+      readonly [...CONCERNS, ...CUSTOM]
+    >,
+    customConcerns?: CUSTOM,
   ): void => {
     const store = useStoreContext<DATA, META>()
     const concerns = (customConcerns ||
-      defaultConcerns) as readonly ConcernType<any, any>[]
+      defaultConcerns) as readonly ConcernType<any, any, any>[]
 
     useLayoutEffect(() => {
       // WASM gateway: dispatch to WASM or legacy implementation
@@ -146,7 +152,11 @@ export const createGenericStore = <
     }, [store, id, registration, customConcerns])
   }
 
-  const withConcerns = <SELECTION extends Partial<Record<string, boolean>>>(
+  const withConcerns = <
+    SELECTION extends Partial<
+      Record<Extract<CONCERNS[number], { name: string }>['name'], boolean>
+    >,
+  >(
     selection: SELECTION,
   ) => {
     type SelectedConcerns = {
@@ -173,7 +183,7 @@ export const createGenericStore = <
         const selectedConcerns = Object.keys(selection).reduce(
           (acc, key) => {
             if (
-              selection[key] &&
+              (selection as Record<string, boolean | undefined>)[key] &&
               Object.prototype.hasOwnProperty.call(allConcerns, key)
             ) {
               acc[key] = allConcerns[key]

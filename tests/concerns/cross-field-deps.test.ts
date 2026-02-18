@@ -26,7 +26,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('AC1: Only leg-1 disabled concern recalculates when status changes', async () => {
     const store = createAppStore()
 
-    const { storeInstance } = mountStore(
+    const { storeInstance, setValue } = mountStore(
       store,
       {
         products: {
@@ -55,7 +55,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
     await flushSync()
 
     const start = performance.now()
-    storeInstance.state.products['leg-1'].status = 'locked'
+    setValue('products.leg-1.status', 'locked')
     await flushSync()
     const duration = performance.now() - start
 
@@ -161,7 +161,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('AC4: Correct disabled state after change', async () => {
     const store = createAppStore()
 
-    const { storeInstance } = mountStore(
+    const { storeInstance, setValue } = mountStore(
       store,
       {
         products: {
@@ -187,7 +187,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
 
     await flushSync()
 
-    storeInstance.state.products['leg-1'].status = 'locked'
+    setValue('products.leg-1.status', 'locked')
     await flushSync()
 
     const leg1Disabled =
@@ -235,7 +235,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
   it('Round-trip: cross-field dependency change → concern value available < 15ms', async () => {
     const store = createAppStore()
 
-    const { storeInstance } = mountStore(
+    const { storeInstance, setValue } = mountStore(
       store,
       {
         products: {
@@ -270,7 +270,7 @@ describe('TEST-002: Cross-Field Dependency Tracking', () => {
     const start = performance.now()
 
     // Change status that affects disabled concern
-    storeInstance.state.products['leg-1'].status = 'locked'
+    setValue('products.leg-1.status', 'locked')
     await flushSync()
 
     const propagationTime = performance.now() - start

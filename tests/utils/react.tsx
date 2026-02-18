@@ -428,7 +428,7 @@ export const createTestStore = <
     registerConcerns(
       storeInstance,
       options.concerns,
-      defaultConcerns as readonly ConcernType<any, any>[],
+      defaultConcerns as readonly ConcernType<any, any, any>[],
     )
   }
 

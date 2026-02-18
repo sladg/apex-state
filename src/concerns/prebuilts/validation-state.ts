@@ -1,8 +1,9 @@
-import { z } from 'zod'
-
-import type { DeepKey, DeepValue } from '../../types'
+import type { DeepKey } from '../../types'
+import type { ValidationStateInput } from '../../types/concerns'
 import { dot } from '../../utils/dot'
 import type { BaseConcernProps } from '../types'
+
+export type { ValidationStateInput }
 
 export interface ValidationError {
   field?: string
@@ -13,17 +14,6 @@ export interface ValidationStateResult {
   isError: boolean
   errors: ValidationError[]
 }
-
-type ValidationStateInput<SUB_STATE, PATH extends DeepKey<SUB_STATE>> =
-  | {
-      schema: z.ZodSchema<DeepValue<SUB_STATE, PATH>>
-    }
-  | {
-      [SCOPE in DeepKey<SUB_STATE>]: {
-        scope: SCOPE
-        schema: z.ZodSchema<DeepValue<SUB_STATE, SCOPE>>
-      }
-    }[DeepKey<SUB_STATE>]
 
 export interface ValidationStateConcern {
   name: 'validationState'

@@ -489,7 +489,26 @@ impl ProcessingPipeline {
                                 .unwrap_or(usize::MAX);
 
                             // Reverse: shallower (lower depth) is better
-                            depth_b.cmp(&depth_a)
+                            // When depths are equal, prefer value from lexicographically smaller path
+                            // (deterministic tie-breaking: matches legacy JS insertion-order behavior
+                            //  when paths are sorted before value counting)
+                            match depth_b.cmp(&depth_a) {
+                                std::cmp::Ordering::Equal => {
+                                    // Compare paths: prefer the one with the lexicographically smaller path
+                                    let path_a = value_to_path
+                                        .get(*value_a)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("");
+                                    let path_b = value_to_path
+                                        .get(*value_b)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("");
+                                    // We want smaller path to "win" (be the max), so reverse the comparison
+                                    // path_b < path_a means a comes after b alphabetically → a loses → Less
+                                    path_b.cmp(path_a)
+                                }
+                                other => other,
+                            }
                         }
                         other => other,
                     }
@@ -2940,11 +2959,11 @@ mod tests {
         // Verify the aggregation change has the correct path
         assert_eq!(result.aggregation_changes[0].path, "totals.sum");
 
-        // Sources have different prices (10, 20, 30) → all-equal fails → null
+        // Sources have different prices (10, 20, 30) → all-equal fails → undefined sentinel
         let value_str = &result.aggregation_changes[0].value_json;
         assert_eq!(
-            value_str, "null",
-            "sources disagree → aggregation result is null"
+            value_str, "\"__APEX_UNDEFINED__\"",
+            "sources disagree → aggregation result is undefined sentinel"
         );
     }
 
@@ -3103,10 +3122,8 @@ mod tests {
 
         fn make_pipeline() -> ProcessingPipeline {
             let mut p = ProcessingPipeline::new();
-            p.shadow_init(
-                r#"{"user": {"role": "guest", "age": 20, "email": "test@test.com"}}"#,
-            )
-            .unwrap();
+            p.shadow_init(r#"{"user": {"role": "guest", "age": 20, "email": "test@test.com"}}"#)
+                .unwrap();
             p
         }
 
@@ -3228,8 +3245,10 @@ mod tests {
             )
             .unwrap();
 
-            let changes =
-                vec![Change::new("user.email".to_owned(), r#""new@test.com""#.to_owned())];
+            let changes = vec![Change::new(
+                "user.email".to_owned(),
+                r#""new@test.com""#.to_owned(),
+            )];
             let prepare = p.prepare_changes(changes).unwrap();
 
             assert_eq!(prepare.validators_to_run.len(), 1);
@@ -3246,8 +3265,10 @@ mod tests {
             // JS passes _concerns.* path in js_changes → partitioned internally →
             // re-prefixed in finalize.state_changes
             let mut p = make_pipeline();
-            let changes =
-                vec![Change::new("user.email".to_owned(), r#""new@test.com""#.to_owned())];
+            let changes = vec![Change::new(
+                "user.email".to_owned(),
+                r#""new@test.com""#.to_owned(),
+            )];
             let _prepare = p.prepare_changes(changes).unwrap();
 
             // Simulate JS validator writing to a concern path

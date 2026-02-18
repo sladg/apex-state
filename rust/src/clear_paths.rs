@@ -1049,10 +1049,10 @@ mod tests {
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
         assert!(paths.contains(&"items.a.price"));
         assert!(paths.contains(&"items.b.price"));
-        // totals.price should be null (sources are [20, null], not all-equal)
+        // totals.price should be undefined sentinel (sources are [20, null], not all-equal)
         let totals = result.changes.iter().find(|c| c.path == "totals.price");
         assert!(totals.is_some());
-        assert_eq!(totals.unwrap().value_json, "null");
+        assert_eq!(totals.unwrap().value_json, "\"__APEX_UNDEFINED__\"");
     }
 
     #[test]

@@ -20,7 +20,11 @@
 import { interpolateTemplate } from '../../utils/interpolation'
 import type { ConcernType } from '../types'
 
-export const dynamicLabel: ConcernType<{ template: string }, string> = {
+export const dynamicLabel: ConcernType<
+  'dynamicLabel',
+  { template: string },
+  string
+> = {
   name: 'dynamicLabel',
   description: 'Template string interpolation for labels',
   evaluate: (props) => {

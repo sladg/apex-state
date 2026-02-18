@@ -75,10 +75,10 @@ export const registerAggregations = <
       // Check if all source paths have equal values
       const allEqual = dot.same(store.state, ...sourcePaths)
 
-      // Set target: value if all equal, null otherwise
+      // Set target: value if all equal, undefined otherwise (sources disagree → clear the target)
       const result = allEqual
         ? dot.get__unsafe(store.state, sourcePaths[0]!)
-        : null
+        : undefined
 
       dot.set__unsafe(store.state, targetPath, result)
     })

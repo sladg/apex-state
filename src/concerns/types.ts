@@ -7,10 +7,11 @@ export interface BaseConcernProps<STATE, PATH extends string> {
 }
 
 export interface ConcernType<
+  NAME extends string = string,
   EXTRA_PROPS = Record<string, unknown>,
   RETURN_TYPE = unknown,
 > {
-  name: string
+  name: NAME
   description: string
   /** Evaluated inside effect() - all state accesses are tracked */
   evaluate: (

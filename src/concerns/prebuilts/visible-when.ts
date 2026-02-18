@@ -20,11 +20,14 @@
 import { evaluateBoolLogic } from '../../utils/bool-logic'
 import type { BoolLogic, ConcernType } from '../types'
 
-export const visibleWhen: ConcernType<{ boolLogic: BoolLogic<any> }, boolean> =
-  {
-    name: 'visibleWhen',
-    description: 'Boolean logic for visibility',
-    evaluate: (props) => {
-      return evaluateBoolLogic(props.boolLogic, props.state)
-    },
-  }
+export const visibleWhen: ConcernType<
+  'visibleWhen',
+  { boolLogic: BoolLogic<any> },
+  boolean
+> = {
+  name: 'visibleWhen',
+  description: 'Boolean logic for visibility',
+  evaluate: (props) => {
+    return evaluateBoolLogic(props.boolLogic, props.state)
+  },
+}
