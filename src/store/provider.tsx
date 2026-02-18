@@ -111,9 +111,22 @@ export const createProvider = <
       }
     }, [])
 
-    // Load WASM asynchronously if not already loaded (production first-render path)
+    // Load WASM asynchronously if not already loaded (production first-render path).
+    // Also re-initializes pipeline if WASM is loaded but pipeline was destroyed by
+    // cleanup (React StrictMode double-mount, or normal unmount/remount).
     useEffect(() => {
-      if (isLegacy || isWasmLoaded()) return
+      if (isLegacy) return
+
+      if (isWasmLoaded()) {
+        // Pipeline may be null after StrictMode cleanup — restore it without a state update
+        if (!store._internal.pipeline) {
+          initPipeline(
+            store._internal,
+            prepared.initialState as Record<string, unknown>,
+          )
+        }
+        return
+      }
 
       loadWasm()
         .then(() => {

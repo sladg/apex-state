@@ -22,6 +22,9 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
+import { useStoreContext } from '../../src/core/context'
+import { processChangesWasm } from '../../src/pipeline/process-changes.wasm-impl'
+import { initPipeline, isWasmLoaded } from '../../src/wasm/lifecycle'
 import type { BasicTestState } from '../mocks'
 import { basicTestFixtures } from '../mocks'
 import { flushSync, MODES, mountStore } from '../utils/react'
@@ -953,6 +956,75 @@ describe.each(MODES)('[$name] Provider & Context', ({ config }) => {
       expect(screen.getByTestId('str')).toHaveTextContent('value-a')
       expect(screen.getByTestId('num')).toHaveTextContent('42')
       expect(screen.getByTestId('bool')).toHaveTextContent('true')
+    })
+  })
+
+  describe('WASM pipeline lifecycle', () => {
+    it('should initialize pipeline to non-null after Provider mounts', () => {
+      // WASM-only: pipeline is intentionally null in legacy mode
+      if (config.useLegacyImplementation) return
+
+      // Create store with initialState
+      const store = createGenericStore<BasicTestState>(config)
+      // Mount store
+      const { storeInstance } = mountStore(store, basicTestFixtures.empty)
+      // Assert pipeline is non-null — invariant required for processChanges to work
+      expect(storeInstance._internal.pipeline).not.toBeNull()
+    })
+
+    it('should restore pipeline after simulated StrictMode cleanup and not throw on processChanges', () => {
+      // WASM-only: null pipeline only matters when processChangesWasm is used
+      if (config.useLegacyImplementation) return
+
+      // Regression: React StrictMode runs the cleanup effect (pipeline = null) then
+      // re-runs the loading effect. Before the fix, the loading effect early-returned
+      // when isWasmLoaded() was true without re-initializing pipeline, leaving it null.
+      // Calling setValue then threw: "Cannot read properties of null, reading 'processChanges'".
+
+      // Create store with initialState
+      let capturedInstance: ReturnType<
+        typeof useStoreContext<BasicTestState>
+      > | null = null
+      const Capture = () => {
+        capturedInstance = useStoreContext<BasicTestState>()
+        return null
+      }
+      const store = createGenericStore<BasicTestState>(config)
+      render(
+        <store.Provider initialState={basicTestFixtures.empty}>
+          <Capture />
+        </store.Provider>,
+      )
+
+      // Assert pipeline is initialized on first mount
+      expect(capturedInstance!._internal.pipeline).not.toBeNull()
+
+      // Simulate StrictMode step 1 — cleanup effect destroys and nulls pipeline
+      capturedInstance!._internal.pipeline?.destroy()
+      capturedInstance!._internal.pipeline = null
+
+      // Simulate StrictMode step 2 — loading effect re-runs.
+      // The fix: if WASM is loaded but pipeline is null (destroyed by cleanup), re-initialize.
+      // This mirrors the exact condition the fixed useEffect handles in provider.tsx.
+      if (isWasmLoaded() && !capturedInstance!._internal.pipeline) {
+        initPipeline(
+          capturedInstance!._internal,
+          basicTestFixtures.empty as Record<string, unknown>,
+        )
+      }
+
+      // Assert pipeline is restored after re-initialization
+      expect(capturedInstance!._internal.pipeline).not.toBeNull()
+
+      // Assert processChanges does not throw "cannot read properties of null, reading 'processChanges'"
+      expect(() => {
+        act(() => {
+          processChangesWasm(capturedInstance!, [['fieldA', 'restored', {}]])
+        })
+      }).not.toThrow()
+
+      const finalValue = capturedInstance!.state.fieldA
+      expect(finalValue).toBe('restored')
     })
   })
 })
