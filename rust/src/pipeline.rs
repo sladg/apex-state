@@ -27,9 +27,13 @@ pub(crate) struct Change {
     pub value_json: String,
 }
 
+/// Raw sentinel value for JS `undefined` (without JSON quotes).
+/// Used by shadow state to recognize undefined values during traversal.
+pub(crate) const UNDEFINED_SENTINEL: &str = "__APEX_UNDEFINED__";
+
 /// JSON-encoded sentinel for JS `undefined` values crossing the WASM boundary.
 /// JS sends `JSON.stringify("__APEX_UNDEFINED__")` = `"\"__APEX_UNDEFINED__\""`.
-/// Treated as null-equivalent in aggregation and sync filtering.
+/// Treated as null-equivalent in aggregation, sync filtering, and shadow traversal.
 pub(crate) const UNDEFINED_SENTINEL_JSON: &str = "\"__APEX_UNDEFINED__\"";
 
 /// Validator dispatch info for JS-side execution.

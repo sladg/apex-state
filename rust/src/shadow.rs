@@ -1,3 +1,4 @@
+use crate::pipeline::UNDEFINED_SENTINEL;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -169,6 +170,15 @@ impl ShadowState {
 
     // --- private helpers ---
 
+    /// Check if a ValueRepr is null-like (Null or the undefined sentinel string).
+    fn is_null_like(v: &ValueRepr) -> bool {
+        match v {
+            ValueRepr::Null => true,
+            ValueRepr::String(s) if s == UNDEFINED_SENTINEL => true,
+            _ => false,
+        }
+    }
+
     fn traverse<'a, 'b>(
         root: &'a ValueRepr,
         segments: impl Iterator<Item = &'b str>,
@@ -225,10 +235,12 @@ impl ShadowState {
                     Self::set_at(child, rest, value)
                 }
             }
-            // Null/undefined → promote to Object so nested paths can be created.
-            // This handles the case where e.g. `form: undefined` gets populated
-            // via a change like `form.email.value = "x"`.
-            ValueRepr::Null => {
+            // Null or undefined sentinel → promote to Object so nested paths can be created.
+            // This handles the case where e.g. `form: undefined` or `form: null`
+            // gets populated via a change like `form.email.value = "x"`.
+            // The "__APEX_UNDEFINED__" sentinel is a String in shadow state that
+            // represents JS `undefined` — treat it like Null for traversal.
+            _ if Self::is_null_like(node) => {
                 let mut map = HashMap::new();
                 if rest.is_empty() {
                     map.insert(key.to_owned(), value);
@@ -529,5 +541,36 @@ mod tests {
         assert_eq!(val.to_json_value(), serde_json::json!("world"));
         let keys = state.get_object_keys("form").unwrap();
         assert_eq!(keys, vec!["email"]);
+    }
+
+    // --- undefined sentinel handling ---
+
+    #[test]
+    fn set_through_undefined_sentinel_promotes_to_object() {
+        // notionalCcy was set to "__APEX_UNDEFINED__" (the JS undefined sentinel)
+        // A later change sets notionalCcy.value = "USD" — should promote, not error
+        let mut state = make_state(r#"{"notionalCcy": "__APEX_UNDEFINED__"}"#);
+        state.set("notionalCcy.value", "\"USD\"").unwrap();
+        let val = state.get("notionalCcy.value").unwrap();
+        assert_eq!(val.to_json_value(), serde_json::json!("USD"));
+        // notionalCcy is now an object
+        let keys = state.get_object_keys("notionalCcy").unwrap();
+        assert_eq!(keys, vec!["value"]);
+    }
+
+    #[test]
+    fn set_through_deeply_nested_undefined_sentinel() {
+        // Deep path: form.field is the sentinel, set form.field.nested.value
+        let mut state = make_state(r#"{"form": {"field": "__APEX_UNDEFINED__"}}"#);
+        state.set("form.field.nested.value", "42").unwrap();
+        let val = state.get("form.field.nested.value").unwrap();
+        assert_eq!(val.to_json_value(), serde_json::json!(42));
+    }
+
+    #[test]
+    fn set_regular_string_still_fails_traversal() {
+        // A real string (not the sentinel) should still error on traversal
+        let mut state = make_state(r#"{"name": "Alice"}"#);
+        assert!(state.set("name.nested", "1").is_err());
     }
 }
