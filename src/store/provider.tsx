@@ -62,8 +62,6 @@ export const createProvider = <
     initialState: rawInitialState,
     children,
   }: ProviderProps<DATA>) => {
-    const [wasmReady, setWasmReady] = useState(isLegacy || isWasmLoaded())
-
     // Prepare getter-free initial state once (used by both useMemo and useEffect)
     const prepared = useMemo(
       () => prepareInitialState(rawInitialState),
@@ -74,9 +72,9 @@ export const createProvider = <
     const store = useMemo<StoreInstance<DATA, META>>(() => {
       const internal = createInternalState<DATA, META>(resolvedConfig)
 
-      // CRITICAL: If WASM is already loaded, create pipeline and init shadow state
-      // BEFORE proxy creation, so registration hooks can compute initial sync changes.
-      // Each Provider gets its own isolated pipeline (no global reset needed).
+      // Fast path: If WASM is already loaded (tests, cached), create pipeline
+      // synchronously so children can render on the very first frame.
+      // This is a pure optimization — the useEffect below handles all other cases.
       if (!isLegacy && isWasmLoaded()) {
         initPipeline(internal, prepared.initialState)
       }
@@ -111,47 +109,53 @@ export const createProvider = <
       }
     }, [])
 
-    // Load WASM asynchronously if not already loaded (production first-render path).
-    // Also re-initializes pipeline if WASM is loaded but pipeline was destroyed by
-    // cleanup (React StrictMode double-mount, or normal unmount/remount).
+    // Derive initial readiness from actual pipeline state, not a separate boolean.
+    // If useMemo fast-path created a pipeline, ready starts true (zero-flash rendering).
+    // Otherwise starts false and the effect below will set it true after WASM loads.
+    const [ready, setReady] = useState(
+      () => isLegacy || store._internal.pipeline !== null,
+    )
+
+    // Single effect handles ALL pipeline lifecycle: WASM loading, pipeline init,
+    // StrictMode restore, and cleanup — always paired in one place.
     useEffect(() => {
       if (isLegacy) return
 
-      if (isWasmLoaded()) {
-        // Pipeline may be null after StrictMode cleanup — restore it without a state update
+      let cancelled = false
+
+      const ensurePipeline = () => {
+        if (cancelled) return
         if (!store._internal.pipeline) {
           initPipeline(
             store._internal,
             prepared.initialState as Record<string, unknown>,
           )
         }
-        return
+        setReady(true)
       }
 
-      loadWasm()
-        .then(() => {
-          initPipeline(
-            store._internal,
-            prepared.initialState as Record<string, unknown>,
-          )
-          setWasmReady(true)
-        })
-        .catch((error) => {
-          console.error('[apex-state] Failed to load WASM:', error)
-          throw error
-        })
-    }, [])
+      if (isWasmLoaded()) {
+        // WASM already loaded (tests, cached, or StrictMode re-mount) — init synchronously
+        ensurePipeline()
+      } else {
+        // Production first-load — wait for WASM, then init
+        loadWasm()
+          .then(ensurePipeline)
+          .catch((error) => {
+            console.error('[apex-state] Failed to load WASM:', error)
+          })
+      }
 
-    // Cleanup: destroy pipeline on unmount
-    useEffect(() => {
       return () => {
+        cancelled = true
         store._internal.pipeline?.destroy()
         store._internal.pipeline = null
+        setReady(false)
       }
     }, [])
 
-    // Block rendering until WASM is ready (if using WASM mode)
-    if (!wasmReady) {
+    // Block rendering until pipeline is ready (WASM loaded + pipeline initialized)
+    if (!ready) {
       return null
     }
 

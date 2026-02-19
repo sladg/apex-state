@@ -22,9 +22,6 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
-import { useStoreContext } from '../../src/core/context'
-import { processChangesWasm } from '../../src/pipeline/process-changes.wasm-impl'
-import { initPipeline, isWasmLoaded } from '../../src/wasm/lifecycle'
 import type { BasicTestState } from '../mocks'
 import { basicTestFixtures } from '../mocks'
 import { flushSync, MODES, mountStore } from '../utils/react'
@@ -972,59 +969,50 @@ describe.each(MODES)('[$name] Provider & Context', ({ config }) => {
       expect(storeInstance._internal.pipeline).not.toBeNull()
     })
 
-    it('should restore pipeline after simulated StrictMode cleanup and not throw on processChanges', () => {
-      // WASM-only: null pipeline only matters when processChangesWasm is used
-      if (config.useLegacyImplementation) return
+    it('should render children and support setValue under React.StrictMode', async () => {
+      // Regression: React StrictMode double-mounts components (mount → cleanup → mount).
+      // The cleanup effect destroys the pipeline (pipeline = null). Before the fix,
+      // children could render with a null pipeline during the re-initialization gap,
+      // causing "Cannot read properties of null" when calling processChanges.
+      //
+      // The fix: cleanup sets ready=false, blocking children until the effect re-runs
+      // and restores the pipeline. This test exercises the REAL StrictMode behavior
+      // (not a manual simulation) to catch regressions.
 
-      // Regression: React StrictMode runs the cleanup effect (pipeline = null) then
-      // re-runs the loading effect. Before the fix, the loading effect early-returned
-      // when isWasmLoaded() was true without re-initializing pipeline, leaving it null.
-      // Calling setValue then threw: "Cannot read properties of null, reading 'processChanges'".
-
-      // Create store with initialState
-      let capturedInstance: ReturnType<
-        typeof useStoreContext<BasicTestState>
-      > | null = null
-      const Capture = () => {
-        capturedInstance = useStoreContext<BasicTestState>()
-        return null
-      }
+      // Create store
       const store = createGenericStore<BasicTestState>(config)
-      render(
-        <store.Provider initialState={basicTestFixtures.empty}>
-          <Capture />
-        </store.Provider>,
-      )
 
-      // Assert pipeline is initialized on first mount
-      expect(capturedInstance!._internal.pipeline).not.toBeNull()
-
-      // Simulate StrictMode step 1 — cleanup effect destroys and nulls pipeline
-      capturedInstance!._internal.pipeline?.destroy()
-      capturedInstance!._internal.pipeline = null
-
-      // Simulate StrictMode step 2 — loading effect re-runs.
-      // The fix: if WASM is loaded but pipeline is null (destroyed by cleanup), re-initialize.
-      // This mirrors the exact condition the fixed useEffect handles in provider.tsx.
-      if (isWasmLoaded() && !capturedInstance!._internal.pipeline) {
-        initPipeline(
-          capturedInstance!._internal,
-          basicTestFixtures.empty as Record<string, unknown>,
+      // Child component that reads state and provides a setValue trigger
+      const Child = () => {
+        const [value, setValue] = store.useStore('fieldA')
+        return (
+          <div>
+            <span data-testid="value">{String(value)}</span>
+            <button
+              data-testid="update"
+              onClick={() => setValue('after-strict-mode')}
+            />
+          </div>
         )
       }
 
-      // Assert pipeline is restored after re-initialization
-      expect(capturedInstance!._internal.pipeline).not.toBeNull()
+      // Render under real React.StrictMode — triggers double-mount in dev
+      render(
+        <React.StrictMode>
+          <store.Provider initialState={basicTestFixtures.empty}>
+            <Child />
+          </store.Provider>
+        </React.StrictMode>,
+      )
 
-      // Assert processChanges does not throw "cannot read properties of null, reading 'processChanges'"
-      expect(() => {
-        act(() => {
-          processChangesWasm(capturedInstance!, [['fieldA', 'restored', {}]])
-        })
-      }).not.toThrow()
+      // Children rendered successfully after StrictMode double-mount
+      expect(screen.getByTestId('value')).toHaveTextContent('')
 
-      const finalValue = capturedInstance!.state.fieldA
-      expect(finalValue).toBe('restored')
+      // setValue works — pipeline is valid after StrictMode restore
+      fireEvent.click(screen.getByTestId('update'))
+      await flushEffects()
+
+      expect(screen.getByTestId('value')).toHaveTextContent('after-strict-mode')
     })
   })
 })

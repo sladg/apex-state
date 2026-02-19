@@ -13,6 +13,13 @@ const pathCache = new Map<string, string[]>()
 const MAX_CACHE_SIZE = 1000
 
 const getPathParts = (path: string): string[] => {
+  if (typeof path !== 'string') {
+    throw new TypeError(
+      `[apex-state] Path must be a string, received ${typeof path}: ${JSON.stringify(path)}. ` +
+        `Paths must be dot-notation strings like "user.email" or "items.0.name".`,
+    )
+  }
+
   let parts = pathCache.get(path)
   if (!parts) {
     parts = path.split('.')
