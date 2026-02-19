@@ -12,8 +12,7 @@
  * @module wasm/bridge
  */
 
-import type { z } from 'zod'
-
+import type { ValidationSchema } from '../types/concerns'
 import { createFastJson } from '../utils/json'
 import { getWasmInstance } from './lifecycle'
 
@@ -218,8 +217,8 @@ export interface WasmPipeline {
   unregisterBoolLogic: (logicId: number) => void
   pipelineReset: () => void
   destroy: () => void
-  /** Per-instance storage for Zod schemas (can't cross WASM boundary). */
-  validatorSchemas: Map<number, z.ZodSchema>
+  /** Per-instance storage for validation schemas (can't cross WASM boundary). */
+  validatorSchemas: Map<number, ValidationSchema>
 }
 
 /**
@@ -230,7 +229,7 @@ export interface WasmPipeline {
 export const createWasmPipeline = (): WasmPipeline => {
   const wasm = getWasmInstance()
   const id = wasm.pipeline_create()
-  const schemas = new Map<number, z.ZodSchema>()
+  const schemas = new Map<number, ValidationSchema>()
 
   return {
     id,

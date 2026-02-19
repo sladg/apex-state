@@ -26,7 +26,7 @@ export interface ValidationStateConcern {
 
 export const validationState: ValidationStateConcern = {
   name: 'validationState',
-  description: 'Zod schema validation with isError flag and detailed errors',
+  description: 'Schema validation with isError flag and detailed errors',
   evaluate: <SUB_STATE, PATH extends DeepKey<SUB_STATE>>(
     props: BaseConcernProps<SUB_STATE, PATH> &
       ValidationStateInput<SUB_STATE, PATH>,
@@ -38,7 +38,7 @@ export const validationState: ValidationStateConcern = {
         ? dot.get__unsafe(props.state, props.scope)
         : props.value
 
-    // Run Zod validation
+    // Run schema validation
     const result = props.schema.safeParse(valueToValidate)
 
     // Success: return valid state
@@ -49,10 +49,10 @@ export const validationState: ValidationStateConcern = {
       }
     }
 
-    // Failure: transform Zod errors to ValidationError format
-    const errors: ValidationError[] = result.error.errors.map((zodError) => ({
-      field: zodError.path.length > 0 ? zodError.path.join('.') : '.',
-      message: zodError.message,
+    // Failure: transform schema errors to ValidationError format
+    const errors: ValidationError[] = result.error.errors.map((err) => ({
+      field: err.path.length > 0 ? err.path.join('.') : '.',
+      message: err.message,
     }))
 
     return {

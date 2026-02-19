@@ -195,7 +195,7 @@ const applyConcernChanges = (
 }
 
 /**
- * Execute Zod validators and return concern changes.
+ * Execute schema validators and return concern changes.
  * Takes validators_to_run from WASM, returns concern changes with _concerns. prefix.
  */
 const runValidators = (
@@ -226,16 +226,16 @@ const runValidators = (
 
     // For single-field validators, validate the primary value
     const primaryValue = Object.values(values)[0]
-    const zodResult = schema.safeParse(primaryValue)
+    const parseResult = schema.safeParse(primaryValue)
 
     // Return as Change with _concerns. prefix (WASM will strip it in finalize)
     validationResults.push({
       path: validator.output_path, // Already has _concerns. prefix
       value: {
-        isError: !zodResult.success,
-        errors: zodResult.success
+        isError: !parseResult.success,
+        errors: parseResult.success
           ? []
-          : zodResult.error.errors.map((e) => ({
+          : parseResult.error.errors.map((e) => ({
               field: e.path.length > 0 ? e.path.join('.') : '.',
               message: e.message,
             })),
@@ -339,7 +339,7 @@ export const processChangesWasm: typeof import('./process-changes').processChang
       applyConcernChanges(early.concernChanges, store._concerns)
     }
 
-    // 4. Execute validators (JS-only: Zod schemas)
+    // 4. Execute validators (JS-only: schema validation)
     const validationResults = runValidators(validators_to_run, pipeline)
 
     // 5. WASM Phase 2: merge, diff, update shadow

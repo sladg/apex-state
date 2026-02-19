@@ -100,12 +100,12 @@ const registerWasmBatch = (
 
   // Post-registration: run initial validation for each validator
   validatorConfigs.forEach((config, validatorId) => {
-    const zodResult = config.schema.safeParse(config.initialValue)
+    const parseResult = config.schema.safeParse(config.initialValue)
     const validationResult = {
-      isError: !zodResult.success,
-      errors: zodResult.success
+      isError: !parseResult.success,
+      errors: parseResult.success
         ? []
-        : zodResult.error.errors.map((e: any) => ({
+        : parseResult.error.errors.map((e: any) => ({
             field: e.path.length > 0 ? e.path.join('.') : '.',
             message: e.message,
           })),

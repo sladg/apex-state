@@ -5,11 +5,24 @@
  * their return types for proper type-safe concern registration and reading.
  */
 
-import { z } from 'zod'
-
 import type { BoolLogic } from './bool-logic'
 import type { DeepKey } from './deep-key'
 import type { DeepValue } from './deep-value'
+
+/**
+ * Validation schema interface — the minimal contract for validation.
+ *
+ * Any library whose schema exposes `safeParse()` with this shape works
+ * out of the box (Zod, Valibot, ArkType, or a plain object).
+ */
+export interface ValidationSchema<T = unknown> {
+  safeParse(data: unknown):
+    | { success: true; data: T }
+    | {
+        success: false
+        error: { errors: { path: (string | number)[]; message: string }[] }
+      }
+}
 
 /**
  * Config type for the validationState concern at a specific path.
@@ -21,11 +34,11 @@ import type { DeepValue } from './deep-value'
  * targeting a different path in the same state.
  */
 export type ValidationStateInput<DATA, PATH extends DeepKey<DATA>> =
-  | { schema: z.ZodSchema<DeepValue<DATA, PATH>> }
+  | { schema: ValidationSchema<DeepValue<DATA, PATH>> }
   | {
       [SCOPE in DeepKey<DATA>]: {
         scope: SCOPE
-        schema: z.ZodSchema<DeepValue<DATA, SCOPE>>
+        schema: ValidationSchema<DeepValue<DATA, SCOPE>>
       }
     }[DeepKey<DATA>]
 
@@ -100,9 +113,10 @@ export type EvaluatedConcerns<CONCERNS extends readonly any[]> = {
  *
  * @example
  * ```typescript
+ * // Works with any library implementing ValidationSchema (Zod, Valibot, ArkType, etc.)
  * const registration: ConcernRegistrationMap<MyFormState> = {
- *   email: { validationState: { schema: z.string().email() } },
- *   name: { validationState: { schema: z.string().min(1) } },
+ *   email: { validationState: { schema: emailSchema } },
+ *   name: { validationState: { schema: nameSchema } },
  * }
  * ```
  */

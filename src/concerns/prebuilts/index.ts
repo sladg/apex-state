@@ -2,7 +2,7 @@
  * Pre-built concerns provided by apex-state
  *
  * Validation & Schema:
- * - validationState: Complete validation with Zod (isError, errors, message, timestamp)
+ * - validationState: Schema validation (isError, errors, message, timestamp)
  *
  * Conditional UI State (uses BoolLogic):
  * - disabledWhen: Disable field when condition is true
