@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.2.0](https://github.com/sladg/apex-state/compare/v3.1.0...v3.2.0)
+
+* feat: add @sladg/apex-state/testing subpath with mock store and __mocked control API [[031556fb641834651429e0ea47cd1487a3008893](https://github.com/sladg/apex-state/commit/031556fb641834651429e0ea47cd1487a3008893))]
+
+
 ## [v3.1.0](https://github.com/sladg/apex-state/compare/v3.0.5...v3.1.0)
 
 * fix(wasm): treat undefined sentinel as null-like in shadow state traversal [[049d0101a9a41347fb37b159f9f33ce5dfd63354](https://github.com/sladg/apex-state/commit/049d0101a9a41347fb37b159f9f33ce5dfd63354))]
@@ -89,6 +94,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* feat: add @sladg/apex-state/testing subpath with mock store and __mocked control API [[031556fb641834651429e0ea47cd1487a3008893](https://github.com/sladg/apex-state/commit/031556fb641834651429e0ea47cd1487a3008893))]
 * fix(wasm): treat undefined sentinel as null-like in shadow state traversal [[049d0101a9a41347fb37b159f9f33ce5dfd63354](https://github.com/sladg/apex-state/commit/049d0101a9a41347fb37b159f9f33ce5dfd63354))]
 * feat: replace Zod peer dependency with ValidationSchema interface and support React 19 [[230bd9b28d31e29287aba7afc5852d7860a169cd](https://github.com/sladg/apex-state/commit/230bd9b28d31e29287aba7afc5852d7860a169cd))]
 * fix(provider): refactor WASM readiness to single-effect lifecycle [[b408c2ccbc53456ce3bf5d993617f9d77c2a3f2a](https://github.com/sladg/apex-state/commit/b408c2ccbc53456ce3bf5d993617f9d77c2a3f2a))]
