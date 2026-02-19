@@ -76,6 +76,7 @@ const App = () => (
 | **WASM mode** | Rust-powered pipeline for bulk operations | [Architecture](docs/WASM_ARCHITECTURE.md) |
 | **Composable hooks** | Buffered, throttled, transformed field wrappers | [Store & Hooks](docs/guides/STORE_HOOKS.md) |
 | **Record/wildcard** | `Record<string, V>` with `[*]` wildcard paths | [Wildcard Guide](docs/WILD_FUNCTION_GUIDE.md) |
+| **Testing mock** | Drop-in `vi.mock` replacement with call tracking | [Testing Mock](docs/TESTING_MOCK.md) |
 
 ## Architecture
 
@@ -215,6 +216,7 @@ cargo install wasm-pack
 | [Debug Timing](docs/DEBUG_TIMING.md) | Performance debugging utilities |
 | [Wildcard Paths](docs/WILD_FUNCTION_GUIDE.md) | `Wild()` template utility for Record types |
 | [Record Migration](docs/RECORD_MIGRATION.md) | Migration patterns for dynamic Record types |
+| [Testing Mock](docs/TESTING_MOCK.md) | Mock module for consumer tests (`vi.mock`) |
 | [Full Index](docs/README.md) | Complete documentation index |
 
 ## Roadmap

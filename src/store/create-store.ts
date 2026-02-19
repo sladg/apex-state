@@ -208,3 +208,11 @@ export const createGenericStore = <
     withConcerns,
   }
 }
+
+/** Return type of createGenericStore — used by testing mock for 1:1 type safety */
+export type GenericStoreApi<
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+  CONCERNS extends readonly ConcernType<string, any, any>[] =
+    typeof defaultConcerns,
+> = ReturnType<typeof createGenericStore<DATA, META, CONCERNS>>

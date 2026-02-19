@@ -176,6 +176,32 @@ Use `DeepKey<T>` and `DeepValue<T, P>` for every path operation. Never string li
 
 From effects: `return () => { /* cleanup */ }`. Never forget cleanup functions.
 
+### 6. Vitest with LLM Reporter + JQ
+
+**CRITICAL**: When running vitest tests for analysis, ALWAYS use `vitest-llm-reporter` with `jq` to format output for LLM consumption.
+
+**Why?** The LLM reporter provides structured JSON output that's far more efficient to parse than raw vitest output. Using `jq` extracts only the relevant test failures and context.
+
+**Running tests:**
+
+```bash
+# Install vitest-llm-reporter if not already installed
+npm install -D vitest-llm-reporter
+
+# Run tests with LLM reporter and jq filtering
+npx vitest run --reporter=vitest-llm-reporter 2>&1 | jq -r '.failures[] | "\(.file):\(.line) - \(.title)\n  \(.message)"'
+```
+
+**For specific test files:**
+
+```bash
+npx vitest run tests/specific-file.test.ts --reporter=vitest-llm-reporter 2>&1 | jq '.failures'
+```
+
+**DO NOT** run raw `vitest run` or `npm run test:all` and read the full output — it wastes tokens. Use the LLM reporter + jq to get structured, concise failure information.
+
+**Fallback**: If `vitest-llm-reporter` is unavailable or fails, fall back to `npm run test:all 2>&1 | tail -50` to get the last 50 lines of output.
+
 ---
 
 ## Directory Structure
@@ -456,6 +482,7 @@ This is a performance-critical layer. Patterns matter.
 ❌ **Never skip running `npm run code:fix && npm run code:check` after TS changes**
 ❌ **Never read lint/format output (wastes tokens)**
 ❌ **Never use classes or function declarations** — always arrow functions
+❌ **Never use `React.fn()` pattern** — use `fn()` directly (e.g., `useMemo()` not `React.useMemo()`)
 ❌ **Never use derive-valtio for dependency tracking** — use `effect()` from valtio-reactive
 ❌ **Never read and write to same proxy in effects** — read from `state`, write to `_concerns`
 ❌ **Never mutate state inside concern evaluate()** — return new values, don't modify inputs
