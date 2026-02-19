@@ -72,6 +72,7 @@ export type {
   GenericMeta,
   PathsWithSameValueAs,
   SyncPair,
+  ValidationSchema,
 } from './types'
 
 // =============================================================================

@@ -22,7 +22,6 @@ import type {
 } from '../types'
 import type { SideEffects } from '../types/side-effects'
 import { dot } from '../utils/dot'
-import { loadWasm } from '../wasm/lifecycle'
 import { createProvider } from './provider'
 
 export const createGenericStore = <
@@ -34,12 +33,6 @@ export const createGenericStore = <
   config?: StoreConfig,
 ) => {
   const Provider = createProvider<DATA, META>(config)
-
-  // Kick off WASM loading early — by the time Provider mounts it may already be ready.
-  // Fire-and-forget: Provider.useEffect handles the actual await.
-  if (!config?.useLegacyImplementation) {
-    void loadWasm()
-  }
 
   // Internal helper hook for field state access
   const _useFieldValue = <P extends DeepKey<DATA>>(path: P) => {

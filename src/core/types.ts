@@ -188,6 +188,8 @@ export interface InternalState<
   config: DeepRequired<StoreConfig>
   /** Per-store WASM pipeline instance (null when using legacy implementation). */
   pipeline: WasmPipeline | null
+  /** Pending deferred destroy timer — cancelled on StrictMode re-mount. */
+  _destroyTimer?: ReturnType<typeof setTimeout> | undefined
 }
 
 export type ConcernValues = Record<string, Record<string, unknown>>
