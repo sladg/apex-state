@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [v3.1.0](https://github.com/sladg/apex-state/compare/v3.0.5...v3.1.0)
+
+* fix(wasm): treat undefined sentinel as null-like in shadow state traversal [[049d0101a9a41347fb37b159f9f33ce5dfd63354](https://github.com/sladg/apex-state/commit/049d0101a9a41347fb37b159f9f33ce5dfd63354))]
+* feat: replace Zod peer dependency with ValidationSchema interface and support React 19 [[230bd9b28d31e29287aba7afc5852d7860a169cd](https://github.com/sladg/apex-state/commit/230bd9b28d31e29287aba7afc5852d7860a169cd))]
+
+
 ## [v3.0.5](https://github.com/sladg/apex-state/compare/v3.0.4...v3.0.5)
 
 * fix(provider): refactor WASM readiness to single-effect lifecycle [[b408c2ccbc53456ce3bf5d993617f9d77c2a3f2a](https://github.com/sladg/apex-state/commit/b408c2ccbc53456ce3bf5d993617f9d77c2a3f2a))]
@@ -83,6 +89,8 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix(wasm): treat undefined sentinel as null-like in shadow state traversal [[049d0101a9a41347fb37b159f9f33ce5dfd63354](https://github.com/sladg/apex-state/commit/049d0101a9a41347fb37b159f9f33ce5dfd63354))]
+* feat: replace Zod peer dependency with ValidationSchema interface and support React 19 [[230bd9b28d31e29287aba7afc5852d7860a169cd](https://github.com/sladg/apex-state/commit/230bd9b28d31e29287aba7afc5852d7860a169cd))]
 * fix(provider): refactor WASM readiness to single-effect lifecycle [[b408c2ccbc53456ce3bf5d993617f9d77c2a3f2a](https://github.com/sladg/apex-state/commit/b408c2ccbc53456ce3bf5d993617f9d77c2a3f2a))]
 * fix(provider): restore WASM pipeline after React StrictMode cleanup [[fbd3c4eb54382729a29624a3af178c04839ae24d](https://github.com/sladg/apex-state/commit/fbd3c4eb54382729a29624a3af178c04839ae24d))]
 * fix: aggregation undefined sentinel and concern type safety [[74cb2b05a422c5daafe8574a0cff62aa587e1e83](https://github.com/sladg/apex-state/commit/74cb2b05a422c5daafe8574a0cff62aa587e1e83))]
