@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.4.0](https://github.com/sladg/apex-state/compare/v3.3.0...v3.4.0)
+
+* feat: add interactive demo with GH Pages deployment [[4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109](https://github.com/sladg/apex-state/commit/4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109))]
+
+
 ## [v3.3.0](https://github.com/sladg/apex-state/compare/v3.2.1...v3.3.0)
 
 * feat: add excludeWhen aggregation, computation SUM/AVG, optimize Rust hot paths, improve WASM bridge types [[f11f4a33ef307ff8fec0334b499bd49d3afd1f16](https://github.com/sladg/apex-state/commit/f11f4a33ef307ff8fec0334b499bd49d3afd1f16))]
@@ -104,6 +109,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* feat: add interactive demo with GH Pages deployment [[4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109](https://github.com/sladg/apex-state/commit/4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109))]
 * feat: add excludeWhen aggregation, computation SUM/AVG, optimize Rust hot paths, improve WASM bridge types [[f11f4a33ef307ff8fec0334b499bd49d3afd1f16](https://github.com/sladg/apex-state/commit/f11f4a33ef307ff8fec0334b499bd49d3afd1f16))]
 * fix: simplify Provider with WasmGate + useRef init, fix StrictMode pipeline null [[c90c321bd5d1545f67ffcd4d2fde6501e07c5c49](https://github.com/sladg/apex-state/commit/c90c321bd5d1545f67ffcd4d2fde6501e07c5c49))]
 * feat: add @sladg/apex-state/testing subpath with mock store and __mocked control API [[031556fb641834651429e0ea47cd1487a3008893](https://github.com/sladg/apex-state/commit/031556fb641834651429e0ea47cd1487a3008893))]
