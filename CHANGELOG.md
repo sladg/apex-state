@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.4.1](https://github.com/sladg/apex-state/compare/v3.4.0...v3.4.1)
+
+* chore: clean up docs, add examples, remove legacy tests and migration comments [[b7447dbde9a64425a0d4a09d8f41fbd091320573](https://github.com/sladg/apex-state/commit/b7447dbde9a64425a0d4a09d8f41fbd091320573))]
+
+
 ## [v3.4.0](https://github.com/sladg/apex-state/compare/v3.3.0...v3.4.0)
 
 * feat: add interactive demo with GH Pages deployment [[4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109](https://github.com/sladg/apex-state/commit/4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109))]
@@ -109,6 +114,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* chore: clean up docs, add examples, remove legacy tests and migration comments [[b7447dbde9a64425a0d4a09d8f41fbd091320573](https://github.com/sladg/apex-state/commit/b7447dbde9a64425a0d4a09d8f41fbd091320573))]
 * feat: add interactive demo with GH Pages deployment [[4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109](https://github.com/sladg/apex-state/commit/4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109))]
 * feat: add excludeWhen aggregation, computation SUM/AVG, optimize Rust hot paths, improve WASM bridge types [[f11f4a33ef307ff8fec0334b499bd49d3afd1f16](https://github.com/sladg/apex-state/commit/f11f4a33ef307ff8fec0334b499bd49d3afd1f16))]
 * fix: simplify Provider with WasmGate + useRef init, fix StrictMode pipeline null [[c90c321bd5d1545f67ffcd4d2fde6501e07c5c49](https://github.com/sladg/apex-state/commit/c90c321bd5d1545f67ffcd4d2fde6501e07c5c49))]
