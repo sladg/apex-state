@@ -6,10 +6,13 @@
 //! (input + computed).
 
 use crate::aggregation::{
-    process_aggregation_reads, process_aggregation_writes, AggregationRegistry,
+    process_aggregation_reads, process_aggregation_writes, AggregationRegistry, AggregationSource,
 };
 use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry};
 use crate::clear_paths::ClearPathsRegistry;
+use crate::computation::{
+    process_computation_reads, ComputationOp, ComputationRegistry, ComputationSource,
+};
 use crate::functions::{FunctionInput, FunctionRegistry};
 use crate::graphs::Graph;
 use crate::intern::InternTable;
@@ -25,6 +28,8 @@ use std::collections::HashSet;
 pub(crate) struct Change {
     pub path: String,
     pub value_json: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 /// Raw sentinel value for JS `undefined` (without JSON quotes).
@@ -51,9 +56,7 @@ pub(crate) struct ProcessResult {
     /// All changes including state and concerns (concern paths have _concerns. prefix).
     pub changes: Vec<Change>,
     /// Validators to run on JS side with their dependency values.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub validators_to_run: Vec<ValidatorDispatch>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_plan: Option<FullExecutionPlan>,
 }
 
@@ -63,10 +66,8 @@ pub(crate) struct PrepareResult {
     /// State changes (readonly context for JS listener execution, not for applying to valtio yet).
     pub state_changes: Vec<Change>,
     /// Validators to run on JS side with their dependency values.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub validators_to_run: Vec<ValidatorDispatch>,
     /// Pre-computed execution plan for listener dispatch.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_plan: Option<FullExecutionPlan>,
     /// Whether there's work to do (validators, listeners, or concern changes to apply).
     /// If false, JS can return early without calling pipeline_finalize.
@@ -100,9 +101,11 @@ pub(crate) struct SideEffectsRegistration {
     #[serde(default)]
     pub flip_pairs: Vec<[String; 2]>,
     #[serde(default)]
-    pub aggregation_pairs: Vec<[String; 2]>,
+    pub aggregation_pairs: Vec<serde_json::Value>,
     #[serde(default)]
     pub clear_paths: Vec<ClearPathInput>,
+    #[serde(default)]
+    pub computation_pairs: Vec<serde_json::Value>,
     #[serde(default)]
     pub listeners: Vec<ListenerRegistration>,
 }
@@ -120,6 +123,7 @@ pub(crate) struct ListenerRegistration {
 pub(crate) struct SideEffectsResult {
     pub sync_changes: Vec<Change>,
     pub aggregation_changes: Vec<Change>,
+    pub computation_changes: Vec<Change>,
     pub registered_listener_ids: Vec<u32>,
 }
 
@@ -183,6 +187,7 @@ pub(crate) struct ProcessingPipeline {
     function_registry: FunctionRegistry,
     function_rev_index: ReverseDependencyIndex,
     aggregations: AggregationRegistry,
+    computations: ComputationRegistry,
     clear_registry: ClearPathsRegistry,
     sync_graph: Graph,
     flip_graph: Graph,
@@ -213,6 +218,7 @@ impl ProcessingPipeline {
             function_registry: FunctionRegistry::new(),
             function_rev_index: ReverseDependencyIndex::new(),
             aggregations: AggregationRegistry::new(),
+            computations: ComputationRegistry::new(),
             clear_registry: ClearPathsRegistry::new(),
             sync_graph: Graph::new(),
             flip_graph: Graph::new(),
@@ -286,17 +292,60 @@ impl ProcessingPipeline {
         &mut self,
         pairs_json: &str,
     ) -> Result<String, String> {
-        // Parse raw pairs
-        let pairs: Vec<[String; 2]> = serde_json::from_str(pairs_json)
+        // Parse raw pairs as JSON arrays (2 or 3 elements each)
+        let raw_pairs: Vec<serde_json::Value> = serde_json::from_str(pairs_json)
             .map_err(|e| format!("Aggregation pairs parse error: {}", e))?;
 
         // Collect all targets and sources for validation
         let mut targets = std::collections::HashSet::new();
         let mut sources = std::collections::HashSet::new();
 
-        for [target, source] in &pairs {
+        // Parse each pair into (target, source, optional condition)
+        let mut parsed: Vec<(String, AggregationSource)> = Vec::new();
+
+        for pair in &raw_pairs {
+            let arr = pair
+                .as_array()
+                .ok_or_else(|| "Aggregation pair must be an array".to_string())?;
+
+            if arr.len() < 2 || arr.len() > 3 {
+                return Err(format!(
+                    "Aggregation pair must have 2 or 3 elements, got {}",
+                    arr.len()
+                ));
+            }
+
+            let target = arr[0]
+                .as_str()
+                .ok_or_else(|| "Aggregation target must be a string".to_string())?
+                .to_string();
+            let source_path = arr[1]
+                .as_str()
+                .ok_or_else(|| "Aggregation source must be a string".to_string())?
+                .to_string();
+
+            let exclude_when = if arr.len() == 3 {
+                // Third element is a JSON string of BoolLogic tree
+                let tree_json = arr[2]
+                    .as_str()
+                    .ok_or_else(|| "Aggregation condition must be a JSON string".to_string())?;
+                let node: BoolLogicNode = serde_json::from_str(tree_json)
+                    .map_err(|e| format!("Aggregation condition parse error: {}", e))?;
+                Some(node)
+            } else {
+                None
+            };
+
             targets.insert(target.clone());
-            sources.insert(source.clone());
+            sources.insert(source_path.clone());
+
+            parsed.push((
+                target,
+                AggregationSource {
+                    path: source_path,
+                    exclude_when,
+                },
+            ));
         }
 
         // Validate no circular dependencies
@@ -310,17 +359,17 @@ impl ProcessingPipeline {
         }
 
         // Group by target for multi-source aggregations
-        let mut by_target: std::collections::HashMap<String, Vec<String>> =
+        let mut by_target: std::collections::HashMap<String, Vec<AggregationSource>> =
             std::collections::HashMap::new();
 
-        for [target, source] in pairs {
+        for (target, source) in parsed {
             by_target.entry(target).or_default().push(source);
         }
 
         // Collect all source paths for initial value computation
         let all_sources: Vec<String> = by_target
             .values()
-            .flat_map(|sources| sources.iter().cloned())
+            .flat_map(|sources| sources.iter().map(|s| s.path.clone()))
             .collect();
 
         // Register all aggregations
@@ -353,6 +402,131 @@ impl ProcessingPipeline {
         }
 
         Ok(())
+    }
+
+    /// Register a batch of computation pairs.
+    ///
+    /// Input: JSON array of 3 or 4 element arrays: [op, target, source] or [op, target, source, excludeWhen]
+    /// Groups by target, validates no circular deps, registers, computes initial values.
+    /// Returns initial computation changes.
+    pub(crate) fn register_computation_batch(
+        &mut self,
+        raw_pairs: &[serde_json::Value],
+    ) -> Result<Vec<Change>, String> {
+        // Collect all targets and sources for validation
+        let mut targets = std::collections::HashSet::new();
+        let mut sources = std::collections::HashSet::new();
+
+        // Parse each pair into (op, target, source, optional condition)
+        let mut parsed: Vec<(ComputationOp, String, ComputationSource)> = Vec::new();
+
+        for pair in raw_pairs {
+            let arr = pair
+                .as_array()
+                .ok_or_else(|| "Computation pair must be an array".to_string())?;
+
+            if arr.len() < 3 || arr.len() > 4 {
+                return Err(format!(
+                    "Computation pair must have 3 or 4 elements, got {}",
+                    arr.len()
+                ));
+            }
+
+            let op_str = arr[0]
+                .as_str()
+                .ok_or_else(|| "Computation operation must be a string".to_string())?;
+            let op = match op_str {
+                "SUM" => ComputationOp::Sum,
+                "AVG" => ComputationOp::Avg,
+                _ => return Err(format!("Unknown computation operation: {}", op_str)),
+            };
+
+            let target = arr[1]
+                .as_str()
+                .ok_or_else(|| "Computation target must be a string".to_string())?
+                .to_string();
+            let source_path = arr[2]
+                .as_str()
+                .ok_or_else(|| "Computation source must be a string".to_string())?
+                .to_string();
+
+            let exclude_when = if arr.len() == 4 {
+                let tree_json = arr[3]
+                    .as_str()
+                    .ok_or_else(|| "Computation condition must be a JSON string".to_string())?;
+                let node: BoolLogicNode = serde_json::from_str(tree_json)
+                    .map_err(|e| format!("Computation condition parse error: {}", e))?;
+                Some(node)
+            } else {
+                None
+            };
+
+            targets.insert(target.clone());
+            sources.insert(source_path.clone());
+
+            parsed.push((
+                op,
+                target,
+                ComputationSource {
+                    path: source_path,
+                    exclude_when,
+                },
+            ));
+        }
+
+        // Validate no circular dependencies
+        for target in &targets {
+            if sources.contains(target) {
+                return Err(format!(
+                    "Circular computation: \"{}\" cannot be both target and source",
+                    target
+                ));
+            }
+        }
+
+        // Group by target for multi-source computations
+        let mut by_target: std::collections::HashMap<
+            String,
+            (ComputationOp, Vec<ComputationSource>),
+        > = std::collections::HashMap::new();
+
+        for (op, target, source) in parsed {
+            let entry = by_target
+                .entry(target)
+                .or_insert_with(|| (op.clone(), Vec::new()));
+            // Validate all pairs for same target use same operation
+            if entry.0 != op {
+                return Err(format!(
+                    "Computation target has mixed operations (found both {:?} and {:?})",
+                    entry.0, op
+                ));
+            }
+            entry.1.push(source);
+        }
+
+        // Collect all source paths for initial value computation
+        let all_sources: Vec<String> = by_target
+            .values()
+            .flat_map(|(_, sources)| sources.iter().map(|s| s.path.clone()))
+            .collect();
+
+        // Register all computations
+        for (target, (op, sources)) in by_target {
+            self.computations.register(op, target, sources);
+        }
+
+        // Compute initial values
+        let initial_changes =
+            process_computation_reads(&self.computations, &self.shadow, &all_sources);
+
+        // Update shadow state with initial computation values
+        for change in &initial_changes {
+            self.shadow
+                .set(&change.path, &change.value_json)
+                .map_err(|e| format!("Shadow update failed for computation: {}", e))?;
+        }
+
+        Ok(initial_changes)
     }
 
     /// Register a batch of sync pairs.
@@ -535,6 +709,7 @@ impl ProcessingPipeline {
                         changes.push(Change {
                             path: path.clone(),
                             value_json: target_value.clone(),
+                            origin: Some("sync".to_owned()),
                         });
                     }
                 }
@@ -721,6 +896,7 @@ impl ProcessingPipeline {
 
         let mut sync_changes = Vec::new();
         let mut aggregation_changes = Vec::new();
+        let mut computation_changes = Vec::new();
         let mut registered_listener_ids = Vec::new();
 
         // 1. Register sync pairs
@@ -756,6 +932,11 @@ impl ProcessingPipeline {
             self.register_clear_paths(&reg.registration_id, &cp.triggers, &cp.targets)?;
         }
 
+        // 4.5. Register computations
+        if !reg.computation_pairs.is_empty() {
+            computation_changes = self.register_computation_batch(&reg.computation_pairs)?;
+        }
+
         // 5. Register listeners
         if !reg.listeners.is_empty() {
             let listener_entries: Vec<_> = reg
@@ -781,6 +962,7 @@ impl ProcessingPipeline {
         Ok(SideEffectsResult {
             sync_changes,
             aggregation_changes,
+            computation_changes,
             registered_listener_ids,
         })
     }
@@ -821,6 +1003,7 @@ impl ProcessingPipeline {
                     } else {
                         "false".to_owned()
                     },
+                    origin: None,
                 });
             }
         }
@@ -861,6 +1044,7 @@ impl ProcessingPipeline {
                 value_logic_changes.push(Change {
                     path: vl.output_path.clone(),
                     value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
+                    origin: None,
                 });
             }
         }
@@ -904,6 +1088,7 @@ impl ProcessingPipeline {
                                     self.buf_sync.push(Change {
                                         path: peer_path.to_owned(),
                                         value_json: change.value_json.clone(),
+                                        origin: Some("sync".to_owned()),
                                     });
                                     continue;
                                 }
@@ -914,6 +1099,7 @@ impl ProcessingPipeline {
                             self.buf_sync.push(Change {
                                 path: peer_path.to_owned(),
                                 value_json: change.value_json.clone(),
+                                origin: Some("sync".to_owned()),
                             });
                         }
                     }
@@ -951,6 +1137,7 @@ impl ProcessingPipeline {
                                 self.buf_flip.push(Change {
                                     path: peer_path.to_owned(),
                                     value_json: inverted.clone(),
+                                    origin: Some("flip".to_owned()),
                                 });
                             }
                         }
@@ -1073,7 +1260,13 @@ impl ProcessingPipeline {
         };
 
         // Step 1-2: Process aggregation writes (distribute target → sources)
-        let changes = process_aggregation_writes(&self.aggregations, input_changes);
+        let changes = process_aggregation_writes(&self.aggregations, input_changes, &self.shadow);
+
+        // Step 1.5: Filter out writes to computation targets (silent no-op)
+        let changes: Vec<Change> = changes
+            .into_iter()
+            .filter(|c| !self.computations.is_computation_target(&c.path))
+            .collect();
 
         // Step 3: Apply aggregated changes to shadow state and collect affected paths
         // Only process genuine changes (diff against shadow before applying)
@@ -1153,6 +1346,17 @@ impl ProcessingPipeline {
         }
         self.buf_output.extend(aggregation_reads);
 
+        // Step 7.6: Process computation reads (sources → target recomputation)
+        let all_changed_paths: Vec<String> =
+            self.buf_output.iter().map(|c| c.path.clone()).collect();
+        let computation_reads =
+            process_computation_reads(&self.computations, &self.shadow, &all_changed_paths);
+        for change in &computation_reads {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend(computation_reads);
+
         // Step 8-9: Evaluate affected BoolLogic expressions
         for logic_id in &self.buf_affected_ids {
             if let Some(meta) = self.registry.get(*logic_id) {
@@ -1164,6 +1368,7 @@ impl ProcessingPipeline {
                     } else {
                         "false".to_owned()
                     },
+                    origin: None,
                 });
             }
         }
@@ -1175,6 +1380,7 @@ impl ProcessingPipeline {
                 self.buf_concern_changes.push(Change {
                     path: meta.output_path.clone(),
                     value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
+                    origin: None,
                 });
             }
         }
@@ -1329,7 +1535,13 @@ impl ProcessingPipeline {
         };
 
         // Step 1-2: Process aggregation writes
-        let changes = process_aggregation_writes(&self.aggregations, input_changes);
+        let changes = process_aggregation_writes(&self.aggregations, input_changes, &self.shadow);
+
+        // Step 1.5: Filter out writes to computation targets (silent no-op)
+        let changes: Vec<Change> = changes
+            .into_iter()
+            .filter(|c| !self.computations.is_computation_target(&c.path))
+            .collect();
 
         // Step 3: Apply aggregated changes to shadow state
         let mut genuine_path_ids: Vec<u32> = Vec::new();
@@ -1402,6 +1614,18 @@ impl ProcessingPipeline {
         }
         self.buf_output.extend(aggregation_reads);
 
+        // Step 7.6: Process computation reads (sources → target recomputation)
+        // After aggregation reads, check if any computation sources changed and recompute targets
+        let all_changed_paths: Vec<String> =
+            self.buf_output.iter().map(|c| c.path.clone()).collect();
+        let computation_reads =
+            process_computation_reads(&self.computations, &self.shadow, &all_changed_paths);
+        for change in &computation_reads {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.buf_output.extend(computation_reads);
+
         // Step 8-9: Evaluate affected BoolLogic expressions
         for logic_id in &self.buf_affected_ids {
             if let Some(meta) = self.registry.get(*logic_id) {
@@ -1414,6 +1638,7 @@ impl ProcessingPipeline {
                     } else {
                         "false".to_owned()
                     },
+                    origin: None,
                 });
             }
         }
@@ -1425,6 +1650,7 @@ impl ProcessingPipeline {
                 self.buf_concern_changes.push(Change {
                     path: meta.output_path.clone(),
                     value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
+                    origin: None,
                 });
             }
         }
@@ -1511,6 +1737,7 @@ impl ProcessingPipeline {
                 js_concern_changes.push(Change {
                     path: stripped_path,
                     value_json: change.value_json,
+                    origin: change.origin,
                 });
             } else {
                 js_state_changes.push(change);
@@ -1539,8 +1766,9 @@ impl ProcessingPipeline {
                     c
                 } else {
                     Change {
-                        path: format!("_concerns.{}", c.path),
+                        path: crate::join_path("_concerns", &c.path),
                         value_json: c.value_json,
+                        origin: c.origin,
                     }
                 }
             })
@@ -1555,8 +1783,9 @@ impl ProcessingPipeline {
         let js_concerns_prefixed: Vec<Change> = js_concern_changes
             .into_iter()
             .map(|c| Change {
-                path: format!("_concerns.{}", c.path),
+                path: crate::join_path("_concerns", &c.path),
                 value_json: c.value_json,
+                origin: c.origin,
             })
             .collect();
         let diffed_js_concerns = self.diff_changes(&js_concerns_prefixed);
@@ -1585,7 +1814,11 @@ impl Default for ProcessingPipeline {
 impl Change {
     #[allow(dead_code)] // Called via WASM export chain
     pub fn new(path: String, value_json: String) -> Self {
-        Self { path, value_json }
+        Self {
+            path,
+            value_json,
+            origin: None,
+        }
     }
 }
 

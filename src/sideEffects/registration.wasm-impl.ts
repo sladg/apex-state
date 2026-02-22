@@ -9,6 +9,7 @@ import type { StoreInstance } from '../core/types'
 import { applyBatch } from '../pipeline/apply-batch'
 import type { GenericMeta } from '../types'
 import type { SideEffects } from '../types/side-effects'
+import type { WasmAggregationPair, WasmComputationPair } from '../wasm/bridge'
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -29,7 +30,25 @@ export const registerSideEffects = <
   // Build consolidated side effects registration
   const syncPairs: [string, string][] = effects.syncPaths ?? []
   const flipPairs: [string, string][] = effects.flipPaths ?? []
-  const aggregationPairs: [string, string][] = effects.aggregations ?? []
+  const aggregationPairs = (effects.aggregations ?? []).map(
+    ([target, source, condition]) =>
+      condition
+        ? [target as string, source as string, JSON.stringify(condition)]
+        : [target as string, source as string],
+  ) as WasmAggregationPair[]
+
+  // Serialize computations: [op, target, source, condition?] → WASM format
+  const computationPairs = (effects.computations ?? []).map(
+    ([op, target, source, condition]) =>
+      condition
+        ? [
+            op as string,
+            target as string,
+            source as string,
+            JSON.stringify(condition),
+          ]
+        : [op as string, target as string, source as string],
+  ) as WasmComputationPair[]
 
   // Transform clearPaths: public API format → WASM format
   // When expandMatch: true, rewrite [*] → [**] in target paths
@@ -81,6 +100,9 @@ export const registerSideEffects = <
     ...(syncPairs.length > 0 && { sync_pairs: syncPairs }),
     ...(flipPairs.length > 0 && { flip_pairs: flipPairs }),
     ...(aggregationPairs.length > 0 && { aggregation_pairs: aggregationPairs }),
+    ...(computationPairs.length > 0 && {
+      computation_pairs: computationPairs,
+    }),
     ...(clearPaths && clearPaths.length > 0 && { clear_paths: clearPaths }),
     ...(listeners && listeners.length > 0 && { listeners }),
   })
@@ -102,6 +124,14 @@ export const registerSideEffects = <
   if (result.aggregation_changes.length > 0) {
     applyBatch(
       result.aggregation_changes.map((c) => [c.path, c.value, {}]) as any,
+      store.state,
+    )
+  }
+
+  // Apply computation changes directly to state
+  if (result.computation_changes.length > 0) {
+    applyBatch(
+      result.computation_changes.map((c) => [c.path, c.value, {}]) as any,
       store.state,
     )
   }

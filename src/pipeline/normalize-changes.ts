@@ -114,7 +114,7 @@ export const normalizeChangesForGroups = (
   const matchMode = props.matchMode ?? 'all'
 
   for (const change of props.changes) {
-    const [changePath, changeValue, changeMeta] = change
+    const [changePath, changeValue, changeMeta = {}] = change
 
     for (const group of props.pathGroups) {
       // Find first matching path in this group

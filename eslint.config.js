@@ -9,6 +9,8 @@ export default defineConfig([
   globalIgnores([
     'out-of-git',
     'node_modules',
+    'dist',
+    'demo',
     'rust/target',
     'rust/pkg',
     '.auto-claude',

@@ -19,7 +19,9 @@
  * ```
  */
 
+import type { BoolLogic } from './bool-logic'
 import type { DeepKey } from './deep-key'
+import type { DeepKeyFiltered } from './deep-key-filtered'
 import type { DeepValue } from './deep-value'
 
 /**
@@ -57,9 +59,10 @@ export type SyncPair<DATA extends object> = {
 export type FlipPair<DATA extends object> = SyncPair<DATA>
 
 /**
- * A tuple for aggregation: [target, source]
+ * A tuple for aggregation: [target, source] or [target, source, excludeWhen]
  * First element (left) is ALWAYS the target (aggregated) path.
  * Second element is a source path.
+ * Optional third element is a BoolLogic condition — when true, this source is excluded.
  *
  * Multiple pairs can point to same target for multi-source aggregation.
  *
@@ -67,7 +70,39 @@ export type FlipPair<DATA extends object> = SyncPair<DATA>
  * // target <- source (target is always first/left)
  * const aggs: AggregationPair<State>[] = [
  *   ['total', 'price1'],
- *   ['total', 'price2'],
+ *   ['total', 'price2', { IS_EQUAL: ['price2.disabled', true] }],
  * ]
  */
-export type AggregationPair<DATA extends object> = SyncPair<DATA>
+export type AggregationPair<DATA extends object> = {
+  [P1 in DeepKey<DATA>]:
+    | [P1, PathsWithSameValueAs<DATA, P1>]
+    | [P1, PathsWithSameValueAs<DATA, P1>, BoolLogic<DATA>]
+}[DeepKey<DATA>]
+
+/**
+ * Supported computation operations for numeric reduction.
+ */
+export type ComputationOp = 'SUM' | 'AVG'
+
+/**
+ * A tuple for computation: [operation, target, source] or [operation, target, source, excludeWhen]
+ * First element is the operation (SUM, AVG).
+ * Second element is the target path (must be a number path).
+ * Third element is a source path (must be a number path).
+ * Optional fourth element is a BoolLogic condition — when true, this source is excluded.
+ *
+ * Multiple pairs can point to same target for multi-source computation.
+ *
+ * @example
+ * const comps: ComputationPair<State>[] = [
+ *   ['SUM', 'total', 'price1'],
+ *   ['SUM', 'total', 'price2', { IS_EQUAL: ['price2.disabled', true] }],
+ *   ['AVG', 'average', 'score1'],
+ *   ['AVG', 'average', 'score2'],
+ * ]
+ */
+export type ComputationPair<DATA extends object> = {
+  [TARGET in DeepKeyFiltered<DATA, number>]:
+    | [ComputationOp, TARGET, DeepKeyFiltered<DATA, number>]
+    | [ComputationOp, TARGET, DeepKeyFiltered<DATA, number>, BoolLogic<DATA>]
+}[DeepKeyFiltered<DATA, number>]

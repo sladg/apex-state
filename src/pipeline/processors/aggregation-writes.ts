@@ -56,7 +56,7 @@ export const processAggregationWrites = <
 
   // Process changes in reverse (so we can safely splice)
   for (let i = changes.length - 1; i >= 0; i--) {
-    const [path, value, meta] = changes[i]!
+    const [path, value, meta = {}] = changes[i]!
 
     // Check if this path is an aggregation target (or child of one)
     for (const [targetPath, items] of aggregations) {

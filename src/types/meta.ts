@@ -44,6 +44,18 @@ export interface GenericMeta {
   isListenerChange?: boolean
 
   /**
+   * Indicates if the change originated from a clear paths side-effect.
+   * Used to track changes triggered by clear paths logic (WASM-only).
+   */
+  isClearPathChange?: boolean
+
+  /**
+   * Indicates if the change originated from a computation side-effect (SUM/AVG).
+   * Used to track changes triggered by computation logic.
+   */
+  isComputationChange?: boolean
+
+  /**
    * Identifies the originator of the change.
    * Can be a user ID, component name, or any identifier string.
    */

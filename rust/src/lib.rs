@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 mod aggregation;
 mod bool_logic;
 mod clear_paths;
+mod computation;
 mod diff;
 mod functions;
 mod graphs;
@@ -16,6 +17,24 @@ mod shadow;
 mod value_logic;
 
 use pipeline::{Change, ProcessingPipeline};
+
+/// Join two path segments with a dot separator, pre-allocating the exact capacity.
+/// Zero-allocation alternative to `format!("{}.{}", a, b)` for path building.
+#[inline]
+pub(crate) fn join_path(prefix: &str, suffix: &str) -> String {
+    let mut s = String::with_capacity(prefix.len() + 1 + suffix.len());
+    s.push_str(prefix);
+    s.push('.');
+    s.push_str(suffix);
+    s
+}
+
+/// Check if `path` is a child of `parent` (i.e. starts with `parent` + '.').
+/// Zero-allocation alternative to `path.starts_with(&format!("{}.", parent))`.
+#[inline]
+pub(crate) fn is_child_path(path: &str, parent: &str) -> bool {
+    path.len() > parent.len() && path.as_bytes()[parent.len()] == b'.' && path.starts_with(parent)
+}
 
 #[cfg(feature = "console_error_panic_hook")]
 fn set_panic_hook() {
@@ -284,4 +303,81 @@ pub fn pipeline_reset_all() {
 #[wasm_bindgen]
 pub fn shadow_dump(pipeline_id: u32) -> Result<String, JsValue> {
     with_pipeline_ref(pipeline_id, |p| p.shadow_dump())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- join_path ---
+
+    #[test]
+    fn join_path_basic() {
+        assert_eq!(join_path("user", "email"), "user.email");
+    }
+
+    #[test]
+    fn join_path_nested() {
+        assert_eq!(join_path("a.b", "c.d"), "a.b.c.d");
+    }
+
+    #[test]
+    fn join_path_single_char() {
+        assert_eq!(join_path("a", "b"), "a.b");
+    }
+
+    #[test]
+    fn join_path_empty_prefix() {
+        assert_eq!(join_path("", "child"), ".child");
+    }
+
+    #[test]
+    fn join_path_empty_suffix() {
+        assert_eq!(join_path("parent", ""), "parent.");
+    }
+
+    #[test]
+    fn join_path_capacity_is_exact() {
+        let result = join_path("abc", "def");
+        // "abc" (3) + '.' (1) + "def" (3) = 7
+        assert_eq!(result.capacity(), 7);
+    }
+
+    // --- is_child_path ---
+
+    #[test]
+    fn is_child_path_direct_child() {
+        assert!(is_child_path("user.email", "user"));
+    }
+
+    #[test]
+    fn is_child_path_deep_child() {
+        assert!(is_child_path("user.profile.email", "user"));
+    }
+
+    #[test]
+    fn is_child_path_exact_match_is_not_child() {
+        assert!(!is_child_path("user", "user"));
+    }
+
+    #[test]
+    fn is_child_path_prefix_overlap_without_dot() {
+        // "username" starts with "user" but is not a child of "user"
+        assert!(!is_child_path("username", "user"));
+    }
+
+    #[test]
+    fn is_child_path_shorter_path() {
+        assert!(!is_child_path("u", "user"));
+    }
+
+    #[test]
+    fn is_child_path_empty_parent() {
+        assert!(is_child_path(".child", ""));
+    }
+
+    #[test]
+    fn is_child_path_unrelated() {
+        assert!(!is_child_path("settings.theme", "user"));
+    }
 }

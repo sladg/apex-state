@@ -11,6 +11,7 @@ import { describe, expectTypeOf, it } from 'vitest'
 
 import type {
   AggregationPair,
+  ComputationPair,
   FlipPair,
   PathsWithSameValueAs,
   SyncPair,
@@ -181,6 +182,84 @@ describe('AggregationPair', () => {
 })
 
 // ============================================================================
+// ComputationPair Type Tests (tuple format: [op, target, source])
+// ============================================================================
+
+describe('ComputationPair', () => {
+  it('accepts number paths for SUM operation', () => {
+    interface State {
+      price1: number
+      price2: number
+      total: number
+    }
+
+    type TestPair = ComputationPair<State>
+
+    const pair: TestPair = ['SUM', 'total', 'price1']
+
+    expectTypeOf(pair).toMatchTypeOf<TestPair>()
+  })
+
+  it('accepts number paths for AVG operation', () => {
+    interface State {
+      score1: number
+      score2: number
+      average: number
+    }
+
+    type TestPair = ComputationPair<State>
+
+    const pair: TestPair = ['AVG', 'average', 'score1']
+
+    expectTypeOf(pair).toMatchTypeOf<TestPair>()
+  })
+
+  it('accepts computation with excludeWhen condition', () => {
+    interface State {
+      price1: number
+      price2: number
+      total: number
+      price2Disabled: boolean
+    }
+
+    type TestPair = ComputationPair<State>
+
+    const pair: TestPair = [
+      'SUM',
+      'total',
+      'price2',
+      { IS_EQUAL: ['price2Disabled', true] },
+    ]
+
+    expectTypeOf(pair).toMatchTypeOf<TestPair>()
+  })
+
+  it('rejects string paths as computation target', () => {
+    interface State {
+      name: string
+      count: number
+    }
+
+    type TestPair = ComputationPair<State>
+
+    // 'name' is a string path, not a number path — should NOT be valid as target
+    expectTypeOf<['SUM', 'name', 'count']>().not.toMatchTypeOf<TestPair>()
+  })
+
+  it('rejects boolean paths as computation source', () => {
+    interface State {
+      isActive: boolean
+      count: number
+    }
+
+    type TestPair = ComputationPair<State>
+
+    // 'isActive' is a boolean path — should NOT be valid as source
+    expectTypeOf<['SUM', 'count', 'isActive']>().not.toMatchTypeOf<TestPair>()
+  })
+})
+
+// ============================================================================
 // SideEffects Type Tests (full config)
 // ============================================================================
 
@@ -232,6 +311,27 @@ describe('SideEffects', () => {
       aggregations: [
         ['total', 'price1'],
         ['total', 'price2'],
+      ],
+    }
+
+    expectTypeOf(config).toMatchTypeOf<TestConfig>()
+  })
+
+  it('accepts aggregations with optional excludeWhen BoolLogic condition', () => {
+    interface State {
+      price1: number
+      price2: number
+      total: number
+      price2Disabled: boolean
+    }
+
+    type TestConfig = SideEffects<State>
+
+    // Mix of 2-element and 3-element tuples
+    const config: TestConfig = {
+      aggregations: [
+        ['total', 'price1'],
+        ['total', 'price2', { IS_EQUAL: ['price2Disabled', true] }],
       ],
     }
 

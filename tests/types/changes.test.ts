@@ -201,6 +201,32 @@ describe('ArrayOfChanges', () => {
     expectTypeOf(formChanges).toMatchTypeOf<FormChanges>()
   })
 
+  it('allows omitting meta from tuples', () => {
+    type Changes = ArrayOfChanges<User, GenericMeta>
+
+    const changes: Changes = [
+      ['name', 'John'], // no meta
+      ['age', 30, {}], // with meta
+    ]
+
+    expectTypeOf(changes).toMatchTypeOf<Changes>()
+  })
+
+  it('allows omitting meta with custom metadata', () => {
+    interface CustomMeta extends GenericMeta {
+      timestamp: number
+    }
+
+    type Changes = ArrayOfChanges<User, CustomMeta>
+
+    const changes: Changes = [
+      ['name', 'John'], // no meta
+      ['age', 30, { timestamp: 123 }], // with custom meta
+    ]
+
+    expectTypeOf(changes).toMatchTypeOf<Changes>()
+  })
+
   it('accepts empty array', () => {
     type Changes = ArrayOfChanges<User, GenericMeta>
 

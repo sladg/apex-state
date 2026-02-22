@@ -191,6 +191,28 @@ export const createGenericStore = <
     }
   }
 
+  const withMeta = (presetMeta: Partial<META>) => ({
+    useFieldStore: <P extends DeepKey<DATA>>(
+      path: P,
+    ): {
+      value: DeepValue<DATA, P>
+      setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+    } => {
+      const { store, value, setValue: originalSetValue } = _useFieldValue(path)
+      const concernsSnap = useSnapshot(store._concerns)
+      const allConcerns = (concernsSnap[path] || {}) as Record<string, unknown>
+
+      const setValue = useCallback(
+        (newValue: DeepValue<DATA, P>, meta?: META) => {
+          originalSetValue(newValue, { ...presetMeta, ...meta } as META)
+        },
+        [originalSetValue],
+      )
+
+      return { value, setValue, ...allConcerns }
+    },
+  })
+
   return {
     Provider,
     useFieldStore,
@@ -199,6 +221,7 @@ export const createGenericStore = <
     useSideEffects,
     useConcerns,
     withConcerns,
+    withMeta,
   }
 }
 

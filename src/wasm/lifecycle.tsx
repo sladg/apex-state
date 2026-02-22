@@ -39,10 +39,10 @@ export const loadWasm = async (): Promise<typeof WasmExports> => {
   }
 
   loadingPromise = (async () => {
-    const wasmModule = (await import(
-      /* @vite-ignore */
-      '../../rust/pkg/apex_state_wasm.js'
-    )) as unknown as typeof WasmExports & { default?: () => Promise<void> }
+    const wasmModule =
+      (await import('../../rust/pkg/apex_state_wasm.js')) as unknown as typeof WasmExports & {
+        default?: () => Promise<void>
+      }
 
     if (typeof wasmModule.default === 'function') {
       await wasmModule.default()

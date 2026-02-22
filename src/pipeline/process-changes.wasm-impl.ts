@@ -18,6 +18,19 @@ import type { Change, FullExecutionPlan, WasmPipeline } from '../wasm/bridge'
 import { applyBatch } from './apply-batch'
 
 // ---------------------------------------------------------------------------
+// Origin → meta flag mapping
+// ---------------------------------------------------------------------------
+
+const ORIGIN_TO_META: Record<string, keyof GenericMeta> = {
+  sync: 'isSyncPathChange',
+  flip: 'isFlipPathChange',
+  aggregation: 'isAggregationChange',
+  computation: 'isComputationChange',
+  clear: 'isClearPathChange',
+  listener: 'isListenerChange',
+}
+
+// ---------------------------------------------------------------------------
 // Conversion helpers: ArrayOfChanges <-> Change[]
 // ---------------------------------------------------------------------------
 
@@ -30,14 +43,31 @@ const tuplesToBridgeChanges = <DATA extends object, META extends GenericMeta>(
     value,
   }))
 
-/** Convert bridge object format to pipeline tuple format. */
+/** Build a map of user-provided meta by path from the original input changes. */
+const buildUserMetaByPath = <DATA extends object, META extends GenericMeta>(
+  changes: ArrayOfChanges<DATA, META>,
+): Map<string, GenericMeta> => {
+  const map = new Map<string, GenericMeta>()
+  for (const change of changes) {
+    const meta = change[2]
+    if (meta && Object.keys(meta as object).length > 0) {
+      map.set(change[0] as string, meta as GenericMeta)
+    }
+  }
+  return map
+}
+
+/** Convert bridge object format to pipeline tuple format, mapping origin to meta flags. */
 const bridgeChangesToTuples = <DATA extends object, META extends GenericMeta>(
   changes: Change[],
-  meta: GenericMeta = {},
+  userMetaByPath?: Map<string, GenericMeta>,
 ): ArrayOfChanges<DATA, META> =>
-  changes.map(
-    (c) => [c.path, c.value, meta] as ArrayOfChanges<DATA, META>[number],
-  ) as unknown as ArrayOfChanges<DATA, META>
+  changes.map((c) => {
+    const baseMeta = userMetaByPath?.get(c.path) ?? {}
+    const originKey = c.origin ? ORIGIN_TO_META[c.origin] : undefined
+    const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
+    return [c.path, c.value, meta] as ArrayOfChanges<DATA, META>[number]
+  }) as unknown as ArrayOfChanges<DATA, META>
 
 /**
  * Execute a pre-computed execution plan with propagation map.
@@ -52,20 +82,29 @@ const buildDispatchInput = (
   d: FullExecutionPlan['groups'][number]['dispatches'][number],
   stateChanges: Change[],
   extra: Map<number, Change[]>,
+  userMetaByPath?: Map<string, GenericMeta>,
 ): [string, unknown, GenericMeta][] => {
   // Single pass: filter + map combined
   const input: [string, unknown, GenericMeta][] = []
   for (const id of d.input_change_ids) {
     const change = stateChanges[id]
     if (change !== undefined) {
-      input.push([change.path, change.value, {}])
+      const baseMeta = userMetaByPath?.get(change.path) ?? {}
+      const originKey = change.origin
+        ? ORIGIN_TO_META[change.origin]
+        : undefined
+      const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
+      input.push([change.path, change.value, meta])
     }
   }
 
   const extraChanges = extra.get(d.dispatch_id)
   if (extraChanges) {
     for (const c of extraChanges) {
-      input.push([c.path, c.value, {}])
+      const baseMeta = userMetaByPath?.get(c.path) ?? {}
+      const originKey = c.origin ? ORIGIN_TO_META[c.origin] : undefined
+      const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
+      input.push([c.path, c.value, meta])
     }
   }
 
@@ -102,6 +141,7 @@ const propagateChanges = (
       existing.push({
         path: remapPath(c.path, t.remap_prefix),
         value: c.value,
+        ...(c.origin ? { origin: c.origin } : {}),
       })
     }
   }
@@ -114,7 +154,7 @@ const executeFullExecutionPlan = <
   plan: FullExecutionPlan | null,
   stateChanges: Change[],
   store: StoreInstance<DATA, META>,
-  currentState: DATA,
+  userMetaByPath?: Map<string, GenericMeta>,
 ): Change[] => {
   if (!plan || plan.groups.length === 0) {
     return []
@@ -123,6 +163,11 @@ const executeFullExecutionPlan = <
   const { listenerHandlers } = store._internal.graphs
   const allProducedChanges: Change[] = []
   const extra = new Map<number, Change[]>()
+
+  // Single snapshot of the full state — then slice scoped subtrees from it.
+  // snapshot() returns a plain frozen object, so dot.get__unsafe is just
+  // regular property access with zero proxy overhead.
+  const currentState = snapshot(store.state) as DATA
 
   for (const group of plan.groups) {
     for (const d of group.dispatches) {
@@ -133,13 +178,13 @@ const executeFullExecutionPlan = <
       const scopedState =
         scope === '' ? currentState : dot.get__unsafe(currentState, scope)
 
-      const input = buildDispatchInput(d, stateChanges, extra)
+      const input = buildDispatchInput(d, stateChanges, extra, userMetaByPath)
 
       const result = registration.fn(input, scopedState)
       if (!result || !(result as unknown[]).length) continue
 
       const producedChanges = (result as [string, unknown][]).map(
-        ([path, value]) => ({ path, value }),
+        ([path, value]) => ({ path, value, origin: 'listener' }),
       )
       allProducedChanges.push(...producedChanges)
 
@@ -264,6 +309,7 @@ const partitionChanges = (
       concernChanges.push({
         path: change.path.slice(CONCERNS_PREFIX_LEN),
         value: change.value,
+        ...(change.origin ? { origin: change.origin } : {}),
       })
     } else {
       stateChanges.push(change)
@@ -292,6 +338,9 @@ const pushDebugChanges = (
 export const processChangesWasm: typeof import('./process-changes').processChanges =
   (store, initialChanges) => {
     const pipeline = store._internal.pipeline!
+
+    // Capture user-provided meta before sending to WASM (WASM strips meta)
+    const userMetaByPath = buildUserMetaByPath(initialChanges)
 
     // Convert to bridge format
     const bridgeChanges = tuplesToBridgeChanges(initialChanges)
@@ -322,16 +371,18 @@ export const processChangesWasm: typeof import('./process-changes').processChang
 
     // Apply state changes to valtio (so listeners see updated state)
     if (early.stateChanges.length > 0) {
-      applyBatch(bridgeChangesToTuples(early.stateChanges), store.state)
+      applyBatch(
+        bridgeChangesToTuples(early.stateChanges, userMetaByPath),
+        store.state,
+      )
     }
 
     // 3. Execute listeners (JS-only: user functions) - now with updated state
-    const currentState = snapshot(store.state) as typeof store.state
     const produced = executeFullExecutionPlan(
       execution_plan,
       state_changes,
       store,
-      currentState,
+      userMetaByPath,
     )
 
     // Apply concern changes from phase 1 (BoolLogic results)
@@ -353,7 +404,10 @@ export const processChangesWasm: typeof import('./process-changes').processChang
 
     // Apply only NEW changes (listener/validator output)
     if (late.stateChanges.length > 0) {
-      applyBatch(bridgeChangesToTuples(late.stateChanges), store.state)
+      applyBatch(
+        bridgeChangesToTuples(late.stateChanges, userMetaByPath),
+        store.state,
+      )
     }
     if (late.concernChanges.length > 0) {
       applyConcernChanges(late.concernChanges, store._concerns)

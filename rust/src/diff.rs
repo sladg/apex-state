@@ -96,6 +96,7 @@ mod tests {
         Change {
             path: path.to_owned(),
             value_json: value_json.to_owned(),
+            origin: None,
         }
     }
 

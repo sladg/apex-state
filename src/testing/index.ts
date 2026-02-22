@@ -117,7 +117,7 @@ const __reset = () => {
 const __typedMock = <T extends object>(): TypedMock<T> => {
   const api: TypedMock<T> = {
     set: (path, value) => {
-      dot.set__unsafe(__state.value, path as string, value)
+      dot.set__unsafe(__state.value, path as string, structuredClone(value))
       return api
     },
     state: __state,
@@ -163,7 +163,10 @@ export const __mocked = {
    */
   set: <T extends object>(data?: Partial<T>): TypedMock<T> => {
     if (data) {
-      Object.assign(__state.value, data as Record<string, unknown>)
+      Object.assign(
+        __state.value,
+        structuredClone(data) as Record<string, unknown>,
+      )
     }
     return __typedMock<T>()
   },
@@ -206,7 +209,10 @@ export const createGenericStore = <
     children?: React.ReactNode
   }) => {
     if (initialState && typeof initialState === 'object') {
-      Object.assign(__state.value, initialState as Record<string, unknown>)
+      Object.assign(
+        __state.value,
+        structuredClone(initialState) as Record<string, unknown>,
+      )
     }
 
     return React.createElement(React.Fragment, null, children)

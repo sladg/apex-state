@@ -8,7 +8,12 @@
 import type { ListenerRegistration } from '../core/types'
 import type { DeepKey } from './deep-key'
 import type { GenericMeta } from './meta'
-import type { AggregationPair, FlipPair, SyncPair } from './paths-of-same-value'
+import type {
+  AggregationPair,
+  ComputationPair,
+  FlipPair,
+  SyncPair,
+} from './paths-of-same-value'
 
 /**
  * Clear path rule - "when trigger paths change, set target paths to null"
@@ -102,6 +107,14 @@ export interface SideEffects<
    * - expandMatch: true → [*] in target expands to ALL keys
    */
   clearPaths?: ClearPathRule<DATA>[]
+
+  /**
+   * Computations - numeric reduction operations (SUM, AVG)
+   * Format: [operation, target, source] - target is computed from sources
+   * Multiple pairs can point to same target for multi-source computation
+   * Unidirectional: source → target only (writes to target are no-op)
+   */
+  computations?: ComputationPair<DATA>[]
 
   /**
    * Listeners - react to state changes with scoped state

@@ -27,6 +27,8 @@ import { visibleWhen } from './visible-when'
 export {
   type ValidationError,
   validationState,
+  type ValidationStateConcern,
+  type ValidationStateInput,
   type ValidationStateResult,
 } from './validation-state'
 

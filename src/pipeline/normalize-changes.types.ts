@@ -8,8 +8,8 @@ import type { GenericMeta } from '../types'
 // Shared Types
 // =============================================================================
 
-/** Simplified change tuple for internal processing (untyped meta) */
-export type AnyChange = [string, unknown, GenericMeta]
+/** Simplified change tuple for internal processing (untyped meta, optional) */
+export type AnyChange = [string, unknown, GenericMeta] | [string, unknown]
 
 // =============================================================================
 // Normalization Types

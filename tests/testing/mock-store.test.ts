@@ -103,6 +103,59 @@ describe('__mocked', () => {
 })
 
 // ---------------------------------------------------------------------------
+// __mocked — deep clone (never mutate original data)
+// ---------------------------------------------------------------------------
+describe('__mocked deep clone', () => {
+  it('set(data) does not mutate the original seed object', () => {
+    const seed = { email: 'orig@test.com', name: 'Alice' }
+    __mocked.set<TestState>(seed).set('email', 'changed@test.com')
+
+    expect(__mocked.state.value['email']).toBe('changed@test.com')
+    expect(seed.email).toBe('orig@test.com')
+  })
+
+  it('set(data) does not share nested object references', () => {
+    const nested = { user: { profile: { bio: 'hello' } } }
+    __mocked.set(nested)
+
+    // Mutate mock state — original must be untouched
+    const stateUser = __mocked.state.value['user'] as Record<string, unknown>
+    const stateProfile = stateUser['profile'] as Record<string, unknown>
+    stateProfile['bio'] = 'mutated'
+
+    expect(nested.user.profile.bio).toBe('hello')
+  })
+
+  it('chainable .set(path, value) does not share object references', () => {
+    const address = { street: '123 Main', city: 'Springfield' }
+    __mocked.set<{ address: typeof address }>().set('address', address)
+
+    // Mutate mock state — original must be untouched
+    const stateAddr = __mocked.state.value['address'] as Record<string, unknown>
+    stateAddr['city'] = 'Shelbyville'
+
+    expect(address.city).toBe('Springfield')
+  })
+
+  it('Provider initialState does not mutate the original object', () => {
+    const initial = { email: 'provider@test.com', name: 'Bob' }
+    const store = createGenericStore<TestState>()
+
+    render(
+      React.createElement(store.Provider, {
+        initialState: initial as unknown as TestState,
+        children: null,
+      }),
+    )
+
+    // Mutate mock state — original must be untouched
+    __mocked.set<TestState>().set('email', 'changed@test.com')
+
+    expect(initial.email).toBe('provider@test.com')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // createGenericStore — shape and hooks
 // ---------------------------------------------------------------------------
 describe('createGenericStore', () => {

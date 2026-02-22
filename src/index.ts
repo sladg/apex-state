@@ -21,7 +21,7 @@ export type {
   StoreConfig,
   StoreInstance,
 } from './core/types'
-export { createGenericStore } from './store/create-store'
+export { createGenericStore, type GenericStoreApi } from './store/create-store'
 
 // Standalone hooks - composable field utilities
 export {
@@ -36,6 +36,7 @@ export {
 } from './hooks/use-keyboard-select'
 export {
   type ThrottleConfig,
+  type ThrottleFieldInput,
   useThrottledField,
 } from './hooks/use-throttled-field'
 export {
@@ -60,6 +61,8 @@ export {
 export type {
   AggregationPair,
   ArrayOfChanges,
+  ComputationOp,
+  ComputationPair,
   ConcernRegistrationMap,
   DeepKey,
   DeepKeyFiltered,
@@ -70,6 +73,7 @@ export type {
   ExtractEvaluateReturn,
   FlipPair,
   GenericMeta,
+  HASH_KEY,
   PathsWithSameValueAs,
   SyncPair,
   ValidationSchema,
@@ -92,6 +96,8 @@ export * as prebuilts from './concerns/prebuilts'
 // Validation concern types
 export type {
   ValidationError,
+  ValidationStateConcern,
+  ValidationStateInput,
   ValidationStateResult,
 } from './concerns/prebuilts/validation-state'
 
@@ -120,7 +126,7 @@ export { extractPlaceholders, interpolateTemplate } from './utils/interpolation'
 // gradually replaced by the concerns pattern which provides better reactivity
 // and type safety.
 
-export type { SideEffects } from './types/side-effects'
+export type { ClearPathRule, SideEffects } from './types/side-effects'
 
 // =============================================================================
 // ADVANCED: DIRECT PATH ACCESS

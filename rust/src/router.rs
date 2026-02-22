@@ -528,6 +528,7 @@ impl TopicRouter {
                     .map(|c| Change {
                         path: relativize_path(&c.path, prefix),
                         value_json: c.value_json.clone(),
+                        origin: c.origin.clone(),
                     })
                     .collect();
 
@@ -828,6 +829,7 @@ impl TopicRouter {
                     .map(|c| Change {
                         path: relativize_path(&c.path, prefix),
                         value_json: c.value_json.clone(),
+                        origin: c.origin.clone(),
                     })
                     .collect();
 
@@ -898,6 +900,7 @@ mod tests {
         Change {
             path: path.to_owned(),
             value_json: value.to_owned(),
+            origin: None,
         }
     }
 

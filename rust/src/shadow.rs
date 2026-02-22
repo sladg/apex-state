@@ -263,17 +263,18 @@ impl ShadowState {
                     let child_path = if prefix.is_empty() {
                         key.clone()
                     } else {
-                        format!("{}.{}", prefix, key)
+                        crate::join_path(prefix, key)
                     };
                     Self::collect_leaves(child, &child_path, result);
                 }
             }
             ValueRepr::Array(arr) => {
                 for (i, child) in arr.iter().enumerate() {
+                    let idx_str = i.to_string();
                     let child_path = if prefix.is_empty() {
-                        i.to_string()
+                        idx_str
                     } else {
-                        format!("{}.{}", prefix, i)
+                        crate::join_path(prefix, &idx_str)
                     };
                     Self::collect_leaves(child, &child_path, result);
                 }

@@ -12,16 +12,24 @@
 //! 3. If yes: generate changes for all source paths with same value
 //! 4. Remove original target change from output
 
+use crate::bool_logic::BoolLogicNode;
 use crate::pipeline::{Change, UNDEFINED_SENTINEL_JSON};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// A single aggregation: target path maps to multiple source paths.
+/// A single aggregation source with an optional exclude condition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AggregationSource {
+    pub path: String,
+    pub exclude_when: Option<BoolLogicNode>,
+}
+
+/// A single aggregation: target path maps to multiple sources (with optional conditions).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Aggregation {
     pub target: String,
-    pub sources: Vec<String>,
+    pub sources: Vec<AggregationSource>,
 }
 
 /// Registry of all registered aggregations, keyed by target path.
@@ -30,6 +38,8 @@ pub(crate) struct AggregationRegistry {
     aggregations: HashMap<String, Aggregation>,
     /// Reverse index: source path → target paths (for reactive updates)
     source_to_targets: HashMap<String, Vec<String>>,
+    /// Reverse index: BoolLogic condition path → target paths (for condition re-evaluation)
+    condition_path_to_targets: HashMap<String, Vec<String>>,
 }
 
 impl AggregationRegistry {
@@ -37,17 +47,28 @@ impl AggregationRegistry {
         Self {
             aggregations: HashMap::new(),
             source_to_targets: HashMap::new(),
+            condition_path_to_targets: HashMap::new(),
         }
     }
 
     /// Register a single aggregation.
-    pub(crate) fn register(&mut self, target: String, sources: Vec<String>) {
+    pub(crate) fn register(&mut self, target: String, sources: Vec<AggregationSource>) {
         // Update reverse index: each source points to this target
         for source in &sources {
             self.source_to_targets
-                .entry(source.clone())
+                .entry(source.path.clone())
                 .or_default()
                 .push(target.clone());
+
+            // Extract paths from BoolLogic conditions and index them
+            if let Some(ref condition) = source.exclude_when {
+                for cond_path in condition.extract_paths() {
+                    self.condition_path_to_targets
+                        .entry(cond_path)
+                        .or_default()
+                        .push(target.clone());
+                }
+            }
         }
 
         // Register the aggregation
@@ -58,13 +79,25 @@ impl AggregationRegistry {
     /// Unregister a single aggregation by target path.
     #[allow(dead_code)] // Called via WASM exports (invisible to clippy)
     pub(crate) fn unregister(&mut self, target: &str) {
-        // Remove from reverse index
+        // Remove from reverse indices
         if let Some(agg) = self.aggregations.get(target) {
             for source in &agg.sources {
-                if let Some(targets) = self.source_to_targets.get_mut(source) {
+                if let Some(targets) = self.source_to_targets.get_mut(&source.path) {
                     targets.retain(|t| t != target);
                     if targets.is_empty() {
-                        self.source_to_targets.remove(source);
+                        self.source_to_targets.remove(&source.path);
+                    }
+                }
+
+                // Clean up condition path reverse index
+                if let Some(ref condition) = source.exclude_when {
+                    for cond_path in condition.extract_paths() {
+                        if let Some(targets) = self.condition_path_to_targets.get_mut(&cond_path) {
+                            targets.retain(|t| t != target);
+                            if targets.is_empty() {
+                                self.condition_path_to_targets.remove(&cond_path);
+                            }
+                        }
                     }
                 }
             }
@@ -88,7 +121,7 @@ impl AggregationRegistry {
 
         // Check for child path (path starts with target + '.')
         for (target, agg) in &self.aggregations {
-            if path.starts_with(&format!("{}.", target)) {
+            if crate::is_child_path(path, target) {
                 return Some(agg);
             }
         }
@@ -98,6 +131,7 @@ impl AggregationRegistry {
 
     /// Get affected aggregation targets for a set of changed paths.
     /// Returns unique target paths that need recomputation.
+    /// Checks both source paths and condition paths.
     pub(crate) fn get_affected_targets(&self, changed_paths: &[String]) -> Vec<String> {
         let mut targets = std::collections::HashSet::new();
 
@@ -107,10 +141,21 @@ impl AggregationRegistry {
                 targets.extend(target_list.iter().cloned());
             }
 
+            // Direct match: path is a condition dependency
+            if let Some(target_list) = self.condition_path_to_targets.get(path) {
+                targets.extend(target_list.iter().cloned());
+            }
+
             // Parent match: path is a child of a source (e.g., "item1.checked" matches source "item1")
-            // Check all registered sources to see if this path is a descendant
             for (source, target_list) in &self.source_to_targets {
-                if path.starts_with(&format!("{}.", source)) {
+                if crate::is_child_path(path, source) {
+                    targets.extend(target_list.iter().cloned());
+                }
+            }
+
+            // Parent match for condition paths
+            for (cond_path, target_list) in &self.condition_path_to_targets {
+                if crate::is_child_path(path, cond_path) {
                     targets.extend(target_list.iter().cloned());
                 }
             }
@@ -125,12 +170,13 @@ impl AggregationRegistry {
 /// Algorithm:
 /// 1. Iterate changes in reverse (so we can safely remove)
 /// 2. For each change, check if path matches aggregation target
-/// 3. If exact match: generate changes for all sources with same value
-/// 4. If child path: generate changes for all sources with child path appended
+/// 3. If exact match: generate changes for all non-excluded sources with same value
+/// 4. If child path: generate changes for all non-excluded sources with child path appended
 /// 5. Remove original target change
 pub(crate) fn process_aggregation_writes(
     registry: &AggregationRegistry,
     changes: Vec<Change>,
+    shadow: &ShadowState,
 ) -> Vec<Change> {
     let mut output: Vec<Change> = changes.clone();
 
@@ -143,20 +189,28 @@ pub(crate) fn process_aggregation_writes(
         if let Some(agg) = registry.find_target(&change.path) {
             let is_exact_match = change.path == agg.target;
 
-            // Generate changes for all source paths
+            // Generate changes for all non-excluded source paths
             let mut new_changes = Vec::new();
-            for source_path in &agg.sources {
+            for source in &agg.sources {
+                // Skip excluded sources
+                if let Some(ref condition) = source.exclude_when {
+                    if condition.evaluate(shadow) {
+                        continue;
+                    }
+                }
+
                 let final_path = if is_exact_match {
-                    source_path.clone()
+                    source.path.clone()
                 } else {
                     // Child path: append relative part to source path
                     let relative = &change.path[(agg.target.len() + 1)..];
-                    format!("{}.{}", source_path, relative)
+                    crate::join_path(&source.path, relative)
                 };
 
                 new_changes.push(Change {
                     path: final_path,
                     value_json: change.value_json.clone(),
+                    origin: Some("aggregation".to_owned()),
                 });
             }
 
@@ -211,17 +265,45 @@ pub(crate) fn process_aggregation_reads(
                     changes.push(Change {
                         path: agg.target.clone(),
                         value_json: desired_value,
+                        origin: Some("aggregation".to_owned()),
                     });
                 }
                 continue;
             }
 
-            // Get values from all source paths
-            let source_values: Vec<Option<String>> = agg
+            // Filter out excluded sources (condition evaluates to true = excluded)
+            let active_sources: Vec<&AggregationSource> = agg
                 .sources
                 .iter()
-                .map(|path| {
-                    shadow.get(path).map(|v| {
+                .filter(|s| {
+                    s.exclude_when
+                        .as_ref()
+                        .is_none_or(|cond| !cond.evaluate(shadow))
+                })
+                .collect();
+
+            // If ALL sources excluded → target = undefined sentinel
+            if active_sources.is_empty() {
+                let desired_value = UNDEFINED_SENTINEL_JSON.to_string();
+                let current_target = shadow.get(&agg.target).map(|v| {
+                    serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_string())
+                });
+
+                if current_target.as_ref() != Some(&desired_value) {
+                    changes.push(Change {
+                        path: agg.target.clone(),
+                        value_json: desired_value,
+                        origin: Some("aggregation".to_owned()),
+                    });
+                }
+                continue;
+            }
+
+            // Get values from all active source paths
+            let source_values: Vec<Option<String>> = active_sources
+                .iter()
+                .map(|s| {
+                    shadow.get(&s.path).map(|v| {
                         serde_json::to_string(&v.to_json_value())
                             .unwrap_or_else(|_| "null".to_string())
                     })
@@ -268,6 +350,7 @@ pub(crate) fn process_aggregation_reads(
                 changes.push(Change {
                     path: agg.target.clone(),
                     value_json: desired_value,
+                    origin: Some("aggregation".to_owned()),
                 });
             }
         }
@@ -280,24 +363,37 @@ pub(crate) fn process_aggregation_reads(
 mod tests {
     use super::*;
 
+    /// Helper: create simple AggregationSource with no condition
+    fn src(path: &str) -> AggregationSource {
+        AggregationSource {
+            path: path.to_string(),
+            exclude_when: None,
+        }
+    }
+
+    /// Helper: convert string paths to AggregationSource vec
+    fn srcs(paths: &[&str]) -> Vec<AggregationSource> {
+        paths.iter().map(|p| src(p)).collect()
+    }
+
+    /// Helper: source path names for changed_paths (just strings)
+    fn paths(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
     #[test]
     fn test_exact_match_aggregation() {
+        let shadow = ShadowState::new();
         let mut registry = AggregationRegistry::new();
-        registry.register(
-            "allUsers".to_string(),
-            vec![
-                "user1".to_string(),
-                "user2".to_string(),
-                "user3".to_string(),
-            ],
-        );
+        registry.register("allUsers".to_string(), srcs(&["user1", "user2", "user3"]));
 
         let changes = vec![Change {
             path: "allUsers".to_string(),
             value_json: "\"alice\"".to_string(),
+            origin: None,
         }];
 
-        let result = process_aggregation_writes(&registry, changes);
+        let result = process_aggregation_writes(&registry, changes, &shadow);
 
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].path, "user1");
@@ -310,18 +406,17 @@ mod tests {
 
     #[test]
     fn test_child_path_aggregation() {
+        let shadow = ShadowState::new();
         let mut registry = AggregationRegistry::new();
-        registry.register(
-            "form.allChecked".to_string(),
-            vec!["item1".to_string(), "item2".to_string()],
-        );
+        registry.register("form.allChecked".to_string(), srcs(&["item1", "item2"]));
 
         let changes = vec![Change {
             path: "form.allChecked".to_string(),
             value_json: "true".to_string(),
+            origin: None,
         }];
 
-        let result = process_aggregation_writes(&registry, changes);
+        let result = process_aggregation_writes(&registry, changes, &shadow);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].path, "item1");
@@ -332,19 +427,18 @@ mod tests {
 
     #[test]
     fn test_child_path_of_aggregation_target() {
+        let shadow = ShadowState::new();
         let mut registry = AggregationRegistry::new();
-        registry.register(
-            "allUsers".to_string(),
-            vec!["user1".to_string(), "user2".to_string()],
-        );
+        registry.register("allUsers".to_string(), srcs(&["user1", "user2"]));
 
         // Writing to a child path of the aggregation target
         let changes = vec![Change {
             path: "allUsers.email".to_string(),
             value_json: "\"alice@example.com\"".to_string(),
+            origin: None,
         }];
 
-        let result = process_aggregation_writes(&registry, changes);
+        let result = process_aggregation_writes(&registry, changes, &shadow);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].path, "user1.email");
@@ -355,28 +449,29 @@ mod tests {
 
     #[test]
     fn test_mixed_changes_some_aggregated() {
+        let shadow = ShadowState::new();
         let mut registry = AggregationRegistry::new();
-        registry.register(
-            "allUsers".to_string(),
-            vec!["user1".to_string(), "user2".to_string()],
-        );
+        registry.register("allUsers".to_string(), srcs(&["user1", "user2"]));
 
         let changes = vec![
             Change {
                 path: "otherField".to_string(),
                 value_json: "42".to_string(),
+                origin: None,
             },
             Change {
                 path: "allUsers".to_string(),
                 value_json: "\"alice\"".to_string(),
+                origin: None,
             },
             Change {
                 path: "anotherField".to_string(),
                 value_json: "\"test\"".to_string(),
+                origin: None,
             },
         ];
 
-        let result = process_aggregation_writes(&registry, changes);
+        let result = process_aggregation_writes(&registry, changes, &shadow);
 
         // Should have: otherField + 2 distributed users + anotherField
         assert_eq!(result.len(), 4);
@@ -391,20 +486,23 @@ mod tests {
 
     #[test]
     fn test_no_aggregation_match() {
+        let shadow = ShadowState::new();
         let registry = AggregationRegistry::new();
 
         let changes = vec![
             Change {
                 path: "user.name".to_string(),
                 value_json: "\"alice\"".to_string(),
+                origin: None,
             },
             Change {
                 path: "user.email".to_string(),
                 value_json: "\"alice@example.com\"".to_string(),
+                origin: None,
             },
         ];
 
-        let result = process_aggregation_writes(&registry, changes.clone());
+        let result = process_aggregation_writes(&registry, changes.clone(), &shadow);
 
         // No changes should be aggregated
         assert_eq!(result.len(), 2);
@@ -421,15 +519,11 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources = vec![
-            "item1".to_string(),
-            "item2".to_string(),
-            "item3".to_string(),
-        ];
-        registry.register("allChecked".to_string(), sources.clone());
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Use reactive logic with source paths
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -444,14 +538,10 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources = vec![
-            "item1".to_string(),
-            "item2".to_string(),
-            "item3".to_string(),
-        ];
-        registry.register("allChecked".to_string(), sources.clone());
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
 
         // Values differ → target was null, now becomes undefined (sources disagree → clear target)
         assert_eq!(changes.len(), 1);
@@ -467,14 +557,10 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources = vec![
-            "item1".to_string(),
-            "item2".to_string(),
-            "item3".to_string(),
-        ];
-        registry.register("allChecked".to_string(), sources.clone());
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -489,14 +575,10 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources = vec![
-            "item1".to_string(),
-            "item2".to_string(),
-            "item3".to_string(),
-        ];
-        registry.register("allChecked".to_string(), sources.clone());
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
 
         // Missing sources → target set to undefined sentinel
         assert_eq!(changes.len(), 1);
@@ -510,10 +592,9 @@ mod tests {
         shadow.init(r#"{"allChecked": true}"#).unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources: Vec<String> = vec![];
-        registry.register("allChecked".to_string(), sources.clone());
+        registry.register("allChecked".to_string(), vec![]);
 
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes = process_aggregation_reads(&registry, &shadow, &[]);
 
         // Empty sources with empty changed_paths → no affected targets → no changes
         assert_eq!(changes.len(), 0);
@@ -527,14 +608,10 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources = vec![
-            "name1".to_string(),
-            "name2".to_string(),
-            "name3".to_string(),
-        ];
-        registry.register("allNames".to_string(), sources.clone());
+        registry.register("allNames".to_string(), srcs(&["name1", "name2", "name3"]));
 
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["name1", "name2", "name3"]));
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allNames");
@@ -550,14 +627,10 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources = vec![
-            "item1".to_string(),
-            "item2".to_string(),
-            "item3".to_string(),
-        ];
-        registry.register("allChecked".to_string(), sources.clone());
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
 
         // Should not create a change if target already has the correct value
         assert_eq!(changes.len(), 0);
@@ -574,14 +647,10 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        let sources = vec![
-            "item1".to_string(),
-            "item2".to_string(),
-            "item3".to_string(),
-        ];
-        registry.register("allChecked".to_string(), sources.clone());
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes = process_aggregation_reads(&registry, &shadow, &sources);
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
 
         // Target already undefined, sources differ → computed = undefined → no-op
         assert_eq!(changes.len(), 0);
@@ -598,20 +667,12 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        registry.register(
-            "allChecked".to_string(),
-            vec![
-                "item1".to_string(),
-                "item2".to_string(),
-                "item3".to_string(),
-            ],
-        );
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Simulate item2 changing to true (now all equal)
         shadow.set("item2", "true").unwrap();
-        let changed_paths = vec!["item2".to_string()];
 
-        let changes = process_aggregation_reads(&registry, &shadow, &changed_paths);
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2"]));
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -627,20 +688,12 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        registry.register(
-            "allChecked".to_string(),
-            vec![
-                "item1".to_string(),
-                "item2".to_string(),
-                "item3".to_string(),
-            ],
-        );
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Simulate item2 changing to false (now sources differ)
         shadow.set("item2", "false").unwrap();
-        let changed_paths = vec!["item2".to_string()];
 
-        let changes = process_aggregation_reads(&registry, &shadow, &changed_paths);
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2"]));
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -656,12 +709,10 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        registry.register("allChecked".to_string(), vec!["item1".to_string()]);
+        registry.register("allChecked".to_string(), srcs(&["item1"]));
 
         // Change unrelated path
-        let changed_paths = vec!["unrelated".to_string()];
-
-        let changes = process_aggregation_reads(&registry, &shadow, &changed_paths);
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["unrelated"]));
 
         // Should not create any changes
         assert_eq!(changes.len(), 0);
@@ -684,20 +735,12 @@ mod tests {
 
         let mut registry = AggregationRegistry::new();
         // Aggregation on the items (not their children)
-        registry.register(
-            "allChecked".to_string(),
-            vec![
-                "item1".to_string(),
-                "item2".to_string(),
-                "item3".to_string(),
-            ],
-        );
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Change a child path (item2.checked)
         shadow.set("item2.checked", "false").unwrap();
-        let changed_paths = vec!["item2.checked".to_string()];
 
-        let changes = process_aggregation_reads(&registry, &shadow, &changed_paths);
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2.checked"]));
 
         // Should detect that a child of item2 changed and recompute
         // Note: The aggregation compares item1, item2, item3 objects (not their children)
@@ -717,21 +760,148 @@ mod tests {
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
-        registry.register(
-            "allChecked".to_string(),
-            vec![
-                "item1".to_string(),
-                "item2".to_string(),
-                "item3".to_string(),
-            ],
-        );
+        registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Simulate a change that doesn't affect equality (all still true)
-        let changed_paths = vec!["item1".to_string()];
-
-        let changes = process_aggregation_reads(&registry, &shadow, &changed_paths);
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1"]));
 
         // Should not create a change (target already correct)
         assert_eq!(changes.len(), 0);
+    }
+
+    // --- Tests for excludeWhen conditions ---
+
+    #[test]
+    fn test_exclude_when_write_skips_excluded_source() {
+        let mut shadow = ShadowState::new();
+        shadow
+            .init(r#"{"allUsers": null, "user1": null, "user2": null, "user1_disabled": true}"#)
+            .unwrap();
+
+        let mut registry = AggregationRegistry::new();
+        registry.register(
+            "allUsers".to_string(),
+            vec![
+                AggregationSource {
+                    path: "user1".to_string(),
+                    exclude_when: Some(BoolLogicNode::IsEqual(
+                        "user1_disabled".to_string(),
+                        serde_json::Value::Bool(true),
+                    )),
+                },
+                src("user2"),
+            ],
+        );
+
+        let changes = vec![Change {
+            path: "allUsers".to_string(),
+            value_json: "\"alice\"".to_string(),
+            origin: None,
+        }];
+
+        let result = process_aggregation_writes(&registry, changes, &shadow);
+
+        // user1 is excluded (user1_disabled=true), only user2 should receive the write
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, "user2");
+        assert_eq!(result[0].value_json, "\"alice\"");
+    }
+
+    #[test]
+    fn test_exclude_when_read_skips_excluded_source() {
+        let mut shadow = ShadowState::new();
+        shadow
+            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item3": true, "item2_disabled": true}"#)
+            .unwrap();
+
+        let mut registry = AggregationRegistry::new();
+        registry.register(
+            "allChecked".to_string(),
+            vec![
+                src("item1"),
+                AggregationSource {
+                    path: "item2".to_string(),
+                    exclude_when: Some(BoolLogicNode::IsEqual(
+                        "item2_disabled".to_string(),
+                        serde_json::Value::Bool(true),
+                    )),
+                },
+                src("item3"),
+            ],
+        );
+
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+
+        // item2 is excluded, item1 and item3 are both true → target = true
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "allChecked");
+        assert_eq!(changes[0].value_json, "true");
+    }
+
+    #[test]
+    fn test_exclude_when_all_excluded_gives_undefined() {
+        let mut shadow = ShadowState::new();
+        shadow
+            .init(r#"{"allChecked": true, "item1": true, "item1_disabled": true}"#)
+            .unwrap();
+
+        let mut registry = AggregationRegistry::new();
+        registry.register(
+            "allChecked".to_string(),
+            vec![AggregationSource {
+                path: "item1".to_string(),
+                exclude_when: Some(BoolLogicNode::IsEqual(
+                    "item1_disabled".to_string(),
+                    serde_json::Value::Bool(true),
+                )),
+            }],
+        );
+
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1"]));
+
+        // All sources excluded → target = undefined
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "allChecked");
+        assert_eq!(changes[0].value_json, UNDEFINED_SENTINEL_JSON);
+    }
+
+    #[test]
+    fn test_condition_path_change_triggers_recomputation() {
+        let mut shadow = ShadowState::new();
+        shadow
+            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item2_disabled": false}"#)
+            .unwrap();
+
+        let mut registry = AggregationRegistry::new();
+        registry.register(
+            "allChecked".to_string(),
+            vec![
+                src("item1"),
+                AggregationSource {
+                    path: "item2".to_string(),
+                    exclude_when: Some(BoolLogicNode::IsEqual(
+                        "item2_disabled".to_string(),
+                        serde_json::Value::Bool(true),
+                    )),
+                },
+            ],
+        );
+
+        // Initially both active, values differ → undefined
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2"]));
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].value_json, UNDEFINED_SENTINEL_JSON);
+
+        // Now disable item2 by changing condition path
+        shadow.set("item2_disabled", "true").unwrap();
+        shadow.set("allChecked", UNDEFINED_SENTINEL_JSON).unwrap();
+
+        // Changing the condition path should trigger recomputation
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2_disabled"]));
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "allChecked");
+        // item2 now excluded, only item1 (true) → target = true
+        assert_eq!(changes[0].value_json, "true");
     }
 }

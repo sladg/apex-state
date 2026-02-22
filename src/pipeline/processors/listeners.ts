@@ -35,7 +35,7 @@ const processListener = <DATA extends object, META extends GenericMeta>(
   if (!result || result.length === 0) return
 
   // Add listener metadata to returned changes
-  for (const [path, value, changeMeta] of result) {
+  for (const [path, value, changeMeta = {}] of result) {
     const meta = { isListenerChange: true, ...changeMeta }
     queueChange({ queue: props.queue, path, value, meta })
   }
@@ -55,7 +55,7 @@ const filterAndRelativize = (
   if (listenerPath === '') {
     for (const change of changes) {
       if (!change[0].includes('.')) {
-        result.push(change)
+        result.push([change[0], change[1], change[2] ?? {}])
       }
     }
     return result
@@ -64,11 +64,12 @@ const filterAndRelativize = (
   // Non-root listener: include exact match and children, convert children to relative paths
   const prefix = listenerPath + '.'
   for (const change of changes) {
+    const meta = change[2] ?? {}
     if (change[0] === listenerPath) {
       // Exact path match: pass through with the full path
-      result.push([change[0], change[1], change[2]])
+      result.push([change[0], change[1], meta])
     } else if (change[0].startsWith(prefix)) {
-      result.push([change[0].slice(prefix.length), change[1], change[2]])
+      result.push([change[0].slice(prefix.length), change[1], meta])
     } else {
       // Change doesn't match this listener's path — skip
     }

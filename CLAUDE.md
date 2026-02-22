@@ -562,6 +562,23 @@ This is a performance-critical layer. Patterns matter.
    expect(validationState).toBeDefined()
    ```
 
+✅ **Always test with nested paths** — don't just test root-level paths. Include tests with `user.profile.name`, `cart.items.price`, etc. to verify deep path handling works correctly.
+
+✅ **Always test at different nesting levels** — verify behavior at root (`price`), one level deep (`user.age`), and deeply nested (`user.profile.settings.theme`). Bugs often hide at specific nesting depths.
+
+✅ **Always include type definition validation tests** — when adding new types (e.g., `ComputationPair`, `SyncPair`), add compile-time type tests using `expectTypeOf` to verify the type accepts valid inputs and rejects invalid ones.
+
+✅ **Use `@ts-expect-error` for type rejection tests** — when testing that a type correctly rejects invalid inputs, use `@ts-expect-error` instead of `expectTypeOf(...).not.toMatchTypeOf`:
+
+   ```typescript
+   // Good: Clearly documents that this SHOULD fail type checking
+   // @ts-expect-error — string path should not be valid as number-only target
+   const bad: ComputationPair<State> = ['SUM', 'name', 'count']
+
+   // Also acceptable: expectTypeOf for negative type assertions
+   expectTypeOf<['SUM', 'name', 'count']>().not.toMatchTypeOf<ComputationPair<State>>()
+   ```
+
 ### Both Layers
 
 ❌ **Never make changes beyond what was asked**

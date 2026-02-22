@@ -30,5 +30,5 @@ import type { GenericMeta } from './meta'
  * - meta: Metadata about the change
  */
 export type ArrayOfChanges<DATA, META extends GenericMeta = GenericMeta> = {
-  [K in DeepKey<DATA>]: [K, DeepValue<DATA, K>, META]
+  [K in DeepKey<DATA>]: [K, DeepValue<DATA, K>, META] | [K, DeepValue<DATA, K>]
 }[DeepKey<DATA>][]
