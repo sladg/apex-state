@@ -27,7 +27,7 @@ import { act } from '@testing-library/react'
 import { proxy, snapshot, useSnapshot } from 'valtio'
 
 import type { ConcernType } from '../concerns'
-import { defaultConcerns } from '../concerns'
+import { defaultConcerns } from '../concerns/registry'
 import type { StoreConfig } from '../core/types'
 import type { GenericStoreApi } from '../store/create-store'
 import type { DeepKey, DeepValue, GenericMeta } from '../types'

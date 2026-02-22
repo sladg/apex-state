@@ -1,0 +1,58 @@
+name: Deploy Demo
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: demo-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - run: npm ci
+
+      - name: Build WASM
+        run: npm run wasm:build
+
+      - name: Build library
+        run: npm run build
+
+      - name: Install demo deps
+        run: npm ci
+        working-directory: demo
+
+      - name: Build demo
+        run: npm run build
+        working-directory: demo
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo/dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

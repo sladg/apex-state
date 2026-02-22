@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apex State — Budget Planning Sheet</title>
+    <style>
+      /* ── Reset & Base ─────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          sans-serif;
+        font-size: 13px;
+        color: #1a1a2e;
+        background: #f0f2f5;
+        padding: 24px;
+      }
+
+      /* ── App Container ────────────────────────────────────── */
+      .app {
+        max-width: 1800px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1a1a2e;
+      }
+      .subtitle {
+        color: #6b7280;
+        margin: 4px 0 20px;
+        font-size: 13px;
+      }
+
+      /* ── Header Bar ───────────────────────────────────────── */
+      .header-bar {
+        display: flex;
+        gap: 20px;
+        align-items: flex-end;
+        margin-bottom: 16px;
+        padding: 14px 16px;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+      }
+      .header-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .header-field label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #6b7280;
+        letter-spacing: 0.5px;
+      }
+      .header-field input,
+      .header-field select {
+        padding: 6px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        font-size: 13px;
+        min-width: 200px;
+      }
+      .header-field input[readonly] {
+        background: #f3f4f6;
+        color: #6b7280;
+      }
+      .col-toggles {
+        display: flex;
+        gap: 12px;
+        padding: 6px 0;
+      }
+      .col-toggle {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .col-toggle input[type='checkbox'] {
+        width: 14px;
+        height: 14px;
+        accent-color: #3b82f6;
+        cursor: pointer;
+      }
+
+      /* ── Spreadsheet Table ────────────────────────────────── */
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid #c4c9d4;
+        border-radius: 8px;
+        background: #fff;
+      }
+      .spreadsheet {
+        min-width: 100%;
+        border-collapse: collapse;
+        white-space: nowrap;
+      }
+      .th {
+        padding: 8px 10px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: #374151;
+        background: #e5e7eb;
+        border-bottom: 2px solid #c4c9d4;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      .cell {
+        padding: 4px 6px;
+        border-bottom: 1px solid #e5e7eb;
+        border-right: 1px solid #f0f0f0;
+        vertical-align: middle;
+      }
+      .cell input[type='text'],
+      .cell input[type='number'],
+      .cell input[type='email'],
+      .cell select {
+        width: 100%;
+        min-width: 80px;
+        padding: 5px 8px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        font-size: 13px;
+        background: transparent;
+        transition: border-color 0.15s;
+      }
+      .cell input:hover,
+      .cell select:hover {
+        border-color: #93c5fd;
+      }
+      .cell input:focus,
+      .cell select:focus {
+        outline: none;
+        border-color: #3b82f6;
+        background: #eff6ff;
+      }
+      .cell input[readonly] {
+        color: #6b7280;
+        cursor: default;
+      }
+      .cell input[disabled] {
+        background: #f9fafb;
+        color: #9ca3af;
+        cursor: not-allowed;
+      }
+
+      /* ── Cell Variants ────────────────────────────────────── */
+      .cell-rownum {
+        width: 30px;
+        text-align: center;
+        font-weight: 600;
+        color: #9ca3af;
+        background: #f9fafb;
+      }
+      .cell-number input {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .cell-computed {
+        text-align: right;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        color: #1e40af;
+        padding-right: 12px;
+        min-width: 90px;
+      }
+      .cell-grand span {
+        font-size: 14px;
+        color: #047857;
+      }
+      .cell-checkbox {
+        text-align: center;
+        width: 60px;
+      }
+      .cell-checkbox input[type='checkbox'] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: #3b82f6;
+      }
+      .cell-readonly input[type='checkbox'] {
+        cursor: default;
+        opacity: 0.6;
+      }
+      .cell-currency input {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        min-width: 90px;
+      }
+      .cell-error input {
+        border-color: #ef4444 !important;
+        background: #fef2f2 !important;
+      }
+      .cell-hidden,
+      .col-hidden {
+        display: none;
+      }
+      .cell-status {
+        text-align: center;
+        min-width: 100px;
+      }
+
+      /* ── Summary Row ──────────────────────────────────────── */
+      .summary-row {
+        background: #f8fafc;
+        font-weight: 600;
+      }
+      .summary-row .cell {
+        border-top: 2px solid #c4c9d4;
+      }
+      .cell-summary {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #6b7280;
+      }
+
+      /* ── Status Badges ────────────────────────────────────── */
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      .badge-high {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .badge-med {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .badge-low {
+        background: #d1fae5;
+        color: #065f46;
+      }
+
+      /* ── Feature Tags ─────────────────────────────────────── */
+      .tag {
+        display: inline-block;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        vertical-align: middle;
+        margin-left: 4px;
+      }
+      .tag-sync {
+        background: #dbeafe;
+        color: #1d4ed8;
+      }
+      .tag-flip {
+        background: #fce7f3;
+        color: #be185d;
+      }
+      .tag-agg {
+        background: #ede9fe;
+        color: #6d28d9;
+      }
+      .tag-sum {
+        background: #d1fae5;
+        color: #047857;
+      }
+      .tag-avg {
+        background: #ccfbf1;
+        color: #0f766e;
+      }
+      .tag-listen {
+        background: #fff7ed;
+        color: #c2410c;
+      }
+      .tag-val {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      .tag-vis {
+        background: #f3e8ff;
+        color: #7e22ce;
+      }
+      .tag-get {
+        background: #e0f2fe;
+        color: #0369a1;
+      }
+
+      /* ── Utilization Cell ──────────────────────────────────── */
+      .cell-utilization {
+        padding: 4px 8px;
+        min-width: 80px;
+      }
+      .util-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px;
+      }
+      .util-pct {
+        font-size: 12px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        color: #374151;
+      }
+      .util-bar {
+        width: 60px;
+        height: 4px;
+        background: #e5e7eb;
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .util-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.2s, background 0.2s;
+      }
+
+      /* ── Legend ────────────────────────────────────────────── */
+      .legend {
+        margin-top: 20px;
+        padding: 16px 20px;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+      }
+      .legend h3 {
+        font-size: 14px;
+        margin-bottom: 12px;
+        color: #374151;
+      }
+      .legend-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 24px;
+        font-size: 12px;
+        color: #4b5563;
+        line-height: 1.6;
+      }
+
+      /* ── Alternating Rows ─────────────────────────────────── */
+      tbody tr:nth-child(even) {
+        background: #f9fafb;
+      }
+      tbody tr:hover {
+        background: #eff6ff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
