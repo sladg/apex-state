@@ -174,3 +174,21 @@ export { is } from './utils/is'
  * ```
  */
 export { applyChangesToObject } from './utils/apply-changes'
+
+/**
+ * @advanced
+ * Deep clone that preserves getters, setters, and property descriptors.
+ * Returns a fully independent copy — mutations to the clone never affect the original.
+ *
+ * @example
+ * ```typescript
+ * import { deepClone } from '@sladg/apex-state'
+ *
+ * const original = { name: 'Alice', get greeting() { return `Hi ${this.name}` } }
+ * const cloned = deepClone(original)
+ * cloned.name = 'Bob'
+ * cloned.greeting // 'Hi Bob'
+ * original.greeting // 'Hi Alice' — untouched
+ * ```
+ */
+export { deepClone } from './utils/deep-clone'

@@ -7,10 +7,6 @@
  * - Handles useLegacyImplementation flag
  * - Respects maxIterations limit
  * - Supports debug config
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ NEW: No v1 equivalent — fills coverage gap for store configuration  │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { describe, expect, it } from 'vitest'

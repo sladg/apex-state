@@ -138,8 +138,7 @@ export const prepareInitialState = <T extends object>(
   rawState: T,
 ): { initialState: T; getterMap: GetterMap } => {
   const { base, computed: getterMap } = extractGetters(rawState)
-  const clonedBase = structuredClone(base) as T
-  return { initialState: clonedBase, getterMap }
+  return { initialState: base as T, getterMap }
 }
 
 /**

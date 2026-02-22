@@ -6,14 +6,6 @@
  * - Drive UI states: disabled, visible, readonly, labels, placeholders, tooltips
  * - Re-evaluate when dependency paths change
  * - Support template interpolation for dynamic text
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES (when this v2 test is fully implemented):                  │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/integration/concerns-ui.test.tsx              (ENTIRE FILE)  │
- * │ tests/integration/ecommerce-catalog.test.tsx   (BoolLogic + text)  │
- * │   → Conditional UI, dynamic interpolation, custom concerns          │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { describe, expect, it } from 'vitest'

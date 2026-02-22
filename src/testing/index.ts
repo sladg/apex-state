@@ -31,6 +31,7 @@ import { defaultConcerns } from '../concerns/registry'
 import type { StoreConfig } from '../core/types'
 import type { GenericStoreApi } from '../store/create-store'
 import type { DeepKey, DeepValue, GenericMeta } from '../types'
+import { deepClone } from '../utils/deep-clone'
 import { dot } from '../utils/dot'
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ import { dot } from '../utils/dot'
 export {
   _,
   applyChangesToObject,
+  deepClone,
   defaultConcerns,
   dot,
   evaluateBoolLogic,
@@ -117,7 +119,7 @@ const __reset = () => {
 const __typedMock = <T extends object>(): TypedMock<T> => {
   const api: TypedMock<T> = {
     set: (path, value) => {
-      dot.set__unsafe(__state.value, path as string, structuredClone(value))
+      dot.set__unsafe(__state.value, path as string, deepClone(value))
       return api
     },
     state: __state,
@@ -163,10 +165,7 @@ export const __mocked = {
    */
   set: <T extends object>(data?: Partial<T>): TypedMock<T> => {
     if (data) {
-      Object.assign(
-        __state.value,
-        structuredClone(data) as Record<string, unknown>,
-      )
+      __state.value = deepClone(data)
     }
     return __typedMock<T>()
   },
@@ -205,16 +204,10 @@ export const createGenericStore = <
     initialState,
     children,
   }: {
-    initialState: unknown
+    initialState: Record<string, unknown>
     children?: React.ReactNode
   }) => {
-    if (initialState && typeof initialState === 'object') {
-      Object.assign(
-        __state.value,
-        structuredClone(initialState) as Record<string, unknown>,
-      )
-    }
-
+    __state.value = deepClone(initialState)
     return React.createElement(React.Fragment, null, children)
   }
   Provider.displayName = 'MockStoreProvider'
@@ -225,7 +218,7 @@ export const createGenericStore = <
     const value = dot.get__unsafe(snap.value as Record<string, unknown>, path)
     const setValue = (newValue: unknown, meta?: unknown) => {
       __state.calls.push({ path, value: newValue, meta })
-      dot.set__unsafe(__state.value, path, newValue)
+      dot.set__unsafe(__state.value, path, deepClone(newValue))
     }
     return [value, setValue] as const
   }
@@ -242,7 +235,7 @@ export const createGenericStore = <
       setChanges: (changes: [string, unknown, unknown?][]) => {
         for (const [path, value, meta] of changes) {
           __state.calls.push({ path, value, meta })
-          dot.set__unsafe(__state.value, path, value)
+          dot.set__unsafe(__state.value, path, deepClone(value))
         }
       },
       getState: () => snapshot(__state.value) as Record<string, unknown>,

@@ -3,29 +3,6 @@
  *
  * Validates that withConcerns() filters which concerns are available to hooks.
  * Used to selectively enable concern types in components.
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES (when this v2 test is fully implemented):                  │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/integration/withConcerns.test.tsx              (ENTIRE FILE)  │
- * │ tests/integration/concerns-ui.test.tsx      (withConcerns tests)    │
- * │   → Lines 100-200 approx (concern filtering test cases)             │
- * └─────────────────────────────────────────────────────────────────────┘
- */
-
-/**
- * API: withConcerns() - Concern Filtering
- *
- * Validates that withConcerns() filters which concerns are available to hooks.
- * Used to selectively enable concern types in components.
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES (when this v2 test is fully implemented):                  │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/integration/withConcerns.test.tsx              (ENTIRE FILE)  │
- * │ tests/integration/concerns-ui.test.tsx      (withConcerns tests)    │
- * │   → Lines 100-200 approx (concern filtering test cases)             │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { describe, expect, it } from 'vitest'

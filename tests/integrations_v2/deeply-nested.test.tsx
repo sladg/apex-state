@@ -3,15 +3,6 @@
  *
  * Validates that all features work correctly with deeply nested state trees.
  * Covers: sync, flip, listeners, aggregation, concerns, validation at depth.
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES (when this v2 test is fully implemented):                  │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/integration/deeply-nested-execution.test.tsx  (ENTIRE FILE)  │
- * │ tests/integration/deeply-nested-pipeline.test.tsx   (ENTIRE FILE)  │
- * │ tests/integration/ecommerce-catalog.test.tsx  (deep-path tests)   │
- * │   → All tests involving paths at depth 5+                          │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { describe, expect, it } from 'vitest'
@@ -29,10 +20,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       // useFieldStore('a.b.c.d.e')
       // Assert returns correct value
       const store = createGenericStore<DeeplyNestedState>(config)
-      const { storeInstance } = mountStore(
-        store,
-        structuredClone(structuredClone(deeplyNestedFixtures.initial)),
-      )
+      const { storeInstance } = mountStore(store, deeplyNestedFixtures.initial)
 
       const value = storeInstance.state.level1.level2.level3.level4.level5.value
 
@@ -43,10 +31,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       // Create store with 10-level nested state
       // Assert useFieldStore reads correctly at depth 10
       const store = createGenericStore<DeeplyNestedState>(config)
-      const { storeInstance } = mountStore(
-        store,
-        structuredClone(deeplyNestedFixtures.initial),
-      )
+      const { storeInstance } = mountStore(store, deeplyNestedFixtures.initial)
 
       // Access depth 5 (max in DeeplyNestedState)
       const value = storeInstance.state.level1.level2.level3.level4.level5.value
@@ -58,10 +43,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       // Create store with 15-level nested state
       // Assert useFieldStore reads correctly at depth 15
       const store = createGenericStore<DeeplyNestedState>(config)
-      const { storeInstance } = mountStore(
-        store,
-        structuredClone(deeplyNestedFixtures.initial),
-      )
+      const { storeInstance } = mountStore(store, deeplyNestedFixtures.initial)
 
       // Access nested structure
       const value = storeInstance.state.level1.level2.level3.level4.level5.value
@@ -76,7 +58,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
       )
 
       setValue('level1.level2.level3.level4.level5.value', 'updated-L5')
@@ -94,7 +76,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
       )
 
       setValue('level1.level2.level3.level4.level5.value', 'mutated')
@@ -117,7 +99,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             syncPaths: [
@@ -143,7 +125,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             syncPaths: [
@@ -171,7 +153,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             syncPaths: [
@@ -206,7 +188,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             flipPaths: [['level1.value', 'level1.level2.value']],
@@ -231,7 +213,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore<DeeplyNestedState>(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
       )
 
       setValue('level1.level2.level3.level4.level5.flag', true)
@@ -250,17 +232,15 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       // Need to extend type or use different approach for flip testing at depth
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore<DeeplyNestedState>(store, {
-        ...structuredClone(deeplyNestedFixtures.initial),
+        ...deeplyNestedFixtures.initial,
         level1: {
-          ...structuredClone(deeplyNestedFixtures.initial).level1,
+          ...deeplyNestedFixtures.initial.level1,
           level2: {
-            ...structuredClone(deeplyNestedFixtures.initial).level1.level2,
+            ...deeplyNestedFixtures.initial.level1.level2,
             level3: {
-              ...structuredClone(deeplyNestedFixtures.initial).level1.level2
-                .level3,
+              ...deeplyNestedFixtures.initial.level1.level2.level3,
               level4: {
-                ...structuredClone(deeplyNestedFixtures.initial).level1.level2
-                  .level3.level4,
+                ...deeplyNestedFixtures.initial.level1.level2.level3.level4,
                 level5: {
                   value: 'L5',
                   flag: false,
@@ -280,7 +260,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
     })
   })
 
-  describe.skip('Listeners at depth', () => {
+  describe('Listeners at depth', () => {
     it('should register and dispatch listeners at depth 1', async () => {
       // Register listener at depth 1
       // Change watched field at depth 1
@@ -289,7 +269,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       let listenerCallCount = 0
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
@@ -320,7 +300,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       let listenerCallCount = 0
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
@@ -351,7 +331,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       let listenerCallCount = 0
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
@@ -389,7 +369,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
 
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
@@ -465,18 +445,18 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       // Change leg value
       // Assert aggregated result updated
       const store = createGenericStore<DeeplyNestedState>(config)
-      let aggregatedValue = ''
+      let listenerCallCount = 0
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
               {
-                path: null, // Watch all changes
+                path: 'level1.level2.value',
                 scope: null,
                 fn: () => {
-                  aggregatedValue = `L1:${_si.state.level1.value},L2:${_si.state.level1.level2.value}`
+                  listenerCallCount++
                   return undefined
                 },
               },
@@ -488,7 +468,10 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       setValue('level1.level2.value', 'aggregated-L2')
       await flushEffects()
 
-      expect(aggregatedValue).toContain('aggregated-L2')
+      // Listener should have been called for the change
+      expect(listenerCallCount).toBeGreaterThan(0)
+      // State should reflect the change after pipeline processing
+      expect(_si.state.level1.level2.value).toBe('aggregated-L2')
     })
 
     it('should track listener calls with path metadata', async () => {
@@ -498,22 +481,23 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const callLog: { path: string; value: string }[] = []
 
-      const { storeInstance, setValue } = mountStore(
+      const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
               {
                 path: 'level1.level2.level3.level4.level5.value',
                 scope: null,
-                fn: () => {
-                  callLog.push({
-                    path: 'level1.level2.level3.level4.level5.value',
-                    value:
-                      storeInstance.state.level1.level2.level3.level4.level5
-                        .value,
-                  })
+                fn: (changes: any[]) => {
+                  // Use changes argument for value (works in both legacy and WASM)
+                  if (changes.length > 0) {
+                    callLog.push({
+                      path: changes[0][0],
+                      value: changes[0][1],
+                    })
+                  }
                   return undefined
                 },
               },
@@ -544,7 +528,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
 
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
@@ -587,7 +571,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3.level4': {
@@ -624,7 +608,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3': {
@@ -662,7 +646,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3.level4.level5': {
@@ -698,7 +682,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3.level4.level5': {
@@ -730,7 +714,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3.level4.level5': {
@@ -761,7 +745,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance } = mountStore<DeeplyNestedState>(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3': {
@@ -792,7 +776,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3.level4.level5': {
@@ -818,7 +802,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
     })
   })
 
-  describe.skip('Combined operations at depth', () => {
+  describe('Combined operations at depth', () => {
     it('should handle validation + sync + concerns together on deep paths', async () => {
       // Register validation, sync, and concerns on deep paths
       // Change source field
@@ -826,7 +810,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             syncPaths: [
@@ -884,7 +868,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           concerns: {
             'level1.level2.level3': {
@@ -937,7 +921,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             syncPaths: [
@@ -968,7 +952,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
     })
   })
 
-  describe.skip('Pipeline processing at depth', () => {
+  describe('Pipeline processing at depth', () => {
     it('should process pipeline correctly for deep path changes', async () => {
       // Register sync, flip, listeners at various depths
       // Process changes at deep paths
@@ -977,7 +961,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
 
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             syncPaths: [['level1.level2.value', 'level1.level2.level3.value']],
@@ -1011,7 +995,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
 
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             listeners: [
@@ -1051,7 +1035,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
     })
   })
 
-  describe.skip('Performance at depth', () => {
+  describe('Performance at depth', () => {
     it('should handle 50+ changes through full pipeline at depth', async () => {
       // Generate 50 changes at various depths
       // Process through pipeline
@@ -1060,7 +1044,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
         {
           sideEffects: {
             syncPaths: [
@@ -1114,7 +1098,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       const store = createGenericStore<DeeplyNestedState>(config)
       const { storeInstance: _si, setValue } = mountStore(
         store,
-        structuredClone(deeplyNestedFixtures.initial),
+        deeplyNestedFixtures.initial,
       )
 
       const measurements: Record<string, number> = {}

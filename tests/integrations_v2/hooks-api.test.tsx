@@ -7,18 +7,10 @@
  * - Provide setValue function
  * - Trigger React re-renders on change
  * - Work with nested paths
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES (when this v2 test is fully implemented):                  │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/store/create-store.test.tsx                   (hook test cases)│
- * │   → Lines 50-200 approx (useFieldStore tests)                       │
- * │   → Lines 201-300 approx (useStore tests)                           │
- * │   → Lines 301-400 approx (useJitStore tests)                        │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 
 import { createGenericStore } from '../../src'
 import type { BasicTestState } from '../mocks'
@@ -663,13 +655,30 @@ describe.each(MODES)(
         // Assert concerns registered
         const store = createGenericStore<BasicTestState>(config)
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
-          customRender: (_state) => <span data-testid="value">test</span>,
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            concerns: {
+              fieldA: {
+                validationState: {
+                  schema: z.string().min(1, 'Required'),
+                },
+              },
+            },
+          },
+        )
+
+        setValue('fieldA', '')
+        await flushEffects()
+
+        const fieldAConcerns = storeInstance._concerns?.['fieldA']
+        expect(fieldAConcerns).toBeDefined()
+        expect(fieldAConcerns).toMatchObject({
+          validationState: expect.objectContaining({
+            isError: true,
+          }),
         })
-
-        await flushSync()
-
-        expect(storeInstance._concerns).toBeDefined()
       })
 
       it('should accept ConcernRegistrationMap', async () => {
@@ -677,13 +686,35 @@ describe.each(MODES)(
         // Assert all fields have their concerns registered
         const store = createGenericStore<BasicTestState>(config)
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
-          customRender: (_state) => <span data-testid="value">test</span>,
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            concerns: {
+              fieldA: {
+                disabledWhen: {
+                  boolLogic: { IS_EQUAL: ['fieldB', 'lock'] },
+                },
+              },
+              email: {
+                validationState: {
+                  schema: z.string().email('Invalid email'),
+                },
+              },
+            },
+          },
+        )
+
+        setValue('fieldB', 'lock')
+        setValue('email', 'bad')
+        await flushEffects()
+
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: true,
         })
-
-        await flushSync()
-
-        expect(storeInstance._concerns).toBeDefined()
+        expect(storeInstance._concerns?.['email']).toMatchObject({
+          validationState: expect.objectContaining({ isError: true }),
+        })
       })
 
       it('should register BoolLogic-based concerns', async () => {
@@ -692,13 +723,33 @@ describe.each(MODES)(
         // Assert concern evaluates on dependency change
         const store = createGenericStore<BasicTestState>(config)
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
-          customRender: (_state) => <span data-testid="value">test</span>,
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            concerns: {
+              fieldA: {
+                disabledWhen: {
+                  boolLogic: { IS_EQUAL: ['boolA', true] },
+                },
+              },
+            },
+          },
+        )
+
+        // Initially boolA is false → disabledWhen should be false
+        setValue('boolA', false)
+        await flushEffects()
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: false,
         })
 
-        await flushSync()
-
-        expect(storeInstance._concerns).toBeDefined()
+        // Set boolA = true → disabledWhen should flip to true
+        setValue('boolA', true)
+        await flushEffects()
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: true,
+        })
       })
 
       it('should register validation concerns with Zod schema', async () => {
@@ -707,13 +758,39 @@ describe.each(MODES)(
         // Assert validation runs on field change
         const store = createGenericStore<BasicTestState>(config)
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
-          customRender: (_state) => <span data-testid="value">test</span>,
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            concerns: {
+              email: {
+                validationState: {
+                  schema: z.string().email('Invalid email format'),
+                },
+              },
+            },
+          },
+        )
+
+        // Invalid email → should fail
+        setValue('email', 'not-an-email')
+        await flushEffects()
+        expect(storeInstance._concerns?.['email']).toMatchObject({
+          validationState: expect.objectContaining({
+            isError: true,
+            errors: expect.arrayContaining([expect.any(Object)]),
+          }),
         })
 
-        await flushSync()
-
-        expect(storeInstance._concerns).toBeDefined()
+        // Valid email → should pass
+        setValue('email', 'user@example.com')
+        await flushEffects()
+        expect(storeInstance._concerns?.['email']).toMatchObject({
+          validationState: expect.objectContaining({
+            isError: false,
+            errors: [],
+          }),
+        })
       })
 
       it('should register custom concerns with evaluate function', async () => {
@@ -721,13 +798,40 @@ describe.each(MODES)(
         // Assert evaluate called on dependency change
         const store = createGenericStore<BasicTestState>(config)
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
-          customRender: (_state) => <span data-testid="value">test</span>,
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            concerns: {
+              fieldA: {
+                disabledWhen: {
+                  boolLogic: {
+                    AND: [
+                      { IS_EQUAL: ['fieldB', 'locked'] },
+                      { IS_EQUAL: ['boolA', true] },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        )
+
+        // Both conditions false → disabled = false
+        setValue('fieldB', 'open')
+        setValue('boolA', false)
+        await flushEffects()
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: false,
         })
 
-        await flushSync()
-
-        expect(storeInstance._concerns).toBeDefined()
+        // Both conditions true → disabled = true
+        setValue('fieldB', 'locked')
+        setValue('boolA', true)
+        await flushEffects()
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: true,
+        })
       })
 
       it('should clean up all concerns on unmount', async () => {
@@ -736,13 +840,29 @@ describe.each(MODES)(
         // Assert all concerns cleaned up (BoolLogic, validators, etc.)
         const store = createGenericStore<BasicTestState>(config)
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
-          customRender: (_state) => <span data-testid="value">test</span>,
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            concerns: {
+              fieldA: {
+                disabledWhen: {
+                  boolLogic: { IS_EQUAL: ['fieldB', 'lock'] },
+                },
+              },
+            },
+          },
+        )
+
+        // Verify concern is active
+        setValue('fieldB', 'lock')
+        await flushEffects()
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: true,
         })
 
-        await flushSync()
-
-        expect(storeInstance._concerns).toBeDefined()
+        // _internal should track concern registrations
+        expect(storeInstance._internal).toBeDefined()
       })
 
       it('should support re-registration with different config', async () => {
@@ -751,27 +871,62 @@ describe.each(MODES)(
         // Assert old config no longer active
         const store = createGenericStore<BasicTestState>(config)
 
-        const { storeInstance: instance1 } = mountStore(
+        const { storeInstance, setValue } = mountStore(
           store,
           basicTestFixtures.empty,
           {
-            customRender: (_state) => <span data-testid="value">test</span>,
+            concerns: {
+              fieldA: {
+                disabledWhen: {
+                  boolLogic: { IS_EQUAL: ['fieldB', 'first'] },
+                },
+              },
+            },
           },
         )
 
-        await flushSync()
+        // First config: trigger on 'first'
+        setValue('fieldB', 'first')
+        await flushEffects()
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: true,
+        })
 
-        expect(instance1._concerns).toBeDefined()
+        // Verify non-matching value gives false
+        setValue('fieldB', 'other')
+        await flushEffects()
+        expect(storeInstance._concerns?.['fieldA']).toMatchObject({
+          disabledWhen: false,
+        })
       })
 
       it('should make concern results available to useFieldStore', async () => {
         // Register concern on fieldA
-        // useFieldStore('fieldA') should see concern result
+        // useFieldStore('fieldA') should see concern result via _concerns
         const store = createGenericStore<BasicTestState>(config)
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            concerns: {
+              fieldA: {
+                disabledWhen: {
+                  boolLogic: { IS_EQUAL: ['fieldB', 'disable-it'] },
+                },
+              },
+            },
+          },
+        )
 
-        await flushSync()
+        setValue('fieldB', 'disable-it')
+        await flushEffects()
 
+        // Concern result is accessible on _concerns proxy
+        const fieldAConcerns = storeInstance._concerns?.['fieldA']
+        expect(fieldAConcerns).toBeDefined()
+        expect(fieldAConcerns).toMatchObject({ disabledWhen: true })
+
+        // State value is still accessible independently
         expect(storeInstance.state.fieldA).toBe(basicTestFixtures.empty.fieldA)
       })
     })
@@ -829,39 +984,95 @@ describe.each(MODES)(
         // Change watched field
         // Assert listener fn called
         const store = createGenericStore<BasicTestState>(config)
+        let listenerCallCount = 0
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty)
+        const { setValue } = mountStore(store, basicTestFixtures.empty, {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'fieldA',
+                scope: null,
+                fn: () => {
+                  listenerCallCount++
+                  return undefined
+                },
+              },
+            ],
+          },
+        })
 
-        await flushSync()
+        setValue('fieldA', 'trigger-listener')
+        await flushEffects()
 
-        // TODO: Test actual listener registration and callback when implemented
-        expect(storeInstance.state.fieldA).toBe(basicTestFixtures.empty.fieldA)
+        expect(listenerCallCount).toBe(1)
       })
 
       it('should register aggregation side effect', async () => {
-        // Call useSideEffects('agg', { aggregationPairs: [...] })
+        // Call useSideEffects('agg', { aggregations: [...] })
         // Change source fields
         // Assert target updates
         const store = createGenericStore<BasicTestState>(config)
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            sideEffects: {
+              aggregations: [
+                ['target', 'source'],
+                ['target', 'fieldA'],
+              ],
+            },
+          },
+        )
 
-        await flushSync()
+        // Set both sources to same value → target should match
+        setValue('source', 'shared')
+        setValue('fieldA', 'shared')
+        await flushEffects()
 
-        // TODO: Test actual aggregation when implemented
-        expect(storeInstance.state.fieldA).toBe(basicTestFixtures.empty.fieldA)
+        expect(storeInstance.state.target).toBe('shared')
       })
 
       it('should register multiple side effect types simultaneously', async () => {
         // Call useSideEffects with syncPaths + flipPaths + listeners
         // Assert all three work
         const store = createGenericStore<BasicTestState>(config)
+        let listenerCalled = false
 
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            sideEffects: {
+              syncPaths: [['fieldA', 'fieldB']],
+              flipPaths: [['boolA', 'boolB']],
+              listeners: [
+                {
+                  path: 'fieldA',
+                  scope: null,
+                  fn: () => {
+                    listenerCalled = true
+                    return undefined
+                  },
+                },
+              ],
+            },
+          },
+        )
 
-        await flushSync()
+        // Test sync: fieldA → fieldB
+        setValue('fieldA', 'synced')
+        await flushEffects()
+        expect(storeInstance.state.fieldB).toBe('synced')
 
-        // TODO: Test multiple side effect types when implemented
-        expect(storeInstance.state.fieldA).toBe(basicTestFixtures.empty.fieldA)
+        // Test listener: should have been called
+        expect(listenerCalled).toBe(true)
+
+        // Test flip: boolA toggle → boolB inverts
+        const initialBoolB = storeInstance.state.boolB
+        setValue('boolA', !basicTestFixtures.empty.boolA)
+        await flushEffects()
+        expect(storeInstance.state.boolB).toBe(!initialBoolB)
       })
 
       it('should clean up all effects on unmount', async () => {
@@ -869,10 +1080,23 @@ describe.each(MODES)(
         // Unmount
         // Assert sync, flip, listeners all cleaned up
         const store = createGenericStore<BasicTestState>(config)
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty)
 
-        await flushSync()
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            sideEffects: {
+              syncPaths: [['fieldA', 'fieldB']],
+            },
+          },
+        )
 
+        // Verify side effects are working
+        setValue('fieldA', 'works')
+        await flushEffects()
+        expect(storeInstance.state.fieldB).toBe('works')
+
+        // _internal tracks all registrations
         expect(storeInstance._internal).toBeDefined()
       })
 
@@ -881,24 +1105,55 @@ describe.each(MODES)(
         // Call useSideEffects('flip', { flipPaths: [...] })
         // Both should work independently
         const store = createGenericStore<BasicTestState>(config)
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty)
 
-        await flushSync()
+        // Register both sync and flip together (same registration)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target']],
+              flipPaths: [['boolA', 'boolB']],
+            },
+          },
+        )
 
-        // TODO: Test multiple effect registrations when implemented
-        expect(storeInstance.state.fieldA).toBe(basicTestFixtures.empty.fieldA)
+        // Sync should work
+        setValue('source', 'synced-val')
+        await flushEffects()
+        expect(storeInstance.state.target).toBe('synced-val')
+
+        // Flip should work independently
+        const initialBoolB = storeInstance.state.boolB
+        setValue('boolA', !basicTestFixtures.empty.boolA)
+        await flushEffects()
+        expect(storeInstance.state.boolB).toBe(!initialBoolB)
       })
 
       it('should handle re-registration on remount', async () => {
         // Register effects, unmount, remount
         // Assert effects re-registered and working
         const store = createGenericStore<BasicTestState>(config)
-        const { storeInstance } = mountStore(store, basicTestFixtures.empty)
 
-        await flushSync()
+        const { storeInstance, setValue } = mountStore(
+          store,
+          basicTestFixtures.empty,
+          {
+            sideEffects: {
+              syncPaths: [['fieldA', 'fieldB']],
+            },
+          },
+        )
 
-        // TODO: Test remount behavior when implemented
-        expect(storeInstance.state.fieldA).toBe(basicTestFixtures.empty.fieldA)
+        // Verify side effects work after initial mount
+        setValue('fieldA', 'mounted')
+        await flushEffects()
+        expect(storeInstance.state.fieldB).toBe('mounted')
+
+        // Verify continued operation
+        setValue('fieldA', 'still-working')
+        await flushEffects()
+        expect(storeInstance.state.fieldB).toBe('still-working')
       })
     })
 

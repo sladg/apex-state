@@ -66,6 +66,16 @@ const BENCH_OPTIONS = { iterations: 50, warmupIterations: 5 }
 // A. Registration (cold path — measures condition parsing overhead)
 // ---------------------------------------------------------------------------
 
+/**
+ * @perf-history — Registration: excludeWhen parsing overhead
+ * Hardware: Apple M4 Pro
+ * | Date       | Variant                     | Hz (ops/sec)  | Commit  | Note                          |
+ * |------------|-----------------------------|---------------|---------|-------------------------------|
+ * | 2026-02-22 | 10 sources, 0 conditions    | 70,803        | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 10 sources, 5 conditions    | 53,409        | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 50 sources, 25 conditions   | 10,922        | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 200 sources, 100 conditions | 2,401         | 4de0ee8 | baseline — initial measurement |
+ */
 describe('Registration: excludeWhen parsing overhead', () => {
   for (const [sources, excluded] of [
     [10, 0],
@@ -94,6 +104,16 @@ describe('Registration: excludeWhen parsing overhead', () => {
 // B. Read direction — source value change (measures process_aggregation_reads)
 // ---------------------------------------------------------------------------
 
+/**
+ * @perf-history — Read direction: source value change with excludeWhen
+ * Hardware: Apple M4 Pro
+ * | Date       | Variant                     | Hz (ops/sec)  | Commit  | Note                          |
+ * |------------|-----------------------------|---------------|---------|-------------------------------|
+ * | 2026-02-22 | 10 sources, 0 conditions    | 921,193       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 10 sources, 5 conditions    | 906,741       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 50 sources, 25 conditions   | 931,031       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 200 sources, 100 conditions | 942,601       | 4de0ee8 | baseline — initial measurement |
+ */
 describe('Read direction: source value change with excludeWhen', () => {
   for (const [sources, excluded] of [
     [10, 0],
@@ -120,6 +140,15 @@ describe('Read direction: source value change with excludeWhen', () => {
 // C. Condition path change (measures condition reverse index + re-aggregation)
 // ---------------------------------------------------------------------------
 
+/**
+ * @perf-history — Condition path change: re-aggregation trigger
+ * Hardware: Apple M4 Pro
+ * | Date       | Variant                     | Hz (ops/sec)  | Commit  | Note                          |
+ * |------------|-----------------------------|---------------|---------|-------------------------------|
+ * | 2026-02-22 | 10 sources, 5 conditions    | 1,106,931     | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 50 sources, 25 conditions   | 1,118,466     | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 200 sources, 100 conditions | 1,103,534     | 4de0ee8 | baseline — initial measurement |
+ */
 describe('Condition path change: re-aggregation trigger', () => {
   for (const [sources, excluded] of [
     [10, 5],
@@ -143,6 +172,16 @@ describe('Condition path change: re-aggregation trigger', () => {
 // D. Write direction — target change distributed to sources
 // ---------------------------------------------------------------------------
 
+/**
+ * @perf-history — Write direction: target → sources with excludeWhen filtering
+ * Hardware: Apple M4 Pro
+ * | Date       | Variant                     | Hz (ops/sec)  | Commit  | Note                          |
+ * |------------|-----------------------------|---------------|---------|-------------------------------|
+ * | 2026-02-22 | 10 sources, 0 conditions    | 935,250       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 10 sources, 5 conditions    | 913,295       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 50 sources, 25 conditions   | 908,792       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-22 | 200 sources, 100 conditions | 919,062       | 4de0ee8 | baseline — initial measurement |
+ */
 describe('Write direction: target → sources with excludeWhen filtering', () => {
   for (const [sources, excluded] of [
     [10, 0],

@@ -13,6 +13,7 @@ import type {
   StoreInstance,
 } from '../core/types'
 import type { DeepRequired, GenericMeta } from '../types'
+import { deepClone } from '../utils/deep-clone'
 import { deepMerge } from '../utils/deep-merge'
 import {
   attachComputedGetters,
@@ -60,7 +61,7 @@ export const createProvider = <
   // Build store instance from raw initialState + resolved config.
   // Pure function — no hooks, no side effects, safe to call during render.
   const buildStore = (rawInitialState: DATA): StoreInstance<DATA, META> => {
-    const prepared = prepareInitialState(rawInitialState)
+    const prepared = prepareInitialState(deepClone(rawInitialState))
     const internal = createInternalState<DATA, META>(resolvedConfig)
 
     // Always create pipeline — WasmGate guarantees WASM is loaded.

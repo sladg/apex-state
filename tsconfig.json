@@ -12,11 +12,15 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    "paths": {
+      "@sladg/apex-state": ["./src/index.ts"],
+      "@sladg/apex-state/testing": ["./src/testing/index.ts"]
+    },
     "resolveJsonModule": true,
 
     "target": "ES2022",
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src/**/*", "tests/**/*"],
+  "include": ["src/**/*", "tests/**/*", "examples/**/*"],
   "exclude": ["node_modules", "dist", "out-of-git", "scripts", "public"]
 }

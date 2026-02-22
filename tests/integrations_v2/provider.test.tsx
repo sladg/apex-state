@@ -6,14 +6,6 @@
  * - Hooks can read/write through context
  * - Multiple providers are independent
  * - Provides proper context isolation
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES (when this v2 test is fully implemented):                  │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/store/provider.test.tsx                        (ENTIRE FILE)  │
- * │ tests/integration/basic.test.tsx                 (some tests)      │
- * │   → Basic feature integration tests using Provider                  │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import React, { act } from 'react'

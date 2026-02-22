@@ -1,16 +1,10 @@
----
-title: useFieldConcerns Hook
-updated: 2026-01-29
-audience: frontend consumers of concern results
----
-
 # `store.useFieldConcerns` API
 
-`useFieldConcerns` exposes the computed concern outputs for a given path on the store instance created by `createGenericStore`. Pair it with `store.useConcerns` to register computations; this hook does the reading.
+`useFieldConcerns` exposes the computed concern outputs for a given path. Pair it with `store.useConcerns` to register computations; this hook does the reading.
 
-## Location
+## Source
 
-- Implementation: `src/store/createStore.ts` (`useFieldConcerns` export)
+- Implementation: `src/store/create-store.ts`
 - Types: `EvaluatedConcerns` in `src/concerns/types.ts`
 
 ## Signature
@@ -27,7 +21,7 @@ store.useFieldConcerns<P extends DeepKey<DATA>>(
 
 ### Returns
 
-An object whose optional keys align with the concerns registered for that path. Example shape when using the built-ins:
+An object whose optional keys align with the concerns registered for that path:
 
 ```ts
 type ConcernValues = {
@@ -39,7 +33,7 @@ type ConcernValues = {
 };
 ```
 
-When no concerns exist for the path the hook returns an empty object (`{}`), so defensive null checks are unnecessary.
+When no concerns exist for the path the hook returns `{}`.
 
 ## How It Works
 
@@ -47,53 +41,22 @@ When no concerns exist for the path the hook returns an empty object (`{}`), so 
 2. Subscribes to `store._concerns` with `useSnapshot` from Valtio.
 3. Returns the value at `path`, cast to `EvaluatedConcerns<CONCERNS>`.
 
-Because concern evaluation writes into `_concerns`, React components re-render only when the relevant concern data changes.
+Re-renders only when the relevant concern data changes.
 
 ## Usage
 
-```tsx
-const Component = () => {
-  store.useConcerns("form.concerns", {
-    email: {
-      validationState: {
-        concern: validationState,
-        config: { schema: emailSchema },
-      },
-      dynamicTooltip: {
-        concern: dynamicTooltip,
-        config: { template: "Current value: {{email}}" },
-      },
-    },
-  });
+See `examples/concerns.tsx` for a complete example of registering validation, BoolLogic, and dynamic text concerns, then reading results with `useFieldConcerns`.
 
-  const emailConcerns = store.useFieldConcerns("email");
-
-  return (
-    <label>
-      <input
-        type="email"
-        className={emailConcerns.validationState?.isValid ? "" : "error"}
-        disabled={emailConcerns.disabledWhen === true}
-        placeholder={emailConcerns.dynamicTooltip}
-      />
-      {emailConcerns.validationState?.message && (
-        <span role="alert">{emailConcerns.validationState.message}</span>
-      )}
-    </label>
-  );
-};
-```
+See `examples/basic-store.tsx` for an end-to-end example combining concerns with side effects and Provider.
 
 ## Related Hooks
 
-- `store.useConcerns(id, registration, customConcerns?)` — Registers the concerns that populate `_concerns`.
+- `store.useConcerns(id, registration)` — Registers the concerns that populate `_concerns`.
 - `store.useStore(path)` / `store.useFieldStore(path)` — Read/write the underlying field value.
-- `store.withConcerns(selection)` — Compose concern values directly into `useFieldStore` results when you want a single call site.
+- `store.withConcerns(selection)` — Compose concern values directly into `useFieldStore` results.
 
-## Test Coverage
+## Tests
 
 - React wiring: `tests/concerns/react-integration.test.tsx`
 - Concern scenarios: `tests/integration/concerns-ui.test.tsx`
 - Registration/reader interplay: `tests/concerns/selective-recalc.test.ts`
-
-Use these specs when validating new concern outputs or debugging memoization issues.

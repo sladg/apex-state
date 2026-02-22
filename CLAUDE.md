@@ -579,6 +579,30 @@ This is a performance-critical layer. Patterns matter.
    expectTypeOf<['SUM', 'name', 'count']>().not.toMatchTypeOf<ComputationPair<State>>()
    ```
 
+### Benchmarks
+
+✅ **Always add `@perf-history` comment above `bench()` calls** — Each bench call gets a performance history table:
+
+   ```typescript
+   /**
+    * @perf-history
+    * Hardware: Apple M4 Pro
+    * | Date       | Hz (ops/sec) | Commit  | Note                          |
+    * |------------|--------------|---------|-------------------------------|
+    * | 2026-02-22 | 12,450       | 4de0ee8 | baseline — initial measurement |
+    * | 2026-03-01 | 14,200       | a1b2c3d | optimized sync graph lookup    |
+    */
+   bench('single field change', () => { ... })
+   ```
+
+✅ **Append new rows, never remove old ones** — History is chronological (newest at bottom). Each row captures a point-in-time measurement.
+
+✅ **Always include a Note** — First entry: "baseline — initial measurement". Subsequent entries: describe what changed since previous (e.g., "optimized sync graph lookup").
+
+❌ **Never delete `@perf-history` entries** — Performance history is permanent. Even if a benchmark is rewritten, preserve the history block.
+
+❌ **Never backfill fake data** — Only add entries from actual benchmark runs with real Hz values and commit hashes.
+
 ### Both Layers
 
 ❌ **Never make changes beyond what was asked**

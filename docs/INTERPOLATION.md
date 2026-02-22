@@ -2,21 +2,14 @@
 
 Dynamic template helpers that power concerns like `dynamicTooltip`, `dynamicLabel`, and `dynamicPlaceholder`.
 
-## Where to Import
-
-Runtime helpers are exported from the package root:
+## Import
 
 ```ts
-import { extractPlaceholders, interpolateTemplate } from "apex-state";
+import { extractPlaceholders, interpolateTemplate } from "@sladg/apex-state";
+import type { ExtractPlaceholders, ValidatedTemplate } from "@sladg/apex-state";
 ```
 
-Type helpers are available as:
-
-```ts
-import type { ExtractPlaceholders, ValidatedTemplate } from "apex-state";
-```
-
-## Runtime vs Type Utilities
+## API
 
 | Helper                                 | Module                       | Purpose                                                           | Notes                                                      |
 | -------------------------------------- | ---------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -29,45 +22,23 @@ import type { ExtractPlaceholders, ValidatedTemplate } from "apex-state";
 
 - Strings, numbers, and booleans are rendered verbatim.
 - `null`, `undefined`, or missing paths leave the original `{{placeholder}}` so issues are obvious.
-- Objects and arrays are not stringified automatically; they also fall back to the placeholder for safety.
+- Objects and arrays are not stringified; they fall back to the placeholder for safety.
 
-```ts
-const state = { user: { name: "Alice" }, count: 5 };
+## Usage Examples
 
-interpolateTemplate("Hello {{user.name}}", state);
-// "Hello Alice"
+See `examples/interpolation.ts` for complete usage with `extractPlaceholders` and `interpolateTemplate`.
 
-interpolateTemplate("Missing: {{invalid.path}}", state);
-// "Missing: {{invalid.path}}"
-```
-
-## Using in Concerns
-
-The prebuilt dynamic concerns wire these helpers for you:
-
-```ts
-store.useConcerns("legs.0.strike", {
-  dynamicTooltip: {
-    concern: dynamicTooltip,
-    config: { template: "Current value: {{legs.0.strike}}" },
-  },
-});
-
-const { dynamicTooltip } = store.useFieldConcerns("legs.0.strike");
-// → "Current value: 105"
-```
-
-When creating custom concerns or side-effects, favour `ValidatedTemplate` to catch typoed paths at compile time.
+See `examples/concerns.tsx` for how dynamic concerns (`dynamicTooltip`, `dynamicLabel`) use templates via `useConcerns`.
 
 ## Edge Cases & Tests
 
-- Template parsing: `tests/types/interpolation.test.ts` verifies placeholder extraction and validation.
-- Runtime integration: `tests/integration/concerns-ui.test.tsx` exercises dynamic tooltip/label concerns end-to-end.
-- Escaping braces: double the braces (`{{\{` / `\}}`) if you need literal curly braces; the runtime treats escaped braces as literals.
+- Template parsing: `tests/types/interpolation.test.ts`
+- Runtime integration: `tests/integration/concerns-ui.test.tsx`
+- Escaping braces: double the braces (`{{\{` / `\}}`) for literal curly braces.
 
-## File Map
+## Source Files
 
-- `src/utils/interpolation.ts` — runtime helpers + behaviour tests.
-- `src/types/interpolation.ts` — type-level utilities.
+- `src/utils/interpolation.ts` — runtime helpers
+- `src/types/interpolation.ts` — type-level utilities
 
-Touch both files together when changing placeholder semantics so the runtime and type system stay aligned.
+Touch both files together when changing placeholder semantics.

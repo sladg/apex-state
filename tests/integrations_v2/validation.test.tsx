@@ -7,14 +7,6 @@
  * - Clear errors when fields become valid
  * - Support cross-field validation
  * - Work with the WASM validator batching pipeline
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES (when this v2 test is fully implemented):                  │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/integration/form-validation.test.tsx          (ENTIRE FILE)  │
- * │ tests/integration/ecommerce-catalog.test.tsx   (validation tests)  │
- * │   → Zod schema tests at depth 9-15                                 │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { describe, expect, it } from 'vitest'

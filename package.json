@@ -45,6 +45,7 @@
     "code:fix": "eslint . --fix",
     "code:unused": "knip",
     "commit": "npx --package @sladg/release-utils utils commit",
+    "docs:llms": "npx tsx scripts/generate-llms-txt.ts --outdir ./demo/dist",
     "release": "npx --package @sladg/release-utils utils shipit --gitUser @sladg --gitEmail jan@ssoukup.com --changelog",
     "test": "npm run test:smoke && npm run test:all && npm run bench",
     "test:all": "vitest run",
@@ -63,6 +64,7 @@
     "wasm:test": "cargo test --manifest-path rust/Cargo.toml"
   },
   "dependencies": {
+    "@jsbits/deep-clone": "^1.1.1",
     "valtio": "^2.3.0",
     "valtio-reactive": "^0.2.0"
   },

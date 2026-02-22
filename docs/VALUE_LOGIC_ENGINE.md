@@ -11,6 +11,7 @@
 BoolLogic evaluates conditions and returns `boolean`. We need a sibling engine that evaluates conditions and returns **arbitrary JSON values** — primarily to drive options lists, labels, or any concern value based on state. This is `ValueLogic`.
 
 **Example use case:** A dropdown's options depend on `user.role`:
+
 ```typescript
 options: {
   value_logic: {
@@ -29,7 +30,7 @@ options: {
 - **Two variants:** `IF/THEN/ELSE` (nestable for elif chains) and `MATCH` (multi-way switch)
 - **Conditions reuse `BoolLogic` trees** — no new condition evaluator
 - **THEN/ELSE/CASES values are static JSON** — not derived from state
-- **Config discriminator:** `value_logic` key (like `condition` for BoolLogic)
+- **Config discriminator:** `value_logic` key (like `boolLogic` for BoolLogic)
 - **Evaluated in WASM** with own registry and reverse dependency index
 - **Fully additive** — no breaking changes to existing APIs
 
@@ -96,7 +97,7 @@ useConcerns('my-reg', {
   'action.type': {
     // Existing BoolLogic concern (returns boolean)
     disabledWhen: {
-      condition: { IS_EQUAL: ['user.role', 'viewer'] },
+      boolLogic: { IS_EQUAL: ['user.role', 'viewer'] },
     },
     // NEW: ValueLogic concern (returns string[])
     options: {

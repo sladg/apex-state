@@ -34,6 +34,7 @@ import type {
   GenericMeta,
 } from '../../src/types'
 import type { SideEffects } from '../../src/types/side-effects'
+import { deepClone } from '../../src/utils/deep-clone'
 import { deepMerge } from '../../src/utils/deep-merge'
 import { createWasmPipeline } from '../../src/wasm/bridge'
 import { isWasmLoaded } from '../../src/wasm/lifecycle'
@@ -216,7 +217,7 @@ export function mountStore<
 
   render(
     React.createElement(store.Provider, {
-      initialState,
+      initialState: deepClone(initialState),
       children: <WrapperComponent>{content}</WrapperComponent>,
     }),
   )

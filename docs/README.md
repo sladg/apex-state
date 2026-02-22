@@ -1,6 +1,6 @@
 ---
 title: Documentation Index
-updated: 2026-02-05
+updated: 2026-02-22
 audience: all contributors
 ---
 
@@ -33,33 +33,32 @@ Subagent prompts for autonomous work in specific areas. Load these as context wh
 
 ## Feature References
 
-| Document                             | Audience                        | Why you read it                                                                      |
-| ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------ |
-| `docs/INTERPOLATION.md`              | Concern + side-effect authors   | Runtime + type helpers for template interpolation.                                   |
-| `docs/USEFIELDCONCERNS_API.md`       | Frontend consumers              | How to read concern results from React components.                                   |
-| `docs/GRAPHOLOGY_REPLACEMENT.md`     | Maintainers                     | PathGroups data structure replacing graphology for O(1) connected component lookups. |
-| `docs/WILDCARD_UTILITIES_EXAMPLE.md` | Users with Record types         | Examples: `toWildcardPath()`, `toWildcardPathAuto()`.                                |
-| `docs/WILD_FUNCTION_GUIDE.md`        | Users with Record types         | `Wild()` inline wildcard template string utility.                                    |
-| `docs/IMPLEMENTATION_COMPLETE.md`    | Record support reference        | Full Record type support with `[*]` wildcard notation.                               |
-| `docs/RECORD_MIGRATION.md`           | Users migrating to Record types | Migration patterns for `Record<string, V>` types.                                    |
+| Document                       | Audience                      | Why you read it                                        |
+| ------------------------------ | ----------------------------- | ------------------------------------------------------ |
+| `docs/INTERPOLATION.md`        | Concern + side-effect authors | Runtime + type helpers for template interpolation.     |
+| `docs/USEFIELDCONCERNS_API.md` | Frontend consumers            | How to read concern results from React components.     |
+| `docs/WILD_FUNCTION_GUIDE.md`  | Users with Record types       | `_()` hash key utility for Record path type safety.    |
+| `docs/TESTING_MOCK.md`         | Consumer test authors         | `@sladg/apex-state/testing` mock setup and API.        |
+| `docs/CLEAR_PATHS.md`          | Side-effect authors           | ClearPaths side effect architecture and implementation. |
 
-## Testing & QA
+## Testing
 
-| Document                          | Audience                  | Why you read it                                           |
-| --------------------------------- | ------------------------- | --------------------------------------------------------- |
-| `docs/WRITING_TESTS.md`           | Contributors              | Test patterns, setup, assertions.                         |
-| `docs/TEST_SCENARIOS.md`          | QA / regression reviewers | Detailed P0 test scenarios and edge cases.                |
-| `docs/TEST_CASES_INVENTORY.md`    | QA / regression reviewers | Complete test map organized by directory.                 |
-| `docs/P0_TEST_COVERAGE_REPORT.md` | QA / regression reviewers | Snapshot of P0 coverage and scenarios; rerun guidance.    |
-| `docs/REFACTORING_EXAMPLE.md`     | Contributors              | Before/after patterns for converting tests to real store. |
+| Document                | Audience     | Why you read it                    |
+| ----------------------- | ------------ | ---------------------------------- |
+| `docs/WRITING_TESTS.md` | Contributors | Test patterns, setup, assertions. |
 
-## Decision Records & Analysis
+## Proposed Features
 
-| Document                                 | Audience          | Why you read it                                                           |
-| ---------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
-| `docs/ARCHITECTURE_CONCERNS_CRITICAL.md` | Core maintainers  | Deep analysis of valtio execution order and why two-proxy pattern exists. |
-| `docs/VALTIO_REACTIVE_ANALYSIS.md`       | Core maintainers  | Technical decision document for valtio-reactive adoption.                 |
-| `docs/DOCS_AUDIT.md`                     | Meta/housekeeping | Tracks what was deleted, updated, and moved during doc cleanup.           |
+| Document                    | Audience         | Why you read it                                           |
+| --------------------------- | ---------------- | --------------------------------------------------------- |
+| `docs/VALUE_LOGIC_ENGINE.md` | Core maintainers | Proposed ValueLogic engine for conditional value selection. |
+| `docs/FORMULA_ENGINE.md`    | Core maintainers | Proposed formula engine for computed expressions.          |
+
+## WASM Architecture
+
+| Document                    | Audience         | Why you read it                                       |
+| --------------------------- | ---------------- | ----------------------------------------------------- |
+| `docs/WASM_ARCHITECTURE.md` | Core maintainers | JS/WASM boundary spec, pipeline, ownership, data flow. |
 
 ## Original Requirements (Historical)
 

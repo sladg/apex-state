@@ -13,12 +13,6 @@
  *
  * Uses v2 fixtures (BasicTestState, DeeplyNestedState, SyncFlipState) instead
  * of the legacy 15-level EcommerceCatalog fixture.
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ REPLACES:                                                          │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │ tests/integration/ecommerce-catalog.test.tsx        (ENTIRE FILE)  │
- * └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { describe, expect, it } from 'vitest'

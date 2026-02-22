@@ -100,7 +100,7 @@ const { storeInstance } = mountStore(
       price: {
         validationState: { schema: z.number().min(0) },
         dynamicTooltip: { template: 'Price: ${{price}}' },
-        disabledWhen: { condition: { IS_EQUAL: ['status', 'locked'] } }
+        disabledWhen: { boolLogic: { IS_EQUAL: ['status', 'locked'] } }
       }
     }
   }
@@ -126,7 +126,7 @@ const { storeInstance } = mountStore(
     concerns: {
       field1: {
         // Depends on field2's value
-        disabledWhen: { condition: { IS_EQUAL: ['field2', 'locked'] } },
+        disabledWhen: { boolLogic: { IS_EQUAL: ['field2', 'locked'] } },
         dynamicTooltip: { template: 'Field1: {{field1}}, Field2: {{field2}}' }
       }
     }
@@ -229,7 +229,7 @@ Conditionally disable field based on state.
 concerns: {
   field: {
     disabledWhen: {
-      condition: { IS_EQUAL: ['status', 'locked'] }
+      boolLogic: { IS_EQUAL: ['status', 'locked'] }
     }
   }
 }
@@ -245,7 +245,7 @@ Conditionally make field readonly.
 concerns: {
   field: {
     readonlyWhen: {
-      condition: { IS_EQUAL: ['mode', 'view'] }
+      boolLogic: { IS_EQUAL: ['mode', 'view'] }
     }
   }
 }
@@ -261,7 +261,7 @@ Conditionally show/hide field.
 concerns: {
   field: {
     visibleWhen: {
-      condition: { IS_EQUAL: ['showAdvanced', true] }
+      boolLogic: { IS_EQUAL: ['showAdvanced', true] }
     }
   }
 }
@@ -385,7 +385,7 @@ it('disables field based on status', async () => {
     {
       concerns: {
         price: {
-          disabledWhen: { condition: { IS_EQUAL: ['status', 'locked'] } }
+          disabledWhen: { boolLogic: { IS_EQUAL: ['status', 'locked'] } }
         }
       }
     }

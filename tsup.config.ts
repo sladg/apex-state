@@ -5,7 +5,7 @@ export default defineConfig({
   entry: ['src/index.ts', 'src/testing/index.ts'],
   format: ['esm'],
   dts: true,
-  splitting: false,
+  splitting: true,
   clean: true,
   sourcemap: true,
   platform: 'browser',

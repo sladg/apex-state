@@ -10,7 +10,13 @@ import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src/store/create-store'
 import type { GenericMeta } from '../../src/types'
-import { mountStore } from '../../tests/utils/react'
+import {
+  deepGetterFixtures,
+  deeplyNestedFixtures,
+  listenerTestFixtures,
+} from '../mocks/fixtures'
+import type { DeeplyNestedState, ListenerTestState } from '../mocks/types'
+import { mountStore } from '../utils/react'
 
 describe('createGenericStore', () => {
   it('should create a store with Provider', () => {
@@ -96,6 +102,47 @@ describe('createGenericStore', () => {
     mountStore(<div>Empty</div>, store, {})
 
     expect(screen.getByText('Empty')).toBeTruthy()
+  })
+
+  it('should not mutate the original initialState object', () => {
+    const store = createGenericStore<DeeplyNestedState>()
+    const originalState = deeplyNestedFixtures.initial
+
+    const snapshotBefore = JSON.stringify(originalState)
+
+    mountStore(store, originalState)
+
+    // Original object must be untouched after Provider consumed it
+    expect(JSON.stringify(originalState)).toBe(snapshotBefore)
+    expect(originalState.level1.value).toBe('L1')
+    expect(originalState.level1.level2.level3.level4.level5.value).toBe('L5')
+  })
+
+  it('should not share references between initialState and store proxy', () => {
+    const store = createGenericStore<ListenerTestState>()
+    const originalState = listenerTestFixtures.initial
+
+    const { storeInstance } = mountStore(store, originalState)
+
+    // Mutate store proxy — original must not be affected
+    storeInstance.state.user.name = 'Bob'
+    storeInstance.state.callCount = 99
+
+    expect(originalState.user.name).toBe('Alice')
+    expect(originalState.callCount).toBe(0)
+  })
+
+  it('should not mutate initialState with getters', () => {
+    const store = createGenericStore<typeof deepGetterFixtures.standard>()
+    const originalState = deepGetterFixtures.standard
+
+    mountStore(store, originalState)
+
+    // Original getters must still work correctly
+    expect(originalState.a).toBe(1)
+    expect(originalState.summary).toBe('root:1')
+    expect(originalState.l1.b).toBe(2)
+    expect(originalState.l1.doubled).toBe(4)
   })
 
   it('should support custom meta type', () => {

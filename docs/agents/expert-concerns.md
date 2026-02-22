@@ -52,9 +52,9 @@ interface BaseConcernProps<STATE, PATH> {
 | Name | Config | Returns | Implementation |
 | ---- | ------ | ------- | -------------- |
 | `validationState` | `{ schema: ZodSchema }` | `{ isError, errors }` | `src/concerns/prebuilts/validationState.ts` |
-| `disabledWhen` | `{ condition: BoolLogic }` | `boolean` | `src/concerns/prebuilts/disabledWhen.ts` |
-| `visibleWhen` | `{ condition: BoolLogic }` | `boolean` | `src/concerns/prebuilts/visibleWhen.ts` |
-| `readonlyWhen` | `{ condition: BoolLogic }` | `boolean` | `src/concerns/prebuilts/readonlyWhen.ts` |
+| `disabledWhen` | `{ boolLogic: BoolLogic }` | `boolean` | `src/concerns/prebuilts/disabledWhen.ts` |
+| `visibleWhen` | `{ boolLogic: BoolLogic }` | `boolean` | `src/concerns/prebuilts/visibleWhen.ts` |
+| `readonlyWhen` | `{ boolLogic: BoolLogic }` | `boolean` | `src/concerns/prebuilts/readonlyWhen.ts` |
 | `dynamicLabel` | `{ template: string }` | `string` | `src/concerns/prebuilts/dynamicLabel.ts` |
 | `dynamicTooltip` | `{ template: string }` | `string` | `src/concerns/prebuilts/dynamicTooltip.ts` |
 | `dynamicPlaceholder` | `{ template: string }` | `string` | `src/concerns/prebuilts/dynamicPlaceholder.ts` |
