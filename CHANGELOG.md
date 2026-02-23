@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.6.2](https://github.com/sladg/apex-state/compare/v3.6.1...v3.6.2)
+
+* fix: fix relative links in llms.txt and add llms-full.txt reference [[f4f49768671f515764d05ecbfbd5b1230ff9f967](https://github.com/sladg/apex-state/commit/f4f49768671f515764d05ecbfbd5b1230ff9f967))]
+
+
 ## [v3.6.1](https://github.com/sladg/apex-state/compare/v3.6.0...v3.6.1)
 
 * docs: document BoolLogic shorthand and fix stale file paths [[4329b44ea5ce6e7b3639099586021000c674d478](https://github.com/sladg/apex-state/commit/4329b44ea5ce6e7b3639099586021000c674d478))]
@@ -139,6 +144,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix: fix relative links in llms.txt and add llms-full.txt reference [[f4f49768671f515764d05ecbfbd5b1230ff9f967](https://github.com/sladg/apex-state/commit/f4f49768671f515764d05ecbfbd5b1230ff9f967))]
 * docs: document BoolLogic shorthand and fix stale file paths [[4329b44ea5ce6e7b3639099586021000c674d478](https://github.com/sladg/apex-state/commit/4329b44ea5ce6e7b3639099586021000c674d478))]
 * feat: add shorthand [path, value] syntax to BoolLogic with full test coverage [[d07d33a361d8531d1ee158fd14cd53f5ec13be27](https://github.com/sladg/apex-state/commit/d07d33a361d8531d1ee158fd14cd53f5ec13be27))]
 * chore: deduplicate benchmark fixtures and remove dead test code [[08cc7a073b0d10ea3bea3da09c391a60fce29099](https://github.com/sladg/apex-state/commit/08cc7a073b0d10ea3bea3da09c391a60fce29099))]
