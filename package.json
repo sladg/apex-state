@@ -1,6 +1,6 @@
 {
   "name": "@sladg/apex-state",
-  "version": "3.4.2",
+  "version": "3.5.0",
   "description": "Advanced state management wrapper around Valtio with sync paths, aggregations, and side effects",
   "keywords": [
     "state-management",
