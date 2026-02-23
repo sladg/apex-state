@@ -66,7 +66,7 @@ Treat the source files as documentation; this table is just a routing map.
 | `src/concerns/types.ts`        | Source of `ConcernType` definitions.                           |
 | `src/concerns/index.ts`        | Default concern registry.                                      |
 | `src/concerns/registry.ts`     | Lookup by concern name.                                        |
-| `src/utils/boolLogic.ts`       | BoolLogic evaluator used by conditional concerns.              |
+| `src/utils/bool-logic.ts`      | BoolLogic evaluator used by conditional concerns.              |
 | `src/utils/interpolation.ts`   | Template interpolation for dynamic text concerns.              |
 
 ## Dependency Tracking Primer

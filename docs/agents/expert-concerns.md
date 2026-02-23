@@ -4,7 +4,7 @@ You are an expert in the apex-state concerns system — the reactive computation
 
 ## Your Domain
 
-You own everything under `src/concerns/` and `src/utils/boolLogic.ts`, `src/utils/interpolation.ts`. You understand how `valtio-reactive`'s `effect()` provides automatic dependency tracking and how the two-proxy pattern prevents infinite loops.
+You own everything under `src/concerns/` and `src/utils/bool-logic.ts`, `src/utils/interpolation.ts`. You understand how `valtio-reactive`'s `effect()` provides automatic dependency tracking and how the two-proxy pattern prevents infinite loops.
 
 ## Architecture Context
 
@@ -27,9 +27,9 @@ User writes to store.state (valtio proxy)
 | `src/concerns/registry.ts` | Lookup concern by name from the concerns array |
 | `src/concerns/index.ts` | Default concerns array exported to consumers |
 | `src/concerns/prebuilts/*.ts` | All built-in concern implementations |
-| `src/utils/boolLogic.ts` | `evaluateBoolLogic()` — evaluator for `BoolLogic<STATE>` DSL |
+| `src/utils/bool-logic.ts` | `evaluateBoolLogic()` — evaluator for `BoolLogic<STATE>` DSL |
 | `src/utils/interpolation.ts` | `interpolateTemplate()`, `extractPlaceholders()` |
-| `src/types/boolLogic.ts` | `BoolLogic<STATE>` type definition — all available operators |
+| `src/types/bool-logic.ts` | `BoolLogic<STATE>` type definition — all available operators |
 
 ## Concern Interface
 
@@ -61,8 +61,19 @@ interface BaseConcernProps<STATE, PATH> {
 
 ## BoolLogic Operators
 
-Available in `src/types/boolLogic.ts`:
+Available in `src/types/bool-logic.ts`:
 `IS_EQUAL`, `EXISTS`, `IS_EMPTY`, `AND`, `OR`, `NOT`, `GT`, `LT`, `GTE`, `LTE`, `IN`
+
+**Shorthand**: `['path', value]` is syntactic sugar for `{ IS_EQUAL: ['path', value] }` and works anywhere a `BoolLogic` node is accepted — as a top-level expression, or as a child of `AND`/`OR`/`NOT`.
+
+```ts
+// These are equivalent:
+{ IS_EQUAL: ['user.role', 'admin'] }
+['user.role', 'admin']
+
+// Shorthand inside compound operators:
+{ AND: [['user.role', 'admin'], { EXISTS: 'user.email' }] }
+```
 
 There is no `HAS_CONCERN` operator.
 
@@ -99,7 +110,7 @@ There is no `HAS_CONCERN` operator.
 - Unit tests: `tests/concerns/*.test.ts`
 - Integration: `tests/integration/concerns-ui.test.tsx`, `tests/integration/form-validation.test.tsx`
 - Test utilities: `tests/concerns/test-utils.ts`
-- BoolLogic tests: `tests/utils/boolLogic.test.ts`
+- BoolLogic tests: `tests/utils/bool-logic.test.ts` (TS runtime), `tests/integration/bool-logic-wasm-boundary.test.ts` (WASM boundary)
 - Interpolation tests: `tests/utils/interpolation.test.ts`
 
 ## Rules

@@ -20,10 +20,14 @@ const FormFields = () => {
   store.useConcerns('form', {
     'user.email': {
       validationState: { schema: z.string().email() },
-      disabledWhen: { boolLogic: { IS_EQUAL: ['tosAccepted', false] } },
+      // Shorthand [path, value] is sugar for { IS_EQUAL: ['path', value] }
+      disabledWhen: { boolLogic: ['tosAccepted', false] },
       visibleWhen: {
         boolLogic: {
-          AND: [{ EXISTS: 'user.name' }, { IS_EQUAL: ['step', 2] }],
+          AND: [
+            { EXISTS: 'user.name' },
+            ['step', 2], // shorthand inside compound operator
+          ],
         },
       },
     },
@@ -33,6 +37,7 @@ const FormFields = () => {
   //   visibleWhen, dynamicLabel, dynamicTooltip, dynamicPlaceholder
   //
   // BoolLogic operators: IS_EQUAL, EXISTS, IS_EMPTY, GT, LT, GTE, LTE, IN, AND, OR, NOT
+  // BoolLogic shorthand: ['path', value]  →  { IS_EQUAL: ['path', value] }
 
   return null
 }
