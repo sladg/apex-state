@@ -43,7 +43,14 @@
 
 import type { HASH_KEY } from './hash-key'
 
-type Primitive = string | number | boolean | bigint | symbol | null | undefined
+export type Primitive =
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
 
 type IsAny<T> = 0 extends 1 & T ? true : false
 

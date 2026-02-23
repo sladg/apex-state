@@ -1,4 +1,4 @@
-import type { BoolLogic, ComparableValue } from '../types'
+import type { BoolLogic } from '../types'
 import { dot } from './dot'
 import { is } from './is'
 
@@ -33,9 +33,15 @@ export const evaluateBoolLogic = <STATE extends object>(
   logic: BoolLogic<STATE>,
   state: STATE,
 ): boolean => {
+  // Shorthand tuple: [path, value]
+  if (Array.isArray(logic)) {
+    const [path, expected] = logic as [string, unknown]
+    return dot.get__unsafe(state, path) === expected
+  }
+
   // Equality check
   if ('IS_EQUAL' in logic) {
-    const [path, expected] = logic.IS_EQUAL
+    const [path, expected] = logic.IS_EQUAL as [string, unknown]
     return dot.get__unsafe(state, path) === expected
   }
 
@@ -68,8 +74,8 @@ export const evaluateBoolLogic = <STATE extends object>(
 
   // Inclusion check
   if ('IN' in logic) {
-    const [path, allowed] = logic.IN
-    return allowed.includes(dot.get__unsafe(state, path) as ComparableValue)
+    const [path, allowed] = logic.IN as [string, unknown[]]
+    return allowed.includes(dot.get__unsafe(state, path))
   }
 
   return false

@@ -6,11 +6,41 @@
  */
 
 import type { DeepKey, DefaultDepth } from './deep-key'
+import type { DeepKeyFiltered } from './deep-key-filtered'
+import type { DeepValue } from './deep-value'
 
 /**
- * Primitive types that can be compared in BoolLogic expressions
+ * Path-value pair distributed over all valid paths.
+ * Each path is paired with its resolved value type, ensuring type safety.
+ * The distribution happens inside the tuple, not at the union level —
+ * this keeps BoolLogic's top-level union flat so `in` narrowing works.
  */
-export type ComparableValue = string | number | boolean | null | undefined
+type PathValuePair<STATE, Depth extends number> =
+  DeepKey<STATE, Depth> extends infer P
+    ? P extends string
+      ? [P, DeepValue<STATE, P>]
+      : never
+    : never
+
+/**
+ * Path-value array pair for IN operator.
+ * Same distribution as PathValuePair but with array values.
+ */
+type PathValueArrayPair<STATE, Depth extends number> =
+  DeepKey<STATE, Depth> extends infer P
+    ? P extends string
+      ? [P, DeepValue<STATE, P>[]]
+      : never
+    : never
+
+/**
+ * Paths that resolve to number, plus `.length` on array-valued paths.
+ * Allows GT/LT/GTE/LTE to compare against array lengths without
+ * polluting DeepKey with virtual paths.
+ */
+type NumericPaths<STATE, Depth extends number> =
+  | DeepKeyFiltered<STATE, number, Depth>
+  | `${DeepKeyFiltered<STATE, readonly unknown[], Depth>}.length`
 
 /**
  * Boolean logic DSL for conditional expressions
@@ -19,40 +49,48 @@ export type ComparableValue = string | number | boolean | null | undefined
  * Used by concerns (disabledWhen, visibleWhen) and side effects.
  *
  * Operators:
- * - IS_EQUAL: Compare path value to expected value
+ * - IS_EQUAL: Compare path value to expected value (value must match path type)
  * - EXISTS: Check if path value is not null/undefined
  * - IS_EMPTY: Check if path value is empty (string/array/object)
  * - AND/OR/NOT: Boolean combinators
- * - GT/LT/GTE/LTE: Numeric comparisons
- * - IN: Check if path value is in allowed list
+ * - GT/LT/GTE/LTE: Numeric comparisons (only on number paths or array.length)
+ * - IN: Check if path value is in allowed list (values must match path type)
+ * - Shorthand: [path, value] tuple as shorthand for IS_EQUAL
  *
  * @example
  * ```typescript
  * // Simple equality check
  * const isAdmin: BoolLogic<State> = { IS_EQUAL: ['user.role', 'admin'] }
  *
- * // Combined conditions
+ * // Shorthand equality (equivalent to IS_EQUAL)
+ * const isAdmin2: BoolLogic<State> = ['user.role', 'admin']
+ *
+ * // Combined conditions with shorthand
  * const canEdit: BoolLogic<State> = {
  *   AND: [
- *     { IS_EQUAL: ['user.role', 'editor'] },
+ *     ['user.role', 'editor'],
  *     { EXISTS: 'document.id' },
- *     { NOT: { IS_EQUAL: ['document.status', 'locked'] } }
+ *     { NOT: ['document.status', 'locked'] }
  *   ]
  * }
  *
  * // Numeric comparison
  * const isExpensive: BoolLogic<State> = { GT: ['product.price', 100] }
+ *
+ * // Array length comparison
+ * const hasManyItems: BoolLogic<State> = { GT: ['cart.items.length', 5] }
  * ```
  */
 export type BoolLogic<STATE, Depth extends number = DefaultDepth> =
-  | { IS_EQUAL: [DeepKey<STATE, Depth>, ComparableValue] }
+  | { IS_EQUAL: PathValuePair<STATE, Depth> }
   | { EXISTS: DeepKey<STATE, Depth> }
   | { IS_EMPTY: DeepKey<STATE, Depth> }
   | { AND: BoolLogic<STATE, Depth>[] }
   | { OR: BoolLogic<STATE, Depth>[] }
   | { NOT: BoolLogic<STATE, Depth> }
-  | { GT: [DeepKey<STATE, Depth>, number] }
-  | { LT: [DeepKey<STATE, Depth>, number] }
-  | { GTE: [DeepKey<STATE, Depth>, number] }
-  | { LTE: [DeepKey<STATE, Depth>, number] }
-  | { IN: [DeepKey<STATE, Depth>, ComparableValue[]] }
+  | { GT: [NumericPaths<STATE, Depth>, number] }
+  | { LT: [NumericPaths<STATE, Depth>, number] }
+  | { GTE: [NumericPaths<STATE, Depth>, number] }
+  | { LTE: [NumericPaths<STATE, Depth>, number] }
+  | { IN: PathValueArrayPair<STATE, Depth> }
+  | PathValuePair<STATE, Depth>

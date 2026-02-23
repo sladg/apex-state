@@ -5,8 +5,9 @@
 //!   using serde tuple variants, enabling high-performance WASM-based condition checking.
 //! - `BoolLogicRegistry`: Stores registered BoolLogic expressions with metadata.
 //!
-//! The enum uses externally tagged representation (serde default) which matches
-//! the JavaScript format: `{ "OPERATOR": [args] }` without requiring transformation.
+//! Two JSON formats are accepted:
+//! - Named operators: `{ "IS_EQUAL": ["path", value] }` (externally tagged)
+//! - Shorthand (IS_EQUAL only): `["path", value]` — 2-element array, normalized to IsEqual
 
 use crate::intern::InternTable;
 use crate::rev_index::ReverseDependencyIndex;
@@ -22,9 +23,8 @@ use std::collections::{HashMap, HashSet};
 /// Boolean logic DSL for conditional expressions.
 ///
 /// Supports declarative condition checking against state paths.
-/// Uses externally tagged serde representation to match JS format directly:
-/// `{ "OPERATOR": [args] }`.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+/// Accepts two JSON formats (see module-level docs for details).
+#[derive(Serialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub(crate) enum BoolLogicNode {
     IsEqual(String, Value),
@@ -38,6 +38,72 @@ pub(crate) enum BoolLogicNode {
     Gte(String, f64),
     Lte(String, f64),
     In(String, Vec<Value>),
+}
+
+/// Private helper that derives Deserialize for the named-operator format.
+/// Used by BoolLogicNode's custom Deserialize to handle the object branch.
+#[derive(Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum BoolLogicNodeHelper {
+    IsEqual(String, Value),
+    Exists(String),
+    IsEmpty(String),
+    And(Vec<BoolLogicNode>),
+    Or(Vec<BoolLogicNode>),
+    Not(Box<BoolLogicNode>),
+    Gt(String, f64),
+    Lt(String, f64),
+    Gte(String, f64),
+    Lte(String, f64),
+    In(String, Vec<Value>),
+}
+
+impl BoolLogicNodeHelper {
+    fn into_node(self) -> BoolLogicNode {
+        match self {
+            Self::IsEqual(p, v) => BoolLogicNode::IsEqual(p, v),
+            Self::Exists(p) => BoolLogicNode::Exists(p),
+            Self::IsEmpty(p) => BoolLogicNode::IsEmpty(p),
+            Self::And(c) => BoolLogicNode::And(c),
+            Self::Or(c) => BoolLogicNode::Or(c),
+            Self::Not(c) => BoolLogicNode::Not(c),
+            Self::Gt(p, t) => BoolLogicNode::Gt(p, t),
+            Self::Lt(p, t) => BoolLogicNode::Lt(p, t),
+            Self::Gte(p, t) => BoolLogicNode::Gte(p, t),
+            Self::Lte(p, t) => BoolLogicNode::Lte(p, t),
+            Self::In(p, a) => BoolLogicNode::In(p, a),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BoolLogicNode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = Value::deserialize(deserializer)?;
+        match raw {
+            // Shorthand: ["path", value] — normalized to IsEqual
+            Value::Array(ref arr) if arr.len() == 2 => {
+                if let Value::String(ref path) = arr[0] {
+                    Ok(BoolLogicNode::IsEqual(path.clone(), arr[1].clone()))
+                } else {
+                    Err(serde::de::Error::custom(
+                        "shorthand first element must be a string path",
+                    ))
+                }
+            }
+            // Named operators: {"IS_EQUAL": [...], ...}
+            Value::Object(_) => {
+                let helper: BoolLogicNodeHelper =
+                    serde_json::from_value(raw).map_err(serde::de::Error::custom)?;
+                Ok(helper.into_node())
+            }
+            _ => Err(serde::de::Error::custom(
+                "BoolLogicNode must be an object or a 2-element array shorthand",
+            )),
+        }
+    }
 }
 
 impl BoolLogicNode {
@@ -72,22 +138,18 @@ impl BoolLogicNode {
             BoolLogicNode::Or(conditions) => conditions.iter().any(|c| c.evaluate_value(state)),
             BoolLogicNode::Not(condition) => !condition.evaluate_value(state),
 
-            BoolLogicNode::Gt(path, threshold) => matches!(
-                get_path_value(state, path),
-                Some(ValueRepr::Number(n)) if n > threshold
-            ),
-            BoolLogicNode::Lt(path, threshold) => matches!(
-                get_path_value(state, path),
-                Some(ValueRepr::Number(n)) if n < threshold
-            ),
-            BoolLogicNode::Gte(path, threshold) => matches!(
-                get_path_value(state, path),
-                Some(ValueRepr::Number(n)) if n >= threshold
-            ),
-            BoolLogicNode::Lte(path, threshold) => matches!(
-                get_path_value(state, path),
-                Some(ValueRepr::Number(n)) if n <= threshold
-            ),
+            BoolLogicNode::Gt(path, threshold) => {
+                resolve_numeric(state, path).is_some_and(|n| n > *threshold)
+            }
+            BoolLogicNode::Lt(path, threshold) => {
+                resolve_numeric(state, path).is_some_and(|n| n < *threshold)
+            }
+            BoolLogicNode::Gte(path, threshold) => {
+                resolve_numeric(state, path).is_some_and(|n| n >= *threshold)
+            }
+            BoolLogicNode::Lte(path, threshold) => {
+                resolve_numeric(state, path).is_some_and(|n| n <= *threshold)
+            }
 
             BoolLogicNode::In(path, allowed) => match get_path_value(state, path) {
                 Some(value) => allowed.contains(&value_repr_to_json(value)),
@@ -149,6 +211,25 @@ pub(crate) fn get_path_value<'a>(state: &'a ValueRepr, path: &str) -> Option<&'a
         }
     }
     Some(current)
+}
+
+/// Resolve a path to a numeric value, supporting virtual `.length` on arrays.
+///
+/// Handles two cases:
+/// - Regular number paths: `user.age` → the f64 value
+/// - Array length paths: `items.length` → array length as f64
+fn resolve_numeric(state: &ValueRepr, path: &str) -> Option<f64> {
+    if let Some(parent_path) = path.strip_suffix(".length") {
+        let parent = get_path_value(state, parent_path)?;
+        if let ValueRepr::Array(arr) = parent {
+            return Some(arr.len() as f64);
+        }
+        return None;
+    }
+    match get_path_value(state, path)? {
+        ValueRepr::Number(n) => Some(*n),
+        _ => None,
+    }
 }
 
 /// Check if a ValueRepr is considered "empty".
@@ -1179,5 +1260,159 @@ mod tests {
         let state = make_state();
         assert!(get_path_value(&state, "user.nonexistent").is_none());
         assert!(get_path_value(&state, "missing.path.here").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Shorthand ["path", value] deserialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_deserialize_shorthand_string() {
+        let logic: BoolLogicNode = serde_json::from_value(json!(["user.role", "admin"])).unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::IsEqual("user.role".into(), json!("admin"))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_number() {
+        let logic: BoolLogicNode = serde_json::from_value(json!(["user.age", 25])).unwrap();
+        assert_eq!(logic, BoolLogicNode::IsEqual("user.age".into(), json!(25)));
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_boolean() {
+        let logic: BoolLogicNode = serde_json::from_value(json!(["user.active", true])).unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::IsEqual("user.active".into(), json!(true))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_null() {
+        let logic: BoolLogicNode = serde_json::from_value(json!(["user.deleted", null])).unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::IsEqual("user.deleted".into(), json!(null))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_normalizes_to_is_equal_on_serialize() {
+        // Shorthand deserializes to IsEqual — serializes back as IS_EQUAL (one-way normalization)
+        let logic: BoolLogicNode = serde_json::from_value(json!(["user.role", "admin"])).unwrap();
+        assert_eq!(
+            serde_json::to_value(&logic).unwrap(),
+            json!({"IS_EQUAL": ["user.role", "admin"]})
+        );
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_non_string_path_returns_error() {
+        let result: Result<BoolLogicNode, _> = serde_json::from_value(json!([42, "admin"]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_wrong_length_returns_error() {
+        let result: Result<BoolLogicNode, _> = serde_json::from_value(json!(["user.role"]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_as_and_child() {
+        // AND children can mix shorthand and named operators
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "AND": [
+                ["user.role", "admin"],
+                {"EXISTS": "user.email"}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::And(vec![
+                BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+                BoolLogicNode::Exists("user.email".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_as_or_child() {
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "OR": [
+                ["user.role", "admin"],
+                ["user.role", "editor"]
+            ]
+        }))
+        .unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::Or(vec![
+                BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
+                BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_deserialize_shorthand_as_not_child() {
+        let logic: BoolLogicNode =
+            serde_json::from_value(json!({"NOT": ["user.role", "guest"]})).unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::Not(Box::new(BoolLogicNode::IsEqual(
+                "user.role".into(),
+                json!("guest")
+            )))
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Shorthand evaluation (mirrors TypeScript evaluateBoolLogic shorthand tests)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_eval_shorthand_string_match() {
+        let state = make_state();
+        let logic = BoolLogicNode::IsEqual("user.role".into(), json!("admin")); // deserialized from shorthand
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_shorthand_string_no_match() {
+        let state = make_state();
+        let logic = BoolLogicNode::IsEqual("user.role".into(), json!("editor"));
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_shorthand_nested_path() {
+        let state = make_state();
+        let logic = BoolLogicNode::IsEqual("user.profile.verified".into(), json!(true));
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_complex_with_shorthand_children() {
+        // Mirrors TypeScript "complex AND using shorthand for equality checks"
+        // Shorthand children are deserialized from ["path", value] and evaluated as IsEqual
+        let state = make_state();
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "AND": [
+                {"OR": [["user.role", "admin"], ["user.role", "editor"]]},
+                {"GTE": ["user.age", 18]},
+                {"GT": ["user.score", 100]},
+                {"NOT": {"IS_EMPTY": "user.tags"}},
+                {"IN": ["user.role", ["admin", "editor", "mod"]]},
+                {"EXISTS": "document.id"},
+                ["user.profile.verified", true]
+            ]
+        }))
+        .unwrap();
+        assert!(logic.evaluate_value(&state));
     }
 }
