@@ -110,21 +110,3 @@ export interface DeeplyNestedState {
     }
   }
 }
-
-/**
- * E-commerce order state for benchmark and combined-effects tests
- */
-export interface OrderState {
-  orders: Record<
-    string,
-    {
-      currency: string
-      confirmed: boolean
-      status: string
-      subtotal: number
-      tax: number
-      total: number
-    }
-  >
-  invoices: Record<string, { pending: boolean }>
-}

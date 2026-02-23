@@ -8,140 +8,316 @@
  * - Scaling with side effects
  *
  * These metrics establish the foundation for all other performance targets.
+ * Uses createWasmPipeline() directly (no React, no store overhead).
  */
 
 import { bench, describe } from 'vitest'
 
+import { type Change } from '../../src/wasm/bridge'
+import { loadWasm } from '../../src/wasm/lifecycle'
+import {
+  BENCH_OPTIONS,
+  buildBatch,
+  createBarePipeline,
+  createFlipPipeline,
+  createListenerPipeline,
+  createSyncPipeline,
+} from './helpers'
+
+// Load WASM before benchmarks run
+await loadWasm()
+
+// ---------------------------------------------------------------------------
+// Basic pipeline latency
+// ---------------------------------------------------------------------------
+
 describe('WASM Pipeline: Baseline & Scaling', () => {
-  /**
-   * MIGRATION: Replaces v1 benchmarks
-   *   ✅ tests/benchmarking/pipeline.bench.spec.ts — processChanges simple cases (lines 315-322)
-   *   ✅ tests/benchmarking/wasm-pipeline.bench.spec.ts — single change baseline (if exists)
-   */
   describe('Basic pipeline latency', () => {
-    bench('single change through pipeline (no side effects)', () => {
-      // Setup: createStore(), no useSideEffects or listeners registered
-      // Measure: Call useFieldStore('fieldA').setValue('new-value')
-      // Includes: JS field value update + WASM processChanges round-trip
-      // Assert: Should be < 2ms (includes boundary crossing)
-    })
+    const barePipeline = createBarePipeline(10)
+    const syncPipeline = createSyncPipeline(1)
+    const flipPipeline = createFlipPipeline(1)
+    const listenerPipeline = createListenerPipeline(1)
 
-    bench('single change with sync path', () => {
-      // Setup: createStore(), call useSideEffects('sync', { syncPaths: [[...]] })
-      // Register via TypeScript - actual WASM receives registration
-      // Measure: setValue on source field triggers sync
-      // Includes: Full JS→WASM→JS round trip including sync evaluation
-      // Assert: Minimal overhead (sync should be cheap)
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 560,889      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'single change through pipeline (no side effects)',
+      () => {
+        // Measure: processChanges round-trip for a single field change
+        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        barePipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-    bench('single change with flip path', () => {
-      // Setup: createStore(), call useSideEffects('flip', { flipPaths: [[...]] })
-      // Measure: setValue on source bool, flip target evaluated in WASM
-      // Includes: Full round trip for boolean inversion
-      // Assert: Minimal overhead (flip is simple operation)
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 548,419      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'single change with sync path',
+      () => {
+        // Measure: processChanges with sync graph evaluation
+        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        syncPipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-    bench('single change with listener', () => {
-      // Setup: createStore(), call useSideEffects('listener', {})
-      // Register listener via TypeScript
-      // Measure: setValue triggers listener dispatch in WASM + handler execution
-      // Includes: Listener routing, handler call, any changes produced by listener
-      // Assert: Overhead depends on handler complexity
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 803,108      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'single change with flip path',
+      () => {
+        // Measure: processChanges with flip graph evaluation
+        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        flipPipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 549,017      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'single change with listener',
+      () => {
+        // Measure: processChanges with listener routing + execution plan
+        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        listenerPipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  /**
-   * MIGRATION: Replaces v1 benchmarks
-   *   ✅ tests/benchmarking/pipeline.bench.spec.ts — processChanges batch tests (lines 335-347)
-   *   ✅ tests/benchmarking/wasm-vs-js-realworld.bench.spec.ts — batching efficiency (lines 202-210)
-   */
+  // ---------------------------------------------------------------------------
+  // Batched changes
+  // ---------------------------------------------------------------------------
+
   describe('Batched changes (the optimization)', () => {
-    bench('batch of 10 changes through pipeline', () => {
-      // Setup: Store with effects, use useJitStore().setChanges()
-      // Call: setChanges([change1, change2, ..., change10])
-      // Measure: Time from setChanges call to all processed + listeners called
-      // Includes: Single WASM round-trip for all 10 changes (not 10 separate calls)
-      // Compare: 10 individual setValue calls vs single setChanges batch
-      // Assert: Batching should be significantly faster (< 3x single)
-    })
+    const batchPipeline = (() => {
+      const p = createBarePipeline(1000)
+      p.registerSideEffects({
+        registration_id: 'bench',
+        sync_pairs: [['field_0', 'field_1']],
+      })
+      return p
+    })()
 
-    bench('batch of 50 changes', () => {
-      // Setup: Store with effects
-      // Call: useJitStore().setChanges([50 changes])
-      // Measure: Total time for single WASM round trip processing all
-      // Assert: Should scale sub-linearly (amortizes boundary crossing cost)
-    })
+    const batch10 = buildBatch(10)
+    const batch50 = buildBatch(50)
+    const batch100 = buildBatch(100)
+    const batch1000 = buildBatch(1000)
 
-    bench('batch of 100 changes', () => {
-      // Setup: 100 changes via setChanges
-      // Measure: Single batch processing time
-      // Assert: Should be efficient (batching benefit)
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 61,502       | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'batch of 10 changes through pipeline',
+      () => {
+        // Single WASM round-trip for all 10 changes
+        batchPipeline.processChanges(batch10)
+      },
+      BENCH_OPTIONS,
+    )
 
-    bench('batch of 1000 changes', () => {
-      // Setup: Large batch via setChanges
-      // Measure: Time and memory for single WASM round-trip
-      // Assert: Should complete in reasonable time (seconds not minutes)
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 18,688       | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'batch of 50 changes',
+      () => {
+        batchPipeline.processChanges(batch50)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 10,119       | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'batch of 100 changes',
+      () => {
+        batchPipeline.processChanges(batch100)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 1,032        | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'batch of 1000 changes',
+      () => {
+        batchPipeline.processChanges(batch1000)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  /**
-   * MIGRATION: Replaces v1 benchmarks
-   *   ✅ tests/benchmarking/pipeline.bench.spec.ts — processChanges scaling (lines 314-409, implicit)
-   *   ✅ tests/benchmarking/wasm-pipeline.bench.spec.ts — field count scaling (if exists)
-   */
+  // ---------------------------------------------------------------------------
+  // Scaling with state size
+  // ---------------------------------------------------------------------------
+
   describe('Scaling with state size', () => {
-    bench('processChanges on small state (10 items)', () => {
-      // Setup: State with 10 items total
-      // Change: One field
-      // Measure: Pipeline execution time
-      // Assert: Baseline
-    })
+    const smallPipeline = createBarePipeline(10)
+    const mediumPipeline = createBarePipeline(1_000)
+    const largePipeline = createBarePipeline(100_000)
 
-    bench('processChanges on medium state (1000 items)', () => {
-      // Setup: State with 1000 items
-      // Change: One field
-      // Measure: Time
-      // Assert: Should be same (O(1) lookup)
-    })
+    const singleChange: Change[] = [{ path: 'field_0', value: 'updated' }]
 
-    bench('processChanges on large state (100,000 items)', () => {
-      // Setup: Massive state
-      // Change: One field via hashmap
-      // Measure: Time
-      // Assert: Should still be O(1) constant
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 789,676      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'processChanges on small state (10 items)',
+      () => {
+        smallPipeline.processChanges(singleChange)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 765,385      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'processChanges on medium state (1000 items)',
+      () => {
+        mediumPipeline.processChanges(singleChange)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 784,546      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'processChanges on large state (100,000 items)',
+      () => {
+        largePipeline.processChanges(singleChange)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  /**
-   * MIGRATION: Replaces v1 benchmarks
-   *   ✅ tests/benchmarking/pipeline.bench.spec.ts — sync/flip scaling (lines 324-408)
-   *   ✅ tests/benchmarking/wasm-vs-js-realworld.bench.spec.ts — listener scaling (lines 235-327)
-   */
+  // ---------------------------------------------------------------------------
+  // Scaling with side effects
+  // ---------------------------------------------------------------------------
+
   describe('Scaling with side effects', () => {
-    bench('processChanges with 10 side effects matching', () => {
-      // Setup: 10 sync pairs, change affects all
-      // Measure: Time to evaluate all 10
-      // Assert: Should be linear in matching effects
-    })
+    const sync10Pipeline = createSyncPipeline(10)
+    const sync100Pipeline = createSyncPipeline(100)
+    const listener10Pipeline = createListenerPipeline(10)
+    const listener100Pipeline = createListenerPipeline(100)
 
-    bench('processChanges with 100 side effects matching', () => {
-      // Setup: 100 effects, all triggered
-      // Measure: Time
-      // Assert: Linear scaling
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 802,849      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'processChanges with 10 side effects matching',
+      () => {
+        // Change field_0 which triggers sync to sync_target_0
+        const changes: Change[] = [{ path: 'field_0', value: 'sync-10' }]
+        sync10Pipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-    bench('processChanges with 10 listeners triggered', () => {
-      // Setup: 10 listeners all match
-      // Change: Field that triggers all
-      // Measure: Time to dispatch all listeners
-      // Assert: Linear with listener count
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 787,178      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'processChanges with 100 side effects matching',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'sync-100' }]
+        sync100Pipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-    bench('processChanges with 100 listeners triggered', () => {
-      // Setup: 100 listeners
-      // Measure: Time
-      // Assert: Should remain reasonable
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 799,217      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'processChanges with 10 listeners triggered',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'listen-10' }]
+        listener10Pipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-22 | 792,481      | 4de0ee8 | baseline — initial measurement |
+     */
+    bench(
+      'processChanges with 100 listeners triggered',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'listen-100' }]
+        listener100Pipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 })

@@ -15,12 +15,13 @@ import { bench, describe } from 'vitest'
 
 import { type Change, createWasmPipeline } from '../../src/wasm/bridge'
 import { loadWasm } from '../../src/wasm/lifecycle'
+import { BENCH_OPTIONS } from './helpers'
 
 // Load WASM before benchmarks run
 await loadWasm()
 
 // ---------------------------------------------------------------------------
-// Helpers
+// File-specific helpers (aggregation-only, not shared)
 // ---------------------------------------------------------------------------
 
 /** Build state + aggregation_pairs for N sources, first `excludedCount` having excludeWhen. */
@@ -59,8 +60,6 @@ const createSetup = (sourceCount: number, excludedCount: number) => {
   })
   return pipeline
 }
-
-const BENCH_OPTIONS = { iterations: 50, warmupIterations: 5 }
 
 // ---------------------------------------------------------------------------
 // A. Registration (cold path — measures condition parsing overhead)

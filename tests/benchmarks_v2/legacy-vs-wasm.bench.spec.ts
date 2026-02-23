@@ -1,325 +1,472 @@
 /**
- * Benchmarks: Legacy JS vs WASM processChanges() — Full Side-Effect Suite
+ * Benchmarks: WASM Pipeline — Effect Types & Combinations
  *
- * Compares processChangesLegacy (JS-only) vs processChangesWasm (Rust/WASM)
- * across every side effect type and their combinations.
+ * Restructured from Legacy JS vs WASM comparison to WASM-only benchmarks
+ * measuring each effect type and their combinations in isolation.
  *
- * Uses real createGenericStore and mountStore patterns.
- * Test data from tests/utils/mocks.ts — no inline builders.
+ * The Legacy JS pipeline requires full valtio store setup which is too heavy
+ * for standalone benchmarks. This suite focuses on WASM pipeline performance
+ * across all effect combinations: sync, flip, listeners, BoolLogic, and their
+ * combinations.
  *
- * MIGRATION: Replaces v1 benchmarks
- *   ✅ tests/benchmarking/pipeline.bench.spec.ts — processChanges perf (lines 315-408)
- *   ✅ tests/benchmarking/wasm-pipeline.bench.spec.ts — WASM pipeline perf
- *   ✅ tests/benchmarking/wasm-vs-js-realworld.bench.spec.ts — JS vs WASM comparison
+ * Uses createWasmPipeline() directly (no React, no store overhead).
+ * Test data builders create state/pipelines once, only measure processChanges().
+ *
+ * NOTE: When implementing bench() calls, add a `@perf-history` comment block
+ * above each one. See CLAUDE.md § Benchmarks for the required table format.
  */
 
 import { bench, describe } from 'vitest'
+
+import { type Change, createWasmPipeline } from '../../src/wasm/bridge'
+import { loadWasm } from '../../src/wasm/lifecycle'
+import {
+  BENCH_OPTIONS,
+  createBarePipeline,
+  createBoolLogicPipeline,
+  createCombinedPipeline,
+  createFlipPipeline,
+  createListenerPipeline,
+  createSyncPipeline,
+} from './helpers'
+
+// Load WASM before benchmarks run
+await loadWasm()
+
+// ---------------------------------------------------------------------------
+// File-specific helpers (not shared — used only here)
+// ---------------------------------------------------------------------------
+
+/** Create E-commerce pipeline with 15 orders. */
+const createEcommercePipeline = () => {
+  const state: Record<string, unknown> = {}
+  // 15 orders: currency (synced), confirmed (boolean), invoice_pending (flip), audit (listener output)
+  for (let i = 0; i < 15; i++) {
+    state[`order_${i}_currency`] = 'USD'
+    state[`order_${i}_confirmed`] = false
+    state[`order_${i}_invoice_pending`] = true
+    state[`order_${i}_audit`] = ''
+  }
+  const pipeline = createWasmPipeline()
+  pipeline.shadowInit(state)
+
+  // Sync pairs: all orders to order_0 currency
+  const syncPairs: [string, string][] = []
+  for (let i = 1; i < 15; i++) {
+    syncPairs.push([`order_0_currency`, `order_${i}_currency`])
+  }
+
+  // Flip pairs: confirmed ↔ invoice_pending
+  const flipPairs: [string, string][] = []
+  for (let i = 0; i < 15; i++) {
+    flipPairs.push([`order_${i}_confirmed`, `order_${i}_invoice_pending`])
+  }
+
+  // Listeners: audit trail on each order
+  const listeners = []
+  for (let i = 0; i < 15; i++) {
+    listeners.push({
+      subscriber_id: i,
+      topic_path: `order_${i}_confirmed`,
+      scope_path: '',
+    })
+  }
+
+  pipeline.registerSideEffects({
+    registration_id: 'bench',
+    sync_pairs: syncPairs,
+    flip_pairs: flipPairs,
+    listeners,
+  })
+  return pipeline
+}
 
 // ---------------------------------------------------------------------------
 // Bare pipeline — no side effects registered
 // ---------------------------------------------------------------------------
 
-describe('bare pipeline processes single change without side effects', () => {
-  describe('Legacy JS', () => {
-    bench('single field change', () => {
-      // Setup: createGenericStore with useLegacyImplementation: true
-      // State: import from mocks.ts
-      // Trigger: setValue on one field
-      // Measure: processChangesLegacy round-trip
-    })
+describe('WASM Pipeline: Effect Types & Combinations', () => {
+  describe('Bare pipeline (no effects)', () => {
+    const pipeline = createBarePipeline(10)
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      'single field change (baseline reference)',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        pipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  describe('WASM', () => {
-    bench('single field change', () => {
-      // Setup: createGenericStore with useLegacyImplementation: false
-      // State: import from mocks.ts
-      // Trigger: setValue on one field
-      // Measure: processChangesWasm round-trip (includes boundary crossing)
-    })
-  })
-})
+  // ---------------------------------------------------------------------------
+  // Sync paths — bidirectional value propagation
+  // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Sync paths — bidirectional value propagation
-// ---------------------------------------------------------------------------
+  describe('Sync paths', () => {
+    const syncPipeline10 = createSyncPipeline(10)
+    const syncPipeline50 = createSyncPipeline(50)
 
-describe('sync paths propagate value changes across paired fields', () => {
-  describe('Legacy JS', () => {
-    bench('1 change triggers 10 sync pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: useSideEffects with 10 syncPaths pairs
-      // Trigger: setValue on one source field
-      // Measure: processChangesLegacy with sync graph traversal
-    })
-  })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change triggers 10 sync pairs',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        syncPipeline10.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-  describe('WASM', () => {
-    bench('1 change triggers 10 sync pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: useSideEffects with 10 syncPaths pairs
-      // Trigger: setValue on one source field
-      // Measure: processChangesWasm with pre-computed sync graph
-    })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Flip paths — inverse boolean propagation
-// ---------------------------------------------------------------------------
-
-describe('flip paths invert boolean values across paired fields', () => {
-  describe('Legacy JS', () => {
-    bench('1 change triggers 10 flip pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: useSideEffects with 10 flipPaths pairs
-      // Trigger: setValue on one boolean source
-      // Measure: processChangesLegacy with flip evaluation
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change triggers 50 sync pairs',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        syncPipeline50.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  describe('WASM', () => {
-    bench('1 change triggers 10 flip pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: useSideEffects with 10 flipPaths pairs
-      // Trigger: setValue on one boolean source
-      // Measure: processChangesWasm with pre-computed flip graph
-    })
-  })
-})
+  // ---------------------------------------------------------------------------
+  // Flip paths — inverse boolean propagation
+  // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Listeners — no-op handlers (dispatch overhead only)
-// ---------------------------------------------------------------------------
+  describe('Flip paths', () => {
+    const flipPipeline10 = createFlipPipeline(10)
+    const flipPipeline50 = createFlipPipeline(50)
 
-describe('listener dispatch overhead with no-op handlers', () => {
-  describe('Legacy JS', () => {
-    bench('1 change dispatched to 15 no-op listeners', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 15 listeners via useSideEffects, handler returns undefined
-      // Trigger: setValue on watched field
-      // Measure: dispatch routing + handler invocation overhead
-    })
-  })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change triggers 10 flip pairs',
+      () => {
+        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        flipPipeline10.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-  describe('WASM', () => {
-    bench('1 change dispatched to 15 no-op listeners', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 15 listeners via useSideEffects, handler returns undefined
-      // Trigger: setValue on watched field
-      // Measure: WASM topic router + execution plan + JS handler calls
-    })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Listeners — handlers producing changes
-// ---------------------------------------------------------------------------
-
-describe('listener handlers that produce downstream changes', () => {
-  describe('Legacy JS', () => {
-    bench('1 change triggers 10 listeners each producing 5 changes', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 10 listeners, each returns 5 changes
-      // Trigger: setValue on one field
-      // Measure: dispatch + handler execution + produced change accumulation
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change triggers 50 flip pairs',
+      () => {
+        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        flipPipeline50.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  describe('WASM', () => {
-    bench('1 change triggers 10 listeners each producing 5 changes', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 10 listeners, each returns 5 changes
-      // Trigger: setValue on one field
-      // Measure: WASM dispatch plan + JS handlers + pipelineFinalize merge
-    })
-  })
-})
+  // ---------------------------------------------------------------------------
+  // Listeners — dispatch overhead only
+  // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// BoolLogic / concerns — declarative evaluation
-// ---------------------------------------------------------------------------
+  describe('Listeners (dispatch overhead only)', () => {
+    const listenerPipeline15 = createListenerPipeline(15)
+    const listenerPipeline50 = createListenerPipeline(50)
 
-describe('BoolLogic concern evaluation on field change', () => {
-  describe('Legacy JS', () => {
-    bench('1 change triggers 20 BoolLogic evaluations', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 20 disabledWhen concerns with IS_EQUAL BoolLogic
-      // Trigger: setValue on one dependency field
-      // Measure: BoolLogic tree evaluation + _concerns proxy writes
-    })
-  })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change dispatched to 15 listeners',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        listenerPipeline15.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-  describe('WASM', () => {
-    bench('1 change triggers 20 BoolLogic evaluations', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 20 disabledWhen concerns with IS_EQUAL BoolLogic
-      // Trigger: setValue on one dependency field
-      // Measure: WASM reverse index lookup + tree eval + concern output
-    })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Combined: sync + flip + listeners
-// ---------------------------------------------------------------------------
-
-describe('combined sync, flip, and listener effects on single pipeline pass', () => {
-  describe('Legacy JS', () => {
-    bench('2 changes through 10 sync + 10 flip + 10 listeners', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 10 syncPaths + 10 flipPaths + 10 listeners
-      // Trigger: 2 changes (one string field, one boolean)
-      // Measure: full pipeline with all three effect types
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change dispatched to 50 listeners',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        listenerPipeline50.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  describe('WASM', () => {
-    bench('2 changes through 10 sync + 10 flip + 10 listeners', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 10 syncPaths + 10 flipPaths + 10 listeners
-      // Trigger: 2 changes (one string field, one boolean)
-      // Measure: single WASM processChanges + listener execution + finalize
-    })
-  })
-})
+  // ---------------------------------------------------------------------------
+  // BoolLogic concerns — declarative evaluation
+  // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Full suite: sync + flip + listeners + BoolLogic
-// ---------------------------------------------------------------------------
+  describe('BoolLogic concerns', () => {
+    const boolLogicPipeline20 = createBoolLogicPipeline(20)
+    const boolLogicPipeline50 = createBoolLogicPipeline(50)
 
-describe('full effect suite with all side effect types active', () => {
-  describe('Legacy JS', () => {
-    bench('4 changes through sync + flip + listeners + BoolLogic', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 10 syncPaths + 10 flipPaths + 10 listeners + 10 BoolLogic
-      // Trigger: 4 changes hitting all effect types
-      // Measure: complete pipeline with maximum effect diversity
-    })
-  })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change triggers 20 BoolLogic evaluations',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        boolLogicPipeline20.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-  describe('WASM', () => {
-    bench('4 changes through sync + flip + listeners + BoolLogic', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 10 syncPaths + 10 flipPaths + 10 listeners + 10 BoolLogic
-      // Trigger: 4 changes hitting all effect types
-      // Measure: single WASM call handling all effect types
-    })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Batch scaling: how latency grows with change count
-// ---------------------------------------------------------------------------
-
-describe('batch scaling: latency as change count increases', () => {
-  describe('Legacy JS', () => {
-    bench('10 changes with 20 sync pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 20 syncPaths
-      // Trigger: batch of 10 changes
-    })
-
-    bench('50 changes with 20 sync pairs', () => {
-      // Setup: same as above
-      // Trigger: batch of 50 changes
-    })
-
-    bench('100 changes with 20 sync pairs', () => {
-      // Setup: same as above
-      // Trigger: batch of 100 changes
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change triggers 50 BoolLogic evaluations',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        boolLogicPipeline50.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  describe('WASM', () => {
-    bench('10 changes with 20 sync pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 20 syncPaths
-      // Trigger: batch of 10 changes
-    })
+  // ---------------------------------------------------------------------------
+  // Combined effects — sync + flip + listeners
+  // ---------------------------------------------------------------------------
 
-    bench('50 changes with 20 sync pairs', () => {
-      // Setup: same as above
-      // Trigger: batch of 50 changes
-    })
+  describe('Combined effects', () => {
+    const combinedPipeline2x10 = createCombinedPipeline(10, 10, 10)
+    const combinedPipeline4x = createCombinedPipeline(10, 10, 10)
 
-    bench('100 changes with 20 sync pairs', () => {
-      // Setup: same as above
-      // Trigger: batch of 100 changes
-    })
-  })
-})
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '2 changes through 10 sync + 10 flip + 10 listeners',
+      () => {
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced' },
+          { path: 'bool_0', value: true },
+        ]
+        combinedPipeline2x10.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
 
-// ---------------------------------------------------------------------------
-// Effect count scaling: how latency grows with registered effects
-// ---------------------------------------------------------------------------
-
-describe('effect count scaling: latency as sync pair count increases', () => {
-  describe('Legacy JS', () => {
-    bench('1 change with 5 sync pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 5 syncPaths
-      // Trigger: 1 change on synced field
-    })
-
-    bench('1 change with 25 sync pairs', () => {
-      // Register: 25 syncPaths
-    })
-
-    bench('1 change with 50 sync pairs', () => {
-      // Register: 50 syncPaths
-    })
-
-    bench('1 change with 100 sync pairs', () => {
-      // Register: 100 syncPaths
-    })
-  })
-
-  describe('WASM', () => {
-    bench('1 change with 5 sync pairs', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 5 syncPaths
-      // Trigger: 1 change on synced field
-    })
-
-    bench('1 change with 25 sync pairs', () => {
-      // Register: 25 syncPaths
-    })
-
-    bench('1 change with 50 sync pairs', () => {
-      // Register: 50 syncPaths
-    })
-
-    bench('1 change with 100 sync pairs', () => {
-      // Register: 100 syncPaths
-    })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// E-commerce: realistic order management workflow
-// ---------------------------------------------------------------------------
-
-describe('order confirmation syncs currency, flips invoice, and updates audit trail', () => {
-  // State: ECOMMERCE_STATE from tests/utils/mocks.ts (15 orders)
-  // Sync: currency synced across all orders
-  // Flip: order.confirmed ↔ invoice.pending
-  // Listeners: each order produces audit trail updates
-
-  describe('Legacy JS', () => {
-    bench('currency change cascades through 15 orders', () => {
-      // Setup: createGenericStore, useLegacyImplementation: true
-      // Register: 14 syncPaths (currency) + 15 flipPaths + 15 listeners
-      // Trigger: change order_0 currency + confirm order_0
-      // Measure: full cascade including listener-produced changes
-    })
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '4 changes through sync + flip + listeners + BoolLogic',
+      () => {
+        const changes: Change[] = [
+          { path: 'field_0', value: 'change1' },
+          { path: 'field_1', value: 'change2' },
+          { path: 'bool_0', value: true },
+          { path: 'bool_1', value: false },
+        ]
+        combinedPipeline4x.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 
-  describe('WASM', () => {
-    bench('currency change cascades through 15 orders', () => {
-      // Setup: createGenericStore, useLegacyImplementation: false
-      // Register: 14 syncPaths (currency) + 15 flipPaths + 15 listeners
-      // Trigger: change order_0 currency + confirm order_0
-      // Measure: WASM pipeline + listener execution + finalize
-    })
+  // ---------------------------------------------------------------------------
+  // Batch scaling — how latency grows with change count
+  // ---------------------------------------------------------------------------
+
+  describe('Batch scaling', () => {
+    const pipeline10 = createSyncPipeline(20)
+    const pipeline50 = createSyncPipeline(20)
+    const pipeline100 = createSyncPipeline(20)
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '10 changes with 20 sync pairs',
+      () => {
+        const changes: Change[] = []
+        for (let i = 0; i < 10; i++) {
+          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+        }
+        pipeline10.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '50 changes with 20 sync pairs',
+      () => {
+        const changes: Change[] = []
+        for (let i = 0; i < 50; i++) {
+          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+        }
+        pipeline50.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '100 changes with 20 sync pairs',
+      () => {
+        const changes: Change[] = []
+        for (let i = 0; i < 100; i++) {
+          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+        }
+        pipeline100.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+  })
+
+  // ---------------------------------------------------------------------------
+  // Effect count scaling — how latency grows with registered effects
+  // ---------------------------------------------------------------------------
+
+  describe('Effect count scaling', () => {
+    const syncPipeline5 = createSyncPipeline(5)
+    const syncPipeline25 = createSyncPipeline(25)
+    const syncPipeline50 = createSyncPipeline(50)
+    const syncPipeline100 = createSyncPipeline(100)
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change with 5 sync pairs',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        syncPipeline5.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change with 25 sync pairs',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        syncPipeline25.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change with 50 sync pairs',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        syncPipeline50.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      '1 change with 100 sync pairs',
+      () => {
+        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        syncPipeline100.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
+  })
+
+  // ---------------------------------------------------------------------------
+  // E-commerce — realistic order management workflow
+  // ---------------------------------------------------------------------------
+
+  describe('E-commerce workflow', () => {
+    const ecommercePipeline = createEcommercePipeline()
+
+    /**
+     * @perf-history
+     * Hardware: Apple M4 Pro
+     * | Date       | Hz (ops/sec) | Commit  | Note                          |
+     * |------------|--------------|---------|-------------------------------|
+     */
+    bench(
+      'currency change cascades through 15 orders',
+      () => {
+        // Trigger: change order_0 currency + confirm order_0
+        const changes: Change[] = [
+          { path: 'order_0_currency', value: 'EUR' },
+          { path: 'order_0_confirmed', value: true },
+        ]
+        ecommercePipeline.processChanges(changes)
+      },
+      BENCH_OPTIONS,
+    )
   })
 })

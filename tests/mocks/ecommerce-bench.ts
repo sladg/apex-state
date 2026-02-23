@@ -26,10 +26,10 @@ import type {
 } from '../../src/types'
 import type { SideEffects } from '../../src/types/side-effects'
 
-export const DEPT_COUNT = 3
-export const PRODUCTS_PER_DEPT = 5
-export const VARIANTS_PER_PRODUCT = 4
-export const ORDER_COUNT = 10
+const DEPT_COUNT = 3
+const PRODUCTS_PER_DEPT = 5
+const VARIANTS_PER_PRODUCT = 4
+const ORDER_COUNT = 10
 
 // Total variants: 3 × 5 × 4 = 60
 
@@ -37,7 +37,7 @@ export const ORDER_COUNT = 10
 // Types
 // ---------------------------------------------------------------------------
 
-export interface VariantMetadata {
+interface VariantMetadata {
   createdAt: string
   updatedAt: string
   tags: string[]
@@ -45,7 +45,7 @@ export interface VariantMetadata {
   season: string
 }
 
-export interface VariantPrice {
+interface VariantPrice {
   base: number
   sale: number
   wholesale: number
@@ -54,7 +54,7 @@ export interface VariantPrice {
   margin: number
 }
 
-export interface VariantInventory {
+interface VariantInventory {
   inStock: number
   reserved: number
   warehouse: string
@@ -62,7 +62,7 @@ export interface VariantInventory {
   isLowStock: boolean
 }
 
-export interface VariantShipping {
+interface VariantShipping {
   weight: number
   dimensions: { l: number; w: number; h: number }
   freeShipping: boolean
@@ -70,7 +70,7 @@ export interface VariantShipping {
   carrier: string
 }
 
-export interface Variant {
+interface Variant {
   sku: string
   color: string
   size: string
@@ -82,7 +82,7 @@ export interface Variant {
   shipping: VariantShipping
 }
 
-export interface Product {
+interface Product {
   name: string
   sku: string
   status: 'active' | 'draft' | 'archived'
@@ -100,7 +100,7 @@ export interface Department {
   products: Record<string, Product>
 }
 
-export interface OrderItem {
+interface OrderItem {
   productId: string
   variantId: string
   quantity: number
@@ -141,15 +141,15 @@ export interface EcommerceBenchState {
 // ---------------------------------------------------------------------------
 
 /** dept/product/variant path prefix */
-export const vp = (d: number, p: number, v: number): string =>
+const vp = (d: number, p: number, v: number): string =>
   `catalog.departments.dept_${d}.products.p_${p}.variants.v_${v}`
 
 /** dept/product path prefix */
-export const pp = (d: number, p: number): string =>
+const pp = (d: number, p: number): string =>
   `catalog.departments.dept_${d}.products.p_${p}`
 
 /** dept path prefix */
-export const dp = (d: number): string => `catalog.departments.dept_${d}`
+const dp = (d: number): string => `catalog.departments.dept_${d}`
 
 // ---------------------------------------------------------------------------
 // Builders
@@ -294,7 +294,7 @@ export const buildEcommerceState = (): EcommerceBenchState => {
  * - 45 intra-product variant price syncs: v_0.price.base → v_1/v_2/v_3.price.base (per product)
  * - 15 cross-dept taxRate syncs: dept_0.p_X.v_0.price.taxRate → dept_1.p_X.v_0.price.taxRate
  */
-export const SYNC_PAIRS: [string, string][] = (() => {
+const SYNC_PAIRS: [string, string][] = (() => {
   const pairs: [string, string][] = []
 
   // 15 currency syncs: settings → product v_0 (3 depts × 5 products)
@@ -335,7 +335,7 @@ export const SYNC_PAIRS: [string, string][] = (() => {
  * - 15 variant inventory flips: isLowStock ↔ freeShipping
  * - 3 department flips: isActive ↔ isDiscontinued
  */
-export const FLIP_PAIRS: [string, string][] = (() => {
+const FLIP_PAIRS: [string, string][] = (() => {
   const pairs: [string, string][] = []
 
   // 5 order flips: isPaid ↔ needsRefund
@@ -374,7 +374,7 @@ export const FLIP_PAIRS: [string, string][] = (() => {
  * - 30: variant visibleWhen product is active AND variant inventory exists
  * - 10: variant shipping disabledWhen variant isLowStock
  */
-export const BOOL_LOGIC_REGISTRATIONS = (() => {
+const BOOL_LOGIC_REGISTRATIONS = (() => {
   const regs: { outputPath: string; tree: unknown }[] = []
 
   // 60: all variants — disabledWhen product archived
@@ -432,9 +432,9 @@ export const BOOL_LOGIC_REGISTRATIONS = (() => {
  * (no dots in path), so we use 'catalog' as a high-level ancestor instead.
  * This ensures they fire in both Legacy and WASM for most scenarios.
  */
-export const CATALOG_ROOT_LISTENER_COUNT = 10
+const CATALOG_ROOT_LISTENER_COUNT = 10
 
-export const LISTENER_ENTRIES = (() => {
+const LISTENER_ENTRIES = (() => {
   const entries: {
     subscriber_id: number
     topic_path: string
@@ -493,7 +493,7 @@ export const LISTENER_ENTRIES = (() => {
  * Variant listeners return price recalculation changes.
  * Order listeners return total + dashboard updates.
  */
-export const makeListenerHandler =
+const makeListenerHandler =
   (entry: (typeof LISTENER_ENTRIES)[number]) =>
   (
     _changes: [string, unknown, GenericMeta][],

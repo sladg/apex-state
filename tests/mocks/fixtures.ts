@@ -23,7 +23,6 @@ import type {
   BasicTestState,
   DeeplyNestedState,
   ListenerTestState,
-  OrderState,
   RegistrationForm,
   SyncFlipState,
   ValidationTestState,
@@ -225,45 +224,6 @@ export const deeplyNestedFixtures = {
       },
     },
   } satisfies DeeplyNestedState,
-}
-
-/**
- * E-commerce order state — 3 orders (lightweight for tests, not benchmarks)
- */
-export const orderFixtures = {
-  threeOrders: {
-    orders: {
-      order_0: {
-        currency: 'USD',
-        confirmed: false,
-        status: 'pending',
-        subtotal: 100,
-        tax: 20,
-        total: 120,
-      },
-      order_1: {
-        currency: 'USD',
-        confirmed: false,
-        status: 'pending',
-        subtotal: 110,
-        tax: 22,
-        total: 132,
-      },
-      order_2: {
-        currency: 'USD',
-        confirmed: false,
-        status: 'pending',
-        subtotal: 120,
-        tax: 24,
-        total: 144,
-      },
-    },
-    invoices: {
-      inv_0: { pending: true },
-      inv_1: { pending: true },
-      inv_2: { pending: true },
-    },
-  } satisfies OrderState,
 }
 
 /**

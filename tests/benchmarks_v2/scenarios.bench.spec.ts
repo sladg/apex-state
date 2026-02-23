@@ -17,18 +17,12 @@ import { bench, describe } from 'vitest'
 
 import { type Change, createWasmPipeline } from '../../src/wasm/bridge'
 import { loadWasm } from '../../src/wasm/lifecycle'
+import { BENCH_OPTIONS } from './helpers'
 
 // Load WASM before benchmarks run
 await loadWasm()
 
-const BENCH_OPTIONS = { iterations: 50, warmupIterations: 5 }
-
 describe('WASM Pipeline: Real-World Scenarios', () => {
-  /**
-   * MIGRATION: Replaces v1 benchmarks
-   *   ✅ tests/benchmarking/wasm-vs-js-realworld.bench.spec.ts — real-world scenarios (lines 233-327)
-   *   ✅ tests/benchmarking/pipeline.bench.spec.ts — cascading/complex scenarios (lines 360-408)
-   */
   describe('End-to-end pipeline scenarios', () => {
     /**
      * @perf-history
