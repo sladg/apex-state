@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.5.1](https://github.com/sladg/apex-state/compare/v3.5.0...v3.5.1)
+
+* chore: deduplicate benchmark fixtures and remove dead test code [[08cc7a073b0d10ea3bea3da09c391a60fce29099](https://github.com/sladg/apex-state/commit/08cc7a073b0d10ea3bea3da09c391a60fce29099))]
+
+
 ## [v3.5.0](https://github.com/sladg/apex-state/compare/v3.4.2...v3.5.0)
 
 * feat: add configurable depth to DeepKey with ?? marker for any-typed properties [[2e38df5684ab0a5f3eebc4516968757467bafc0c](https://github.com/sladg/apex-state/commit/2e38df5684ab0a5f3eebc4516968757467bafc0c))]
@@ -124,6 +129,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* chore: deduplicate benchmark fixtures and remove dead test code [[08cc7a073b0d10ea3bea3da09c391a60fce29099](https://github.com/sladg/apex-state/commit/08cc7a073b0d10ea3bea3da09c391a60fce29099))]
 * feat: add configurable depth to DeepKey with ?? marker for any-typed properties [[2e38df5684ab0a5f3eebc4516968757467bafc0c](https://github.com/sladg/apex-state/commit/2e38df5684ab0a5f3eebc4516968757467bafc0c))]
 * fix: disable code splitting to prevent top-level await in published output [[d08aeeab21a34e9b23349541062f4968be1ef417](https://github.com/sladg/apex-state/commit/d08aeeab21a34e9b23349541062f4968be1ef417))]
 * chore: clean up docs, add examples, remove legacy tests and migration comments [[b7447dbde9a64425a0d4a09d8f41fbd091320573](https://github.com/sladg/apex-state/commit/b7447dbde9a64425a0d4a09d8f41fbd091320573))]
