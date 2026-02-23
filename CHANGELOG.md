@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.6.0](https://github.com/sladg/apex-state/compare/v3.5.1...v3.6.0)
+
+* feat: add shorthand [path, value] syntax to BoolLogic with full test coverage [[d07d33a361d8531d1ee158fd14cd53f5ec13be27](https://github.com/sladg/apex-state/commit/d07d33a361d8531d1ee158fd14cd53f5ec13be27))]
+
+
 ## [v3.5.1](https://github.com/sladg/apex-state/compare/v3.5.0...v3.5.1)
 
 * chore: deduplicate benchmark fixtures and remove dead test code [[08cc7a073b0d10ea3bea3da09c391a60fce29099](https://github.com/sladg/apex-state/commit/08cc7a073b0d10ea3bea3da09c391a60fce29099))]
@@ -129,6 +134,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* feat: add shorthand [path, value] syntax to BoolLogic with full test coverage [[d07d33a361d8531d1ee158fd14cd53f5ec13be27](https://github.com/sladg/apex-state/commit/d07d33a361d8531d1ee158fd14cd53f5ec13be27))]
 * chore: deduplicate benchmark fixtures and remove dead test code [[08cc7a073b0d10ea3bea3da09c391a60fce29099](https://github.com/sladg/apex-state/commit/08cc7a073b0d10ea3bea3da09c391a60fce29099))]
 * feat: add configurable depth to DeepKey with ?? marker for any-typed properties [[2e38df5684ab0a5f3eebc4516968757467bafc0c](https://github.com/sladg/apex-state/commit/2e38df5684ab0a5f3eebc4516968757467bafc0c))]
 * fix: disable code splitting to prevent top-level await in published output [[d08aeeab21a34e9b23349541062f4968be1ef417](https://github.com/sladg/apex-state/commit/d08aeeab21a34e9b23349541062f4968be1ef417))]
