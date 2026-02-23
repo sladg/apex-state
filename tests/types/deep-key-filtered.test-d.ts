@@ -67,3 +67,56 @@ describe('DeepKeyFiltered type utility', () => {
     expectTypeOf<DatePaths>().toEqualTypeOf<never>()
   })
 })
+
+describe('DeepKeyFiltered with nullable fields', () => {
+  interface NullableData {
+    price: number
+    discount: number | undefined
+    tax: number | null
+    bonus?: number
+    name: string
+    label: string | undefined
+    title?: string
+    isActive: boolean
+    isHidden: boolean | undefined
+    isVerified?: boolean
+    nested: {
+      amount: number
+      optional?: number
+    }
+  }
+
+  test('includes number | undefined paths when filtering for number', () => {
+    type NumberPaths = DeepKeyFiltered<NullableData, number>
+
+    expectTypeOf<NumberPaths>().toEqualTypeOf<
+      | 'price'
+      | 'discount'
+      | 'tax'
+      | 'bonus'
+      | 'nested.amount'
+      | 'nested.optional'
+    >()
+  })
+
+  test('includes string | undefined paths when filtering for string', () => {
+    type StringPaths = DeepKeyFiltered<NullableData, string>
+
+    expectTypeOf<StringPaths>().toEqualTypeOf<'name' | 'label' | 'title'>()
+  })
+
+  test('includes boolean | undefined paths when filtering for boolean', () => {
+    type BooleanPaths = DeepKeyFiltered<NullableData, boolean>
+
+    expectTypeOf<BooleanPaths>().toEqualTypeOf<
+      'isActive' | 'isHidden' | 'isVerified'
+    >()
+  })
+
+  test('does not include object paths when filtering for primitives', () => {
+    type NumberPaths = DeepKeyFiltered<NullableData, number>
+
+    // 'nested' is an object, should not appear in number paths
+    expectTypeOf<'nested'>().not.toMatchTypeOf<NumberPaths>()
+  })
+})

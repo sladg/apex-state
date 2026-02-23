@@ -58,7 +58,7 @@ const UserForm = () => {
 
 | Feature | Description | Details |
 |---|---|---|
-| **Type-safe paths** | `DeepKey<T>` / `DeepValue<T, P>` — compile-time path safety | |
+| **Type-safe paths** | `DeepKey<T>` / `DeepValue<T, P>` — compile-time path safety with configurable depth | |
 | **Concerns** | Validation (Zod), BoolLogic conditions, dynamic text | [Concerns Guide](docs/guides/CONCERNS_GUIDE.md) |
 | **Side effects** | Sync paths, flip paths, aggregations, listeners | [Side Effects Guide](docs/SIDE_EFFECTS_GUIDE.md) |
 | **WASM mode** | Rust-powered pipeline for bulk operations (up to 367x faster) | [Architecture](docs/WASM_ARCHITECTURE.md) |
@@ -400,6 +400,61 @@ store.useConcerns('wildcards', {
 
 // Multiple hash keys for deeply nested Records
 const nestedPath = `books.${_('b1')}.products.${_('p1')}.legs.${_('l1')}.notional`
+```
+
+## Type-Safe Paths with Configurable Depth
+
+Deeply nested state types can cause TypeScript errors like **TS2589 ("Type instantiation is excessively deep")** or slow IDE autocomplete. `DeepKey<T, Depth>` solves this with a configurable recursion limit — reduce depth for wide types to speed up compilation, increase it for deeply nested structures, and get clear feedback when the limit is reached.
+
+```typescript
+type State = {
+  user: { name: string; address: { street: string; city: string } }
+  count: number
+}
+
+// DeepKey<State> = "user" | "count" | "user.name" | "user.address" | "user.address.street" | "user.address.city"
+type AllPaths = DeepKey<State>
+```
+
+### Default Depth
+
+`DefaultDepth` is set to **20** — enough for most real-world types. Uses loop unrolling (2 levels per recursion call) to stay well within TypeScript's recursion limits while supporting deeply nested structures.
+
+### Custom Depth
+
+Tune the depth limit per use-site to balance **compilation speed vs path coverage**:
+
+```typescript
+// Shallow — faster tsc for wide types with many top-level keys
+type ShallowPaths = DeepKey<State, 10>
+
+// Deeper — for types nested beyond 20 levels (e.g., recursive data models)
+type DeepPaths = DeepKey<State, 30>
+```
+
+### Depth Limit Marker (`??`)
+
+When `DeepKey` hits the depth limit on an object type, or encounters an **`any`-typed property** (unknowable structure), it emits a `??` marker in IDE autocomplete:
+
+```
+some.deep.path.??    ← depth limit reached
+data.payload.??      ← property typed as `any`
+```
+
+This tells you exactly where path generation stopped. To fix it: increase depth (`DeepKey<T, 30>`), restructure your type, or replace `any` with a concrete type.
+
+### Depth Propagation
+
+The `Depth` parameter propagates to all dependent types, keeping the entire type system consistent:
+
+```typescript
+// All accept a Depth parameter (defaults to DefaultDepth = 20)
+type Paths = DeepKey<State, 10>
+type BoolPaths = DeepKeyFiltered<State, boolean, 10>
+type Syncs = SyncPair<State, 10>
+type Logic = BoolLogic<State, 10>
+type Effects = SideEffects<State, Meta, 10>
+type Clear = ClearPathRule<State, 10>
 ```
 
 ## Testing with the Mock Module

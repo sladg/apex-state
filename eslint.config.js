@@ -118,6 +118,7 @@ export default defineConfig([
       'tests/vitest.d.ts',
       'tests/concerns/test-utils.ts',
       'tests/integrations_v2/setup.ts',
+      'tests/benchmarks_v2/helpers.ts',
     ],
     plugins: {
       'check-file': checkFile,

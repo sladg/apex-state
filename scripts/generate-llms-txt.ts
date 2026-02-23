@@ -98,7 +98,7 @@ const DOCS = [
 ]
 
 // ---------------------------------------------------------------------------
-// Extract @llms-example markers from source and test files
+// Extract examples from @llms-example markers AND @example TSDoc tags
 // ---------------------------------------------------------------------------
 
 interface LlmsExample {
@@ -118,7 +118,8 @@ const stripCommonIndent = (codeLines: string[]): string[] => {
     : codeLines.map((l) => l.slice(minIndent))
 }
 
-const parseExamplesFromFile = (
+// Parse // @llms-example: Title ... // @llms-example-end blocks
+const parseLlmsExamples = (
   content: string,
   sourceFile: string,
 ): LlmsExample[] => {
@@ -159,10 +160,66 @@ const parseExamplesFromFile = (
   return examples
 }
 
+// Parse @example blocks from TSDoc comments:
+//  * @example Optional title
+//  * ```typescript
+//  * code here
+//  * ```
+const parseTsDocExamples = (
+  content: string,
+  sourceFile: string,
+): LlmsExample[] => {
+  const lines = content.split('\n')
+  const examples: LlmsExample[] = []
+  let title: string | null = null
+  let codeLines: string[] = []
+  let inFence = false
+
+  for (const line of lines) {
+    // Strip leading ` * ` from TSDoc lines
+    const stripped = line.replace(/^\s*\*\s?/, '')
+
+    // Match @example with optional title text
+    const exampleMatch = stripped.match(/^@example\s*(.*)/)
+    if (exampleMatch) {
+      title = exampleMatch[1].trim() || null
+      continue
+    }
+
+    // Opening fence inside a TSDoc @example
+    if (title !== null && !inFence && stripped.match(/^```/)) {
+      inFence = true
+      codeLines = []
+      continue
+    }
+
+    // Closing fence
+    if (inFence && stripped.match(/^```/)) {
+      if (title && codeLines.length > 0) {
+        const strippedCode = stripCommonIndent(codeLines)
+        examples.push({
+          title,
+          code: strippedCode.join('\n').trim(),
+          sourceFile,
+        })
+      }
+      inFence = false
+      title = null
+      continue
+    }
+
+    if (inFence) {
+      codeLines.push(stripped)
+    }
+  }
+
+  return examples
+}
+
 const findMarkerFiles = (): string[] => {
   try {
     const output = execSync(
-      'grep -rl "@llms-example:" --include="*.ts" --include="*.tsx" examples/ src/',
+      'grep -rl "@llms-example:\\|@example" --include="*.ts" --include="*.tsx" examples/ src/',
       { cwd: ROOT, encoding: 'utf-8' },
     )
     return output.trim().split('\n').filter(Boolean)
@@ -175,7 +232,10 @@ const extractExamples = (): LlmsExample[] => {
   const matchingFiles = findMarkerFiles()
   return matchingFiles.flatMap((relPath) => {
     const content = readFileSync(resolve(ROOT, relPath), 'utf-8')
-    return parseExamplesFromFile(content, relPath)
+    return [
+      ...parseLlmsExamples(content, relPath),
+      ...parseTsDocExamples(content, relPath),
+    ]
   })
 }
 

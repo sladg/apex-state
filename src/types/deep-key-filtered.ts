@@ -23,14 +23,22 @@
  * ```
  */
 
-import type { DeepKey, DeepValue } from './index'
+import type { DeepValue, DefaultDepth, ResolvableDeepKey } from './index'
 
 /**
  * Filters DeepKey<T> to only include paths that resolve to type U.
  *
  * Uses mapped type with conditional filtering - maps over all possible paths,
  * keeps those matching the target type, and extracts the union.
+ *
+ * @example Custom depth — propagates to DeepKey
+ * ```typescript
+ * // Only number paths, limited to 10 levels deep
+ * type ShallowNumbers = DeepKeyFiltered<State, number, 10>
+ * ```
  */
-export type DeepKeyFiltered<T, U> = {
-  [K in DeepKey<T>]: DeepValue<T, K> extends U ? K : never
-}[DeepKey<T>]
+export type DeepKeyFiltered<T, U, Depth extends number = DefaultDepth> = {
+  [K in ResolvableDeepKey<T, Depth>]: NonNullable<DeepValue<T, K>> extends U
+    ? K
+    : never
+}[ResolvableDeepKey<T, Depth>]

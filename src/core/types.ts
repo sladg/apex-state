@@ -12,6 +12,7 @@ import type {
   ArrayOfChanges,
   DeepKey,
   DeepRequired,
+  DefaultDepth,
   GenericMeta,
 } from '../types'
 import type { Timing } from '../utils/timing'
@@ -126,12 +127,13 @@ export type OnStateListener<
 export interface ListenerRegistration<
   DATA extends object = object,
   META extends GenericMeta = GenericMeta,
+  Depth extends number = DefaultDepth,
 > {
   /**
    * Path to watch - only changes under this path will trigger the listener
    * null = watch all top-level paths
    */
-  path: DeepKey<DATA> | null
+  path: DeepKey<DATA, Depth> | null
 
   /**
    * Scope for state and changes presentation
@@ -140,7 +142,7 @@ export interface ListenerRegistration<
    *
    * Note: Changes are filtered based on `path`, even when scope is null
    */
-  scope: DeepKey<DATA> | null
+  scope: DeepKey<DATA, Depth> | null
 
   fn: OnStateListener<DATA, any, META>
 }

@@ -39,7 +39,7 @@
  */
 
 import type { BoolLogic } from './bool-logic'
-import type { DeepKey } from './deep-key'
+import type { ResolvableDeepKey } from './deep-key'
 import type { DeepValue } from './deep-value'
 
 /**
@@ -64,11 +64,11 @@ export interface ValueLogicIfThenElse<STATE, T = unknown> {
 
 /** MATCH variant — multi-way switch on a state path value */
 export type ValueLogicMatch<STATE, T = unknown> = {
-  [P in DeepKey<STATE>]: {
+  [P in ResolvableDeepKey<STATE>]: {
     MATCH: P
     CASES: Partial<
       Record<`${Extract<DeepValue<STATE, P>, string | number>}`, T>
     >
     DEFAULT: T
   }
-}[DeepKey<STATE>]
+}[ResolvableDeepKey<STATE>]

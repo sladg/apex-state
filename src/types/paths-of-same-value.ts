@@ -20,7 +20,7 @@
  */
 
 import type { BoolLogic } from './bool-logic'
-import type { DeepKey } from './deep-key'
+import type { DefaultDepth, ResolvableDeepKey } from './deep-key'
 import type { DeepKeyFiltered } from './deep-key-filtered'
 import type { DeepValue } from './deep-value'
 
@@ -29,14 +29,17 @@ import type { DeepValue } from './deep-value'
  */
 export type PathsWithSameValueAs<
   DATA extends object,
-  PATH extends DeepKey<DATA>,
+  PATH extends ResolvableDeepKey<DATA, Depth>,
+  Depth extends number = DefaultDepth,
 > = {
-  [K in DeepKey<DATA>]: DeepValue<DATA, K> extends DeepValue<DATA, PATH>
-    ? DeepValue<DATA, PATH> extends DeepValue<DATA, K>
+  [K in ResolvableDeepKey<DATA, Depth>]: NonNullable<
+    DeepValue<DATA, K>
+  > extends NonNullable<DeepValue<DATA, PATH>>
+    ? NonNullable<DeepValue<DATA, PATH>> extends NonNullable<DeepValue<DATA, K>>
       ? K
       : never
     : never
-}[DeepKey<DATA>]
+}[ResolvableDeepKey<DATA, Depth>]
 
 /**
  * A tuple of two paths that must have the same value type.
@@ -44,10 +47,22 @@ export type PathsWithSameValueAs<
  *
  * @example
  * const pair: SyncPair<State> = ['user.email', 'profile.email']
+ *
+ * @example Custom depth — propagates to DeepKey and PathsWithSameValueAs
+ * ```typescript
+ * // Limit path traversal to 10 levels
+ * const shallow: SyncPair<State, 10> = ['user.email', 'profile.email']
+ * ```
  */
-export type SyncPair<DATA extends object> = {
-  [P1 in DeepKey<DATA>]: [P1, PathsWithSameValueAs<DATA, P1>]
-}[DeepKey<DATA>]
+export type SyncPair<
+  DATA extends object,
+  Depth extends number = DefaultDepth,
+> = {
+  [P1 in ResolvableDeepKey<DATA, Depth>]: [
+    P1,
+    PathsWithSameValueAs<DATA, P1, Depth>,
+  ]
+}[ResolvableDeepKey<DATA, Depth>]
 
 /**
  * A tuple of two paths for flip (alias for SyncPair)
@@ -56,7 +71,10 @@ export type SyncPair<DATA extends object> = {
  * @example
  * const pair: FlipPair<State> = ['isActive', 'isInactive']
  */
-export type FlipPair<DATA extends object> = SyncPair<DATA>
+export type FlipPair<
+  DATA extends object,
+  Depth extends number = DefaultDepth,
+> = SyncPair<DATA, Depth>
 
 /**
  * A tuple for aggregation: [target, source] or [target, source, excludeWhen]
@@ -73,11 +91,14 @@ export type FlipPair<DATA extends object> = SyncPair<DATA>
  *   ['total', 'price2', { IS_EQUAL: ['price2.disabled', true] }],
  * ]
  */
-export type AggregationPair<DATA extends object> = {
-  [P1 in DeepKey<DATA>]:
-    | [P1, PathsWithSameValueAs<DATA, P1>]
-    | [P1, PathsWithSameValueAs<DATA, P1>, BoolLogic<DATA>]
-}[DeepKey<DATA>]
+export type AggregationPair<
+  DATA extends object,
+  Depth extends number = DefaultDepth,
+> = {
+  [P1 in ResolvableDeepKey<DATA, Depth>]:
+    | [P1, PathsWithSameValueAs<DATA, P1, Depth>]
+    | [P1, PathsWithSameValueAs<DATA, P1, Depth>, BoolLogic<DATA, Depth>]
+}[ResolvableDeepKey<DATA, Depth>]
 
 /**
  * Supported computation operations for numeric reduction.
@@ -101,8 +122,16 @@ export type ComputationOp = 'SUM' | 'AVG'
  *   ['AVG', 'average', 'score2'],
  * ]
  */
-export type ComputationPair<DATA extends object> = {
-  [TARGET in DeepKeyFiltered<DATA, number>]:
-    | [ComputationOp, TARGET, DeepKeyFiltered<DATA, number>]
-    | [ComputationOp, TARGET, DeepKeyFiltered<DATA, number>, BoolLogic<DATA>]
-}[DeepKeyFiltered<DATA, number>]
+export type ComputationPair<
+  DATA extends object,
+  Depth extends number = DefaultDepth,
+> = {
+  [TARGET in DeepKeyFiltered<DATA, number, Depth>]:
+    | [ComputationOp, TARGET, DeepKeyFiltered<DATA, number, Depth>]
+    | [
+        ComputationOp,
+        TARGET,
+        DeepKeyFiltered<DATA, number, Depth>,
+        BoolLogic<DATA, Depth>,
+      ]
+}[DeepKeyFiltered<DATA, number, Depth>]

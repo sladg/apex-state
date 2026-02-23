@@ -6,7 +6,7 @@
  */
 
 import type { ListenerRegistration } from '../core/types'
-import type { DeepKey } from './deep-key'
+import type { DeepKey, DefaultDepth } from './deep-key'
 import type { GenericMeta } from './meta'
 import type {
   AggregationPair,
@@ -23,11 +23,10 @@ import type {
  * - targets: paths to set to null
  * - expandMatch: if true, [*] in targets expands to ALL keys (not just matched key)
  */
-export type ClearPathRule<DATA extends object> = [
-  DeepKey<DATA>[],
-  DeepKey<DATA>[],
-  { expandMatch?: boolean }?,
-]
+export type ClearPathRule<
+  DATA extends object,
+  Depth extends number = DefaultDepth,
+> = [DeepKey<DATA, Depth>[], DeepKey<DATA, Depth>[], { expandMatch?: boolean }?]
 
 /**
  * Side effects configuration for useSideEffects hook
@@ -80,25 +79,26 @@ export type ClearPathRule<DATA extends object> = [
 export interface SideEffects<
   DATA extends object,
   META extends GenericMeta = GenericMeta,
+  Depth extends number = DefaultDepth,
 > {
   /**
    * Sync paths - keeps specified paths synchronized
    * Format: [path1, path2] - both paths stay in sync
    */
-  syncPaths?: SyncPair<DATA>[]
+  syncPaths?: SyncPair<DATA, Depth>[]
 
   /**
    * Flip paths - keeps specified paths with opposite values
    * Format: [path1, path2] - paths have inverse boolean values
    */
-  flipPaths?: FlipPair<DATA>[]
+  flipPaths?: FlipPair<DATA, Depth>[]
 
   /**
    * Aggregations - aggregates sources into target
    * Format: [target, source] - target is ALWAYS first (left)
    * Multiple pairs can point to same target for multi-source aggregation
    */
-  aggregations?: AggregationPair<DATA>[]
+  aggregations?: AggregationPair<DATA, Depth>[]
 
   /**
    * Clear paths - "when X changes, set Y to null"
@@ -106,7 +106,7 @@ export interface SideEffects<
    * - Default: [*] in target correlates with trigger's [*] (same key)
    * - expandMatch: true → [*] in target expands to ALL keys
    */
-  clearPaths?: ClearPathRule<DATA>[]
+  clearPaths?: ClearPathRule<DATA, Depth>[]
 
   /**
    * Computations - numeric reduction operations (SUM, AVG)
@@ -114,7 +114,7 @@ export interface SideEffects<
    * Multiple pairs can point to same target for multi-source computation
    * Unidirectional: source → target only (writes to target are no-op)
    */
-  computations?: ComputationPair<DATA>[]
+  computations?: ComputationPair<DATA, Depth>[]
 
   /**
    * Listeners - react to state changes with scoped state

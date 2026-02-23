@@ -6,7 +6,7 @@
  */
 
 import type { BoolLogic } from './bool-logic'
-import type { DeepKey } from './deep-key'
+import type { DeepKey, DefaultDepth, ResolvableDeepKey } from './deep-key'
 import type { DeepValue } from './deep-value'
 
 /**
@@ -33,14 +33,18 @@ export interface ValidationSchema<T = unknown> {
  * Can be a schema for the path's own value type, or a scoped schema
  * targeting a different path in the same state.
  */
-export type ValidationStateInput<DATA, PATH extends DeepKey<DATA>> =
+export type ValidationStateInput<
+  DATA,
+  PATH extends DeepKey<DATA, Depth>,
+  Depth extends number = DefaultDepth,
+> =
   | { schema: ValidationSchema<DeepValue<DATA, PATH>> }
   | {
-      [SCOPE in DeepKey<DATA>]: {
+      [SCOPE in ResolvableDeepKey<DATA, Depth>]: {
         scope: SCOPE
         schema: ValidationSchema<DeepValue<DATA, SCOPE>>
       }
-    }[DeepKey<DATA>]
+    }[ResolvableDeepKey<DATA, Depth>]
 
 /**
  * Get the appropriate registration config type for a concern at a given path.
@@ -53,12 +57,13 @@ export type ValidationStateInput<DATA, PATH extends DeepKey<DATA>> =
 type ConcernConfigFor<
   C,
   DATA extends object,
-  PATH extends DeepKey<DATA>,
+  PATH extends DeepKey<DATA, Depth>,
+  Depth extends number = DefaultDepth,
 > = C extends { name: 'validationState' }
-  ? ValidationStateInput<DATA, PATH>
+  ? ValidationStateInput<DATA, PATH, Depth>
   : C extends { evaluate: (props: infer P) => any }
     ? P extends { boolLogic: any }
-      ? { boolLogic: BoolLogic<DATA> }
+      ? { boolLogic: BoolLogic<DATA, Depth> }
       : Omit<P, 'state' | 'path' | 'value'>
     : Record<string, unknown>
 
@@ -123,10 +128,11 @@ export type EvaluatedConcerns<CONCERNS extends readonly any[]> = {
 export type ConcernRegistrationMap<
   DATA extends object,
   CONCERNS extends readonly any[] = readonly any[],
+  Depth extends number = DefaultDepth,
 > = Partial<{
-  [PATH in DeepKey<DATA>]: Partial<{
+  [PATH in DeepKey<DATA, Depth>]: Partial<{
     [C in CONCERNS[number] as C extends { name: string }
       ? C['name']
-      : never]: ConcernConfigFor<C, DATA, PATH>
+      : never]: ConcernConfigFor<C, DATA, PATH, Depth>
   }>
 }>

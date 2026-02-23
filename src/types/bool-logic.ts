@@ -5,7 +5,7 @@
  * for reactive condition checking against state.
  */
 
-import type { DeepKey } from './deep-key'
+import type { DeepKey, DefaultDepth } from './deep-key'
 
 /**
  * Primitive types that can be compared in BoolLogic expressions
@@ -44,15 +44,15 @@ export type ComparableValue = string | number | boolean | null | undefined
  * const isExpensive: BoolLogic<State> = { GT: ['product.price', 100] }
  * ```
  */
-export type BoolLogic<STATE> =
-  | { IS_EQUAL: [DeepKey<STATE>, ComparableValue] }
-  | { EXISTS: DeepKey<STATE> }
-  | { IS_EMPTY: DeepKey<STATE> }
-  | { AND: BoolLogic<STATE>[] }
-  | { OR: BoolLogic<STATE>[] }
-  | { NOT: BoolLogic<STATE> }
-  | { GT: [DeepKey<STATE>, number] }
-  | { LT: [DeepKey<STATE>, number] }
-  | { GTE: [DeepKey<STATE>, number] }
-  | { LTE: [DeepKey<STATE>, number] }
-  | { IN: [DeepKey<STATE>, ComparableValue[]] }
+export type BoolLogic<STATE, Depth extends number = DefaultDepth> =
+  | { IS_EQUAL: [DeepKey<STATE, Depth>, ComparableValue] }
+  | { EXISTS: DeepKey<STATE, Depth> }
+  | { IS_EMPTY: DeepKey<STATE, Depth> }
+  | { AND: BoolLogic<STATE, Depth>[] }
+  | { OR: BoolLogic<STATE, Depth>[] }
+  | { NOT: BoolLogic<STATE, Depth> }
+  | { GT: [DeepKey<STATE, Depth>, number] }
+  | { LT: [DeepKey<STATE, Depth>, number] }
+  | { GTE: [DeepKey<STATE, Depth>, number] }
+  | { LTE: [DeepKey<STATE, Depth>, number] }
+  | { IN: [DeepKey<STATE, Depth>, ComparableValue[]] }
