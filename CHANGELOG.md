@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.4.2](https://github.com/sladg/apex-state/compare/v3.4.1...v3.4.2)
+
+* fix: disable code splitting to prevent top-level await in published output [[d08aeeab21a34e9b23349541062f4968be1ef417](https://github.com/sladg/apex-state/commit/d08aeeab21a34e9b23349541062f4968be1ef417))]
+
+
 ## [v3.4.1](https://github.com/sladg/apex-state/compare/v3.4.0...v3.4.1)
 
 * chore: clean up docs, add examples, remove legacy tests and migration comments [[b7447dbde9a64425a0d4a09d8f41fbd091320573](https://github.com/sladg/apex-state/commit/b7447dbde9a64425a0d4a09d8f41fbd091320573))]
@@ -114,6 +119,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix: disable code splitting to prevent top-level await in published output [[d08aeeab21a34e9b23349541062f4968be1ef417](https://github.com/sladg/apex-state/commit/d08aeeab21a34e9b23349541062f4968be1ef417))]
 * chore: clean up docs, add examples, remove legacy tests and migration comments [[b7447dbde9a64425a0d4a09d8f41fbd091320573](https://github.com/sladg/apex-state/commit/b7447dbde9a64425a0d4a09d8f41fbd091320573))]
 * feat: add interactive demo with GH Pages deployment [[4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109](https://github.com/sladg/apex-state/commit/4de0ee870dc0dec9037b2229ae7cc8f1ae4ba109))]
 * feat: add excludeWhen aggregation, computation SUM/AVG, optimize Rust hot paths, improve WASM bridge types [[f11f4a33ef307ff8fec0334b499bd49d3afd1f16](https://github.com/sladg/apex-state/commit/f11f4a33ef307ff8fec0334b499bd49d3afd1f16))]
