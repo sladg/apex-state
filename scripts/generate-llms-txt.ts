@@ -40,12 +40,16 @@ const OUTDIR =
 // llms.txt — index file
 // ---------------------------------------------------------------------------
 
+const BASE_URL = 'https://sladg.github.io/apex-state'
+const GITHUB_BASE = 'https://github.com/sladg/apex-state/blob/master'
+
 const LLMS_TXT = `# @sladg/apex-state
 
 > Reactive state management for React built on Valtio. Declare what your fields need — validation, conditional UI, sync, listeners — and the store handles the rest. Optional Rust/WASM accelerator for complex workloads (up to 367x faster). Type-safe paths with DeepKey<T> and DeepValue<T, P>.
 
 Key concepts:
 - Concerns-based architecture: validation (Zod), conditional UI (BoolLogic), dynamic text — all declarative
+- BoolLogic shorthand: \`['path', value]\` is sugar for \`{ IS_EQUAL: ['path', value] }\` — both formats supported
 - Two-proxy pattern: read from state, write to _concerns — prevents infinite loops
 - Side effects: sync paths, flip paths, aggregations, listeners — registered via hooks
 - Dual-layer: JS/React owns reactivity and rendering; Rust/WASM owns heavy computation
@@ -72,13 +76,17 @@ const { value, setValue, validationState } = store.useFieldStore('path')
 
 ## API Reference
 
-- [Store & Hooks](docs/guides/STORE_HOOKS.md): createGenericStore, useFieldStore, useStore, useJitStore, useConcerns, useSideEffects, withConcerns, composable field hooks (buffered, throttled, transformed)
-- [Concerns System](docs/guides/CONCERNS_GUIDE.md): Validation (Zod), BoolLogic conditions (disabledWhen, visibleWhen, readonlyWhen), dynamic text (tooltip, label, placeholder), custom concerns
-- [Side Effects](docs/SIDE_EFFECTS_GUIDE.md): Sync paths, flip paths, aggregations (consensus mode), listeners — registration, processing order, scoping
-- [String Interpolation](docs/INTERPOLATION.md): Template helpers for dynamic text concerns — extractPlaceholders, interpolateTemplate
-- [Hash Key Paths](docs/WILD_FUNCTION_GUIDE.md): _() hash key utility for Record<string, V> types
-- [Testing Mock](docs/TESTING_MOCK.md): Drop-in vi.mock replacement with call tracking — \`@sladg/apex-state/testing\`
-- [Record Migration](docs/RECORD_MIGRATION.md): Migration patterns for dynamic Record types
+- [Store & Hooks](${GITHUB_BASE}/docs/guides/STORE_HOOKS.md): createGenericStore, useFieldStore, useStore, useJitStore, useConcerns, useSideEffects, withConcerns, composable field hooks (buffered, throttled, transformed)
+- [Concerns System](${GITHUB_BASE}/docs/guides/CONCERNS_GUIDE.md): Validation (Zod), BoolLogic conditions (disabledWhen, visibleWhen, readonlyWhen), dynamic text (tooltip, label, placeholder), custom concerns
+- [Side Effects](${GITHUB_BASE}/docs/SIDE_EFFECTS_GUIDE.md): Sync paths, flip paths, aggregations (consensus mode), listeners — registration, processing order, scoping
+- [String Interpolation](${GITHUB_BASE}/docs/INTERPOLATION.md): Template helpers for dynamic text concerns — extractPlaceholders, interpolateTemplate
+- [Hash Key Paths](${GITHUB_BASE}/docs/WILD_FUNCTION_GUIDE.md): _() hash key utility for Record<string, V> types
+- [Testing Mock](${GITHUB_BASE}/docs/TESTING_MOCK.md): Drop-in vi.mock replacement with call tracking — \`@sladg/apex-state/testing\`
+- [Record Migration](${GITHUB_BASE}/docs/RECORD_MIGRATION.md): Migration patterns for dynamic Record types
+
+## Optional
+
+- [Full documentation](${BASE_URL}/llms-full.txt): Complete concatenated docs, type-checked examples, and public API surface — optimised for LLM context
 `
 
 // ---------------------------------------------------------------------------
