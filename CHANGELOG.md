@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [v3.9.0](https://github.com/sladg/apex-state/compare/v3.7.3...v3.9.0)
+
+* feat: add type-safe listeners() helper with lazy validation and scoped return types [[76c7053b6c035bfdcb257dc0a195db7b3aef2df0](https://github.com/sladg/apex-state/commit/76c7053b6c035bfdcb257dc0a195db7b3aef2df0))]
+* perf: resolve TS2589 for pair types on large state types (>1,500 paths) [[477c473eddc2b363d4bf122c41513a9bcde95c6f](https://github.com/sladg/apex-state/commit/477c473eddc2b363d4bf122c41513a9bcde95c6f))]
+
+
 ## [v3.7.3](https://github.com/sladg/apex-state/compare/v3.7.1...v3.7.3)
 
 * fix: rewrite DeepPartial as conditional type to correctly handle nullable arrays [[d7dfa13426fad0b914662c2252b03e613e9dfea4](https://github.com/sladg/apex-state/commit/d7dfa13426fad0b914662c2252b03e613e9dfea4))]
@@ -165,6 +171,8 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* feat: add type-safe listeners() helper with lazy validation and scoped return types [[76c7053b6c035bfdcb257dc0a195db7b3aef2df0](https://github.com/sladg/apex-state/commit/76c7053b6c035bfdcb257dc0a195db7b3aef2df0))]
+* perf: resolve TS2589 for pair types on large state types (>1,500 paths) [[477c473eddc2b363d4bf122c41513a9bcde95c6f](https://github.com/sladg/apex-state/commit/477c473eddc2b363d4bf122c41513a9bcde95c6f))]
 * fix: rewrite DeepPartial as conditional type to correctly handle nullable arrays [[d7dfa13426fad0b914662c2252b03e613e9dfea4](https://github.com/sladg/apex-state/commit/d7dfa13426fad0b914662c2252b03e613e9dfea4))]
 * chore: switch test environment from jsdom to happy-dom [[97398cdf1ecaca28cc4e00f86fe5f7667b1fdc87](https://github.com/sladg/apex-state/commit/97398cdf1ecaca28cc4e00f86fe5f7667b1fdc87))]
 * fix: replace structuredClone with deepClone in applyChangesToObject [[424d4a9d69f49040faf31a83af93f03acbd01bbf](https://github.com/sladg/apex-state/commit/424d4a9d69f49040faf31a83af93f03acbd01bbf))]
