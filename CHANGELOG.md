@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.7.1](https://github.com/sladg/apex-state/compare/v3.7.0...v3.7.1)
+
+* fix: replace structuredClone with deepClone in applyChangesToObject [[424d4a9d69f49040faf31a83af93f03acbd01bbf](https://github.com/sladg/apex-state/commit/424d4a9d69f49040faf31a83af93f03acbd01bbf))]
+
+
 ## [v3.7.0](https://github.com/sladg/apex-state/compare/v3.6.3...v3.7.0)
 
 * feat: add CONTAINS_ANY and CONTAINS_ALL to BoolLogic; improve is utility [[22a5cdd07435725bae185735c8e8b071f96b96f9](https://github.com/sladg/apex-state/commit/22a5cdd07435725bae185735c8e8b071f96b96f9))]
@@ -154,6 +159,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix: replace structuredClone with deepClone in applyChangesToObject [[424d4a9d69f49040faf31a83af93f03acbd01bbf](https://github.com/sladg/apex-state/commit/424d4a9d69f49040faf31a83af93f03acbd01bbf))]
 * feat: add CONTAINS_ANY and CONTAINS_ALL to BoolLogic; improve is utility [[22a5cdd07435725bae185735c8e8b071f96b96f9](https://github.com/sladg/apex-state/commit/22a5cdd07435725bae185735c8e8b071f96b96f9))]
 * fix: DeepValue now strips null/undefined from intermediate types during path traversal [[fe866b359385fe4df9380273cdad504c30c7a5d2](https://github.com/sladg/apex-state/commit/fe866b359385fe4df9380273cdad504c30c7a5d2))]
 * fix: fix relative links in llms.txt and add llms-full.txt reference [[f4f49768671f515764d05ecbfbd5b1230ff9f967](https://github.com/sladg/apex-state/commit/f4f49768671f515764d05ecbfbd5b1230ff9f967))]
