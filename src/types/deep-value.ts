@@ -30,7 +30,7 @@ export type DeepValue<T, Path extends string> =
       ? T[number]
       : Path extends `${infer First}.${infer Rest}`
         ? First extends keyof T
-          ? DeepValue<T[First], Rest>
+          ? DeepValue<NonNullable<T[First]>, Rest>
           : string extends keyof T
             ? // First doesn't exist as concrete key, but T has string index (Record)
               First extends HASH_KEY

@@ -120,3 +120,104 @@ describe('DeepKeyFiltered with nullable fields', () => {
     expectTypeOf<'nested'>().not.toMatchTypeOf<NumberPaths>()
   })
 })
+
+describe('DeepKeyFiltered — null/undefined intermediate handling', () => {
+  // Three flavours of nullable intermediate:
+  //   optional (?:)     → T | undefined
+  //   nullable (| null) → T | null
+  //   both              → T | null | undefined
+  interface Mixed {
+    // optional intermediate (undefined)
+    optUser?: {
+      name: string
+      score: number
+    }
+    // nullable intermediate (null)
+    nullUser: {
+      name: string
+      score: number
+    } | null
+    // both null and undefined
+    bothUser:
+      | {
+          name: string
+          score: number
+        }
+      | null
+      | undefined
+    // object intermediate (non-nullable, for comparison)
+    nested: {
+      label?: string // optional leaf only
+      count?: number
+    }
+    active: boolean
+    root: string
+  }
+
+  test('filter for string — optional intermediate (|undefined)', () => {
+    type StringPaths = DeepKeyFiltered<Mixed, string>
+
+    expectTypeOf<StringPaths>().toEqualTypeOf<
+      | 'root'
+      | 'nested.label'
+      | 'optUser.name'
+      | 'nullUser.name'
+      | 'bothUser.name'
+    >()
+  })
+
+  test('filter for string|undefined — optional intermediate', () => {
+    type StringPaths = DeepKeyFiltered<Mixed, string | undefined>
+
+    expectTypeOf<StringPaths>().toEqualTypeOf<
+      | 'root'
+      | 'nested.label'
+      | 'optUser.name'
+      | 'nullUser.name'
+      | 'bothUser.name'
+    >()
+  })
+
+  test('filter for string|null — nullable intermediate', () => {
+    type StringPaths = DeepKeyFiltered<Mixed, string | null>
+
+    expectTypeOf<StringPaths>().toEqualTypeOf<
+      | 'root'
+      | 'nested.label'
+      | 'optUser.name'
+      | 'nullUser.name'
+      | 'bothUser.name'
+    >()
+  })
+
+  test('filter for number — all three nullable intermediate flavours', () => {
+    type NumberPaths = DeepKeyFiltered<Mixed, number>
+
+    expectTypeOf<NumberPaths>().toEqualTypeOf<
+      'nested.count' | 'optUser.score' | 'nullUser.score' | 'bothUser.score'
+    >()
+  })
+
+  test('filter for object type — paths resolving to an object shape', () => {
+    interface UserShape {
+      name: string
+      score: number
+    }
+    type ObjectPaths = DeepKeyFiltered<Mixed, UserShape>
+
+    // 'optUser', 'nullUser', 'bothUser' all resolve to UserShape (after stripping null/undefined)
+    expectTypeOf<ObjectPaths>().toEqualTypeOf<
+      'optUser' | 'nullUser' | 'bothUser'
+    >()
+  })
+
+  test('does not include wrong-type paths through nullable intermediates', () => {
+    type BoolPaths = DeepKeyFiltered<Mixed, boolean>
+
+    // 'active' is boolean, but optUser.name / nullUser.name / bothUser.name are string
+    expectTypeOf<'active'>().toMatchTypeOf<BoolPaths>()
+    expectTypeOf<'optUser.name'>().not.toMatchTypeOf<BoolPaths>()
+    expectTypeOf<'nullUser.name'>().not.toMatchTypeOf<BoolPaths>()
+    expectTypeOf<'bothUser.name'>().not.toMatchTypeOf<BoolPaths>()
+  })
+})
