@@ -12,19 +12,19 @@ import React, { type ReactElement } from 'react'
 import { act, fireEvent as tlFireEvent, render } from '@testing-library/react'
 import { proxy, ref, useSnapshot } from 'valtio'
 
-import type { ConcernType } from '../../src/concerns'
-import { defaultConcerns } from '../../src/concerns'
-import { registerConcernEffects as registerConcernEffectsLegacy } from '../../src/concerns/registration'
-import { registerConcernEffects as registerConcernEffectsWasm } from '../../src/concerns/registration.wasm-impl'
-import { useStoreContext } from '../../src/core/context'
-import { DEFAULT_STORE_CONFIG } from '../../src/core/defaults'
-import type { StoreConfig, StoreInstance } from '../../src/core/types'
-import { processChangesLegacy } from '../../src/pipeline/process-changes'
-import { processChangesWasm } from '../../src/pipeline/process-changes.wasm-impl'
-import { registerSideEffects as registerSideEffectsLegacy } from '../../src/sideEffects/registration'
-import { registerSideEffects as registerSideEffectsWasm } from '../../src/sideEffects/registration.wasm-impl'
-import { createGenericStore } from '../../src/store/create-store'
-import { createInternalState } from '../../src/store/provider'
+import type { ConcernType } from '~/concerns'
+import { defaultConcerns } from '~/concerns'
+import { registerConcernEffects as registerConcernEffectsLegacy } from '~/concerns/registration'
+import { registerConcernEffects as registerConcernEffectsWasm } from '~/concerns/registration.wasm-impl'
+import { useStoreContext } from '~/core/context'
+import { DEFAULT_STORE_CONFIG } from '~/core/defaults'
+import type { StoreConfig, StoreInstance } from '~/core/types'
+import { processChangesLegacy } from '~/pipeline/process-changes'
+import { processChangesWasm } from '~/pipeline/process-changes.wasm-impl'
+import { registerSideEffects as registerSideEffectsLegacy } from '~/sideEffects/registration'
+import { registerSideEffects as registerSideEffectsWasm } from '~/sideEffects/registration.wasm-impl'
+import { createGenericStore } from '~/store/create-store'
+import { createInternalState } from '~/store/provider'
 import type {
   ArrayOfChanges,
   ConcernRegistrationMap,
@@ -32,12 +32,12 @@ import type {
   DeepRequired,
   DeepValue,
   GenericMeta,
-} from '../../src/types'
-import type { SideEffects } from '../../src/types/side-effects'
-import { deepClone } from '../../src/utils/deep-clone'
-import { deepMerge } from '../../src/utils/deep-merge'
-import { createWasmPipeline } from '../../src/wasm/bridge'
-import { isWasmLoaded } from '../../src/wasm/lifecycle'
+} from '~/types'
+import type { SideEffects } from '~/types/side-effects'
+import { deepClone } from '~/utils/deep-clone'
+import { deepMerge } from '~/utils/deep-merge'
+import { createWasmPipeline } from '~/wasm/bridge'
+import { isWasmLoaded } from '~/wasm/lifecycle'
 
 // ---------------------------------------------------------------------------
 // Types

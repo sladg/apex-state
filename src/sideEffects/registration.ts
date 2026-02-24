@@ -1,5 +1,5 @@
 import type { StoreInstance } from '../core/types'
-import type { GenericMeta } from '../types'
+import type { AggregationPair, GenericMeta } from '../types'
 import type { SideEffects } from '../types/side-effects'
 import { registerAggregations } from './prebuilts/aggregation'
 import { registerFlipPair } from './prebuilts/flip'
@@ -21,13 +21,15 @@ const registerSideEffectsImpl = <
   // Do NOT revert to a loop over registerSyncPair — causes N × M redundant effect evaluations.
   // See docs/SIDE_EFFECTS_GUIDE.md "Batched Registration" section.
   if (effects.syncPaths) {
-    const cleanup = registerSyncPairsBatch(store, effects.syncPaths)
+    const pairs = effects.syncPaths as [string, string][]
+    const cleanup = registerSyncPairsBatch(store, pairs)
     cleanups.push(cleanup)
   }
 
   // Register flip paths: [path1, path2]
   if (effects.flipPaths) {
-    for (const [path1, path2] of effects.flipPaths) {
+    const pairs = effects.flipPaths as [string, string][]
+    for (const [path1, path2] of pairs) {
       const cleanup = registerFlipPair(store, path1, path2)
       cleanups.push(cleanup)
     }
@@ -35,7 +37,8 @@ const registerSideEffectsImpl = <
 
   // Register aggregations: [target, source] - target always first
   if (effects.aggregations) {
-    const cleanup = registerAggregations(store, id, effects.aggregations)
+    const pairs = effects.aggregations as AggregationPair<DATA>[]
+    const cleanup = registerAggregations(store, id, pairs)
     cleanups.push(cleanup)
   }
 

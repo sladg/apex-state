@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { createWasmPipeline, type WasmPipeline } from '../../src/wasm/bridge'
+import { createWasmPipeline, type WasmPipeline } from '~/wasm/bridge'
 
 /** Helper: find change by path */
 const findChange = (

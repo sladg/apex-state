@@ -11,11 +11,12 @@ import { useSnapshot } from 'valtio'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import type { ValidationStateResult } from '../../src/concerns/prebuilts'
-import { useStoreContext } from '../../src/core/context'
-import type { StoreInstance } from '../../src/core/types'
-import { createGenericStore } from '../../src/store/create-store'
-import { _ } from '../../src/utils/hash-key'
+import type { ValidationStateResult } from '~/concerns/prebuilts'
+import { useStoreContext } from '~/core/context'
+import type { StoreInstance } from '~/core/types'
+import { createGenericStore } from '~/store/create-store'
+import { _ } from '~/utils/hash-key'
+
 import { flushEffects, flushSync, mountStore } from '../utils/react'
 import { createRenderTracker, PerformanceBenchmark } from './test-utils'
 

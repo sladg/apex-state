@@ -9,15 +9,15 @@
 
 import { describe, expectTypeOf, it } from 'vitest'
 
-import type { DeepKeyFiltered } from '../../src/types/deep-key-filtered'
+import type { DeepKeyFiltered } from '~/types/deep-key-filtered'
 import type {
   AggregationPair,
   ComputationPair,
   FlipPair,
   PathsWithSameValueAs,
   SyncPair,
-} from '../../src/types/paths-of-same-value'
-import type { SideEffects } from '../../src/types/side-effects'
+} from '~/types/paths-of-same-value'
+import type { SideEffects } from '~/types/side-effects'
 
 // ============================================================================
 // Test State Definitions

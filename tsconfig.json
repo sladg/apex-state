@@ -13,6 +13,7 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "paths": {
+      "~/*": ["./src/*"],
       "@sladg/apex-state": ["./src/index.ts"],
       "@sladg/apex-state/testing": ["./src/testing/index.ts"]
     },

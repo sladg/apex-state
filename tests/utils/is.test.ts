@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { is } from '../../src/utils/is'
+import { is } from '~/utils/is'
 
 describe('is utility', () => {
   describe('nil', () => {

@@ -11,8 +11,9 @@
 
 import { describe, expect, it } from 'vitest'
 
+import type { ArrayOfChanges, GenericMeta } from '~/types'
+
 import { createGenericStore } from '../../src'
-import type { ArrayOfChanges, GenericMeta } from '../../src/types'
 import { flushEffects, flushSync, MODES, mountStore } from '../utils/react'
 
 // Type uses non-optional objects so DeepKey generates nested paths like

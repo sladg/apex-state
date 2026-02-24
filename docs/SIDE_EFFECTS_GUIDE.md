@@ -43,6 +43,57 @@ const cleanup = registerSideEffects(store, 'my-effects', { ... })
 
 Individual registration functions are also exported: `registerSyncPair`, `registerSyncPairsBatch`, `registerFlipPair`, `registerListener`.
 
+## Type-Safe Pair Helpers (Large State Types)
+
+The direct pair types (`SyncPair<T>`, `FlipPair<T>`, `AggregationPair<T>`, `ComputationPair<T>`) build an O(N²) union of all valid path combinations. This hits TypeScript's TS2589 recursion limit at ~1,500 paths.
+
+For large state types, use the **lazy-validated helper functions** instead:
+
+```typescript
+import { syncPairs, flipPairs, aggregationPairs, computationPairs } from '@sladg/apex-state'
+
+// Curried: first call binds the state type, second call validates pairs
+const syncs = syncPairs<MyLargeState>()([
+  ['billing.email', 'shipping.email'],   // ✓ both string — autocomplete works
+  ['billing.phone', 'shipping.phone'],   // ✓ both string
+  ['billing.total', 'shipping.email'],   // ✗ number vs string → type error
+])
+
+const flips = flipPairs<MyLargeState>()([
+  ['isActive', 'isInactive'],            // ✓ both boolean
+])
+
+const aggs = aggregationPairs<MyLargeState>()([
+  ['total', 'price1'],
+  ['total', 'price2', { IS_EQUAL: ['price2.disabled', true] }],
+])
+
+const comps = computationPairs<MyLargeState>()([
+  ['SUM', 'total', 'subtotal1'],
+  ['AVG', 'average', 'score1'],
+])
+```
+
+**How they work**: The function constraint uses `ResolvableDeepKey<T>` (O(N)) for path autocomplete. Validation uses `CheckPairValueMatch` which resolves `DeepValue` only for the concrete paths you write — O(1) per pair, O(K) total. Runtime behavior is identity (returns input as-is).
+
+**Scaling limits** (Apple M4 Pro):
+
+| Paths | Structure | Result | Time | Memory |
+|-------|-----------|--------|------|--------|
+| ~1,500 | `SyncPair<T>` (old) | TS2589 | — | — |
+| ~1,650 | 10 sectors, depth 4 | PASS | 1.3s | 400 MB |
+| ~33,000 | 200 sectors, depth 4 | PASS | 2.5s | 734 MB |
+| ~52,800 | 6 nesting levels, depth 9 | PASS | 4.7s | 574 MB |
+| ~82,500 | 500 sectors, depth 4 | PASS | 7.1s | 617 MB |
+| ~105,600 | 7 nesting levels, depth 10 | TS2589 | — | — |
+
+Practical limit: **~50K–80K paths** — a ~30–50x improvement over the direct types. The bottleneck is `ResolvableDeepKey` union resolution at the function constraint, not the pair validation itself.
+
+**When to use which**:
+
+- **`SyncPair<T>`** and direct types: Fine for state types with < ~1,000 paths. Use in type annotations.
+- **`syncPairs<T>()()`** helpers: Required for large state types. Use to define pair arrays with validation.
+
 ## Sync Paths
 
 Keep multiple paths synchronized. When one path changes, all paths in the same sync group receive the new value.
@@ -78,6 +129,7 @@ When registering multiple sync pairs at once (e.g. via `registerSideEffects` or 
 With concern effects registered (real-world scenario), the difference is significantly larger.
 
 **Functions**:
+
 - `registerSyncPair(store, path1, path2)` — registers a single pair, calls `processChanges` immediately. Use for standalone/dynamic registration.
 - `registerSyncPairsBatch(store, pairs)` — registers all pairs, calls `processChanges` once. Used internally by `registerSideEffects`.
 

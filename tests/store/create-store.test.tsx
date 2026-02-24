@@ -8,8 +8,9 @@
 import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { createGenericStore } from '../../src/store/create-store'
-import type { GenericMeta } from '../../src/types'
+import { createGenericStore } from '~/store/create-store'
+import type { GenericMeta } from '~/types'
+
 import {
   deepGetterFixtures,
   deeplyNestedFixtures,

@@ -8,7 +8,7 @@
 
 import { describe, expectTypeOf, test } from 'vitest'
 
-import type { DeepPartial } from '../../src/types'
+import type { DeepPartial } from '~/types'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

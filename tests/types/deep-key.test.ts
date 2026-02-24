@@ -7,7 +7,7 @@
 
 import { describe, expectTypeOf, it } from 'vitest'
 
-import type { DeepKey } from '../../src/types/deep-key'
+import type { DeepKey } from '~/types/deep-key'
 
 // Simple object type
 interface SimpleUser {

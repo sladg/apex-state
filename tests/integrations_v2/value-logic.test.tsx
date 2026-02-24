@@ -11,8 +11,9 @@
 
 import { describe, expect, it } from 'vitest'
 
+import type { StoreConfig } from '~/core/types'
+
 import { createGenericStore } from '../../src'
-import type { StoreConfig } from '../../src/core/types'
 import { flushEffects, mountStore } from '../utils/react'
 
 interface ValueLogicTestState {

@@ -23,8 +23,8 @@ import type {
   ArrayOfChanges,
   ConcernRegistrationMap,
   GenericMeta,
-} from '../../src/types'
-import type { SideEffects } from '../../src/types/side-effects'
+} from '~/types'
+import type { SideEffects } from '~/types/side-effects'
 
 const DEPT_COUNT = 3
 const PRODUCTS_PER_DEPT = 5

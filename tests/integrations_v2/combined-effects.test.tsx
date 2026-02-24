@@ -1681,4 +1681,152 @@ describe.each(MODES)('[$name] Combined Side Effects', ({ config }) => {
       expect(updateCount).toBeGreaterThanOrEqual(0)
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // Pre-warmed & standalone pair helpers — runtime integration
+  // ---------------------------------------------------------------------------
+
+  describe('Pre-warmed pair helpers (from store)', () => {
+    it('store.syncPairs() → syncPaths — sync works at runtime', async () => {
+      const store = createGenericStore<SyncFlipState>(config)
+      const syncs = store.syncPairs([['source', 'target']])
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.allFalse,
+        { sideEffects: { syncPaths: syncs } },
+      )
+      await flushSync()
+
+      setValue('source', 'hello')
+      await flushEffects()
+
+      expect(storeInstance.state.target).toBe('hello')
+    })
+
+    it('store.flipPairs() → flipPaths — flip works at runtime', async () => {
+      const store = createGenericStore<SyncFlipState>(config)
+      const flips = store.flipPairs([['flag1', 'flag2']])
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.allFalse,
+        { sideEffects: { flipPaths: flips } },
+      )
+      await flushSync()
+
+      setValue('flag1', true)
+      await flushSync()
+
+      expect(storeInstance.state.flag1).toBe(true)
+      expect(storeInstance.state.flag2).toBe(false)
+    })
+
+    it('store.aggregationPairs() → aggregations — aggregation works at runtime', async () => {
+      const store = createGenericStore<AggregationTestState>(config)
+      const aggs = store.aggregationPairs([
+        ['target', 'sourceA'],
+        ['target', 'sourceB'],
+      ])
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        aggregationTestFixtures.empty,
+        { sideEffects: { aggregations: aggs } },
+      )
+      await flushSync()
+
+      // Set both sources to the same value → consensus
+      setValue('sourceA', 'shared')
+      await flushEffects()
+      setValue('sourceB', 'shared')
+      await flushEffects()
+
+      expect(storeInstance.state.target).toBe('shared')
+    })
+
+    // Computations (SUM, AVG, etc.) are WASM-only — legacy mode does not support them
+    it.skipIf(config.useLegacyImplementation)(
+      'store.computationPairs() → computations — computation works at runtime',
+      async () => {
+        const store = createGenericStore<AggregationTestState>(config)
+        const comps = store.computationPairs([['SUM', 'numTotal', 'numA']])
+
+        const { storeInstance, setValue } = mountStore(
+          store,
+          aggregationTestFixtures.empty,
+          { sideEffects: { computations: comps } },
+        )
+        await flushSync()
+
+        setValue('numA', 10)
+        await flushEffects()
+
+        expect(storeInstance.state.numTotal).toBe(10)
+      },
+    )
+
+    it('combined: all four pair types in one useSideEffects call', async () => {
+      const store = createGenericStore<SyncFlipState>(config)
+      const syncs = store.syncPairs([['source', 'target']])
+      const flips = store.flipPairs([['flag1', 'flag2']])
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.allFalse,
+        { sideEffects: { syncPaths: syncs, flipPaths: flips } },
+      )
+      await flushSync()
+
+      // Sync: source → target
+      setValue('source', 'combined-test')
+      await flushEffects()
+      expect(storeInstance.state.target).toBe('combined-test')
+
+      // Flip: flag1 → flag2
+      setValue('flag1', true)
+      await flushSync()
+      expect(storeInstance.state.flag1).toBe(true)
+      expect(storeInstance.state.flag2).toBe(false)
+    })
+  })
+
+  describe('Standalone pair helpers', () => {
+    it('syncPairs<State>()(pairs) → syncPaths — same runtime behavior', async () => {
+      const { syncPairs } = await import('../../src/utils/pair-helpers')
+      const syncs = syncPairs<SyncFlipState>()([['source', 'target']])
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.allFalse,
+        { sideEffects: { syncPaths: syncs } },
+      )
+      await flushSync()
+
+      setValue('source', 'standalone-sync')
+      await flushEffects()
+
+      expect(storeInstance.state.target).toBe('standalone-sync')
+    })
+
+    it('flipPairs<State>()(pairs) → flipPaths — same runtime behavior', async () => {
+      const { flipPairs } = await import('../../src/utils/pair-helpers')
+      const flips = flipPairs<SyncFlipState>()([['flag1', 'flag2']])
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.allFalse,
+        { sideEffects: { flipPaths: flips } },
+      )
+      await flushSync()
+
+      setValue('flag1', true)
+      await flushSync()
+
+      expect(storeInstance.state.flag1).toBe(true)
+      expect(storeInstance.state.flag2).toBe(false)
+    })
+  })
 })

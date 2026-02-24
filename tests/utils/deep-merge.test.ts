@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { DeepPartial } from '../../src/types'
-import { deepMerge } from '../../src/utils/deep-merge'
+import type { DeepPartial } from '~/types'
+import { deepMerge } from '~/utils/deep-merge'
 
 describe('deepMerge', () => {
   it('should return target when source is undefined', () => {

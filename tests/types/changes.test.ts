@@ -7,7 +7,7 @@
 
 import { describe, expectTypeOf, it } from 'vitest'
 
-import type { ArrayOfChanges, GenericMeta } from '../../src/types'
+import type { ArrayOfChanges, GenericMeta } from '~/types'
 
 // Test data types
 interface User {

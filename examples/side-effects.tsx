@@ -61,6 +61,42 @@ const ListenerDemo = () => {
 }
 // @llms-example-end
 
+// @llms-example: Pre-warmed pair helpers — define pairs at module scope, reuse across components
+//
+// When to use each pattern:
+// - Pre-warmed (store.syncPairs): Best for most cases. Type is already bound to your state,
+//   pairs are validated once and reused. No need to repeat <State> generic.
+// - Standalone (syncPairs<State>()): Useful when you need pairs outside a store context,
+//   e.g. in shared config files or libraries.
+// - Inline (as shown in SideEffectsDemo): Quick and simple for one-off usage.
+
+const {
+  useSideEffects,
+  syncPairs: storeSyncPairs,
+  flipPairs: storeFlipPairs,
+  aggregationPairs: storeAggregationPairs,
+} = store
+
+// Define pairs at module scope — validated once, reused across components
+const syncs = storeSyncPairs([['source', 'target']])
+const flips = storeFlipPairs([['active', 'inactive']])
+const aggs = storeAggregationPairs([
+  ['summary.price', 'legs.0.price'],
+  ['summary.price', 'legs.1.price'],
+])
+
+const PreWarmedDemo = () => {
+  useSideEffects('pre-warmed', {
+    syncPaths: syncs,
+    flipPaths: flips,
+    aggregations: aggs,
+    listeners: [{ path: 'orders', scope: 'orders', fn: handler }],
+  })
+
+  return null
+}
+// @llms-example-end
+
 const handler = (
   _changes: ArrayOfChanges<TradeState['orders']>,
   _state: TradeState['orders'],
@@ -68,3 +104,4 @@ const handler = (
 
 void SideEffectsDemo
 void ListenerDemo
+void PreWarmedDemo

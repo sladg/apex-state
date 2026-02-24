@@ -23,6 +23,7 @@ import type {
 import type { SideEffects } from '../types/side-effects'
 import { dot } from '../utils/dot'
 import { createProvider } from './provider'
+import { createWarmPairHelpers } from './warm-pair-helpers'
 
 export const createGenericStore = <
   DATA extends object,
@@ -222,6 +223,7 @@ export const createGenericStore = <
     useConcerns,
     withConcerns,
     withMeta,
+    ...createWarmPairHelpers<DATA, META>(),
   }
 }
 

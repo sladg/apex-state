@@ -7,8 +7,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { BoolLogic } from '../../src/types/bool-logic'
-import { evaluateBoolLogic } from '../../src/utils/bool-logic'
+import type { BoolLogic } from '~/types/bool-logic'
+import { evaluateBoolLogic } from '~/utils/bool-logic'
 
 // -- Shared state fixture (mirrors Rust make_state()) --
 

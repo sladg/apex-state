@@ -8,7 +8,7 @@
 import { proxy } from 'valtio/vanilla'
 import { effect } from 'valtio-reactive'
 
-import { dot } from '../../src/utils/dot'
+import { dot } from '~/utils/dot'
 
 /**
  * Minimal concern type for testing

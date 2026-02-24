@@ -7,7 +7,7 @@
 
 import { describe, expectTypeOf, test } from 'vitest'
 
-import { is } from '../../src/utils/is'
+import { is } from '~/utils/is'
 
 // ============================================================================
 // Positive guards — narrow to the specific type

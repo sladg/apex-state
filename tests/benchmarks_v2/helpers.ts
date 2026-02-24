@@ -5,7 +5,7 @@
  * to reduce ~300 lines of duplication across 6 files.
  */
 
-import { type Change, createWasmPipeline } from '../../src/wasm/bridge'
+import { type Change, createWasmPipeline } from '~/wasm/bridge'
 
 export type { Change }
 

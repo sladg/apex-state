@@ -14,6 +14,12 @@ import type {
   FlipPair,
   SyncPair,
 } from './paths-of-same-value'
+import type {
+  ValidatedAggregationPairs,
+  ValidatedComputationPairs,
+  ValidatedFlipPairs,
+  ValidatedSyncPairs,
+} from './validated-pairs'
 
 /**
  * Clear path rule - "when trigger paths change, set target paths to null"
@@ -84,21 +90,26 @@ export interface SideEffects<
   /**
    * Sync paths - keeps specified paths synchronized
    * Format: [path1, path2] - both paths stay in sync
+   * Accepts direct `SyncPair<T>[]` or pre-validated result from `syncPairs()`.
    */
-  syncPaths?: SyncPair<DATA, Depth>[]
+  syncPaths?: SyncPair<DATA, Depth>[] | ValidatedSyncPairs<DATA>
 
   /**
    * Flip paths - keeps specified paths with opposite values
    * Format: [path1, path2] - paths have inverse boolean values
+   * Accepts direct `FlipPair<T>[]` or pre-validated result from `flipPairs()`.
    */
-  flipPaths?: FlipPair<DATA, Depth>[]
+  flipPaths?: FlipPair<DATA, Depth>[] | ValidatedFlipPairs<DATA>
 
   /**
    * Aggregations - aggregates sources into target
    * Format: [target, source] - target is ALWAYS first (left)
    * Multiple pairs can point to same target for multi-source aggregation
+   * Accepts direct `AggregationPair<T>[]` or pre-validated result from `aggregationPairs()`.
    */
-  aggregations?: AggregationPair<DATA, Depth>[]
+  aggregations?:
+    | AggregationPair<DATA, Depth>[]
+    | ValidatedAggregationPairs<DATA>
 
   /**
    * Clear paths - "when X changes, set Y to null"
@@ -113,8 +124,11 @@ export interface SideEffects<
    * Format: [operation, target, source] - target is computed from sources
    * Multiple pairs can point to same target for multi-source computation
    * Unidirectional: source → target only (writes to target are no-op)
+   * Accepts direct `ComputationPair<T>[]` or pre-validated result from `computationPairs()`.
    */
-  computations?: ComputationPair<DATA, Depth>[]
+  computations?:
+    | ComputationPair<DATA, Depth>[]
+    | ValidatedComputationPairs<DATA>
 
   /**
    * Listeners - react to state changes with scoped state

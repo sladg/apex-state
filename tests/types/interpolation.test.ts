@@ -7,11 +7,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   ExtractPlaceholders,
   ValidatedTemplate,
-} from '../../src/types/interpolation'
-import {
-  extractPlaceholders,
-  interpolateTemplate,
-} from '../../src/utils/interpolation'
+} from '~/types/interpolation'
+import { extractPlaceholders, interpolateTemplate } from '~/utils/interpolation'
 
 // ============================================================================
 // Test State Types

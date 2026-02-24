@@ -12,7 +12,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createWasmPipeline, type WasmPipeline } from '../../src/wasm/bridge'
+import { createWasmPipeline, type WasmPipeline } from '~/wasm/bridge'
 
 // -- Shared state fixture (mirrors Rust make_state() + TS bool-logic.test.ts) --
 

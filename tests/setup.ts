@@ -12,7 +12,7 @@ import * as matchers from '@testing-library/jest-dom/matchers'
 import { cleanup, fireEvent as rtlFireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, expect } from 'vitest'
 
-import { loadWasm } from '../src/wasm/lifecycle'
+import { loadWasm } from '~/wasm/lifecycle'
 
 // Enable jest-dom matchers for vitest
 expect.extend(matchers)

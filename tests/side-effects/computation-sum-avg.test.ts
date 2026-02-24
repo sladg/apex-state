@@ -20,7 +20,7 @@ import {
   type Change,
   createWasmPipeline,
   type WasmPipeline,
-} from '../../src/wasm/bridge'
+} from '~/wasm/bridge'
 
 /** Helper: find change by path */
 const findChange = (changes: Change[], path: string) =>

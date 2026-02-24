@@ -19,8 +19,9 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 // ---------------------------------------------------------------------------
 import { z } from 'zod'
 
-import type { ValidationStateResult } from '../../src/concerns/prebuilts'
-import { createGenericStore } from '../../src/store/create-store'
+import type { ValidationStateResult } from '~/concerns/prebuilts'
+import { createGenericStore } from '~/store/create-store'
+
 import { mountStore } from '../utils/react'
 
 // ---------------------------------------------------------------------------

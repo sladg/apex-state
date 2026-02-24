@@ -11,7 +11,7 @@ import React from 'react'
 import { render, renderHook, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { __mocked, createGenericStore } from '../../src/testing/index'
+import { __mocked, createGenericStore } from '~/testing/index'
 
 interface TestState {
   email: string

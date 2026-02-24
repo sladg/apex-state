@@ -1,7 +1,11 @@
 /**
- * PathsOfSameValue - Type-safe path tuples for side effects
+ * Direct pair types — O(N²) path unions for side effects
  *
- * Simple tuple-based API for syncPaths, flipPaths, and aggregations.
+ * These types enumerate all valid path combinations eagerly.
+ * Simple to use as type annotations but hit TS2589 at ~1,500 paths.
+ *
+ * For large state types, use the curried helper functions (syncPairs, flipPairs, etc.)
+ * which use lazy validators from `pair-validators.ts` instead.
  *
  * @example
  * ```typescript
@@ -45,6 +49,11 @@ export type PathsWithSameValueAs<
  * A tuple of two paths that must have the same value type.
  * Format: [path1, path2]
  *
+ * **Scaling note**: This type is O(N²) where N = number of paths. It hits TS2589
+ * at ~1,500 paths. For large state types, use the `syncPairs()` helper function
+ * or `store.syncPairs()` (pre-warmed from `createGenericStore`) instead —
+ * they scale to ~50K–80K paths.
+ *
  * @example
  * const pair: SyncPair<State> = ['user.email', 'profile.email']
  *
@@ -65,8 +74,11 @@ export type SyncPair<
 }[ResolvableDeepKey<DATA, Depth>]
 
 /**
- * A tuple of two paths for flip (alias for SyncPair)
+ * A tuple of two paths for flip (alias for SyncPair).
  * Format: [path1, path2]
+ *
+ * **Scaling note**: O(N²) — hits TS2589 at ~1,500 paths. Use `flipPairs()` helper
+ * or `store.flipPairs()` for large state types.
  *
  * @example
  * const pair: FlipPair<State> = ['isActive', 'isInactive']
@@ -83,6 +95,9 @@ export type FlipPair<
  * Optional third element is a BoolLogic condition — when true, this source is excluded.
  *
  * Multiple pairs can point to same target for multi-source aggregation.
+ *
+ * **Scaling note**: O(N²) — hits TS2589 at ~1,500 paths. Use `aggregationPairs()` helper
+ * or `store.aggregationPairs()` for large state types.
  *
  * @example
  * // target <- source (target is always first/left)
@@ -113,6 +128,9 @@ export type ComputationOp = 'SUM' | 'AVG'
  * Optional fourth element is a BoolLogic condition — when true, this source is excluded.
  *
  * Multiple pairs can point to same target for multi-source computation.
+ *
+ * **Scaling note**: O(N²) — hits TS2589 at ~1,500 paths. Use `computationPairs()` helper
+ * or `store.computationPairs()` for large state types.
  *
  * @example
  * const comps: ComputationPair<State>[] = [

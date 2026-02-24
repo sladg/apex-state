@@ -18,9 +18,10 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
+import type { ConcernType } from '~/concerns/types'
+import { dot } from '~/utils/dot'
+
 import { createGenericStore, defaultConcerns } from '../../src'
-import type { ConcernType } from '../../src/concerns/types'
-import { dot } from '../../src/utils/dot'
 import type { BasicTestState, DeeplyNestedState, SyncFlipState } from '../mocks'
 import {
   basicTestFixtures,

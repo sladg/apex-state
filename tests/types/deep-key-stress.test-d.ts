@@ -10,14 +10,14 @@
 
 import { describe, expectTypeOf, test } from 'vitest'
 
-import type { BoolLogic } from '../../src/types/bool-logic'
-import type { DeepKey } from '../../src/types/deep-key'
-import type { DeepKeyFiltered } from '../../src/types/deep-key-filtered'
-import type { DeepValue } from '../../src/types/deep-value'
+import type { BoolLogic } from '~/types/bool-logic'
+import type { DeepKey } from '~/types/deep-key'
+import type { DeepKeyFiltered } from '~/types/deep-key-filtered'
+import type { DeepValue } from '~/types/deep-value'
 import type {
   PathsWithSameValueAs,
   SyncPair,
-} from '../../src/types/paths-of-same-value'
+} from '~/types/paths-of-same-value'
 
 // ============================================================================
 // Leaf types (deepest level)

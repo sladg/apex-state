@@ -61,6 +61,10 @@ export {
 export type {
   AggregationPair,
   ArrayOfChanges,
+  CheckAggregationPairs,
+  CheckComputationPairs,
+  CheckPairValueMatch,
+  CheckSyncPairs,
   ComputationOp,
   ComputationPair,
   ConcernRegistrationMap,
@@ -78,6 +82,14 @@ export type {
   SyncPair,
   ValidationSchema,
 } from './types'
+
+// Lazy-validated pair helpers (scale to large state types without TS2589)
+export {
+  aggregationPairs,
+  computationPairs,
+  flipPairs,
+  syncPairs,
+} from './utils/pair-helpers'
 
 // =============================================================================
 // CONCERNS SYSTEM (Main Extension Point)

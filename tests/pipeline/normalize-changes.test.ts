@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { normalizeChangesForGroups } from '../../src/pipeline/normalize-changes'
+import { normalizeChangesForGroups } from '~/pipeline/normalize-changes'
 
 describe('normalizeChangesForGroups', () => {
   describe('Exact path match', () => {

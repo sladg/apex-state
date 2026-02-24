@@ -1,0 +1,41 @@
+/**
+ * Validated pair branded types
+ *
+ * Phantom types for pre-validated pair arrays returned by helper functions
+ * (syncPairs, flipPairs, aggregationPairs, computationPairs).
+ *
+ * Brands serve two purposes:
+ * 1. SideEffects accepts them without re-resolving the O(N²) direct pair types
+ * 2. DATA generic prevents cross-store use (pairs from StoreA can't go to StoreB)
+ *
+ * Zero runtime cost — brands are erased at compile time.
+ */
+
+import type { ComputationOp } from './paths-of-same-value'
+
+declare const VALIDATED: unique symbol
+declare const STORE_DATA: unique symbol
+
+/** Pre-validated sync pair array. Returned by `syncPairs()`. Branded with DATA to prevent cross-store use. */
+export type ValidatedSyncPairs<DATA extends object = object> = [
+  string,
+  string,
+][] & { [VALIDATED]: 'sync'; [STORE_DATA]: DATA }
+
+/** Pre-validated flip pair array. Returned by `flipPairs()`. Branded with DATA to prevent cross-store use. */
+export type ValidatedFlipPairs<DATA extends object = object> = [
+  string,
+  string,
+][] & { [VALIDATED]: 'flip'; [STORE_DATA]: DATA }
+
+/** Pre-validated aggregation pair array. Returned by `aggregationPairs()`. Branded with DATA to prevent cross-store use. */
+export type ValidatedAggregationPairs<DATA extends object = object> = (
+  | [string, string]
+  | [string, string, unknown]
+)[] & { [VALIDATED]: 'aggregation'; [STORE_DATA]: DATA }
+
+/** Pre-validated computation pair array. Returned by `computationPairs()`. Branded with DATA to prevent cross-store use. */
+export type ValidatedComputationPairs<DATA extends object = object> = (
+  | [ComputationOp, string, string]
+  | [ComputationOp, string, string, unknown]
+)[] & { [VALIDATED]: 'computation'; [STORE_DATA]: DATA }

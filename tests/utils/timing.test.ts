@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { createTiming, type TimingEvent } from '../../src/utils/timing'
+import { createTiming, type TimingEvent } from '~/utils/timing'
 
 describe('createTiming', () => {
   describe('when timing is enabled', () => {

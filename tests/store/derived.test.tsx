@@ -10,9 +10,10 @@ import { screen } from '@testing-library/react'
 import { useSnapshot } from 'valtio'
 import { describe, expect, it } from 'vitest'
 
-import { StoreContext } from '../../src/core/context'
-import { createGenericStore } from '../../src/store/create-store'
-import { detectGetters, extractGetters } from '../../src/utils/derive-values'
+import { StoreContext } from '~/core/context'
+import { createGenericStore } from '~/store/create-store'
+import { detectGetters, extractGetters } from '~/utils/derive-values'
+
 import { fireEvent, flushEffects, mountStore } from '../../tests/utils/react'
 import { deepGetterFixtures, typeHelpers } from '../mocks'
 

@@ -4,8 +4,8 @@
  * Type-safe wrappers for runtime/dynamic paths in tests.
  */
 
-import type { ArrayOfChanges, GenericMeta } from '../../src/types'
-import type { FlipPair, SyncPair } from '../../src/types/paths-of-same-value'
+import type { ArrayOfChanges, GenericMeta } from '~/types'
+import type { FlipPair, SyncPair } from '~/types/paths-of-same-value'
 
 /**
  * Type-safe test helpers for dynamic paths

@@ -21,7 +21,7 @@ The test utilities provide helpers that wrap the real store, ensuring tests run 
 
 ```typescript
 import { mountStore } from '../utils/react'
-import { createGenericStore } from '../../src/store/createStore'
+import { createGenericStore } from '~/store/createStore'
 
 it('should update state correctly', async () => {
   const store = createGenericStore<{ count: number }>()
@@ -415,7 +415,7 @@ When paths index into `Record<string, T>` (e.g., `orders.order_0.status`), use t
 `_()` takes a concrete ID string and returns it typed as `HASH_KEY`, which satisfies `DeepKey<T>` for Record-indexed paths.
 
 ```typescript
-import { _ } from '../../src/utils/hashKey'
+import { _ } from '~/utils/hashKey'
 ```
 
 ### Correct Usage

@@ -17,8 +17,9 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 
+import type { ValidationStateResult } from '~/concerns/prebuilts'
+
 import { createGenericStore } from '../../src'
-import type { ValidationStateResult } from '../../src/concerns/prebuilts'
 import { flushEffects, mountStore } from '../utils/react'
 
 interface TestState {

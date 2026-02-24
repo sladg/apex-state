@@ -15,8 +15,9 @@
 
 import { bench, describe } from 'vitest'
 
-import { type Change, createWasmPipeline } from '../../src/wasm/bridge'
-import { loadWasm } from '../../src/wasm/lifecycle'
+import { type Change, createWasmPipeline } from '~/wasm/bridge'
+import { loadWasm } from '~/wasm/lifecycle'
+
 import {
   BENCH_OPTIONS,
   buildState,

@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { dot } from '../../src/utils/dot'
+import { dot } from '~/utils/dot'
 
 interface TestState {
   user: {

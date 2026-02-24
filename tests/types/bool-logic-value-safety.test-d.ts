@@ -8,7 +8,7 @@
 
 import { describe, expectTypeOf, test } from 'vitest'
 
-import type { BoolLogic } from '../../src/types/bool-logic'
+import type { BoolLogic } from '~/types/bool-logic'
 
 // -- Test fixtures --
 

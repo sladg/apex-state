@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deepClone } from '../../src/utils/deep-clone'
+import { deepClone } from '~/utils/deep-clone'
 
 describe('deepClone', () => {
   describe('basic cloning', () => {

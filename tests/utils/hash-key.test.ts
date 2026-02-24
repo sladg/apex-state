@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { _, hashKey } from '../../src/utils/hash-key'
+import { _, hashKey } from '~/utils/hash-key'
 
 describe('_ (hash key helper)', () => {
   it('should return the ID as-is', () => {
