@@ -13,23 +13,28 @@ export const deepMerge = <T extends object>(
 
   const result = { ...target }
 
-  for (const key in source) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue
+  // DeepPartial<T> has the same keys as T when T extends object.
+  // Cast to a known-keyed type so TypeScript allows indexing both objects.
+  const src = source as { [K in keyof T]?: unknown }
 
-    const sourceValue = source[key]
-    const targetValue = target[key]
+  for (const key in src) {
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue
+
+    const k = key as Extract<keyof T, string>
+    const sourceValue = src[k]
+    const targetValue = target[k]
 
     if (is.undefined(sourceValue)) {
       continue
     }
 
     if (is.object(sourceValue) && is.object(targetValue)) {
-      result[key] = deepMerge(
+      result[k] = deepMerge(
         targetValue,
-        sourceValue as Partial<typeof targetValue>,
-      ) as T[Extract<keyof T, string>]
+        sourceValue as DeepPartial<typeof targetValue>,
+      ) as T[typeof k]
     } else {
-      result[key] = sourceValue as T[Extract<keyof T, string>]
+      result[k] = sourceValue as T[typeof k]
     }
   }
 

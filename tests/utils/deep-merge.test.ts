@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import type { DeepPartial } from '../../src/types'
 import { deepMerge } from '../../src/utils/deep-merge'
 
 describe('deepMerge', () => {
@@ -35,7 +36,10 @@ describe('deepMerge', () => {
 
   it('should skip undefined source values (preserve target)', () => {
     const target = { a: 1, b: 2 }
-    const result = deepMerge(target, { a: undefined })
+    // Cast: exactOptionalPropertyTypes prevents direct assignment of explicit undefined;
+    // this tests the runtime guard `if (is.undefined(sourceValue)) continue`
+    const source = { a: undefined } as unknown as DeepPartial<typeof target>
+    const result = deepMerge(target, source)
 
     expect(result).toEqual({ a: 1, b: 2 })
   })
