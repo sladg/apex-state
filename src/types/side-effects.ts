@@ -57,7 +57,7 @@ export type ClearPathRule<
  *       fn: (changes, state) => {
  *         // changes: [['name', 'Alice', {}]]  // RELATIVE to scope
  *         // state: user.profile sub-object
- *         return [['status', 'updated', {}]]  // Return FULL paths
+ *         return [['status', 'updated', {}]]  // Return SCOPED paths (relative to scope)
  *       }
  *     },
  *     {
@@ -75,7 +75,7 @@ export type ClearPathRule<
  *       fn: (changes, state) => {
  *         // changes: [['data.strike', value, {}]]  // RELATIVE to scope
  *         // state: p.123.g.abc object
- *         return [['some.value.elsewhere', computed, {}]]  // FULL path
+ *         return [['data.computed', computed, {}]]  // SCOPED path (relative to scope)
  *       }
  *     }
  *   ]
@@ -132,6 +132,7 @@ export interface SideEffects<
 
   /**
    * Listeners - react to state changes with scoped state
+   * Accepts direct `ListenerRegistration<T>[]` or pre-validated result from `listeners()`.
    */
   listeners?: ListenerRegistration<DATA, META>[]
 }

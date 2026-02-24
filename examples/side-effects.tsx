@@ -4,8 +4,8 @@
  * These examples type-check against the real @sladg/apex-state exports.
  */
 
-import type { ArrayOfChanges } from '@sladg/apex-state'
-import { createGenericStore } from '@sladg/apex-state'
+import type { OnStateListener } from '@sladg/apex-state'
+import { createGenericStore, listeners } from '@sladg/apex-state'
 
 interface TradeState {
   'source': string
@@ -22,6 +22,28 @@ interface TradeState {
 
 const store = createGenericStore<TradeState>()
 
+// @llms-example: Standalone listener fns — typed independently of the store
+// Use OnStateListener<DATA, SUB_STATE> to define standalone listener functions.
+// SUB_STATE matches the scope type (what the listener receives as state).
+
+// Scoped listener fn: receives user.profile as state, returns scoped changes
+const profileListener: OnStateListener<
+  TradeState,
+  TradeState['user']['profile']
+> = (_changes, _state) => {
+  // _changes: ArrayOfChanges<TradeState['user']['profile']>  (paths relative to scope)
+  // _state: TradeState['user']['profile']                     (scoped state)
+  // return: ArrayOfChanges<TradeState['user']['profile']> | undefined  (scoped paths)
+  return [['name', `updated-${_state.name}`, {}]]
+}
+
+// Full-state listener fn: receives the entire TradeState['orders'] scope
+const ordersHandler: OnStateListener<TradeState, TradeState['orders']> = (
+  _changes,
+  _state,
+) => undefined
+// @llms-example-end
+
 // @llms-example: Register sync paths, flip paths, aggregations, and listeners in one call
 const SideEffectsDemo = () => {
   store.useSideEffects('demo', {
@@ -34,31 +56,50 @@ const SideEffectsDemo = () => {
       ['summary.price', 'legs.0.price'],
       ['summary.price', 'legs.1.price'],
     ],
-    listeners: [{ path: 'orders', scope: 'orders', fn: handler }],
+    listeners: [{ path: 'orders', scope: 'orders', fn: ordersHandler }],
   })
 
   return null
 }
 // @llms-example-end
 
-// @llms-example: Scoped listener that watches user.profile changes and produces audit entries
+// @llms-example: Inline listener with standalone fn (direct pattern)
 const ListenerDemo = () => {
   store.useSideEffects('listeners', {
     listeners: [
       {
         path: 'user.profile', // watch changes under this path
         scope: 'user.profile', // receive scoped state
-        fn: (_changes, _state) => {
-          // changes: [['name', 'Alice', {}]]  -- paths relative to scope
-          // state: user.profile sub-object
-          return [['audit.lastEdit', Date.now(), {}]] // return FULL paths
-        },
+        fn: profileListener, // standalone fn — pre-typed
       },
     ],
   })
 
   return null
 }
+// @llms-example-end
+
+// @llms-example: Branded listeners — validated with scope-prefix-of-path check
+// Use listeners<State>()([...]) for type-safe scope/path validation at definition time.
+// The branded result is accepted by useSideEffects without re-validation.
+const brandedListeners = listeners<TradeState>()([
+  {
+    path: 'user.profile', // scope omitted → defaults to 'user.profile'
+    fn: profileListener, // fn typed for scoped state
+  },
+  {
+    path: 'orders', // scope omitted → defaults to 'orders'
+    fn: ordersHandler, // standalone handler
+  },
+  {
+    path: 'active', // watch a specific path
+    scope: null, // null scope → fn gets full state
+    fn: ((_changes, _state) => undefined) as OnStateListener<
+      TradeState,
+      TradeState
+    >,
+  },
+])
 // @llms-example-end
 
 // @llms-example: Pre-warmed pair helpers — define pairs at module scope, reuse across components
@@ -75,6 +116,7 @@ const {
   syncPairs: storeSyncPairs,
   flipPairs: storeFlipPairs,
   aggregationPairs: storeAggregationPairs,
+  listeners: storeListeners,
 } = store
 
 // Define pairs at module scope — validated once, reused across components
@@ -84,24 +126,22 @@ const aggs = storeAggregationPairs([
   ['summary.price', 'legs.0.price'],
   ['summary.price', 'legs.1.price'],
 ])
+// Pre-warmed listeners — scope omitted, defaults to path
+const list = storeListeners([{ path: 'orders', fn: ordersHandler }])
 
 const PreWarmedDemo = () => {
   useSideEffects('pre-warmed', {
     syncPaths: syncs,
     flipPaths: flips,
     aggregations: aggs,
-    listeners: [{ path: 'orders', scope: 'orders', fn: handler }],
+    listeners: list,
   })
 
   return null
 }
 // @llms-example-end
 
-const handler = (
-  _changes: ArrayOfChanges<TradeState['orders']>,
-  _state: TradeState['orders'],
-): ArrayOfChanges<TradeState> | undefined => undefined
-
 void SideEffectsDemo
 void ListenerDemo
 void PreWarmedDemo
+void brandedListeners

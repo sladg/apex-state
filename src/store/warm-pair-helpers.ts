@@ -33,6 +33,7 @@ import {
   aggregationPairs,
   computationPairs,
   flipPairs,
+  listeners,
   syncPairs,
 } from '../utils/pair-helpers'
 
@@ -42,7 +43,7 @@ import {
  */
 export const createWarmPairHelpers = <
   DATA extends object,
-  _META extends GenericMeta = GenericMeta,
+  META extends GenericMeta = GenericMeta,
 >() => ({
   /**
    * Pre-warmed sync pair validator — DATA type is already bound.
@@ -125,4 +126,29 @@ export const createWarmPairHelpers = <
    * ```
    */
   computationPairs: computationPairs<DATA>(),
+
+  /**
+   * Pre-warmed listener validator — DATA type is already bound.
+   * Validates path/scope relationships and derives fn types from scope.
+   * Pass the result to `useSideEffects` as `listeners`.
+   *
+   * @example
+   * ```typescript
+   * const { useSideEffects, listeners } = createGenericStore<MyState>()
+   *
+   * const myListeners = listeners([
+   *   {
+   *     path: 'user.profile.name',
+   *     scope: 'user.profile',
+   *     fn: (changes, state) => {
+   *       // state is typed as MyState['user']['profile']
+   *       return undefined
+   *     }
+   *   },
+   * ])
+   *
+   * useSideEffects('my-listeners', { listeners: myListeners })
+   * ```
+   */
+  listeners: listeners<DATA, META>(),
 })

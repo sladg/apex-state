@@ -68,6 +68,10 @@ export const registerSideEffects = <
 
     // Wrap fn with timing measurement
     const originalFn = listener.fn
+    // Default scope to path when omitted (undefined)
+    const effectiveScope =
+      listener.scope === undefined ? listener.path : listener.scope
+
     const mapKey = listener.path ?? ''
     const wrappedFn = (changes: any, state: any) =>
       store._internal.timing.run(
@@ -81,14 +85,14 @@ export const registerSideEffects = <
 
     // Store in handler map for execution
     listenerHandlers.set(subscriberId, {
-      scope: listener.scope,
+      scope: effectiveScope,
       fn: wrappedFn,
     })
 
     return {
       subscriber_id: subscriberId,
       topic_path: listener.path ?? '',
-      scope_path: listener.scope ?? '',
+      scope_path: effectiveScope ?? '',
     }
   })
 

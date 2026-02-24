@@ -53,8 +53,13 @@ export const registerListenerLegacy = <
   const { graphs } = store._internal
   const { listeners, listenerHandlers } = graphs
 
+  // Default scope to path when omitted (undefined)
+  if (registration.scope === undefined) {
+    registration.scope = registration.path
+  }
+
   // Validate that scope is a parent/ancestor of path
-  validateScopeAndPath(registration.path, registration.scope)
+  validateScopeAndPath(registration.path, registration.scope ?? null)
 
   // Assign a unique subscriber_id for O(1) handler lookup
   const subscriberId = nextSubscriberId++

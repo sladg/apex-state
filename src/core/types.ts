@@ -78,7 +78,14 @@ export interface Aggregation {
   sourcePaths: string[]
 }
 
-/** Reacts to scoped changes - receives relative paths and scoped state. Only fires for NESTED paths, not the path itself. */
+/** Reacts to scoped changes - receives relative paths and scoped state. Only fires for NESTED paths, not the path itself.
+ * Both input changes and return changes use paths relative to scope (or full paths when scope is null).
+ *
+ * When SUB_STATE is `any` (as in ListenerRegistration's default), the return type falls back to
+ * ArrayOfChanges<DATA> to avoid DeepKey<any> resolving to never.
+ */
+type IsAnyState<T> = 0 extends 1 & T ? true : false
+
 export type OnStateListener<
   DATA extends object = object,
   SUB_STATE = DATA,
@@ -86,7 +93,9 @@ export type OnStateListener<
 > = (
   changes: ArrayOfChanges<SUB_STATE, META>,
   state: SUB_STATE,
-) => ArrayOfChanges<DATA, META> | undefined
+) => IsAnyState<SUB_STATE> extends true
+  ? ArrayOfChanges<DATA, META> | undefined
+  : ArrayOfChanges<SUB_STATE, META> | undefined
 
 /**
  * Listener registration with path (what to watch) and scope (how to present data)
@@ -137,12 +146,13 @@ export interface ListenerRegistration<
 
   /**
    * Scope for state and changes presentation
+   * - If omitted/undefined: defaults to `path` (scoped state matching the watched path)
    * - If null: state is full DATA, changes use FULL paths
    * - If set: state is value at scope, changes use paths RELATIVE to scope
    *
    * Note: Changes are filtered based on `path`, even when scope is null
    */
-  scope: DeepKey<DATA, Depth> | null
+  scope?: DeepKey<DATA, Depth> | null
 
   fn: OnStateListener<DATA, any, META>
 }

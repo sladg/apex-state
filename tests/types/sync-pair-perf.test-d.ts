@@ -40,6 +40,7 @@
 
 import { describe, expect, expectTypeOf, test } from 'vitest'
 
+import type { OnStateListener } from '~/core/types'
 import type { DeepKey } from '~/types/deep-key'
 import type {
   CheckAggregationPairs,
@@ -51,12 +52,14 @@ import type {
   ValidatedAggregationPairs,
   ValidatedComputationPairs,
   ValidatedFlipPairs,
+  ValidatedListeners,
   ValidatedSyncPairs,
 } from '~/types/validated-pairs'
 import {
   aggregationPairs,
   computationPairs,
   flipPairs,
+  listeners,
   syncPairs,
 } from '~/utils/pair-helpers'
 
@@ -1184,5 +1187,574 @@ describe('Validated pairs — cross-store rejection', () => {
     expectTypeOf(otherComps).not.toMatchTypeOf<
       ValidatedComputationPairs<ObjState>
     >()
+  })
+})
+
+// ============================================================================
+// 9. Listener helper — path/scope validation, prefix enforcement, fn typing
+// ============================================================================
+
+// Typed noop fns for ObjState listener tests (avoids implicit `any` params)
+const noopObjFull: OnStateListener<ObjState, ObjState> = () => undefined
+const noopObjMid: OnStateListener<ObjState, ObjMid> = () => undefined
+const noopObjString: OnStateListener<ObjState, string> = () => undefined
+
+// Typed noop fns for OtherState listener tests
+const noopOtherFull: OnStateListener<OtherState, OtherState> = () => undefined
+
+// Typed noop fns for HugeState listener tests
+const noopHugeFull: OnStateListener<HugeState, HugeState> = () => undefined
+const noopHugeMidA1: OnStateListener<HugeState, PerfMidA1> = () => undefined
+
+describe('listeners helper — valid registrations', () => {
+  test('scope is prefix of path — accepted', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: 'gamma.nested.leaf.id',
+        scope: 'gamma.nested',
+        fn: noopObjMid,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('scope equals path — accepted', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: 'gamma.nested',
+        scope: 'gamma.nested',
+        fn: noopObjMid,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('path set, scope null — full state', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: 'alpha.tag',
+        scope: null,
+        fn: noopObjFull,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('both null — watch everything, full state', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: null,
+        scope: null,
+        fn: noopObjFull,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('path set, scope omitted — defaults to path scope', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: 'alpha.tag',
+        fn: noopObjString,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('path null, scope omitted — defaults to null, full state', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: null,
+        fn: noopObjFull,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('multiple listeners in one call', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: 'gamma.nested.leaf.id',
+        scope: 'gamma.nested',
+        fn: noopObjMid,
+      },
+      {
+        path: 'alpha.tag',
+        scope: null,
+        fn: noopObjFull,
+      },
+      {
+        path: null,
+        scope: null,
+        fn: noopObjFull,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('returns input as-is at runtime (identity)', () => {
+    const input = [
+      {
+        path: 'alpha.tag' as const,
+        scope: null,
+        fn: () => undefined,
+      },
+    ]
+    const result = listeners<ObjState>()(input)
+    expect(result).toBe(input)
+  })
+})
+
+describe('listeners helper — rejection tests', () => {
+  test('rejects scope not prefix of path', () => {
+    listeners<ObjState>()([
+      {
+        path: 'alpha.tag',
+        // @ts-expect-error — 'beta' is not a prefix of 'alpha.tag'
+        scope: 'beta',
+        fn: (_changes, _state) => undefined,
+      },
+    ])
+  })
+
+  test('rejects scope deeper than path', () => {
+    listeners<ObjState>()([
+      {
+        path: 'alpha',
+        // @ts-expect-error — 'alpha.leaf' is deeper than path 'alpha'
+        scope: 'alpha.leaf',
+        fn: (_changes, _state) => undefined,
+      },
+    ])
+  })
+
+  test('rejects invalid path', () => {
+    listeners<ObjState>()([
+      {
+        // @ts-expect-error — 'nonexistent.path' is not a valid path
+        path: 'nonexistent.path',
+        scope: null,
+        fn: (_changes, _state) => undefined,
+      },
+    ])
+  })
+
+  test('rejects invalid scope', () => {
+    listeners<ObjState>()([
+      {
+        path: 'alpha.tag',
+        // @ts-expect-error — 'nonexistent' is not a valid path
+        scope: 'nonexistent',
+        fn: (_changes, _state) => undefined,
+      },
+    ])
+  })
+
+  test('rejects unrelated scope and path', () => {
+    listeners<ObjState>()([
+      {
+        path: 'alpha.tag',
+        // @ts-expect-error — 'gamma' is not a prefix of 'alpha.tag'
+        scope: 'gamma',
+        // @ts-expect-error — scope rejection cascades to fn (OnStateListener<..., never>)
+        fn: noopObjFull,
+      },
+    ])
+  })
+})
+
+describe('listeners helper — SideEffects assignability', () => {
+  test('listeners result assigns to SideEffects.listeners', () => {
+    const myListeners = listeners<ObjState>()([
+      {
+        path: 'gamma.nested.leaf.id',
+        scope: 'gamma.nested',
+        fn: noopObjMid,
+      },
+    ])
+    const effects: SideEffects<ObjState> = { listeners: myListeners }
+    expectTypeOf(effects).toMatchTypeOf<SideEffects<ObjState>>()
+  })
+
+  test('all validated types combined in one SideEffects', () => {
+    const syncs = syncPairs<ObjState>()([['alpha.tag', 'beta.tag']])
+    const myListeners = listeners<ObjState>()([
+      {
+        path: 'alpha.tag',
+        scope: null,
+        fn: noopObjFull,
+      },
+    ])
+    const effects: SideEffects<ObjState> = {
+      syncPaths: syncs,
+      listeners: myListeners,
+    }
+    expectTypeOf(effects).toMatchTypeOf<SideEffects<ObjState>>()
+  })
+})
+
+describe('listeners helper — cross-store rejection', () => {
+  test('OtherState listeners cannot assign to ObjState SideEffects', () => {
+    const otherListeners = listeners<OtherState>()([
+      {
+        path: 'foo',
+        scope: null,
+        fn: noopOtherFull,
+      },
+    ])
+    expectTypeOf(otherListeners).not.toMatchTypeOf<
+      ValidatedListeners<ObjState>
+    >()
+  })
+})
+
+describe('listeners helper — spread loses brand', () => {
+  test('spreading listeners strips the brand', () => {
+    const batch1 = listeners<ObjState>()([
+      { path: 'alpha.tag', scope: null, fn: () => undefined },
+    ])
+    const batch2 = listeners<ObjState>()([
+      { path: 'beta.tag', scope: null, fn: () => undefined },
+    ])
+    const spread = [...batch1, ...batch2]
+    expectTypeOf(spread).not.toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+})
+
+// ============================================================================
+// 10. Standalone listener fn typing — OnStateListener as standalone const
+// ============================================================================
+
+describe('standalone listener fn — OnStateListener typing', () => {
+  test('standalone fn with scoped state types correctly', () => {
+    type ScopedFn = OnStateListener<ObjState, ObjState['alpha']>
+    expectTypeOf<ScopedFn>().toBeFunction()
+    // Should accept (changes: ArrayOfChanges<ObjMid>, state: ObjMid) => ...
+  })
+
+  test('standalone fn with full state types correctly', () => {
+    type FullFn = OnStateListener<ObjState, ObjState>
+    expectTypeOf<FullFn>().toBeFunction()
+  })
+
+  test('standalone fn assignable to inline listener', () => {
+    const scopedFn: OnStateListener<ObjState, ObjState['gamma']['nested']> = (
+      _changes,
+      _state,
+    ) => undefined
+
+    // Can use this fn in a branded listener call
+    const result = listeners<ObjState>()([
+      {
+        path: 'gamma.nested.leaf.id',
+        scope: 'gamma.nested',
+        fn: scopedFn,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('standalone fn assignable to direct inline listener', () => {
+    const scopedFn: OnStateListener<ObjState, ObjState['alpha']> = (
+      _changes,
+      _state,
+    ) => undefined
+
+    // Direct usage in SideEffects (non-branded)
+    const effects: SideEffects<ObjState> = {
+      listeners: [{ path: 'alpha.tag', scope: 'alpha', fn: scopedFn }],
+    }
+    expectTypeOf(effects).toMatchTypeOf<SideEffects<ObjState>>()
+  })
+})
+
+// ============================================================================
+// 11. Listener fn validation — standalone fns and type-level checks
+// ============================================================================
+
+describe('listeners helper — fn scoped state validation', () => {
+  test('standalone fn with scoped state assigns to helper', () => {
+    // Standalone fn explicitly typed for alpha scope
+    const alphaFn: OnStateListener<ObjState, ObjMid> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<ObjState>()([
+      { path: 'alpha.tag', scope: 'alpha', fn: alphaFn },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('standalone fn with leaf scope assigns to helper', () => {
+    const leafFn: OnStateListener<ObjState, ObjLeaf> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<ObjState>()([
+      { path: 'alpha.leaf.id', scope: 'alpha.leaf', fn: leafFn },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('standalone fn with full state assigns to null scope', () => {
+    const fullFn: OnStateListener<ObjState, ObjState> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<ObjState>()([
+      { path: 'alpha.tag', scope: null, fn: fullFn },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('standalone fn with full state assigns to both null', () => {
+    const fullFn: OnStateListener<ObjState, ObjState> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<ObjState>()([
+      { path: null, scope: null, fn: fullFn },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('standalone fn with scope omitted defaults to path scope', () => {
+    // scope omitted → defaults to 'alpha', so fn gets ObjMid (= ObjState['alpha'])
+    const alphaFn: OnStateListener<ObjState, ObjMid> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<ObjState>()([{ path: 'alpha', fn: alphaFn }])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('inline fn compiles for null scope', () => {
+    const result = listeners<ObjState>()([
+      {
+        path: 'alpha.tag',
+        scope: null,
+        fn: noopObjFull,
+      },
+    ])
+    expectTypeOf(result).toMatchTypeOf<ValidatedListeners<ObjState>>()
+  })
+
+  test('CheckListenerElement produces correct fn type for scope', () => {
+    // Type-level check: CheckListenerElement with scope 'alpha' should
+    // produce fn: OnStateListener<ObjState, ObjMid, GenericMeta>
+    interface Input {
+      path: 'alpha.tag'
+      scope: 'alpha'
+      fn: (...args: any[]) => any
+    }
+    type Result = import('~/types/listener-validators').CheckListenerElement<
+      ObjState,
+      import('~/types/meta').GenericMeta,
+      Input
+    >
+    // The fn field should require OnStateListener<ObjState, ObjMid>
+    type ResultFn = Result['fn']
+    // A properly typed fn should be assignable
+    type TestFn = OnStateListener<ObjState, ObjMid>
+    expectTypeOf<TestFn>().toMatchTypeOf<ResultFn>()
+  })
+
+  test('CheckListenerElement produces correct fn type for omitted scope', () => {
+    // When scope is omitted, effective scope = path
+    interface Input {
+      path: 'alpha'
+      fn: (...args: any[]) => any
+    }
+    type Result = import('~/types/listener-validators').CheckListenerElement<
+      ObjState,
+      import('~/types/meta').GenericMeta,
+      Input
+    >
+    // The fn field should require OnStateListener<ObjState, ObjMid>
+    type ResultFn = Result['fn']
+    type TestFn = OnStateListener<ObjState, ObjMid>
+    expectTypeOf<TestFn>().toMatchTypeOf<ResultFn>()
+  })
+
+  test('CheckListenerElement produces correct fn type for null scope', () => {
+    interface Input {
+      path: 'alpha.tag'
+      scope: null
+      fn: (...args: any[]) => any
+    }
+    type Result = import('~/types/listener-validators').CheckListenerElement<
+      ObjState,
+      import('~/types/meta').GenericMeta,
+      Input
+    >
+    type ResultFn = Result['fn']
+    // Null scope → fn gets full ObjState
+    type TestFn = OnStateListener<ObjState, ObjState>
+    expectTypeOf<TestFn>().toMatchTypeOf<ResultFn>()
+  })
+})
+
+// ============================================================================
+// 12. Listener helper — branded vs direct comparison
+// ============================================================================
+
+describe('listeners — branded vs direct pattern', () => {
+  test('branded listeners assign to SideEffects.listeners', () => {
+    const branded = listeners<ObjState>()([
+      { path: 'alpha.tag', scope: 'alpha', fn: noopObjMid },
+    ])
+    const effects: SideEffects<ObjState> = { listeners: branded }
+    expectTypeOf(effects).toMatchTypeOf<SideEffects<ObjState>>()
+  })
+
+  test('direct inline listeners still work in SideEffects', () => {
+    const effects: SideEffects<ObjState> = {
+      listeners: [
+        {
+          path: 'alpha.tag',
+          scope: 'alpha',
+          fn: noopObjMid,
+        },
+      ],
+    }
+    expectTypeOf(effects).toMatchTypeOf<SideEffects<ObjState>>()
+  })
+
+  test('branded and direct can coexist (separate fields)', () => {
+    const brandedSyncs = syncPairs<ObjState>()([['alpha.tag', 'beta.tag']])
+    const brandedListeners = listeners<ObjState>()([
+      { path: 'alpha.tag', scope: null, fn: noopObjFull },
+    ])
+    const effects: SideEffects<ObjState> = {
+      syncPaths: brandedSyncs,
+      listeners: brandedListeners,
+    }
+    expectTypeOf(effects).toMatchTypeOf<SideEffects<ObjState>>()
+  })
+})
+
+describe('listeners helper on HugeState (~1650 paths)', () => {
+  test('accepts valid listener with deep scope prefix', () => {
+    const result = listeners<HugeState>()([
+      {
+        path: 'sector1.mid1.leafA.name',
+        scope: 'sector1.mid1',
+        fn: noopHugeMidA1,
+      },
+    ])
+    expectTypeOf(result).toBeArray()
+  })
+
+  test('accepts multiple listeners on HugeState', () => {
+    const result = listeners<HugeState>()([
+      {
+        path: 'sector1.mid1.leafA.name',
+        scope: 'sector1.mid1',
+        fn: noopHugeMidA1,
+      },
+      {
+        path: 'sector5.mid7.leafD.price',
+        scope: null,
+        fn: noopHugeFull,
+      },
+      {
+        path: null,
+        scope: null,
+        fn: noopHugeFull,
+      },
+    ])
+    expectTypeOf(result).toBeArray()
+  })
+
+  test('rejects invalid scope on HugeState', () => {
+    listeners<HugeState>()([
+      {
+        path: 'sector1.mid1.leafA.name',
+        // @ts-expect-error — 'sector2' is not a prefix of 'sector1.mid1.leafA.name'
+        scope: 'sector2',
+        fn: (_changes, _state) => undefined,
+      },
+    ])
+  })
+
+  test('scope omitted — fn receives path-scoped state on HugeState', () => {
+    // scope omitted with path 'sector1.mid1' → fn gets PerfMidA1
+    const midFn: OnStateListener<HugeState, PerfMidA1> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<HugeState>()([{ path: 'sector1.mid1', fn: midFn }])
+    expectTypeOf(result).toBeArray()
+  })
+
+  test('scope omitted — fn receives leaf-scoped state on HugeState', () => {
+    // scope omitted with path 'sector3.mid1.leafA' → fn gets PerfLeafA
+    const leafFn: OnStateListener<HugeState, PerfLeafA> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<HugeState>()([
+      { path: 'sector3.mid1.leafA', fn: leafFn },
+    ])
+    expectTypeOf(result).toBeArray()
+  })
+
+  test('explicit scope — fn receives scoped state on HugeState', () => {
+    // path deep, scope at sector → fn gets PerfSector
+    const sectorFn: OnStateListener<HugeState, PerfSector> = (
+      _changes,
+      _state,
+    ) => undefined
+
+    const result = listeners<HugeState>()([
+      { path: 'sector5.mid7.leafD.price', scope: 'sector5', fn: sectorFn },
+    ])
+    expectTypeOf(result).toBeArray()
+  })
+
+  test('null scope — fn receives full HugeState', () => {
+    const fullFn: OnStateListener<HugeState, HugeState> = (_changes, _state) =>
+      undefined
+
+    const result = listeners<HugeState>()([
+      { path: 'sector1.mid1.leafA.name', scope: null, fn: fullFn },
+    ])
+    expectTypeOf(result).toBeArray()
+  })
+
+  test('standalone fn returns scoped changes on HugeState', () => {
+    // fn with PerfMidA1 scope returns ArrayOfChanges<PerfMidA1>
+    const midFn: OnStateListener<HugeState, PerfMidA1> = (_changes, _state) => {
+      // Return value should be scoped to PerfMidA1 paths
+      return [['leafA.name', 'updated', {}]]
+    }
+
+    const result = listeners<HugeState>()([{ path: 'sector1.mid1', fn: midFn }])
+    expectTypeOf(result).toBeArray()
+  })
+
+  test('rejects wrong fn state type on HugeState', () => {
+    // fn typed for PerfLeafA but path scope resolves to PerfMidA1
+    const wrongFn: OnStateListener<HugeState, PerfLeafA> = (_changes, _state) =>
+      undefined
+
+    listeners<HugeState>()([
+      {
+        path: 'sector1.mid1',
+        // @ts-expect-error — PerfLeafA fn doesn't match PerfMidA1 scope
+        fn: wrongFn,
+      },
+    ])
+  })
+
+  test('mixed scope patterns with fn validation on HugeState', () => {
+    const midFn: OnStateListener<HugeState, PerfMidA1> = (_c, _s) => undefined
+    const fullFn: OnStateListener<HugeState, HugeState> = (_c, _s) => undefined
+    const leafFn: OnStateListener<HugeState, PerfLeafA> = (_c, _s) => undefined
+
+    const result = listeners<HugeState>()([
+      { path: 'sector1.mid1', fn: midFn }, // scope omitted → mid1
+      { path: 'sector2.mid1.leafA', fn: leafFn }, // scope omitted → leafA
+      { path: 'sector5.mid7.leafD.price', scope: null, fn: fullFn }, // null → full
+      {
+        path: 'sector3.mid1.leafA.name',
+        scope: 'sector3.mid1',
+        fn: midFn, // explicit scope → mid1
+      },
+    ])
+    expectTypeOf(result).toBeArray()
   })
 })

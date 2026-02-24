@@ -11,6 +11,8 @@
  * Zero runtime cost — brands are erased at compile time.
  */
 
+import type { ListenerRegistration } from '../core/types'
+import type { GenericMeta } from './meta'
 import type { ComputationOp } from './paths-of-same-value'
 
 declare const VALIDATED: unique symbol
@@ -39,3 +41,15 @@ export type ValidatedComputationPairs<DATA extends object = object> = (
   | [ComputationOp, string, string]
   | [ComputationOp, string, string, unknown]
 )[] & { [VALIDATED]: 'computation'; [STORE_DATA]: DATA }
+
+/** Pre-validated listener array. Returned by `listeners()`. Branded with DATA to prevent cross-store use.
+ * Uses intersection with ListenerRegistration[] so it's assignable to the listeners field
+ * without needing a union — preserving contextual typing for inline fn parameters.
+ */
+export type ValidatedListeners<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+> = ListenerRegistration<DATA, META>[] & {
+  [VALIDATED]: 'listeners'
+  [STORE_DATA]: DATA
+}

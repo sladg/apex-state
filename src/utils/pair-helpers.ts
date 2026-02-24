@@ -42,15 +42,18 @@ import type {
   BoolLogic,
   CheckAggregationPairs,
   CheckComputationPairs,
+  CheckListeners,
   CheckSyncPairs,
   ComputationOp,
   ValidatedAggregationPairs,
   ValidatedComputationPairs,
   ValidatedFlipPairs,
+  ValidatedListeners,
   ValidatedSyncPairs,
 } from '../types'
 import type { DefaultDepth, ResolvableDeepKey } from '../types/deep-key'
 import type { DeepKeyFiltered } from '../types/deep-key-filtered'
+import type { GenericMeta } from '../types/meta'
 
 /**
  * Lazy-validated sync pairs. Curried: `syncPairs<State>()(pairs)`.
@@ -174,3 +177,47 @@ export const computationPairs =
     pairs: CheckComputationPairs<DATA, T, Depth>,
   ): ValidatedComputationPairs<DATA> =>
     pairs as ValidatedComputationPairs<DATA>
+
+/**
+ * Lazy-validated listeners. Curried: `listeners<State>()(items)`.
+ *
+ * Provides autocomplete for valid paths (O(N)) and validates each listener:
+ * - path and scope are valid `ResolvableDeepKey<DATA>` or null
+ * - When both non-null: scope must be a dot-separated prefix of path
+ * - fn receives correctly-typed scoped state based on scope
+ *
+ * Returns branded `ValidatedListeners` — accepted by `useSideEffects` without re-validation.
+ *
+ * @example
+ * ```typescript
+ * const myListeners = listeners<MyState>()([
+ *   {
+ *     path: 'user.profile.name',
+ *     scope: 'user.profile',
+ *     fn: (changes, state) => {
+ *       // changes: ArrayOfChanges relative to user.profile scope
+ *       // state: typed as MyState['user']['profile']
+ *       // return: ArrayOfChanges relative to scope, or undefined
+ *       return [['name', `updated-${state.name}`, {}]]
+ *     }
+ *   },
+ * ])
+ * useSideEffects('my-listeners', { listeners: myListeners })
+ * ```
+ */
+export const listeners =
+  <
+    DATA extends object,
+    META extends GenericMeta = GenericMeta,
+    Depth extends number = DefaultDepth,
+  >() =>
+  <
+    T extends readonly {
+      path: ResolvableDeepKey<DATA, Depth> | null
+      scope?: ResolvableDeepKey<DATA, Depth> | null | undefined
+      fn: (...args: any[]) => any
+    }[],
+  >(
+    items: CheckListeners<DATA, META, T, Depth>,
+  ): ValidatedListeners<DATA, META> =>
+    items as ValidatedListeners<DATA, META>
