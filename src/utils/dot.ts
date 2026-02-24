@@ -50,7 +50,7 @@ const get = <T extends object, P extends DeepKey<T>>(
   const parts = getPathParts(path)
   let current: any = obj
   for (const part of parts) {
-    if (is.not.object(current)) {
+    if (is.not.objectOrArray(current)) {
       return undefined as DeepValue<T, P>
     }
     current = Reflect.get(current, part)
@@ -75,7 +75,7 @@ const get__unsafe = <P extends string>(obj: unknown, path: P): unknown => {
   const parts = getPathParts(path)
   let current: any = obj
   for (const part of parts) {
-    if (is.not.object(current)) {
+    if (is.not.objectOrArray(current)) {
       return undefined
     }
     current = Reflect.get(current, part)
@@ -104,8 +104,8 @@ const set = <T extends object, P extends DeepKey<T>>(
   let current: object = obj
   for (let i = 0; i < last; i++) {
     let next = Reflect.get(current, keys[i]!)
-    if (!is.object(next)) {
-      next = {}
+    if (is.not.objectOrArray(next)) {
+      next = is.numericKey(keys[i + 1]!) ? [] : {}
       Reflect.set(current, keys[i]!, next)
     }
     current = next as object
@@ -134,8 +134,8 @@ const set__unsafe = <T extends object, P extends string>(
   let current: object = obj
   for (let i = 0; i < last; i++) {
     let next = Reflect.get(current, keys[i]!)
-    if (!is.object(next)) {
-      next = {}
+    if (is.not.objectOrArray(next)) {
+      next = is.numericKey(keys[i + 1]!) ? [] : {}
       Reflect.set(current, keys[i]!, next)
     }
     current = next as object
@@ -163,7 +163,7 @@ const has = <T extends object, P extends DeepKey<T>>(
   const parts = getPathParts(path)
   let current: any = obj
   for (const part of parts) {
-    if (is.not.object(current)) {
+    if (is.not.objectOrArray(current)) {
       return false
     }
     current = Reflect.get(current, part)

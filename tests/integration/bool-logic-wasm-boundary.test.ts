@@ -400,6 +400,155 @@ describe('shorthand as children of compound operators', () => {
 })
 
 // ---------------------------------------------------------------------------
+// CONTAINS_ANY — array contains at least one of the given candidates
+// ---------------------------------------------------------------------------
+
+describe('CONTAINS_ANY', () => {
+  it('should return true when array contains any of the candidates', () => {
+    pipeline = makePipeline()
+    // user.tags = ['premium'] — 'premium' is among the candidates
+    const { bool_logic_changes } = pipeline.registerConcerns({
+      registration_id: 'test',
+      bool_logics: [
+        {
+          output_path: 'result',
+          tree_json: JSON.stringify({
+            CONTAINS_ANY: ['user.tags', ['premium', 'vip']],
+          }),
+        },
+      ],
+    })
+
+    expect(bool_logic_changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'result', value: true }),
+      ]),
+    )
+  })
+
+  it('should return false when no candidate is in the array', () => {
+    pipeline = makePipeline()
+    const { bool_logic_changes } = pipeline.registerConcerns({
+      registration_id: 'test',
+      bool_logics: [
+        {
+          output_path: 'result',
+          tree_json: JSON.stringify({
+            CONTAINS_ANY: ['user.tags', ['vip', 'free']],
+          }),
+        },
+      ],
+    })
+
+    expect(bool_logic_changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'result', value: false }),
+      ]),
+    )
+  })
+
+  it('should re-evaluate when a matching candidate is added to the array', () => {
+    pipeline = makePipeline()
+    pipeline.registerConcerns({
+      registration_id: 'test',
+      bool_logics: [
+        {
+          output_path: 'result',
+          tree_json: JSON.stringify({
+            CONTAINS_ANY: ['user.tags', ['vip', 'free']],
+          }),
+        },
+      ],
+    })
+
+    // Add 'vip' to tags — now matches
+    pipeline.processChanges([{ path: 'user.tags', value: ['premium', 'vip'] }])
+    const { state_changes } = pipeline.pipelineFinalize([])
+
+    expect(state_changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: '_concerns.result', value: true }),
+      ]),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CONTAINS_ALL — array contains every one of the given candidates
+// ---------------------------------------------------------------------------
+
+describe('CONTAINS_ALL', () => {
+  it('should return false when only some candidates are present', () => {
+    pipeline = makePipeline()
+    // user.tags = ['premium'] only — 'vip' is missing
+    const { bool_logic_changes } = pipeline.registerConcerns({
+      registration_id: 'test',
+      bool_logics: [
+        {
+          output_path: 'result',
+          tree_json: JSON.stringify({
+            CONTAINS_ALL: ['user.tags', ['premium', 'vip']],
+          }),
+        },
+      ],
+    })
+
+    expect(bool_logic_changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'result', value: false }),
+      ]),
+    )
+  })
+
+  it('should return true when all candidates are present', () => {
+    pipeline = makePipeline()
+    // user.tags = ['premium'] — checking against ['premium'] only
+    const { bool_logic_changes } = pipeline.registerConcerns({
+      registration_id: 'test',
+      bool_logics: [
+        {
+          output_path: 'result',
+          tree_json: JSON.stringify({
+            CONTAINS_ALL: ['user.tags', ['premium']],
+          }),
+        },
+      ],
+    })
+
+    expect(bool_logic_changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'result', value: true }),
+      ]),
+    )
+  })
+
+  it('should re-evaluate to true when the missing candidate is added', () => {
+    pipeline = makePipeline()
+    pipeline.registerConcerns({
+      registration_id: 'test',
+      bool_logics: [
+        {
+          output_path: 'result',
+          tree_json: JSON.stringify({
+            CONTAINS_ALL: ['user.tags', ['premium', 'vip']],
+          }),
+        },
+      ],
+    })
+
+    // Add 'vip' — now all candidates are present
+    pipeline.processChanges([{ path: 'user.tags', value: ['premium', 'vip'] }])
+    const { state_changes } = pipeline.pipelineFinalize([])
+
+    expect(state_changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: '_concerns.result', value: true }),
+      ]),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Complex expression parity — same expression as Rust + TypeScript tests
 // ---------------------------------------------------------------------------
 

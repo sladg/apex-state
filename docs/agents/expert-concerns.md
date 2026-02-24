@@ -62,7 +62,10 @@ interface BaseConcernProps<STATE, PATH> {
 ## BoolLogic Operators
 
 Available in `src/types/bool-logic.ts`:
-`IS_EQUAL`, `EXISTS`, `IS_EMPTY`, `AND`, `OR`, `NOT`, `GT`, `LT`, `GTE`, `LTE`, `IN`
+`IS_EQUAL`, `EXISTS`, `IS_EMPTY`, `AND`, `OR`, `NOT`, `GT`, `LT`, `GTE`, `LTE`, `IN`, `CONTAINS_ANY`, `CONTAINS_ALL`
+
+- `CONTAINS_ANY: ['path', [v1, v2]]` — true if array at path contains any of the given elements
+- `CONTAINS_ALL: ['path', [v1, v2]]` — true if array at path contains all of the given elements
 
 **Shorthand**: `['path', value]` is syntactic sugar for `{ IS_EQUAL: ['path', value] }` and works anywhere a `BoolLogic` node is accepted — as a top-level expression, or as a child of `AND`/`OR`/`NOT`.
 

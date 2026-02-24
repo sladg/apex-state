@@ -34,7 +34,7 @@ export const evaluateBoolLogic = <STATE extends object>(
   state: STATE,
 ): boolean => {
   // Shorthand tuple: [path, value]
-  if (Array.isArray(logic)) {
+  if (is.array(logic)) {
     const [path, expected] = logic as [string, unknown]
     return dot.get__unsafe(state, path) === expected
   }
@@ -76,6 +76,30 @@ export const evaluateBoolLogic = <STATE extends object>(
   if ('IN' in logic) {
     const [path, allowed] = logic.IN as [string, unknown[]]
     return allowed.includes(dot.get__unsafe(state, path))
+  }
+
+  // Array contains at least one of the given elements
+  if ('CONTAINS_ANY' in logic) {
+    const [path, elements] = logic.CONTAINS_ANY as [string, unknown[]]
+    const arr = dot.get__unsafe(state, path)
+    return (
+      is.array(arr) &&
+      (elements as unknown[]).some((el) =>
+        arr.some((item) => is.equal(item, el)),
+      )
+    )
+  }
+
+  // Array contains every one of the given elements
+  if ('CONTAINS_ALL' in logic) {
+    const [path, elements] = logic.CONTAINS_ALL as [string, unknown[]]
+    const arr = dot.get__unsafe(state, path)
+    return (
+      is.array(arr) &&
+      (elements as unknown[]).every((el) =>
+        arr.some((item) => is.equal(item, el)),
+      )
+    )
   }
 
   return false

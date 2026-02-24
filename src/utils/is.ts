@@ -3,6 +3,7 @@
  *
  * Provides type-safe predicates for common type checks with TypeScript support
  */
+import type { Primitive } from '../types/deep-key'
 
 /** Check if value is null or undefined */
 const isNil = (value: unknown): value is null | undefined => value == null
@@ -23,6 +24,12 @@ const isObject = (value: unknown): value is Record<string, unknown> => {
 
 /** Check if value is an array */
 const isArray = (value: unknown): value is unknown[] => Array.isArray(value)
+
+/** Check if value is a plain object or an array */
+const isObjectOrArray = (
+  value: unknown,
+): value is Record<string, unknown> | unknown[] =>
+  isObject(value) || isArray(value)
 
 /** Check if value is a string */
 const isString = (value: unknown): value is string => typeof value === 'string'
@@ -47,10 +54,11 @@ const isDate = (value: unknown): value is Date => value instanceof Date
 /** Check if value is a RegExp */
 const isRegExp = (value: unknown): value is RegExp => value instanceof RegExp
 
+/** Check if a string key is a non-negative integer index (e.g. "0", "1", "42") */
+const isNumericKey = (value: string): boolean => /^\d+$/.test(value)
+
 /** Check if value is a primitive (string, number, boolean, symbol, bigint, null, undefined) */
-const isPrimitive = (
-  value: unknown,
-): value is string | number | boolean | symbol | bigint | null | undefined => {
+const isPrimitive = (value: unknown): value is Primitive => {
   const type = typeof value
   return (
     type === 'string' ||
@@ -140,34 +148,52 @@ const isNotUndefined = <T>(value: T | undefined): value is T =>
 const isNotNull = <T>(value: T | null): value is T => value !== null
 
 /** Check if value is not a plain object */
-const isNotObject = (value: unknown): boolean => !isObject(value)
+const isNotObject = <T>(
+  value: T,
+): value is Exclude<T, Record<string, unknown>> => !isObject(value)
+
+/** Check if value is not a plain object and not an array */
+const isNotObjectOrArray = <T>(
+  value: T,
+): value is Exclude<T, Record<string, unknown> | unknown[]> =>
+  !isObject(value) && !isArray(value)
 
 /** Check if value is not an array */
-const isNotArray = (value: unknown): boolean => !Array.isArray(value)
+const isNotArray = <T>(value: T): value is Exclude<T, unknown[]> =>
+  !isArray(value)
 
 /** Check if value is not a string */
-const isNotString = (value: unknown): boolean => typeof value !== 'string'
+const isNotString = <T>(value: T): value is Exclude<T, string> =>
+  typeof value !== 'string'
 
 /** Check if value is not a number */
-const isNotNumber = (value: unknown): boolean => typeof value !== 'number'
+const isNotNumber = <T>(value: T): value is Exclude<T, number> =>
+  typeof value !== 'number'
 
 /** Check if value is not a boolean */
-const isNotBoolean = (value: unknown): boolean => typeof value !== 'boolean'
+const isNotBoolean = <T>(value: T): value is Exclude<T, boolean> =>
+  typeof value !== 'boolean'
 
 /** Check if value is not a function */
-const isNotFunction = (value: unknown): boolean => typeof value !== 'function'
+const isNotFunction = <T>(
+  value: T,
+): value is Exclude<T, (...args: unknown[]) => unknown> =>
+  typeof value !== 'function'
 
 /** Check if value is not a symbol */
-const isNotSymbol = (value: unknown): boolean => typeof value !== 'symbol'
+const isNotSymbol = <T>(value: T): value is Exclude<T, symbol> =>
+  typeof value !== 'symbol'
 
 /** Check if value is not a Date */
-const isNotDate = (value: unknown): boolean => !(value instanceof Date)
+const isNotDate = <T>(value: T): value is Exclude<T, Date> =>
+  !(value instanceof Date)
 
 /** Check if value is not a RegExp */
-const isNotRegExp = (value: unknown): boolean => !(value instanceof RegExp)
+const isNotRegExp = <T>(value: T): value is Exclude<T, RegExp> =>
+  !(value instanceof RegExp)
 
 /** Check if value is not a primitive */
-const isNotPrimitive = (value: unknown): boolean => {
+const isNotPrimitive = <T>(value: T): value is Exclude<T, Primitive> => {
   const type = typeof value
   return !(
     type === 'string' ||
@@ -206,6 +232,7 @@ export const is = {
   undefined: isUndefined,
   null: isNull,
   object: isObject,
+  objectOrArray: isObjectOrArray,
   array: isArray,
   string: isString,
   number: isNumber,
@@ -214,6 +241,7 @@ export const is = {
   symbol: isSymbol,
   date: isDate,
   regexp: isRegExp,
+  numericKey: isNumericKey,
   primitive: isPrimitive,
   empty: isEmpty,
   equal: iEqual,
@@ -222,6 +250,7 @@ export const is = {
     undefined: isNotUndefined,
     null: isNotNull,
     object: isNotObject,
+    objectOrArray: isNotObjectOrArray,
     array: isNotArray,
     string: isNotString,
     number: isNotNumber,

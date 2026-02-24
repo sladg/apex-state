@@ -34,6 +34,20 @@ type PathValueArrayPair<STATE, Depth extends number> =
     : never
 
 /**
+ * Array-elements pair for CONTAINS_ANY / CONTAINS_ALL operators.
+ * Same distribution as PathArrayElementPair but the second element is an array
+ * of items, enabling multi-value containment checks.
+ */
+type PathArrayElementsPair<STATE, Depth extends number> =
+  DeepKey<STATE, Depth> extends infer P
+    ? P extends string
+      ? NonNullable<DeepValue<STATE, P>> extends readonly (infer Item)[]
+        ? [P, Item[]]
+        : never
+      : never
+    : never
+
+/**
  * Paths that resolve to number, plus `.length` on array-valued paths.
  * Allows GT/LT/GTE/LTE to compare against array lengths without
  * polluting DeepKey with virtual paths.
@@ -55,6 +69,8 @@ type NumericPaths<STATE, Depth extends number> =
  * - AND/OR/NOT: Boolean combinators
  * - GT/LT/GTE/LTE: Numeric comparisons (only on number paths or array.length)
  * - IN: Check if path value is in allowed list (values must match path type)
+ * - CONTAINS_ANY: Check if array at path contains any of the given elements
+ * - CONTAINS_ALL: Check if array at path contains all of the given elements
  * - Shorthand: [path, value] tuple as shorthand for IS_EQUAL
  *
  * @example
@@ -93,4 +109,6 @@ export type BoolLogic<STATE, Depth extends number = DefaultDepth> =
   | { GTE: [NumericPaths<STATE, Depth>, number] }
   | { LTE: [NumericPaths<STATE, Depth>, number] }
   | { IN: PathValueArrayPair<STATE, Depth> }
+  | { CONTAINS_ANY: PathArrayElementsPair<STATE, Depth> }
+  | { CONTAINS_ALL: PathArrayElementsPair<STATE, Depth> }
   | PathValuePair<STATE, Depth>

@@ -290,6 +290,144 @@ describe('evaluateBoolLogic', () => {
   })
 
   // --------------------------------------------------------------------------
+  // CONTAINS_ANY
+  // --------------------------------------------------------------------------
+
+  describe('CONTAINS_ANY', () => {
+    it('should return true when array contains at least one of the candidates', () => {
+      // user.tags = ['premium'] — 'premium' is among candidates
+      const logic: Logic = { CONTAINS_ANY: ['user.tags', ['premium', 'vip']] }
+      expect(evaluateBoolLogic(logic, state)).toBe(true)
+    })
+
+    it('should return true when only the second candidate matches', () => {
+      const logic: Logic = { CONTAINS_ANY: ['user.tags', ['vip', 'premium']] }
+      expect(evaluateBoolLogic(logic, state)).toBe(true)
+    })
+
+    it('should return false when no candidate is in the array', () => {
+      const logic: Logic = { CONTAINS_ANY: ['user.tags', ['vip', 'free']] }
+      expect(evaluateBoolLogic(logic, state)).toBe(false)
+    })
+
+    it('should return false for an empty candidates list', () => {
+      const logic: Logic = { CONTAINS_ANY: ['user.tags', []] }
+      expect(evaluateBoolLogic(logic, state)).toBe(false)
+    })
+
+    it('should use deep equality for object candidates', () => {
+      const itemState = {
+        items: [
+          { id: 1, label: 'Alpha' },
+          { id: 2, label: 'Beta' },
+        ],
+      }
+
+      type ItemState = typeof itemState
+
+      expect(
+        evaluateBoolLogic<ItemState>(
+          {
+            CONTAINS_ANY: [
+              'items',
+              [
+                { id: 99, label: 'Ghost' },
+                { id: 1, label: 'Alpha' },
+              ],
+            ],
+          },
+          itemState,
+        ),
+      ).toBe(true)
+
+      expect(
+        evaluateBoolLogic<ItemState>(
+          {
+            CONTAINS_ANY: [
+              'items',
+              [
+                { id: 99, label: 'Ghost' },
+                { id: 77, label: 'Other' },
+              ],
+            ],
+          },
+          itemState,
+        ),
+      ).toBe(false)
+    })
+  })
+
+  // --------------------------------------------------------------------------
+  // CONTAINS_ALL
+  // --------------------------------------------------------------------------
+
+  describe('CONTAINS_ALL', () => {
+    it('should return true when array contains all candidates', () => {
+      const multiTagState = {
+        ...state,
+        user: { ...state.user, tags: ['premium', 'verified'] },
+      }
+      const logic: BoolLogic<typeof multiTagState> = {
+        CONTAINS_ALL: ['user.tags', ['premium', 'verified']],
+      }
+      expect(evaluateBoolLogic(logic, multiTagState)).toBe(true)
+    })
+
+    it('should return false when only some candidates are present', () => {
+      // user.tags = ['premium'] only — 'verified' is missing
+      const logic: Logic = {
+        CONTAINS_ALL: ['user.tags', ['premium', 'verified']],
+      }
+      expect(evaluateBoolLogic(logic, state)).toBe(false)
+    })
+
+    it('should return true for an empty candidates list (vacuously true)', () => {
+      const logic: Logic = { CONTAINS_ALL: ['user.tags', []] }
+      expect(evaluateBoolLogic(logic, state)).toBe(true)
+    })
+
+    it('should use deep equality for object candidates', () => {
+      const itemState = {
+        items: [
+          { id: 1, label: 'Alpha' },
+          { id: 2, label: 'Beta' },
+        ],
+      }
+      type ItemState = typeof itemState
+
+      expect(
+        evaluateBoolLogic<ItemState>(
+          {
+            CONTAINS_ALL: [
+              'items',
+              [
+                { id: 1, label: 'Alpha' },
+                { id: 2, label: 'Beta' },
+              ],
+            ],
+          },
+          itemState,
+        ),
+      ).toBe(true)
+
+      expect(
+        evaluateBoolLogic<ItemState>(
+          {
+            CONTAINS_ALL: [
+              'items',
+              [
+                { id: 1, label: 'Alpha' },
+                { id: 99, label: 'Ghost' },
+              ],
+            ],
+          },
+          itemState,
+        ),
+      ).toBe(false)
+    })
+  })
+
+  // --------------------------------------------------------------------------
   // Complex nested expressions — mirrors Rust test_eval_complex_real_world
   // and test_eval_complex_with_shorthand_children
   // --------------------------------------------------------------------------

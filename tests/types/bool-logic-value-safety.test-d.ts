@@ -32,6 +32,10 @@ interface TypeSafeState {
     age: number
     active: boolean
     nullable: string | null
+    tags: string[]
+    scores: number[]
+    roles: TestRole[]
+    items: { id: number; label: string }[]
   }
 }
 
@@ -177,6 +181,87 @@ describe('BoolLogic IN value type safety', () => {
   test('rejects mixed types in value array', () => {
     expectTypeOf<{
       IN: ['user.age', [1, 'two', 3]]
+    }>().not.toMatchTypeOf<Logic>()
+  })
+})
+
+// ============================================================================
+// CONTAINS_ANY — path must resolve to an array; elements must match element type
+// ============================================================================
+
+describe('BoolLogic CONTAINS_ANY value type safety', () => {
+  // --- Valid ---
+
+  test('accepts string elements for string array path', () => {
+    expectTypeOf<{
+      CONTAINS_ANY: ['user.tags', string[]]
+    }>().toMatchTypeOf<Logic>()
+  })
+
+  test('accepts number elements for number array path', () => {
+    expectTypeOf<{
+      CONTAINS_ANY: ['user.scores', number[]]
+    }>().toMatchTypeOf<Logic>()
+  })
+
+  test('accepts enum elements for enum array path', () => {
+    expectTypeOf<{
+      CONTAINS_ANY: ['user.roles', TestRole[]]
+    }>().toMatchTypeOf<Logic>()
+  })
+
+  test('accepts object elements for object array path', () => {
+    expectTypeOf<{
+      CONTAINS_ANY: ['user.items', { id: number; label: string }[]]
+    }>().toMatchTypeOf<Logic>()
+  })
+
+  // --- Invalid ---
+
+  test('rejects non-array path', () => {
+    expectTypeOf<{
+      CONTAINS_ANY: ['user.name', string[]]
+    }>().not.toMatchTypeOf<Logic>()
+  })
+
+  test('rejects wrong element type for array path', () => {
+    // user.tags is string[] — number[] elements should be rejected
+    expectTypeOf<{
+      CONTAINS_ANY: ['user.tags', number[]]
+    }>().not.toMatchTypeOf<Logic>()
+  })
+})
+
+// ============================================================================
+// CONTAINS_ALL — path must resolve to an array; elements must match element type
+// ============================================================================
+
+describe('BoolLogic CONTAINS_ALL value type safety', () => {
+  // --- Valid ---
+
+  test('accepts string elements for string array path', () => {
+    expectTypeOf<{
+      CONTAINS_ALL: ['user.tags', string[]]
+    }>().toMatchTypeOf<Logic>()
+  })
+
+  test('accepts enum elements for enum array path', () => {
+    expectTypeOf<{
+      CONTAINS_ALL: ['user.roles', TestRole[]]
+    }>().toMatchTypeOf<Logic>()
+  })
+
+  // --- Invalid ---
+
+  test('rejects non-array path', () => {
+    expectTypeOf<{
+      CONTAINS_ALL: ['user.name', string[]]
+    }>().not.toMatchTypeOf<Logic>()
+  })
+
+  test('rejects wrong element type for array path', () => {
+    expectTypeOf<{
+      CONTAINS_ALL: ['user.tags', number[]]
     }>().not.toMatchTypeOf<Logic>()
   })
 })

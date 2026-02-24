@@ -256,6 +256,8 @@ pub(crate) enum BoolLogicNode {
     Gte(String, f64),
     Lte(String, f64),
     In(String, Vec<Value>),
+    ContainsAny(String, Vec<Value>),  // array contains at least one of the given elements
+    ContainsAll(String, Vec<Value>),  // array contains all of the given elements
 }
 ```
 

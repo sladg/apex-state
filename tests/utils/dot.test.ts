@@ -78,6 +78,17 @@ describe('dot utility', () => {
       expect(dot.get(state, 'user.tags')).toEqual(['developer', 'designer'])
     })
 
+    it('should get value at array index', () => {
+      const state = createTestState()
+      expect(dot.get__unsafe(state, 'user.tags.0')).toBe('developer')
+      expect(dot.get__unsafe(state, 'user.tags.1')).toBe('designer')
+    })
+
+    it('should return undefined for out-of-bounds array index', () => {
+      const state = createTestState()
+      expect(dot.get__unsafe(state, 'user.tags.5')).toBeUndefined()
+    })
+
     it('should get boolean values', () => {
       const state = createTestState()
       expect(dot.get(state, 'settings.enabled')).toBe(true)
@@ -164,6 +175,13 @@ describe('dot utility', () => {
       dot.set(state, 'user.tags', ['engineer'])
       expect(state.user.tags).toEqual(['engineer'])
     })
+
+    it('should set value at array index', () => {
+      const state = createTestState()
+      dot.set__unsafe(state, 'user.tags.0', 'engineer')
+      expect(state.user.tags[0]).toBe('engineer')
+      expect(state.user.tags[1]).toBe('designer')
+    })
   })
 
   describe('set__unsafe (runtime path)', () => {
@@ -186,6 +204,20 @@ describe('dot utility', () => {
       const path = 'user.address.city'
       dot.set__unsafe(state, path, 'Chicago')
       expect((state as any).user.address.city).toBe('Chicago')
+    })
+
+    it('should set value at array index', () => {
+      const state = createTestState()
+      dot.set__unsafe(state, 'user.tags.1', 'engineer')
+      expect(state.user.tags[1]).toBe('engineer')
+      expect(state.user.tags[0]).toBe('developer')
+    })
+
+    it('should create intermediate array when next key is numeric', () => {
+      const state = {} as any
+      dot.set__unsafe(state, 'items.0.name', 'Alice')
+      expect(Array.isArray(state.items)).toBe(true)
+      expect(state.items[0].name).toBe('Alice')
     })
   })
 
@@ -222,6 +254,14 @@ describe('dot utility', () => {
     it('should return true for empty objects', () => {
       const state = createTestState()
       expect(dot.has(state, 'empty')).toBe(true)
+    })
+
+    it('should return true for value at array index', () => {
+      const state = createTestState()
+      // use get__unsafe since numeric index paths aren't in DeepKey
+      expect(dot.get__unsafe(state, 'user.tags.0')).toBe('developer')
+      expect(dot.get__unsafe(state, 'user.tags.1')).toBe('designer')
+      expect(dot.get__unsafe(state, 'user.tags.5')).toBeUndefined()
     })
 
     it('should return true for arrays', () => {

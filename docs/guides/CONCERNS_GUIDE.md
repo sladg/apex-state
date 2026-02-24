@@ -52,7 +52,7 @@ Lifecycle:
 | Concern                                                  | Returns                 | Primary dependency          | Notes                                                             |
 | -------------------------------------------------------- | ----------------------- | --------------------------- | ----------------------------------------------------------------- |
 | `validationState`                                        | `ValidationStateResult` | Zod schema + optional scope | Aggregates errors; see tests under `tests/concerns/validation`.   |
-| `disabledWhen` / `visibleWhen` / `readonlyWhen`          | `boolean`               | BoolLogic tree              | See `src/utils/boolLogic.ts` for available operators.             |
+| `disabledWhen` / `visibleWhen` / `readonlyWhen`          | `boolean`               | BoolLogic tree              | See `src/utils/bool-logic.ts` for available operators.             |
 | `dynamicTooltip` / `dynamicLabel` / `dynamicPlaceholder` | `string`                | Interpolation template      | Uses `interpolateTemplate`; references are tracked automatically. |
 | `prefillValue` (if registered)                           | `unknown`               | explicit config             | Example of pure compute without BoolLogic.                        |
 

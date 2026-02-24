@@ -38,6 +38,8 @@ pub(crate) enum BoolLogicNode {
     Gte(String, f64),
     Lte(String, f64),
     In(String, Vec<Value>),
+    ContainsAny(String, Vec<Value>),
+    ContainsAll(String, Vec<Value>),
 }
 
 /// Private helper that derives Deserialize for the named-operator format.
@@ -56,6 +58,8 @@ enum BoolLogicNodeHelper {
     Gte(String, f64),
     Lte(String, f64),
     In(String, Vec<Value>),
+    ContainsAny(String, Vec<Value>),
+    ContainsAll(String, Vec<Value>),
 }
 
 impl BoolLogicNodeHelper {
@@ -72,6 +76,8 @@ impl BoolLogicNodeHelper {
             Self::Gte(p, t) => BoolLogicNode::Gte(p, t),
             Self::Lte(p, t) => BoolLogicNode::Lte(p, t),
             Self::In(p, a) => BoolLogicNode::In(p, a),
+            Self::ContainsAny(p, a) => BoolLogicNode::ContainsAny(p, a),
+            Self::ContainsAll(p, a) => BoolLogicNode::ContainsAll(p, a),
         }
     }
 }
@@ -155,6 +161,20 @@ impl BoolLogicNode {
                 Some(value) => allowed.contains(&value_repr_to_json(value)),
                 None => false,
             },
+
+            BoolLogicNode::ContainsAny(path, elements) => match get_path_value(state, path) {
+                Some(ValueRepr::Array(arr)) => elements
+                    .iter()
+                    .any(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
+                _ => false,
+            },
+
+            BoolLogicNode::ContainsAll(path, elements) => match get_path_value(state, path) {
+                Some(ValueRepr::Array(arr)) => elements
+                    .iter()
+                    .all(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
+                _ => false,
+            },
         }
     }
 
@@ -176,7 +196,9 @@ impl BoolLogicNode {
             | BoolLogicNode::Lte(path, _) => {
                 out.push(path.clone());
             }
-            BoolLogicNode::In(path, _) => {
+            BoolLogicNode::In(path, _)
+            | BoolLogicNode::ContainsAny(path, _)
+            | BoolLogicNode::ContainsAll(path, _) => {
                 out.push(path.clone());
             }
             BoolLogicNode::And(children) | BoolLogicNode::Or(children) => {
@@ -937,6 +959,148 @@ mod tests {
         let state = make_state();
         let logic = BoolLogicNode::In("user.age".into(), vec![json!(25), json!(30)]);
         assert!(logic.evaluate_value(&state));
+    }
+
+    // -----------------------------------------------------------------------
+    // CONTAINS_ANY tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_deserialize_contains_any() {
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "CONTAINS_ANY": ["user.tags", ["premium", "vip"]]
+        }))
+        .unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("premium"), json!("vip")])
+        );
+    }
+
+    #[test]
+    fn test_eval_contains_any_match_first() {
+        let state = make_state();
+        // user.tags = ["premium"] — "premium" is in candidates
+        let logic =
+            BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("premium"), json!("vip")]);
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_contains_any_match_second() {
+        let state = make_state();
+        // user.tags = ["premium"] — only second candidate matches, first doesn't
+        let logic =
+            BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("vip"), json!("premium")]);
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_contains_any_no_match() {
+        let state = make_state();
+        let logic =
+            BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("vip"), json!("free")]);
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_contains_any_empty_candidates_returns_false() {
+        let state = make_state();
+        let logic = BoolLogicNode::ContainsAny("user.tags".into(), vec![]);
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_contains_any_non_array_path_returns_false() {
+        let state = make_state();
+        // user.role is a string, not an array
+        let logic =
+            BoolLogicNode::ContainsAny("user.role".into(), vec![json!("admin"), json!("editor")]);
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_extract_paths_contains_any() {
+        let logic =
+            BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("premium"), json!("vip")]);
+        assert_eq!(logic.extract_paths(), vec!["user.tags".to_string()]);
+    }
+
+    // -----------------------------------------------------------------------
+    // CONTAINS_ALL tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_deserialize_contains_all() {
+        let logic: BoolLogicNode = serde_json::from_value(json!({
+            "CONTAINS_ALL": ["user.tags", ["premium", "verified"]]
+        }))
+        .unwrap();
+        assert_eq!(
+            logic,
+            BoolLogicNode::ContainsAll(
+                "user.tags".into(),
+                vec![json!("premium"), json!("verified")]
+            )
+        );
+    }
+
+    #[test]
+    fn test_eval_contains_all_all_present() {
+        // Build state with two tags
+        let mut user = HashMap::new();
+        user.insert(
+            "tags".to_string(),
+            ValueRepr::Array(vec![
+                ValueRepr::String("premium".to_string()),
+                ValueRepr::String("verified".to_string()),
+            ]),
+        );
+        let mut root = HashMap::new();
+        root.insert("user".to_string(), ValueRepr::Object(user));
+        let state = ValueRepr::Object(root);
+
+        let logic = BoolLogicNode::ContainsAll(
+            "user.tags".into(),
+            vec![json!("premium"), json!("verified")],
+        );
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_contains_all_partial_match_returns_false() {
+        let state = make_state();
+        // user.tags = ["premium"] only — "verified" is missing
+        let logic = BoolLogicNode::ContainsAll(
+            "user.tags".into(),
+            vec![json!("premium"), json!("verified")],
+        );
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_contains_all_empty_candidates_returns_true() {
+        // vacuously true — all elements of an empty set are present
+        let state = make_state();
+        let logic = BoolLogicNode::ContainsAll("user.tags".into(), vec![]);
+        assert!(logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_eval_contains_all_non_array_path_returns_false() {
+        let state = make_state();
+        let logic =
+            BoolLogicNode::ContainsAll("user.role".into(), vec![json!("admin"), json!("editor")]);
+        assert!(!logic.evaluate_value(&state));
+    }
+
+    #[test]
+    fn test_extract_paths_contains_all() {
+        let logic = BoolLogicNode::ContainsAll(
+            "user.tags".into(),
+            vec![json!("premium"), json!("verified")],
+        );
+        assert_eq!(logic.extract_paths(), vec!["user.tags".to_string()]);
     }
 
     #[test]
