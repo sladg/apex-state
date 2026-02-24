@@ -5,6 +5,7 @@
  */
 
 import type { ArrayOfChanges } from '../types'
+import { deepClone } from './deep-clone'
 import { dot } from './dot'
 
 /**
@@ -32,8 +33,8 @@ export const applyChangesToObject = <T extends object>(
   obj: T,
   changes: ArrayOfChanges<T>,
 ): T => {
-  // Deep clone the object
-  const result = structuredClone(obj)
+  // Deep clone the object — deepClone handles Proxy objects (structuredClone does not)
+  const result = deepClone(obj)
 
   // Apply each change
   for (const [path, value] of changes) {

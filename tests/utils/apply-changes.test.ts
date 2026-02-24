@@ -105,4 +105,42 @@ describe('applyChangesToObject', () => {
     expect(result.level1.level2.level3.value).toBe(999)
     expect(obj.level1.level2.level3.value).toBe(0) // Original unchanged
   })
+
+  // ── Proxy compatibility (structuredClone cannot clone Proxy objects) ──────
+
+  it('should work when the root object is a Proxy', () => {
+    const inner = { name: 'Alice', score: 10 }
+    const proxy = new Proxy(inner, {})
+    const changes: ArrayOfChanges<typeof inner> = [['name', 'Bob', {}]]
+
+    // structuredClone(proxy) throws — applyChangesToObject must handle this
+    expect(() => applyChangesToObject(proxy, changes)).not.toThrow()
+    const result = applyChangesToObject(proxy, changes)
+    expect(result.name).toBe('Bob')
+    expect(result.score).toBe(10)
+  })
+
+  it('should work when a nested array is a Proxy', () => {
+    const obj = { items: new Proxy([1, 2, 3], {}), label: 'list' }
+    const changes: ArrayOfChanges<typeof obj> = [['label', 'updated', {}]]
+
+    // structuredClone throws when encountering a nested Proxy-wrapped array
+    expect(() => applyChangesToObject(obj, changes)).not.toThrow()
+    const result = applyChangesToObject(obj, changes)
+    expect(result.label).toBe('updated')
+    expect(result.items).toEqual([1, 2, 3])
+  })
+
+  it('should work when a nested object is a Proxy', () => {
+    const obj = {
+      user: new Proxy({ name: 'Alice', age: 30 }, {}),
+      active: true,
+    }
+    const changes: ArrayOfChanges<typeof obj> = [['active', false, {}]]
+
+    expect(() => applyChangesToObject(obj, changes)).not.toThrow()
+    const result = applyChangesToObject(obj, changes)
+    expect(result.active).toBe(false)
+    expect(result.user.name).toBe('Alice')
+  })
 })
