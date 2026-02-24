@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [v3.7.3](https://github.com/sladg/apex-state/compare/v3.7.1...v3.7.3)
+
+* fix: rewrite DeepPartial as conditional type to correctly handle nullable arrays [[d7dfa13426fad0b914662c2252b03e613e9dfea4](https://github.com/sladg/apex-state/commit/d7dfa13426fad0b914662c2252b03e613e9dfea4))]
+* chore: switch test environment from jsdom to happy-dom [[97398cdf1ecaca28cc4e00f86fe5f7667b1fdc87](https://github.com/sladg/apex-state/commit/97398cdf1ecaca28cc4e00f86fe5f7667b1fdc87))]
+
+
 ## [v3.7.1](https://github.com/sladg/apex-state/compare/v3.7.0...v3.7.1)
 
 * fix: replace structuredClone with deepClone in applyChangesToObject [[424d4a9d69f49040faf31a83af93f03acbd01bbf](https://github.com/sladg/apex-state/commit/424d4a9d69f49040faf31a83af93f03acbd01bbf))]
@@ -159,6 +165,8 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix: rewrite DeepPartial as conditional type to correctly handle nullable arrays [[d7dfa13426fad0b914662c2252b03e613e9dfea4](https://github.com/sladg/apex-state/commit/d7dfa13426fad0b914662c2252b03e613e9dfea4))]
+* chore: switch test environment from jsdom to happy-dom [[97398cdf1ecaca28cc4e00f86fe5f7667b1fdc87](https://github.com/sladg/apex-state/commit/97398cdf1ecaca28cc4e00f86fe5f7667b1fdc87))]
 * fix: replace structuredClone with deepClone in applyChangesToObject [[424d4a9d69f49040faf31a83af93f03acbd01bbf](https://github.com/sladg/apex-state/commit/424d4a9d69f49040faf31a83af93f03acbd01bbf))]
 * feat: add CONTAINS_ANY and CONTAINS_ALL to BoolLogic; improve is utility [[22a5cdd07435725bae185735c8e8b071f96b96f9](https://github.com/sladg/apex-state/commit/22a5cdd07435725bae185735c8e8b071f96b96f9))]
 * fix: DeepValue now strips null/undefined from intermediate types during path traversal [[fe866b359385fe4df9380273cdad504c30c7a5d2](https://github.com/sladg/apex-state/commit/fe866b359385fe4df9380273cdad504c30c7a5d2))]
