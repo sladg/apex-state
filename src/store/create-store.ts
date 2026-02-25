@@ -7,23 +7,160 @@ import { defaultConcerns } from '../concerns'
 import { registerConcernEffects as registerConcernEffectsLegacy } from '../concerns/registration'
 import { registerConcernEffects as registerConcernEffectsWasm } from '../concerns/registration.wasm-impl'
 import { useStoreContext } from '../core/context'
-import type { StoreConfig } from '../core/types'
+import type { ProviderProps, StoreConfig } from '../core/types'
 import { processChangesLegacy } from '../pipeline/process-changes'
 import { processChangesWasm } from '../pipeline/process-changes.wasm-impl'
 import { registerSideEffects as registerSideEffectsLegacy } from '../sideEffects/registration'
 import { registerSideEffects as registerSideEffectsWasm } from '../sideEffects/registration.wasm-impl'
 import type {
   ArrayOfChanges,
+  BoolLogic,
+  CheckAggregationPairs,
+  CheckComputationPairs,
+  CheckListeners,
+  CheckSyncPairs,
+  ComputationOp,
   ConcernRegistrationMap,
   DeepKey,
   DeepValue,
   EvaluatedConcerns,
   GenericMeta,
+  ResolvableDeepKey,
+  ValidatedAggregationPairs,
+  ValidatedComputationPairs,
+  ValidatedFlipPairs,
+  ValidatedListeners,
+  ValidatedSyncPairs,
 } from '../types'
+import type { DeepKeyFiltered } from '../types/deep-key-filtered'
 import type { SideEffects } from '../types/side-effects'
 import { dot } from '../utils/dot'
 import { createProvider } from './provider'
 import { createWarmPairHelpers } from './warm-pair-helpers'
+
+/**
+ * Explicit return type of createGenericStore.
+ *
+ * Defined as an interface so TypeScript references type aliases by name
+ * (e.g. `SideEffects<DATA, META>`) instead of expanding them inline.
+ * Without this, large DATA types (2800+ DeepKey paths) cause
+ * "inferred type exceeds the maximum length" (TS error) because the
+ * compiler tries to inline-expand every O(N²) pair type.
+ */
+export interface GenericStoreApi<
+  DATA extends object,
+  META extends GenericMeta = GenericMeta,
+  CONCERNS extends readonly ConcernType<string, any, any>[] =
+    typeof defaultConcerns,
+> {
+  Provider: (props: ProviderProps<DATA>) => React.JSX.Element
+
+  useFieldStore: <P extends DeepKey<DATA>>(
+    path: P,
+  ) => {
+    value: DeepValue<DATA, P>
+    setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+  } & Record<string, unknown>
+
+  useStore: <P extends DeepKey<DATA>>(
+    path: P,
+  ) => [DeepValue<DATA, P>, (value: DeepValue<DATA, P>, meta?: META) => void]
+
+  useJitStore: () => {
+    proxyValue: DATA
+    setChanges: (changes: ArrayOfChanges<DATA, META>) => void
+    getState: () => DATA
+  }
+
+  useSideEffects: (id: string, effects: SideEffects<DATA, META>) => void
+
+  useConcerns: <
+    CUSTOM extends readonly ConcernType<string, any, any>[] = readonly [],
+  >(
+    id: string,
+    registration: ConcernRegistrationMap<
+      DATA,
+      readonly [...CONCERNS, ...CUSTOM]
+    >,
+    customConcerns?: CUSTOM,
+  ) => void
+
+  withConcerns: <
+    SELECTION extends Partial<
+      Record<Extract<CONCERNS[number], { name: string }>['name'], boolean>
+    >,
+  >(
+    selection: SELECTION,
+  ) => {
+    useFieldStore: <P extends DeepKey<DATA>>(
+      path: P,
+    ) => {
+      value: DeepValue<DATA, P>
+      setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+    } & {
+      [K in keyof SELECTION as SELECTION[K] extends true
+        ? K
+        : never]?: K extends keyof EvaluatedConcerns<CONCERNS>
+        ? EvaluatedConcerns<CONCERNS>[K]
+        : never
+    }
+  }
+
+  withMeta: (presetMeta: Partial<META>) => {
+    useFieldStore: <P extends DeepKey<DATA>>(
+      path: P,
+    ) => {
+      value: DeepValue<DATA, P>
+      setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
+    }
+  }
+
+  // Pre-warmed pair helpers from createWarmPairHelpers
+  syncPairs: <T extends [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>][]>(
+    pairs: CheckSyncPairs<DATA, T>,
+  ) => ValidatedSyncPairs<DATA>
+
+  flipPairs: <T extends [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>][]>(
+    pairs: CheckSyncPairs<DATA, T>,
+  ) => ValidatedFlipPairs<DATA>
+
+  aggregationPairs: <
+    T extends (
+      | [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>]
+      | [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>, BoolLogic<DATA>]
+    )[],
+  >(
+    pairs: CheckAggregationPairs<DATA, T>,
+  ) => ValidatedAggregationPairs<DATA>
+
+  computationPairs: <
+    T extends (
+      | [
+          ComputationOp,
+          DeepKeyFiltered<DATA, number>,
+          DeepKeyFiltered<DATA, number>,
+        ]
+      | [
+          ComputationOp,
+          DeepKeyFiltered<DATA, number>,
+          DeepKeyFiltered<DATA, number>,
+          BoolLogic<DATA>,
+        ]
+    )[],
+  >(
+    pairs: CheckComputationPairs<DATA, T>,
+  ) => ValidatedComputationPairs<DATA>
+
+  listeners: <
+    T extends readonly {
+      path: ResolvableDeepKey<DATA> | null
+      scope?: ResolvableDeepKey<DATA> | null | undefined
+      fn: (...args: any[]) => any
+    }[],
+  >(
+    items: CheckListeners<DATA, META, T>,
+  ) => ValidatedListeners<DATA, META>
+}
 
 export const createGenericStore = <
   DATA extends object,
@@ -32,7 +169,7 @@ export const createGenericStore = <
     typeof defaultConcerns,
 >(
   config?: StoreConfig,
-) => {
+): GenericStoreApi<DATA, META, CONCERNS> => {
   const Provider = createProvider<DATA, META>(config)
 
   // Internal helper hook for field state access
@@ -121,15 +258,16 @@ export const createGenericStore = <
     }, [store, id, effects])
   }
 
-  const useConcerns = <
-    CUSTOM extends readonly ConcernType<string, any, any>[] = readonly [],
-  >(
+  // Explicit type annotation from GenericStoreApi — TS can't structurally verify
+  // generic function assignability for this method (contravariant generic params).
+  // Typing the variable directly ensures the return type annotation works without `as`.
+  const useConcerns: GenericStoreApi<DATA, META, CONCERNS>['useConcerns'] = ((
     id: string,
     registration: ConcernRegistrationMap<
       DATA,
-      readonly [...CONCERNS, ...CUSTOM]
+      readonly [...CONCERNS, ...any[]]
     >,
-    customConcerns?: CUSTOM,
+    customConcerns?: readonly ConcernType<string, any, any>[],
   ): void => {
     const store = useStoreContext<DATA, META>()
     const concerns = (customConcerns ||
@@ -144,9 +282,10 @@ export const createGenericStore = <
 
       return registerConcernEffects(store, registration, concerns)
     }, [store, id, registration, customConcerns])
-  }
+  }) as GenericStoreApi<DATA, META, CONCERNS>['useConcerns']
 
-  const withConcerns = <
+  // Explicit type annotation from GenericStoreApi — same reason as useConcerns.
+  const withConcerns: GenericStoreApi<DATA, META, CONCERNS>['withConcerns'] = (<
     SELECTION extends Partial<
       Record<Extract<CONCERNS[number], { name: string }>['name'], boolean>
     >,
@@ -190,7 +329,7 @@ export const createGenericStore = <
         return { value, setValue, ...selectedConcerns }
       },
     }
-  }
+  }) as GenericStoreApi<DATA, META, CONCERNS>['withConcerns']
 
   const withMeta = (presetMeta: Partial<META>) => ({
     useFieldStore: <P extends DeepKey<DATA>>(
@@ -226,11 +365,3 @@ export const createGenericStore = <
     ...createWarmPairHelpers<DATA, META>(),
   }
 }
-
-/** Return type of createGenericStore — used by testing mock for 1:1 type safety */
-export type GenericStoreApi<
-  DATA extends object,
-  META extends GenericMeta = GenericMeta,
-  CONCERNS extends readonly ConcernType<string, any, any>[] =
-    typeof defaultConcerns,
-> = ReturnType<typeof createGenericStore<DATA, META, CONCERNS>>

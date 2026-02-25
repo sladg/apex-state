@@ -15,8 +15,8 @@ import type { ListenerRegistration } from '../core/types'
 import type { GenericMeta } from './meta'
 import type { ComputationOp } from './paths-of-same-value'
 
-declare const VALIDATED: unique symbol
-declare const STORE_DATA: unique symbol
+export declare const VALIDATED: unique symbol
+export declare const STORE_DATA: unique symbol
 
 /** Pre-validated sync pair array. Returned by `syncPairs()`. Branded with DATA to prevent cross-store use. */
 export type ValidatedSyncPairs<DATA extends object = object> = [
