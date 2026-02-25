@@ -1745,26 +1745,22 @@ describe.each(MODES)('[$name] Combined Side Effects', ({ config }) => {
       expect(storeInstance.state.target).toBe('shared')
     })
 
-    // Computations (SUM, AVG, etc.) are WASM-only — legacy mode does not support them
-    it.skipIf(config.useLegacyImplementation)(
-      'store.computationPairs() → computations — computation works at runtime',
-      async () => {
-        const store = createGenericStore<AggregationTestState>(config)
-        const comps = store.computationPairs([['SUM', 'numTotal', 'numA']])
+    it('store.computationPairs() → computations — computation works at runtime', async () => {
+      const store = createGenericStore<AggregationTestState>(config)
+      const comps = store.computationPairs([['SUM', 'numTotal', 'numA']])
 
-        const { storeInstance, setValue } = mountStore(
-          store,
-          aggregationTestFixtures.empty,
-          { sideEffects: { computations: comps } },
-        )
-        await flushSync()
+      const { storeInstance, setValue } = mountStore(
+        store,
+        aggregationTestFixtures.empty,
+        { sideEffects: { computations: comps } },
+      )
+      await flushSync()
 
-        setValue('numA', 10)
-        await flushEffects()
+      setValue('numA', 10)
+      await flushEffects()
 
-        expect(storeInstance.state.numTotal).toBe(10)
-      },
-    )
+      expect(storeInstance.state.numTotal).toBe(10)
+    })
 
     it('combined: all four pair types in one useSideEffects call', async () => {
       const store = createGenericStore<SyncFlipState>(config)

@@ -14,7 +14,6 @@ import { useLayoutEffect, useRef } from 'react'
 import { devtools } from 'valtio/utils'
 
 import type { StoreInstance } from '../core/types'
-import type { GenericMeta } from '../types'
 import type { DevToolsRef } from '../utils/debug-log'
 
 // Track active devtools subscriptions per proxy identity.
@@ -49,11 +48,8 @@ const connectProxy = (
  * Hook that connects store proxies to Redux DevTools when devtools flag is enabled.
  * Uses DevToolsRef for unique store identification.
  */
-export const useStoreDevtools = <
-  DATA extends object,
-  META extends GenericMeta = GenericMeta,
->(
-  store: StoreInstance<DATA, META>,
+export const useStoreDevtools = <DATA extends object>(
+  store: StoreInstance<DATA>,
   enabled: boolean,
   dt: DevToolsRef,
 ): void => {

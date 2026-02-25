@@ -950,9 +950,6 @@ describe.each(MODES)('[$name] Provider & Context', ({ config }) => {
 
   describe('WASM pipeline lifecycle', () => {
     it('should initialize pipeline to non-null after Provider mounts', () => {
-      // WASM-only: pipeline is intentionally null in legacy mode
-      if (config.useLegacyImplementation) return
-
       // Create store with initialState
       const store = createGenericStore<BasicTestState>(config)
       // Mount store

@@ -218,12 +218,15 @@ const executeFullExecutionPlan = <
     const input = buildDispatchInput(d, stateChanges, extra, userMetaByPath)
 
     const result = registration.fn(input, scopedState)
+    const durationMs = store._internal.timing.lastDuration
     obs?.listenerDispatch(
       d.subscriber_id,
-      registration.fn.name,
+      registration.name,
       scope || '(root)',
       input,
       result ?? [],
+      i,
+      durationMs,
     )
     if (!result || !(result as unknown[]).length) continue
 

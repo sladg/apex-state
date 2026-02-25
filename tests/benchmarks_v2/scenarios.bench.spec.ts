@@ -31,6 +31,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 37,236       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 32,218       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'typical form field change (validation + listener)',
@@ -82,6 +83,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 26,366       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 27,495       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'checkout workflow (syncs + flips + listeners)',
@@ -128,6 +130,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 18,841       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 18,808       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'dashboard metric update (aggregates + cascades)',

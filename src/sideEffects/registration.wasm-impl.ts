@@ -87,6 +87,7 @@ export const registerSideEffects = <
     listenerHandlers.set(subscriberId, {
       scope: effectiveScope,
       fn: wrappedFn,
+      name: originalFn.name || '(anonymous)',
     })
 
     return {
@@ -99,7 +100,7 @@ export const registerSideEffects = <
   // Single consolidated WASM call with all side effects
   const pipeline = store._internal.pipeline!
   const registrationId = `sideEffects-${id}`
-  const result = pipeline.registerSideEffects({
+  const registration = {
     registration_id: registrationId,
     ...(syncPairs.length > 0 && { sync_pairs: syncPairs }),
     ...(flipPairs.length > 0 && { flip_pairs: flipPairs }),
@@ -109,6 +110,14 @@ export const registerSideEffects = <
     }),
     ...(clearPaths && clearPaths.length > 0 && { clear_paths: clearPaths }),
     ...(listeners && listeners.length > 0 && { listeners }),
+  }
+  const result = pipeline.registerSideEffects(registration)
+
+  // Notify observer (DevTools + console logging)
+  store._internal.observer.event('registration:add', {
+    id,
+    registration,
+    result,
   })
 
   // Apply sync changes directly to valtio state.
@@ -143,6 +152,7 @@ export const registerSideEffects = <
   // Create cleanup function
   const cleanup = () => {
     pipeline.unregisterSideEffects(registrationId)
+    store._internal.observer.event('registration:remove', id)
 
     // Clean up listener handlers
     effects.listeners?.forEach((_listener, index) => {

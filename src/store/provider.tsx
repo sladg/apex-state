@@ -2,9 +2,9 @@ import { useLayoutEffect, useRef } from 'react'
 
 import { proxy, ref } from 'valtio'
 
+import pkg from '../../package.json'
 import { StoreContext } from '../core/context'
 import { DEFAULT_STORE_CONFIG } from '../core/defaults'
-import { createPathGroups } from '../core/path-groups'
 import type {
   DebugTrack,
   InternalState,
@@ -38,20 +38,12 @@ export const createInternalState = <
   devtools: DevToolsRef,
 ): InternalState<DATA, META> => ({
   graphs: {
-    sync: createPathGroups('sync'),
-    flip: createPathGroups('flip'),
-    listeners: new Map(),
-    sortedListenerPaths: [],
     listenerHandlers: new Map(),
   },
   registrations: {
     concerns: new Map(),
     effectCleanups: new Set(),
     sideEffectCleanups: new Map(),
-    aggregations: new Map(),
-  },
-  processing: {
-    queue: [],
   },
   timing: createTiming(config.debug),
   observer: createPipelineObserver(config.debug, devtools),
@@ -72,12 +64,11 @@ export const createProvider = <
   // Stable DevTools ref for this Provider factory.
   // Shared across StrictMode remounts — no duplicates.
   storeIdCounter++
+  const prefix = `apex-state@${pkg.version}:${resolvedConfig.name}-${String(storeIdCounter)}`
   const devtoolsRef: DevToolsRef = {
-    prefix: `apex-state:${resolvedConfig.name}-${String(storeIdCounter)}`,
+    prefix,
     pipeline: resolvedConfig.debug.devtools
-      ? connectPipelineDevTools(
-          `apex-state:${resolvedConfig.name}-${String(storeIdCounter)}`,
-        )
+      ? connectPipelineDevTools(prefix)
       : null,
   }
 

@@ -95,6 +95,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 751,968      | aa7e7da | baseline — initial measurement |
      */
     bench(
       'single field change (baseline reference)',
@@ -119,6 +120,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 745,101      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 10 sync pairs',
@@ -134,6 +136,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 800,338      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 50 sync pairs',
@@ -158,6 +161,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 1,155,425    | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 10 flip pairs',
@@ -173,6 +177,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 1,085,100    | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 50 flip pairs',
@@ -197,6 +202,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 797,707      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change dispatched to 15 listeners',
@@ -212,6 +218,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 760,759      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change dispatched to 50 listeners',
@@ -236,6 +243,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 797,986      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 20 BoolLogic evaluations',
@@ -251,6 +259,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 805,900      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 50 BoolLogic evaluations',
@@ -275,6 +284,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 549,194      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '2 changes through 10 sync + 10 flip + 10 listeners',
@@ -293,6 +303,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 303,386      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '4 changes through sync + flip + listeners + BoolLogic',
@@ -323,6 +334,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 104,685      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '10 changes with 20 sync pairs',
@@ -341,6 +353,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 6,385        | aa7e7da | baseline — initial measurement |
      */
     bench(
       '50 changes with 20 sync pairs',
@@ -359,6 +372,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 2,788        | aa7e7da | baseline — initial measurement |
      */
     bench(
       '100 changes with 20 sync pairs',
@@ -388,6 +402,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 771,120      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 5 sync pairs',
@@ -403,6 +418,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 766,924      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 25 sync pairs',
@@ -418,6 +434,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 770,215      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 50 sync pairs',
@@ -433,6 +450,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 767,525      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 100 sync pairs',
@@ -456,6 +474,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 537,918      | aa7e7da | baseline — initial measurement |
      */
     bench(
       'currency change cascades through 15 orders',

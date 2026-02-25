@@ -82,6 +82,7 @@ export const registerListenerLegacy = <
   listenerHandlers.set(subscriberId, {
     scope: registration.scope,
     fn: registration.fn as (...args: unknown[]) => unknown,
+    name: originalFn.name || '(anonymous)',
   })
 
   // Update sorted paths cache

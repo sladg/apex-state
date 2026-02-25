@@ -181,6 +181,7 @@ export interface ListenerRegistration<
 export interface ListenerHandlerRef {
   scope: string | null
   fn: (...args: unknown[]) => unknown
+  name: string
 }
 
 export interface SideEffectGraphs<

@@ -36,7 +36,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
     }
 
     const { storeInstance, processChanges } = createTestStore<State>(
-      { useLegacyImplementation: false },
+      {},
       { field1: 10, nested: { deep: { value: 10 } } },
     )
 
@@ -82,7 +82,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
     }
 
     const { storeInstance, processChanges } = createTestStore<State>(
-      { useLegacyImplementation: false },
+      {},
       { data: { a: 1, b: 1, c: 1 } },
     )
 
@@ -122,7 +122,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
     }
 
     const { storeInstance, processChanges } = createTestStore<State>(
-      { useLegacyImplementation: false },
+      {},
       { wrapper: { data: { a: 1, b: 1 } } },
     )
 
@@ -163,7 +163,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
     }
 
     const { storeInstance, processChanges } = createTestStore<State>(
-      { useLegacyImplementation: false },
+      {},
       { topBool: true, form: { fields: { enabled: false } } },
     )
 

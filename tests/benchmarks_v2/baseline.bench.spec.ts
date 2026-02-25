@@ -45,6 +45,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 560,889      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 769,702      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'single change through pipeline (no side effects)',
@@ -62,6 +63,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 548,419      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 776,191      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'single change with sync path',
@@ -79,6 +81,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 803,108      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 1,117,087    | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'single change with flip path',
@@ -96,6 +99,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 549,017      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 770,356      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'single change with listener',
@@ -133,6 +137,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 61,502       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 60,183       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'batch of 10 changes through pipeline',
@@ -149,6 +154,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 18,688       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 18,208       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'batch of 50 changes',
@@ -164,6 +170,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 10,119       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 9,846        | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'batch of 100 changes',
@@ -179,6 +186,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 1,032        | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 1,053        | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'batch of 1000 changes',
@@ -206,6 +214,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 789,676      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 766,981      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges on small state (10 items)',
@@ -221,6 +230,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 765,385      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 771,310      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges on medium state (1000 items)',
@@ -236,6 +246,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 784,546      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 763,254      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges on large state (100,000 items)',
@@ -262,6 +273,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 802,849      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 785,244      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges with 10 side effects matching',
@@ -279,6 +291,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 787,178      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 754,004      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges with 100 side effects matching',
@@ -295,6 +308,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 799,217      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 750,701      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges with 10 listeners triggered',
@@ -311,6 +325,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 792,481      | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 757,977      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges with 100 listeners triggered',

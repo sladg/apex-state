@@ -45,6 +45,7 @@ const defaultOnTimingSummary: OnTimingSummary = (summary) => {
 export interface Timing {
   run: <T>(type: TimingType, fn: () => T, meta: TimingMeta) => T
   reportBatch: (type: TimingType) => void
+  lastDuration: number
 }
 
 interface TimingConfig {
@@ -87,6 +88,7 @@ export const createTiming = (options: TimingConfig): Timing => {
       reportBatch: () => {
         // Do nothing
       },
+      lastDuration: 0,
     }
   }
 
@@ -96,11 +98,14 @@ export const createTiming = (options: TimingConfig): Timing => {
     registration: createTypeState(),
   }
 
-  return {
+  const instance: Timing = {
+    lastDuration: 0,
+
     run: <T>(type: TimingType, fn: () => T, meta: TimingMeta): T => {
       const start = performance.now()
       const result = fn()
       const duration = performance.now() - start
+      instance.lastDuration = duration
 
       const typeState = state[type]
       typeState.totalDuration += duration
@@ -140,4 +145,6 @@ export const createTiming = (options: TimingConfig): Timing => {
       typeState.slowOperations = []
     },
   }
+
+  return instance
 }

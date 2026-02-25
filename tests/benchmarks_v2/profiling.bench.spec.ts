@@ -40,6 +40,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 41,497       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'shadow state update (simple field)',
@@ -59,6 +60,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 16,419       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'shadow state update (deep nested field)',
@@ -85,6 +87,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 2,251        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'shadow state update (large object)',
@@ -107,6 +110,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 22,063       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'BoolLogic evaluation (simple: IS_EQUAL)',
@@ -137,6 +141,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 26,163       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'BoolLogic evaluation (complex: nested AND/OR)',
@@ -181,6 +186,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 1,469        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'BoolLogic evaluation (many conditions)',
@@ -202,6 +208,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 18,996       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'WASM memory allocation per change',
@@ -222,6 +229,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 486          | aa7e7da | baseline — initial measurement |
      */
     bench(
       'WASM memory with 1000 state items',
@@ -241,6 +249,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 1,297        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'WASM memory cleanup after processing',
@@ -262,6 +271,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 11,964       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'regression: processChanges latency baseline',
@@ -281,6 +291,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 9,758        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'regression: batching efficiency ratio',
@@ -304,6 +315,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 74           | aa7e7da | baseline — initial measurement |
      */
     bench(
       'regression: scaling factor (10x items → latency)',
@@ -325,6 +337,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 10,187       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: changeNormalization time',
@@ -343,6 +356,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 3,232        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: shadowStateUpdate time',
@@ -362,6 +376,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 446          | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: pathInterner.intern time',
@@ -384,6 +399,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 4,960        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: graphEvaluation time',
@@ -428,6 +444,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 4,097        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: topicRouter.dispatch time',
@@ -447,6 +464,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 3,832        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: listenerExecution time',

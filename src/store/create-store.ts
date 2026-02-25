@@ -4,14 +4,11 @@ import { snapshot, useSnapshot } from 'valtio'
 
 import type { ConcernType } from '../concerns'
 import { defaultConcerns } from '../concerns'
-import { registerConcernEffects as registerConcernEffectsLegacy } from '../concerns/registration'
-import { registerConcernEffects as registerConcernEffectsWasm } from '../concerns/registration.wasm-impl'
+import { registerConcernEffects } from '../concerns/registration.wasm-impl'
 import { useStoreContext } from '../core/context'
 import type { ProviderProps, StoreConfig } from '../core/types'
-import { processChangesLegacy } from '../pipeline/process-changes'
-import { processChangesWasm } from '../pipeline/process-changes.wasm-impl'
-import { registerSideEffects as registerSideEffectsLegacy } from '../sideEffects/registration'
-import { registerSideEffects as registerSideEffectsWasm } from '../sideEffects/registration.wasm-impl'
+import { processChangesWasm as processChanges } from '../pipeline/process-changes.wasm-impl'
+import { registerSideEffects } from '../sideEffects/registration.wasm-impl'
 import type {
   ArrayOfChanges,
   BoolLogic,
@@ -184,10 +181,6 @@ export const createGenericStore = <
           [path, newValue, (meta || {}) as META],
         ]
 
-        const processChanges = store._internal.config.useLegacyImplementation
-          ? processChangesLegacy
-          : processChangesWasm
-
         processChanges(store, changes)
       },
       [store, path],
@@ -226,11 +219,6 @@ export const createGenericStore = <
 
     const setChanges = useCallback(
       (changes: ArrayOfChanges<DATA, META>) => {
-        // WASM gateway: dispatch to WASM or legacy implementation
-        const processChanges = store._internal.config.useLegacyImplementation
-          ? processChangesLegacy
-          : processChangesWasm
-
         processChanges(store, changes)
       },
       [store],
@@ -249,11 +237,6 @@ export const createGenericStore = <
   ): void => {
     const store = useStoreContext<DATA, META>()
     useLayoutEffect(() => {
-      // WASM gateway: dispatch to WASM or legacy implementation
-      const registerSideEffects = store._internal.config.useLegacyImplementation
-        ? registerSideEffectsLegacy
-        : registerSideEffectsWasm
-
       return registerSideEffects(store, id, effects)
     }, [store, id, effects])
   }
@@ -274,12 +257,6 @@ export const createGenericStore = <
       defaultConcerns) as readonly ConcernType<any, any, any>[]
 
     useLayoutEffect(() => {
-      // WASM gateway: dispatch to WASM or legacy implementation
-      const registerConcernEffects = store._internal.config
-        .useLegacyImplementation
-        ? registerConcernEffectsLegacy
-        : registerConcernEffectsWasm
-
       return registerConcernEffects(store, registration, concerns)
     }, [store, id, registration, customConcerns])
   }) as GenericStoreApi<DATA, META, CONCERNS>['useConcerns']

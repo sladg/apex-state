@@ -15,7 +15,6 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { registerSideEffects as registerSideEffectsLegacy } from '~/sideEffects/registration'
 import { registerSideEffects as registerSideEffectsWasm } from '~/sideEffects/registration.wasm-impl'
 
 import { createGenericStore } from '../../src'
@@ -256,11 +255,7 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       await flushEffects()
 
       // Register listener directly (not via hook — hooks can't be called outside components)
-      const registerSideEffects = config.useLegacyImplementation
-        ? registerSideEffectsLegacy
-        : registerSideEffectsWasm
-
-      registerSideEffects(storeInstance, 'test-listener', {
+      registerSideEffectsWasm(storeInstance, 'test-listener', {
         listeners: [
           {
             path: 'fieldA',
