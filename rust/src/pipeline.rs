@@ -1078,6 +1078,13 @@ impl ProcessingPipeline {
             for peer_id in peer_ids {
                 if peer_id != path_id {
                     if let Some(peer_path) = self.intern.resolve(peer_id) {
+                        // Skip sync to paths whose parent structure no longer exists.
+                        // Prevents stale sync writes when React hasn't unmounted old
+                        // components yet but the target subtree was replaced.
+                        if self.shadow.get(peer_path).is_none() {
+                            continue;
+                        }
+
                         // Check if this sync change is a no-op against current shadow state
                         let current = self.shadow.get(peer_path);
                         let new_value: crate::shadow::ValueRepr =
@@ -1127,6 +1134,12 @@ impl ProcessingPipeline {
                 for peer_id in peer_ids {
                     if peer_id != path_id {
                         if let Some(peer_path) = self.intern.resolve(peer_id) {
+                            // Skip flip to paths whose parent structure no longer exists.
+                            // Same guard as sync: prevents writes to stale paths.
+                            if self.shadow.get(peer_path).is_none() {
+                                continue;
+                            }
+
                             // Check if this flip change is a no-op against current shadow state
                             let current = self.shadow.get(peer_path);
                             let inverted_bool = inverted == "true";
