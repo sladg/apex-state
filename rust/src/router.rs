@@ -1648,7 +1648,11 @@ mod tests {
         ];
 
         let batches = group_into_batches(&dispatches);
-        assert_eq!(batches.len(), 1, "same-scope listeners should share a batch");
+        assert_eq!(
+            batches.len(),
+            1,
+            "same-scope listeners should share a batch"
+        );
         assert_eq!(batches[0].dispatches.len(), 2);
     }
 
