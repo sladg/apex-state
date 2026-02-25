@@ -13,6 +13,7 @@ import type {
   StoreInstance,
 } from '../core/types'
 import type { DeepRequired, GenericMeta } from '../types'
+import { createPipelineObserver } from '../utils/debug-log'
 import { deepClone } from '../utils/deep-clone'
 import { deepMerge } from '../utils/deep-merge'
 import {
@@ -21,6 +22,7 @@ import {
 } from '../utils/derive-values'
 import { createTiming } from '../utils/timing'
 import { initPipeline, WasmGate } from '../wasm/lifecycle'
+import { useStoreDevtools } from './devtools'
 
 export const createInternalState = <
   DATA extends object,
@@ -45,6 +47,7 @@ export const createInternalState = <
     queue: [],
   },
   timing: createTiming(config.debug),
+  observer: createPipelineObserver(config.debug),
   config,
   pipeline: null,
 })
@@ -103,6 +106,9 @@ export const createProvider = <
     const storeRef = useRef(buildStore(initialState))
     const internal = storeRef.current._internal
 
+    // Redux DevTools: connect state and concerns proxies for inspection.
+    useStoreDevtools(storeRef.current, resolvedConfig.debug.devtools)
+
     // Deferred pipeline destroy: schedules cleanup on unmount, cancels on StrictMode re-mount.
     // StrictMode does unmount→mount synchronously — the 10s timer won't fire in between.
     // Real unmount: timer fires after 10s, destroying the WASM pipeline to prevent leaks.
@@ -116,6 +122,7 @@ export const createProvider = <
         internal._destroyTimer = setTimeout(() => {
           internal.pipeline?.destroy()
           internal.pipeline = null
+          internal.observer.destroy()
           internal._destroyTimer = undefined
         }, 10_000)
       }

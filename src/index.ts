@@ -22,6 +22,7 @@ export type {
   StoreInstance,
 } from './core/types'
 export { createGenericStore, type GenericStoreApi } from './store/create-store'
+export type { PipelineObserver } from './utils/debug-log'
 
 // Standalone hooks - composable field utilities
 export {
@@ -80,8 +81,16 @@ export type {
   HASH_KEY,
   PathsWithSameValueAs,
   SyncPair,
+  ValidatedAggregationPairs,
+  ValidatedComputationPairs,
+  ValidatedFlipPairs,
+  ValidatedListeners,
+  ValidatedSyncPairs,
   ValidationSchema,
 } from './types'
+
+// Brand symbols for validated pairs (unique symbols require value export for .d.ts)
+export { STORE_DATA, VALIDATED } from './types/validated-pairs'
 
 // Lazy-validated pair helpers (scale to large state types without TS2589)
 export {

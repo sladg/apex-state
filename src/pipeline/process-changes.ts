@@ -31,7 +31,9 @@ const processChangesJS = <
   store: StoreInstance<DATA, META>,
   initialChanges: ArrayOfChanges<DATA, META>,
 ): void => {
-  const { processing } = store._internal
+  const { processing, observer: obs } = store._internal
+
+  obs.pipelineStart('legacy', initialChanges as unknown[])
 
   // Early no-op filter: skip changes where value === current state
   // Reads from valtio proxy directly (cheaper than snapshot)
@@ -42,7 +44,10 @@ const processChangesJS = <
       filtered.push(change)
     }
   }
-  if (filtered.length === 0) return
+  if (filtered.length === 0) {
+    obs.pipelineEnd()
+    return
+  }
 
   // Use queue as the mutable batch - processors write to it directly
   processing.queue = [...filtered]
@@ -56,6 +61,7 @@ const processChangesJS = <
 
   // 2. Sync: bidirectional path synchronization
   processSyncPaths(processing.queue, store)
+  obs.phase1(processing.queue as unknown[])
 
   // 3. Flip: invert boolean values across paired paths
   processFlipPaths(processing.queue, store)
@@ -71,6 +77,7 @@ const processChangesJS = <
   }
   if (preListenerQueue.length === 0) {
     processing.queue = []
+    obs.pipelineEnd()
     return
   }
   processing.queue = preListenerQueue
@@ -94,6 +101,8 @@ const processChangesJS = <
 
   // Apply all accumulated changes to state once
   applyBatch(processing.queue, store.state)
+
+  obs.pipelineEnd()
 }
 
 // ---------------------------------------------------------------------------

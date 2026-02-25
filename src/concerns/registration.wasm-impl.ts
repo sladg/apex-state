@@ -160,6 +160,8 @@ const createConcernEffect = <DATA extends object, META extends GenericMeta>(
       { path, name: concernName },
     )
 
+    store._internal.observer.concernEval(path, concernName, value, result)
+
     // Check cache (non-reactive!) to see if value changed
     const prev = resultCache.get(cacheKey)
     if (prev !== result) {

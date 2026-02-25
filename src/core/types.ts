@@ -15,6 +15,7 @@ import type {
   DefaultDepth,
   GenericMeta,
 } from '../types'
+import type { PipelineObserver } from '../utils/debug-log'
 import type { Timing } from '../utils/timing'
 import type { WasmPipeline } from '../wasm/bridge'
 import type { FlipGraph, SyncGraph } from './graph-types'
@@ -29,6 +30,14 @@ export interface DebugConfig {
   timingThreshold?: number
   /** Enable tracking of processChanges calls and applied changes for testing/debugging */
   track?: boolean
+  /** Log pipeline phases, state changes, sync/flip expansions */
+  logPipeline?: boolean
+  /** Log listener dispatch inputs and outputs */
+  logListeners?: boolean
+  /** Log concern evaluations and validator runs */
+  logConcerns?: boolean
+  /** Connect to Redux DevTools Extension for state inspection */
+  devtools?: boolean
 }
 
 /**
@@ -197,6 +206,7 @@ export interface InternalState<
   registrations: Registrations
   processing: ProcessingState<DATA, META>
   timing: Timing
+  observer: PipelineObserver
   config: DeepRequired<StoreConfig>
   /** Per-store WASM pipeline instance (null when using legacy implementation). */
   pipeline: WasmPipeline | null

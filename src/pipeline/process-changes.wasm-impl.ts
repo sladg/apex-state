@@ -13,6 +13,7 @@ import type {
   StoreInstance,
 } from '../core/types'
 import type { ArrayOfChanges, GenericMeta } from '../types'
+import type { PipelineObserver } from '../utils/debug-log'
 import { dot } from '../utils/dot'
 import type { Change, FullExecutionPlan, WasmPipeline } from '../wasm/bridge'
 import { applyBatch } from './apply-batch'
@@ -155,6 +156,7 @@ const executeFullExecutionPlan = <
   stateChanges: Change[],
   store: StoreInstance<DATA, META>,
   userMetaByPath?: Map<string, GenericMeta>,
+  obs?: PipelineObserver,
 ): Change[] => {
   if (!plan || plan.groups.length === 0) {
     return []
@@ -181,6 +183,13 @@ const executeFullExecutionPlan = <
       const input = buildDispatchInput(d, stateChanges, extra, userMetaByPath)
 
       const result = registration.fn(input, scopedState)
+      obs?.listenerDispatch(
+        d.subscriber_id,
+        registration.fn.name,
+        scope || '(root)',
+        input,
+        result ?? [],
+      )
       if (!result || !(result as unknown[]).length) continue
 
       const producedChanges = (result as [string, unknown][]).map(
@@ -250,6 +259,7 @@ const runValidators = (
     dependency_values: Record<string, string>
   }[],
   pipeline: WasmPipeline,
+  obs?: PipelineObserver,
 ): Change[] => {
   const validationResults: Change[] = []
 
@@ -273,18 +283,22 @@ const runValidators = (
     const primaryValue = Object.values(values)[0]
     const parseResult = schema.safeParse(primaryValue)
 
+    const validationValue = {
+      isError: !parseResult.success,
+      errors: parseResult.success
+        ? []
+        : parseResult.error.errors.map((e) => ({
+            field: e.path.length > 0 ? e.path.join('.') : '.',
+            message: e.message,
+          })),
+    }
+
+    obs?.validatorResult(validator.output_path, primaryValue, validationValue)
+
     // Return as Change with _concerns. prefix (WASM will strip it in finalize)
     validationResults.push({
       path: validator.output_path, // Already has _concerns. prefix
-      value: {
-        isError: !parseResult.success,
-        errors: parseResult.success
-          ? []
-          : parseResult.error.errors.map((e) => ({
-              field: e.path.length > 0 ? e.path.join('.') : '.',
-              message: e.message,
-            })),
-      },
+      value: validationValue,
     })
   }
 
@@ -338,12 +352,15 @@ const pushDebugChanges = (
 export const processChangesWasm: typeof import('./process-changes').processChanges =
   (store, initialChanges) => {
     const pipeline = store._internal.pipeline!
+    const { observer: obs } = store._internal
 
     // Capture user-provided meta before sending to WASM (WASM strips meta)
     const userMetaByPath = buildUserMetaByPath(initialChanges)
 
     // Convert to bridge format
     const bridgeChanges = tuplesToBridgeChanges(initialChanges)
+
+    obs.pipelineStart('wasm', bridgeChanges)
 
     // Initialize debug entry if tracking is enabled
     const trackEntry: DebugTrackEntry | null = store._debug
@@ -362,12 +379,14 @@ export const processChangesWasm: typeof import('./process-changes').processChang
     // Early exit if WASM signals no work to do
     if (!has_work) {
       if (trackEntry) store._debug!.calls.push(trackEntry)
+      obs.pipelineEnd()
       return
     }
 
     // 2. Apply state changes FIRST (so listeners see updated state)
     // Partition early: separate state changes from concern changes
     const early = partitionChanges(state_changes)
+    obs.phase1(early.stateChanges)
 
     // Apply state changes to valtio (so listeners see updated state)
     if (early.stateChanges.length > 0) {
@@ -377,12 +396,19 @@ export const processChangesWasm: typeof import('./process-changes').processChang
       )
     }
 
+    // Log sync/flip changes from phase 1
+    const syncChanges = early.stateChanges.filter((c) => c.origin === 'sync')
+    const flipChanges = early.stateChanges.filter((c) => c.origin === 'flip')
+    if (syncChanges.length > 0) obs.syncExpand(syncChanges)
+    if (flipChanges.length > 0) obs.flipExpand(flipChanges)
+
     // 3. Execute listeners (JS-only: user functions) - now with updated state
     const produced = executeFullExecutionPlan(
       execution_plan,
       state_changes,
       store,
       userMetaByPath,
+      obs,
     )
 
     // Apply concern changes from phase 1 (BoolLogic results)
@@ -391,7 +417,7 @@ export const processChangesWasm: typeof import('./process-changes').processChang
     }
 
     // 4. Execute validators (JS-only: schema validation)
-    const validationResults = runValidators(validators_to_run, pipeline)
+    const validationResults = runValidators(validators_to_run, pipeline, obs)
 
     // 5. WASM Phase 2: merge, diff, update shadow
     // Single flat array: listener output + validator output (with _concerns. prefix)
@@ -401,6 +427,7 @@ export const processChangesWasm: typeof import('./process-changes').processChang
     // 6. Apply NEW changes from listeners/validators to valtio
     // Phase 1 changes were already applied above, so filter them out
     const late = partitionChanges(final.state_changes)
+    obs.phase2(late.stateChanges)
 
     // Apply only NEW changes (listener/validator output)
     if (late.stateChanges.length > 0) {
@@ -421,4 +448,6 @@ export const processChangesWasm: typeof import('./process-changes').processChang
       pushDebugChanges(trackEntry.appliedConcerns, late.concernChanges)
       store._debug!.calls.push(trackEntry)
     }
+
+    obs.pipelineEnd()
   }

@@ -8,6 +8,10 @@ export const DEFAULT_STORE_CONFIG: DeepRequired<StoreConfig> = {
     timing: false,
     timingThreshold: 5,
     track: false,
+    logPipeline: false,
+    logListeners: false,
+    logConcerns: false,
+    devtools: false,
   },
   useLegacyImplementation: false,
 }
