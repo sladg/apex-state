@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [v3.11.4](https://github.com/sladg/apex-state/compare/v3.11.2...v3.11.4)
+
+* 🐛 fix(wasm): formatting [[aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8](https://github.com/sladg/apex-state/commit/aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8))]
+* fix: root listeners (path/scope null) receive all changes and cascade [[5f97256142c7ac72d2d2cd421f09be891bce56cd](https://github.com/sladg/apex-state/commit/5f97256142c7ac72d2d2cd421f09be891bce56cd))]
+
+
 ## [v3.11.2](https://github.com/sladg/apex-state/compare/v3.11.0...v3.11.2)
 
 * fix: use parent_exists guard for sync/flip stale path detection [[44332140d8d1ebdd4168781189a77e8399d34145](https://github.com/sladg/apex-state/commit/44332140d8d1ebdd4168781189a77e8399d34145))]
@@ -188,6 +194,8 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* 🐛 fix(wasm): formatting [[aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8](https://github.com/sladg/apex-state/commit/aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8))]
+* fix: root listeners (path/scope null) receive all changes and cascade [[5f97256142c7ac72d2d2cd421f09be891bce56cd](https://github.com/sladg/apex-state/commit/5f97256142c7ac72d2d2cd421f09be891bce56cd))]
 * fix: use parent_exists guard for sync/flip stale path detection [[44332140d8d1ebdd4168781189a77e8399d34145](https://github.com/sladg/apex-state/commit/44332140d8d1ebdd4168781189a77e8399d34145))]
 * fix: skip sync/flip to paths whose parent structure was replaced [[b5773f13bb705f22145d8b08e2f3c468004bfb73](https://github.com/sladg/apex-state/commit/b5773f13bb705f22145d8b08e2f3c468004bfb73))]
 * refactor: decouple applyChangesToObject from GenericMeta constraint [[62aa7c8f2c303b175a16c2604d4572bdcc5f2eab](https://github.com/sladg/apex-state/commit/62aa7c8f2c303b175a16c2604d4572bdcc5f2eab))]
