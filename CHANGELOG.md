@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v3.9.1](https://github.com/sladg/apex-state/compare/v3.9.0...v3.9.1)
+
+* fix: add missing pair helper re-exports to testing module [[3722e4a14fc5def7f0b843093317501923cf4d5c](https://github.com/sladg/apex-state/commit/3722e4a14fc5def7f0b843093317501923cf4d5c))]
+
+
 ## [v3.9.0](https://github.com/sladg/apex-state/compare/v3.7.3...v3.9.0)
 
 * feat: add type-safe listeners() helper with lazy validation and scoped return types [[76c7053b6c035bfdcb257dc0a195db7b3aef2df0](https://github.com/sladg/apex-state/commit/76c7053b6c035bfdcb257dc0a195db7b3aef2df0))]
@@ -171,6 +176,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix: add missing pair helper re-exports to testing module [[3722e4a14fc5def7f0b843093317501923cf4d5c](https://github.com/sladg/apex-state/commit/3722e4a14fc5def7f0b843093317501923cf4d5c))]
 * feat: add type-safe listeners() helper with lazy validation and scoped return types [[76c7053b6c035bfdcb257dc0a195db7b3aef2df0](https://github.com/sladg/apex-state/commit/76c7053b6c035bfdcb257dc0a195db7b3aef2df0))]
 * perf: resolve TS2589 for pair types on large state types (>1,500 paths) [[477c473eddc2b363d4bf122c41513a9bcde95c6f](https://github.com/sladg/apex-state/commit/477c473eddc2b363d4bf122c41513a9bcde95c6f))]
 * fix: rewrite DeepPartial as conditional type to correctly handle nullable arrays [[d7dfa13426fad0b914662c2252b03e613e9dfea4](https://github.com/sladg/apex-state/commit/d7dfa13426fad0b914662c2252b03e613e9dfea4))]
