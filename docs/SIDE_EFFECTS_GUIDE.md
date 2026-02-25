@@ -206,7 +206,7 @@ store.useSideEffects("listeners", {
 | `'user.profile'`      | `'user.profile'` | Relative paths (`'name'`)            | Scoped object  |
 | `'user.profile.name'` | `null`           | Full paths (`'user.profile.name'`)   | Full state     |
 | `'a.b.c.d'`           | `'a.b'`          | Relative to scope (`'c.d'`)          | Value at `a.b` |
-| `null`                | `null`           | Full paths for all top-level changes | Full state     |
+| `null`                | `null`           | Full paths for ALL changes (always fires) | Full state     |
 
 **Constraints**:
 

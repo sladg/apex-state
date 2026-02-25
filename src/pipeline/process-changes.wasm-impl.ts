@@ -64,21 +64,45 @@ const bridgeChangesToTuples = <DATA extends object, META extends GenericMeta>(
   userMetaByPath?: Map<string, GenericMeta>,
 ): ArrayOfChanges<DATA, META> =>
   changes.map((c) => {
-    const baseMeta = userMetaByPath?.get(c.path) ?? {}
-    const originKey = c.origin ? ORIGIN_TO_META[c.origin] : undefined
-    const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
+    const meta = buildMeta(c.path, c.origin, userMetaByPath)
     return [c.path, c.value, meta] as ArrayOfChanges<DATA, META>[number]
   }) as unknown as ArrayOfChanges<DATA, META>
 
-/**
- * Execute a pre-computed execution plan with propagation map.
- * Trivial loop — no ancestor walking, no path remapping logic.
- * WASM pre-computes all routing; TS just iterates and calls handlers.
- */
-/**
- * Build the input array for a single listener dispatch.
- * Combines changes referenced by index with propagated extras from parent dispatches.
- */
+// ---------------------------------------------------------------------------
+// Shared micro-helpers
+// ---------------------------------------------------------------------------
+
+/** Build meta object from user-provided meta + origin flag. */
+const buildMeta = (
+  path: string,
+  origin: string | undefined,
+  userMetaByPath?: Map<string, GenericMeta>,
+): GenericMeta => {
+  const baseMeta = userMetaByPath?.get(path) ?? {}
+  const originKey = origin ? ORIGIN_TO_META[origin] : undefined
+  return originKey ? { ...baseMeta, [originKey]: true } : baseMeta
+}
+
+/** Append changes to the extra map for a given dispatch ID (get-or-create). */
+const pushExtra = (
+  extra: Map<number, Change[]>,
+  dispatchId: number,
+  changes: Change[],
+): void => {
+  let existing = extra.get(dispatchId)
+  if (!existing) {
+    existing = []
+    extra.set(dispatchId, existing)
+  }
+  for (const c of changes) {
+    existing.push(c)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Path helpers
+// ---------------------------------------------------------------------------
+
 /**
  * Relativize a change path against a topic path, matching legacy filterAndRelativize:
  * - Root topic (empty): path passes through as-is
@@ -93,6 +117,7 @@ const relativizePath = (changePath: string, topicPath: string): string => {
   return changePath
 }
 
+/** Build the input array for a single listener dispatch. */
 const buildDispatchInput = (
   d: FullExecutionPlan['groups'][number]['dispatches'][number],
   stateChanges: Change[],
@@ -105,11 +130,7 @@ const buildDispatchInput = (
   for (const id of d.input_change_ids) {
     const change = stateChanges[id]
     if (change !== undefined) {
-      const baseMeta = userMetaByPath?.get(change.path) ?? {}
-      const originKey = change.origin
-        ? ORIGIN_TO_META[change.origin]
-        : undefined
-      const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
+      const meta = buildMeta(change.path, change.origin, userMetaByPath)
       input.push([relativizePath(change.path, topicPath), change.value, meta])
     }
   }
@@ -117,9 +138,7 @@ const buildDispatchInput = (
   const extraChanges = extra.get(d.dispatch_id)
   if (extraChanges) {
     for (const c of extraChanges) {
-      const baseMeta = userMetaByPath?.get(c.path) ?? {}
-      const originKey = c.origin ? ORIGIN_TO_META[c.origin] : undefined
-      const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
+      const meta = buildMeta(c.path, c.origin, userMetaByPath)
       input.push([relativizePath(c.path, topicPath), c.value, meta])
     }
   }
@@ -148,21 +167,19 @@ const propagateChanges = (
   if (!targets) return
 
   for (const t of targets) {
-    let existing = extra.get(t.target_dispatch_id)
-    if (!existing) {
-      existing = []
-      extra.set(t.target_dispatch_id, existing)
-    }
-    for (const c of producedChanges) {
-      existing.push({
-        path: remapPath(c.path, t.remap_prefix),
-        value: c.value,
-        ...(c.origin ? { origin: c.origin } : {}),
-      })
-    }
+    const remapped = producedChanges.map((c) => ({
+      path: remapPath(c.path, t.remap_prefix),
+      value: c.value,
+      ...(c.origin ? { origin: c.origin } : {}),
+    }))
+    pushExtra(extra, t.target_dispatch_id, remapped)
   }
 }
 
+/**
+ * Execute a pre-computed execution plan with propagation map.
+ * WASM pre-computes all routing; TS just iterates and calls handlers.
+ */
 const executeFullExecutionPlan = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
@@ -186,39 +203,47 @@ const executeFullExecutionPlan = <
   // regular property access with zero proxy overhead.
   const currentState = snapshot(store.state) as DATA
 
-  for (const group of plan.groups) {
-    for (const d of group.dispatches) {
-      const registration = listenerHandlers.get(d.subscriber_id)
-      if (!registration) continue
+  // Flatten all dispatches in execution order for cascading injection
+  const allDispatches = plan.groups.flatMap((g) => g.dispatches)
 
-      const scope = registration.scope ?? ''
-      const scopedState =
-        scope === '' ? currentState : dot.get__unsafe(currentState, scope)
+  for (const [i, d] of allDispatches.entries()) {
+    const registration = listenerHandlers.get(d.subscriber_id)
+    if (!registration) continue
 
-      const input = buildDispatchInput(d, stateChanges, extra, userMetaByPath)
+    const scope = registration.scope ?? ''
+    const scopedState =
+      scope === '' ? currentState : dot.get__unsafe(currentState, scope)
 
-      const result = registration.fn(input, scopedState)
-      obs?.listenerDispatch(
-        d.subscriber_id,
-        registration.fn.name,
-        scope || '(root)',
-        input,
-        result ?? [],
-      )
-      if (!result || !(result as unknown[]).length) continue
+    // buildDispatchInput reads from extra — which now includes cascaded changes
+    const input = buildDispatchInput(d, stateChanges, extra, userMetaByPath)
 
-      const producedChanges = (result as [string, unknown][]).map(
-        ([path, value]) => ({ path, value, origin: 'listener' }),
-      )
-      allProducedChanges.push(...producedChanges)
+    const result = registration.fn(input, scopedState)
+    obs?.listenerDispatch(
+      d.subscriber_id,
+      registration.fn.name,
+      scope || '(root)',
+      input,
+      result ?? [],
+    )
+    if (!result || !(result as unknown[]).length) continue
 
-      // Propagate to parent dispatches via pre-computed propagation map
-      propagateChanges(
-        d.dispatch_id,
-        producedChanges,
-        plan.propagation_map,
-        extra,
-      )
+    const producedChanges = (result as [string, unknown][]).map(
+      ([path, value]) => ({ path, value, origin: 'listener' }),
+    )
+    allProducedChanges.push(...producedChanges)
+
+    // Propagate to parent dispatches via pre-computed propagation map (cross-depth)
+    propagateChanges(
+      d.dispatch_id,
+      producedChanges,
+      plan.propagation_map,
+      extra,
+    )
+
+    // Same-depth cascading: inject produced changes into extra for ALL subsequent dispatches
+    // buildDispatchInput will pick them up naturally via extra map
+    for (const subsequent of allDispatches.slice(i + 1)) {
+      pushExtra(extra, subsequent.dispatch_id, producedChanges)
     }
   }
 

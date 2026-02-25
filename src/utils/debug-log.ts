@@ -156,10 +156,15 @@ const createConsoleLayer = (config: DebugConfig) => {
 // Redux DevTools layer
 // ---------------------------------------------------------------------------
 
-interface DevToolsInstance {
+export interface DevToolsInstance {
   init: (state: unknown) => void
   send: (action: { type: string }, state: unknown) => void
   unsubscribe: () => void
+}
+
+export interface DevToolsRef {
+  prefix: string
+  pipeline: DevToolsInstance | null
 }
 
 interface DevToolsExtension {
@@ -182,27 +187,36 @@ const changesMap = (changes: unknown[]): Record<string, unknown> => {
   return map
 }
 
-const createDevToolsLayer = (enabled: boolean) => {
-  if (!enabled) return NOOP_OBSERVER
+const getDevToolsExtension = (): DevToolsExtension | undefined =>
+  typeof window !== 'undefined'
+    ? ((window as unknown as Record<string, unknown>)[
+        '__REDUX_DEVTOOLS_EXTENSION__'
+      ] as DevToolsExtension | undefined)
+    : undefined
 
-  const ext =
-    typeof window !== 'undefined'
-      ? ((window as unknown as Record<string, unknown>)[
-          '__REDUX_DEVTOOLS_EXTENSION__'
-        ] as DevToolsExtension | undefined)
-      : undefined
-
-  if (!ext) return NOOP_OBSERVER
+/** Connect to Redux DevTools, reusing an existing instance from the ref. */
+export const connectPipelineDevTools = (
+  prefix: string,
+): DevToolsInstance | null => {
+  const ext = getDevToolsExtension()
+  if (!ext) return null
 
   const instance = ext.connect({
-    name: 'apex-state:pipeline',
+    name: `${prefix}:pipeline`,
     features: { jump: false, skip: false, dispatch: false },
   })
+  instance.init({})
+  return instance
+}
+
+const createDevToolsLayer = (enabled: boolean, dt: DevToolsRef) => {
+  if (!enabled) return NOOP_OBSERVER
+  if (!dt.pipeline) return NOOP_OBSERVER
+
+  const instance = dt.pipeline
 
   let runId = 0
   let tree: Record<string, unknown> = {}
-
-  instance.init({})
 
   return {
     ...NOOP_OBSERVER,
@@ -277,6 +291,7 @@ const createDevToolsLayer = (enabled: boolean) => {
  */
 export const createPipelineObserver = (
   config: DebugConfig,
+  dtRef: DevToolsRef,
 ): PipelineObserver => {
   const {
     logPipeline = false,
@@ -290,7 +305,7 @@ export const createPipelineObserver = (
   }
 
   const con = createConsoleLayer(config)
-  const dt = createDevToolsLayer(devtools)
+  const dt = createDevToolsLayer(devtools, dtRef)
 
   return {
     pipelineStart: (label, input) => {

@@ -77,6 +77,15 @@ export type ClearPathRule<
  *         // state: p.123.g.abc object
  *         return [['data.computed', computed, {}]]  // SCOPED path (relative to scope)
  *       }
+ *     },
+ *     {
+ *       path: null,   // Always fires — receives ALL changes at any depth
+ *       scope: null,  // Get full state
+ *       fn: (changes, state) => {
+ *         // changes: [['user.profile.name', 'Alice', {}]]  // FULL paths, all depths
+ *         // state: full DATA object
+ *         return undefined
+ *       }
  *     }
  *   ]
  * })

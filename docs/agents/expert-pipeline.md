@@ -57,6 +57,7 @@ interface PathGroups {
 ```
 
 Key functions in `src/core/pathGroups.ts`:
+
 - `addEdge(graph, path1, path2)` — adds edge, merges groups if needed
 - `removeEdge(graph, path1, path2)` — removes edge, splits groups if needed
 - `getGroupPaths(graph, path)` — O(1) get all paths in same connected component
@@ -74,17 +75,20 @@ interface SideEffects<DATA, META> {
 ```
 
 ### Sync Paths
+
 - Multiple sync pairs form groups via PathGroups
 - On registration, all paths in a group sync to the most common non-null value
 - During pipeline processing, a change to any path propagates to all group members
 - **IMPORTANT**: Bulk registration uses `registerSyncPairsBatch` (single `processChanges` call), NOT a loop over `registerSyncPair`. This is a 10x perf optimization at 150 fields. See `docs/SIDE_EFFECTS_GUIDE.md` "Batched Registration" section. Do not revert `registerSideEffects` to per-pair loop.
 
 ### Flip Paths
+
 - Pairs of boolean paths that stay inverse
 - On change, the paired path gets `!value`
 - Uses PathGroups for O(1) lookups
 
 ### Aggregations
+
 - Target is ALWAYS first in the tuple: `[target, source]`
 - If all sources have equal values → target gets that value
 - If sources differ → target becomes `undefined`
@@ -92,7 +96,9 @@ interface SideEffects<DATA, META> {
 - Circular dependencies (path is both target and source) throw at registration
 
 ### Listeners
+
 - Watch changes under a path, optionally with scoped state
+- `path: null` = always fires on any change (all depths), receives full paths and full state
 - `scope` must be null or a parent/ancestor of `path`
 - Changes are relative to scope when scope is set
 - Listener `fn` can return new changes (full paths) or `undefined`

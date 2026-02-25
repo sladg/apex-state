@@ -1363,8 +1363,8 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       expect(capturedChanges).toEqual([['name', 'Bob', expect.any(Object)]])
     })
 
-    it('should only include top-level paths for root topic listener', async () => {
-      // Root listener (path=null/'') should only see top-level changes (no dots)
+    it('should include ALL paths for root topic listener', async () => {
+      // Root listener (path=null/'') should see ALL changes including nested paths
 
       interface FlatState {
         fieldA: string
@@ -1399,8 +1399,95 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       ])
       await flushEffects()
 
-      // Root listener: only 'fieldA' (no dots), NOT 'nested.child'
-      expect(capturedChanges).toEqual([['fieldA', 'hello', expect.any(Object)]])
+      // Root listener (path: null): receives ALL changes with full paths
+      expect(capturedChanges).toEqual(
+        expect.arrayContaining([
+          ['nested.child', 'deep', expect.any(Object)],
+          ['fieldA', 'hello', expect.any(Object)],
+        ]),
+      )
+      expect(capturedChanges).toHaveLength(2)
+    })
+
+    it('should deliver ALL changes to 3 root listeners (path: null)', async () => {
+      // 3 root listeners all at same depth: each sees the same initial changes
+      // Same-depth listeners run independently — they don't see each other's produced changes
+      // Produced changes from all listeners are collected and applied after all run
+
+      interface CascadeState {
+        fieldA: string
+        fieldB: string
+        fieldC: string
+        nested: { deep: string }
+      }
+
+      const store = createGenericStore<CascadeState>(config)
+      const listener1Changes: any[] = []
+      const listener2Changes: any[] = []
+      const listener3Changes: any[] = []
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        { fieldA: '', fieldB: '', fieldC: '', nested: { deep: '' } },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  listener1Changes.push(...changes)
+                  // Listener 1 produces a nested change
+                  return [['nested.deep', 'from-listener-1']]
+                },
+              },
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  listener2Changes.push(...changes)
+                  // Listener 2 produces fieldB change
+                  return [['fieldB', 'from-listener-2']]
+                },
+              },
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  listener3Changes.push(...changes)
+                  // Listener 3 just observes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('fieldA', 'trigger')
+      await flushEffects()
+
+      // All root listeners see the initial change (including nested paths)
+      expect(listener1Changes).toEqual(
+        expect.arrayContaining([['fieldA', 'trigger', expect.any(Object)]]),
+      )
+
+      // Listener 2 sees initial change + changes produced by listener 1
+      expect(listener2Changes).toEqual(
+        expect.arrayContaining([
+          ['fieldA', 'trigger', expect.any(Object)],
+          ['nested.deep', 'from-listener-1', expect.any(Object)],
+        ]),
+      )
+
+      // Listener 3 sees initial + listener 1 + listener 2 produced changes
+      expect(listener3Changes).toEqual(
+        expect.arrayContaining([
+          ['fieldA', 'trigger', expect.any(Object)],
+          ['nested.deep', 'from-listener-1', expect.any(Object)],
+          ['fieldB', 'from-listener-2', expect.any(Object)],
+        ]),
+      )
     })
 
     it('should relativize multiple child changes under the same topic', async () => {

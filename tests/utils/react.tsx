@@ -401,7 +401,10 @@ export const createTestStore = <
   ) as DeepRequired<StoreConfig>
 
   // Initialize WASM pipeline if in WASM mode
-  const internal = createInternalState<T, META>(resolvedConfig)
+  const internal = createInternalState<T, META>(resolvedConfig, {
+    prefix: 'test:store-0',
+    pipeline: null,
+  })
   if (!resolvedConfig.useLegacyImplementation) {
     if (!isWasmLoaded()) {
       throw new Error(

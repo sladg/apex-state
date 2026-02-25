@@ -12,7 +12,7 @@
  * 1. `{ path: string, fn }` — scope defaults to path → scoped state
  * 2. `{ path: string, scope: null, fn }` — explicit null scope → full DATA
  * 3. `{ path: string, scope: string, fn }` — scope must be prefix of path
- * 4. `{ path: null, fn }` — watch everything, scope defaults to null → full DATA
+ * 4. `{ path: null, fn }` — always fires on any change, scope defaults to null → full DATA
  * 5. `{ path: null, scope: null, fn }` — same as above, explicit
  *
  * **Inline fn restriction**: Fns with untyped (any) parameters are rejected.

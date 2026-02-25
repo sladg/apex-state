@@ -51,12 +51,10 @@ const filterAndRelativize = (
 ): AnyChange[] => {
   const result: AnyChange[] = []
 
-  // Root listener: include top-level paths only (no dots in path)
+  // Root listener (path: null): include ALL changes with full paths
   if (listenerPath === '') {
     for (const change of changes) {
-      if (!change[0].includes('.')) {
-        result.push([change[0], change[1], change[2] ?? {}])
-      }
+      result.push([change[0], change[1], change[2] ?? {}])
     }
     return result
   }
@@ -106,14 +104,23 @@ export const processListeners = <DATA extends object, META extends GenericMeta>(
   )
 
   // Process each listener path with filtered changes
+  // Same-depth cascading: each listener sees changes produced by previous listeners at same depth
   for (const listenerPath of sortedListenerPaths) {
     const pathListeners = listeners.get(listenerPath)!
 
-    // Filter and relativize changes in single pass
-    const relevantChanges = filterAndRelativize(sortedChanges, listenerPath)
+    // Track accumulated changes — starts with the sorted input changes
+    let accumulatedChanges = sortedChanges
 
-    // Process each listener with the filtered changes
+    // Process each listener with cascading produced changes
     for (const registration of pathListeners) {
+      // Re-filter with accumulated changes for each listener (includes previous listeners' output)
+      const relevantChanges = filterAndRelativize(
+        accumulatedChanges,
+        listenerPath,
+      )
+
+      const queueLenBefore = queue.length
+
       processListener({
         // Safe: ListenerRegistration and ListenerRegistrationInternal have same runtime shape
         // The function signature difference (ArrayOfChanges vs AnyChange[]) is a compile-time distinction only
@@ -125,6 +132,12 @@ export const processListeners = <DATA extends object, META extends GenericMeta>(
         currentState,
         queue,
       })
+
+      // Cascade: if this listener produced changes, add them for subsequent listeners
+      if (queue.length > queueLenBefore) {
+        const produced = queue.slice(queueLenBefore) as AnyChange[]
+        accumulatedChanges = [...accumulatedChanges, ...produced]
+      }
     }
   }
 }

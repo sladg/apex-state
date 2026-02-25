@@ -206,13 +206,14 @@ fn build_ancestor_chain(scope_path: &str) -> Vec<String> {
 // Batch grouping
 // ---------------------------------------------------------------------------
 
-/// Check if two topic paths are ancestor/descendant of each other (or equal).
+/// Check if two topic paths are strict ancestor/descendant of each other (not equal).
+/// Same-scope listeners are NOT conflicting — they cascade sequentially within a batch.
 fn is_ancestor_or_descendant(a: &str, b: &str) -> bool {
     if a == b {
-        return true;
+        return false; // same scope: group together for sequential cascading
     }
     if a.is_empty() || b.is_empty() {
-        return true; // root is ancestor of everything
+        return true; // root is ancestor of everything else
     }
     (a.starts_with(b) && a.as_bytes().get(b.len()) == Some(&b'.'))
         || (b.starts_with(a) && b.as_bytes().get(a.len()) == Some(&b'.'))
@@ -628,15 +629,14 @@ impl TopicRouter {
                         .map(|m| m.topic_path.as_str())
                         .unwrap_or("");
 
-                    // Compute input_change_ids: filter by topic_path (what to watch),
-                    // matching legacy filterAndRelativize behavior:
-                    // - Root topic (empty): match only top-level paths (no dots)
+                    // Compute input_change_ids: filter by topic_path (what to watch).
+                    // - Root topic (empty): match ALL paths
                     // - Non-root: match exact path OR children (path.starts_with(topic + '.'))
                     let mut input_change_ids: Vec<u32> = Vec::new();
                     for (idx, change) in changes.iter().enumerate() {
                         let matches = if topic_path.is_empty() {
-                            // Root topic: only top-level paths (no dots)
-                            !change.path.contains('.')
+                            // Root topic: match everything
+                            true
                         } else {
                             change.path == topic_path
                                 || (change.path.starts_with(topic_path)
@@ -1324,7 +1324,8 @@ mod tests {
 
     #[test]
     fn ancestor_or_desc_equal() {
-        assert!(is_ancestor_or_descendant("user", "user"));
+        // Same scope = no conflict (sequential cascading within batch)
+        assert!(!is_ancestor_or_descendant("user", "user"));
     }
 
     #[test]
@@ -1577,6 +1578,103 @@ mod tests {
                     assert_eq!(d.input_change_ids, vec![1]);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn full_execution_plan_root_topic_matches_all() {
+        let mut router = TopicRouter::new();
+        // Root listener: topic_path="" scope_path=""
+        register(&mut router, 1, "", "");
+
+        let changes = vec![
+            make_change("fieldA", r#""hello""#),
+            make_change("nested.child", r#""deep""#),
+        ];
+
+        let plan = router.create_full_execution_plan(&changes);
+        assert!(!plan.groups.is_empty(), "should have dispatch groups");
+
+        let d = &plan.groups[0].dispatches[0];
+        // Root topic should match ALL changes including nested paths
+        assert_eq!(d.input_change_ids, vec![0, 1]);
+    }
+
+    #[test]
+    fn batch_same_scope_root_listeners_single_group() {
+        // Multiple root listeners (same scope "") should be in a single batch
+        let dispatches = vec![
+            ListenerDispatch {
+                subscriber_id: 1,
+                scope_path: "".to_owned(),
+                changes: vec![],
+                ancestors: vec![],
+            },
+            ListenerDispatch {
+                subscriber_id: 2,
+                scope_path: "".to_owned(),
+                changes: vec![],
+                ancestors: vec![],
+            },
+            ListenerDispatch {
+                subscriber_id: 3,
+                scope_path: "".to_owned(),
+                changes: vec![],
+                ancestors: vec![],
+            },
+        ];
+
+        let batches = group_into_batches(&dispatches);
+        assert_eq!(batches.len(), 1, "3 root listeners should be in 1 batch");
+        assert_eq!(batches[0].dispatches.len(), 3);
+    }
+
+    #[test]
+    fn batch_same_scope_non_root_single_group() {
+        // Multiple listeners with same non-root scope should be in a single batch
+        let dispatches = vec![
+            ListenerDispatch {
+                subscriber_id: 1,
+                scope_path: "user.profile".to_owned(),
+                changes: vec![],
+                ancestors: vec![],
+            },
+            ListenerDispatch {
+                subscriber_id: 2,
+                scope_path: "user.profile".to_owned(),
+                changes: vec![],
+                ancestors: vec![],
+            },
+        ];
+
+        let batches = group_into_batches(&dispatches);
+        assert_eq!(batches.len(), 1, "same-scope listeners should share a batch");
+        assert_eq!(batches[0].dispatches.len(), 2);
+    }
+
+    #[test]
+    fn full_execution_plan_3_root_listeners_single_group() {
+        // 3 root listeners should produce a single group with all 3 dispatches
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "", "");
+        register(&mut router, 2, "", "");
+        register(&mut router, 3, "", "");
+
+        let changes = vec![make_change("fieldA", r#""trigger""#)];
+        let plan = router.create_full_execution_plan(&changes);
+
+        assert_eq!(plan.groups.len(), 1, "all root listeners in 1 group");
+        assert_eq!(
+            plan.groups[0].dispatches.len(),
+            3,
+            "group has all 3 dispatches"
+        );
+
+        // All 3 dispatches should reference the same change
+        for d in &plan.groups[0].dispatches {
+            assert_eq!(d.input_change_ids, vec![0]);
+            assert_eq!(d.topic_path, "");
+            assert_eq!(d.scope_path, "");
         }
     }
 }

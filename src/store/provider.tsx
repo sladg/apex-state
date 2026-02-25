@@ -13,7 +13,11 @@ import type {
   StoreInstance,
 } from '../core/types'
 import type { DeepRequired, GenericMeta } from '../types'
-import { createPipelineObserver } from '../utils/debug-log'
+import type { DevToolsRef } from '../utils/debug-log'
+import {
+  connectPipelineDevTools,
+  createPipelineObserver,
+} from '../utils/debug-log'
 import { deepClone } from '../utils/deep-clone'
 import { deepMerge } from '../utils/deep-merge'
 import {
@@ -24,11 +28,14 @@ import { createTiming } from '../utils/timing'
 import { initPipeline, WasmGate } from '../wasm/lifecycle'
 import { useStoreDevtools } from './devtools'
 
+let storeIdCounter = 0
+
 export const createInternalState = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
 >(
   config: DeepRequired<StoreConfig>,
+  devtools: DevToolsRef,
 ): InternalState<DATA, META> => ({
   graphs: {
     sync: createPathGroups('sync'),
@@ -47,8 +54,9 @@ export const createInternalState = <
     queue: [],
   },
   timing: createTiming(config.debug),
-  observer: createPipelineObserver(config.debug),
+  observer: createPipelineObserver(config.debug, devtools),
   config,
+  _devtools: devtools,
   pipeline: null,
 })
 
@@ -61,11 +69,26 @@ export const createProvider = <
   // Resolve config with defaults at factory time
   const resolvedConfig = deepMerge(DEFAULT_STORE_CONFIG, storeConfig)
 
+  // Stable DevTools ref for this Provider factory.
+  // Shared across StrictMode remounts — no duplicates.
+  storeIdCounter++
+  const devtoolsRef: DevToolsRef = {
+    prefix: `apex-state:${resolvedConfig.name}-${String(storeIdCounter)}`,
+    pipeline: resolvedConfig.debug.devtools
+      ? connectPipelineDevTools(
+          `apex-state:${resolvedConfig.name}-${String(storeIdCounter)}`,
+        )
+      : null,
+  }
+
   // Build store instance from raw initialState + resolved config.
   // Pure function — no hooks, no side effects, safe to call during render.
   const buildStore = (rawInitialState: DATA): StoreInstance<DATA, META> => {
     const prepared = prepareInitialState(deepClone(rawInitialState))
-    const internal = createInternalState<DATA, META>(resolvedConfig)
+    const internal = createInternalState<DATA, META>(
+      resolvedConfig,
+      devtoolsRef,
+    )
 
     // Always create pipeline — WasmGate guarantees WASM is loaded.
     initPipeline(internal, prepared.initialState)
@@ -107,7 +130,11 @@ export const createProvider = <
     const internal = storeRef.current._internal
 
     // Redux DevTools: connect state and concerns proxies for inspection.
-    useStoreDevtools(storeRef.current, resolvedConfig.debug.devtools)
+    useStoreDevtools(
+      storeRef.current,
+      resolvedConfig.debug.devtools,
+      devtoolsRef,
+    )
 
     // Deferred pipeline destroy: schedules cleanup on unmount, cancels on StrictMode re-mount.
     // StrictMode does unmount→mount synchronously — the 10s timer won't fire in between.

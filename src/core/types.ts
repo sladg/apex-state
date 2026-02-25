@@ -15,7 +15,7 @@ import type {
   DefaultDepth,
   GenericMeta,
 } from '../types'
-import type { PipelineObserver } from '../utils/debug-log'
+import type { DevToolsRef, PipelineObserver } from '../utils/debug-log'
 import type { Timing } from '../utils/timing'
 import type { WasmPipeline } from '../wasm/bridge'
 import type { FlipGraph, SyncGraph } from './graph-types'
@@ -66,6 +66,8 @@ export interface DebugTrack {
 }
 
 export interface StoreConfig {
+  /** Human-readable store name for DevTools (default: "store"). Auto-incremented ID is appended. */
+  name?: string
   /** Error storage path (default: "_errors") */
   errorStorePath?: string
   /** Max iterations for change processing (default: 100) */
@@ -140,6 +142,16 @@ export type OnStateListener<
  *     // state: p.123.g.abc object
  *   }
  * }
+ *
+ * // Watch ALL changes (always fires), get full state
+ * {
+ *   path: null,
+ *   scope: null,
+ *   fn: (changes, state) => {
+ *     // changes: [['user.profile.name', 'Alice', {}], ['count', 5, {}]] - FULL paths, all depths
+ *     // state: full DATA object
+ *   }
+ * }
  * ```
  */
 export interface ListenerRegistration<
@@ -149,7 +161,7 @@ export interface ListenerRegistration<
 > {
   /**
    * Path to watch - only changes under this path will trigger the listener
-   * null = watch all top-level paths
+   * null = watch all paths (receives every change)
    */
   path: DeepKey<DATA, Depth> | null
 
@@ -208,6 +220,8 @@ export interface InternalState<
   timing: Timing
   observer: PipelineObserver
   config: DeepRequired<StoreConfig>
+  /** Redux DevTools state — prefix for naming + shared connection instance. */
+  _devtools: DevToolsRef
   /** Per-store WASM pipeline instance (null when using legacy implementation). */
   pipeline: WasmPipeline | null
   /** Pending deferred destroy timer — cancelled on StrictMode re-mount. */
