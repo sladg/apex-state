@@ -119,6 +119,7 @@ pub(crate) struct DispatchEntry {
     pub dispatch_id: u32,
     pub subscriber_id: u32,
     pub scope_path: String,
+    pub topic_path: String,
     /// Indexes into the ProcessResult.changes array.
     pub input_change_ids: Vec<u32>,
 }
@@ -620,16 +621,26 @@ impl TopicRouter {
                     let dispatch_id = next_dispatch_id;
                     next_dispatch_id += 1;
 
-                    // Compute input_change_ids: which changes (by index) match this dispatch's topic
-                    let scope = &dispatch.scope_path;
+                    // Look up topic_path from subscriber metadata
+                    let topic_path = self
+                        .subscriber_meta
+                        .get(&dispatch.subscriber_id)
+                        .map(|m| m.topic_path.as_str())
+                        .unwrap_or("");
+
+                    // Compute input_change_ids: filter by topic_path (what to watch),
+                    // matching legacy filterAndRelativize behavior:
+                    // - Root topic (empty): match only top-level paths (no dots)
+                    // - Non-root: match exact path OR children (path.starts_with(topic + '.'))
                     let mut input_change_ids: Vec<u32> = Vec::new();
                     for (idx, change) in changes.iter().enumerate() {
-                        let matches = if scope.is_empty() {
-                            true // root scope matches everything
+                        let matches = if topic_path.is_empty() {
+                            // Root topic: only top-level paths (no dots)
+                            !change.path.contains('.')
                         } else {
-                            change.path == *scope
-                                || (change.path.starts_with(scope.as_str())
-                                    && change.path.as_bytes().get(scope.len()) == Some(&b'.'))
+                            change.path == topic_path
+                                || (change.path.starts_with(topic_path)
+                                    && change.path.as_bytes().get(topic_path.len()) == Some(&b'.'))
                         };
                         if matches {
                             input_change_ids.push(idx as u32);
@@ -639,13 +650,14 @@ impl TopicRouter {
                     entries.push(DispatchEntry {
                         dispatch_id,
                         subscriber_id: dispatch.subscriber_id,
-                        scope_path: scope.clone(),
+                        scope_path: dispatch.scope_path.clone(),
+                        topic_path: topic_path.to_owned(),
                         input_change_ids,
                     });
 
                     all_dispatch_metas.push(DispatchMeta {
                         dispatch_id,
-                        scope_path: scope.clone(),
+                        scope_path: dispatch.scope_path.clone(),
                         depth: level.depth,
                     });
                 }

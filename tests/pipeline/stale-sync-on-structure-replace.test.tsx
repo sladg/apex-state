@@ -76,7 +76,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
     oldCleanup()
   })
 
-  it('should not sync when parent is replaced with fewer keys', () => {
+  it('should sync siblings under existing parent (parent_exists guard only blocks dead parents)', () => {
     interface State {
       data: { a: number; b: number; c: number }
     }
@@ -91,12 +91,12 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
       syncPaths: [['data.a', 'data.b']],
     })
 
-    // Replace data with object that only has 'c'
+    // Replace data with object that only has 'c' — parent 'data' still exists
     processChanges(storeInstance, [
       ['data', { c: 42 }, {} as GenericMeta],
     ] as ArrayOfChanges<State, GenericMeta>)
 
-    // data.a and data.b no longer exist
+    // data.a and data.b no longer exist as keys
     expect(
       (storeInstance.state.data as Record<string, unknown>)['a'],
     ).toBeUndefined()
@@ -104,16 +104,54 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
       (storeInstance.state.data as Record<string, unknown>)['b'],
     ).toBeUndefined()
 
-    // Re-create data.a — this should NOT trigger sync to dead data.b
+    // Re-create data.a — parent 'data' still exists, so sync SHOULD create data.b
     processChanges(storeInstance, [
       ['data.a', 77, {} as GenericMeta],
     ] as ArrayOfChanges<State, GenericMeta>)
 
     expect((storeInstance.state.data as Record<string, unknown>)['a']).toBe(77)
-    // data.b must NOT have been ghost-created by stale sync
+    // Sync IS expected here: parent 'data' exists, sync pair is still registered
+    expect((storeInstance.state.data as Record<string, unknown>)['b']).toBe(77)
+
+    oldCleanup()
+  })
+
+  it('should sync when recreating nested path (shadow.set creates intermediates)', () => {
+    interface State {
+      wrapper: { data: { a: number; b: number } }
+    }
+
+    const { storeInstance, processChanges } = createTestStore<State>(
+      { useLegacyImplementation: false },
+      { wrapper: { data: { a: 1, b: 1 } } },
+    )
+
+    // Register sync: wrapper.data.a ↔ wrapper.data.b
+    const oldCleanup = registerSideEffects(storeInstance, 'old', {
+      syncPaths: [['wrapper.data.a', 'wrapper.data.b']],
+    })
+
+    // Replace wrapper with empty object — wrapper.data is gone entirely
+    processChanges(storeInstance, [
+      ['wrapper', {}, {} as GenericMeta],
+    ] as ArrayOfChanges<State, GenericMeta>)
+
     expect(
-      (storeInstance.state.data as Record<string, unknown>)['b'],
+      (storeInstance.state.wrapper as Record<string, unknown>)['data'],
     ).toBeUndefined()
+
+    // Re-create wrapper.data.a — shadow.set creates intermediate 'wrapper.data' object,
+    // which makes parent_exists("wrapper.data.b") true, so sync proceeds
+    processChanges(storeInstance, [
+      ['wrapper.data.a', 77, {} as GenericMeta],
+    ] as unknown as ArrayOfChanges<State, GenericMeta>)
+
+    // Both a and b exist: shadow.set created wrapper.data, sync pair is valid
+    const data = (storeInstance.state.wrapper as Record<string, unknown>)[
+      'data'
+    ] as Record<string, unknown>
+    expect(data['a']).toBe(77)
+    expect(data['b']).toBe(77)
 
     oldCleanup()
   })

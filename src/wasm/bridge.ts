@@ -32,6 +32,7 @@ export interface DispatchEntry {
   dispatch_id: number
   subscriber_id: number
   scope_path: string
+  topic_path: string
   /** Indexes into ProcessResult.changes array. */
   input_change_ids: number[]
 }

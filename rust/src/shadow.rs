@@ -103,6 +103,16 @@ impl ShadowState {
         Self::traverse(&self.root, path.split('.'))
     }
 
+    /// Check if the parent structure of a dot-separated path exists.
+    /// Returns true for root-level paths (no dots) since the root always exists.
+    /// For nested paths, checks that the parent resolves to an Object.
+    pub(crate) fn parent_exists(&self, path: &str) -> bool {
+        match path.rsplit_once('.') {
+            None => true, // root-level key, parent is root which always exists
+            Some((parent, _)) => matches!(self.get(parent), Some(ValueRepr::Object(_))),
+        }
+    }
+
     /// Set a value at the given dot-separated path from a JSON string.
     /// Creates intermediate objects if they don't exist.
     /// Preserves sibling values (partial update).

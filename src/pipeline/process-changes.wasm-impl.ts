@@ -79,12 +79,27 @@ const bridgeChangesToTuples = <DATA extends object, META extends GenericMeta>(
  * Build the input array for a single listener dispatch.
  * Combines changes referenced by index with propagated extras from parent dispatches.
  */
+/**
+ * Relativize a change path against a topic path, matching legacy filterAndRelativize:
+ * - Root topic (empty): path passes through as-is
+ * - Exact match: keep full path (legacy line 68-70)
+ * - Child match: strip topic prefix (legacy line 71-72)
+ */
+const relativizePath = (changePath: string, topicPath: string): string => {
+  if (topicPath === '') return changePath
+  if (changePath === topicPath) return changePath
+  const prefix = topicPath + '.'
+  if (changePath.startsWith(prefix)) return changePath.slice(prefix.length)
+  return changePath
+}
+
 const buildDispatchInput = (
   d: FullExecutionPlan['groups'][number]['dispatches'][number],
   stateChanges: Change[],
   extra: Map<number, Change[]>,
   userMetaByPath?: Map<string, GenericMeta>,
 ): [string, unknown, GenericMeta][] => {
+  const topicPath = d.topic_path
   // Single pass: filter + map combined
   const input: [string, unknown, GenericMeta][] = []
   for (const id of d.input_change_ids) {
@@ -95,7 +110,7 @@ const buildDispatchInput = (
         ? ORIGIN_TO_META[change.origin]
         : undefined
       const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
-      input.push([change.path, change.value, meta])
+      input.push([relativizePath(change.path, topicPath), change.value, meta])
     }
   }
 
@@ -105,7 +120,7 @@ const buildDispatchInput = (
       const baseMeta = userMetaByPath?.get(c.path) ?? {}
       const originKey = c.origin ? ORIGIN_TO_META[c.origin] : undefined
       const meta = originKey ? { ...baseMeta, [originKey]: true } : baseMeta
-      input.push([c.path, c.value, meta])
+      input.push([relativizePath(c.path, topicPath), c.value, meta])
     }
   }
 

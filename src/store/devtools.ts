@@ -29,10 +29,14 @@ export const useStoreDevtools = <
   const unsubRef = useRef<(() => void)[]>([])
 
   useLayoutEffect(() => {
-    if (!enabled) return
-
-    const unsub1 = devtools(store.state, { name: 'apex-state:state' })
-    const unsub2 = devtools(store._concerns, { name: 'apex-state:concerns' })
+    const unsub1 = devtools(store.state, {
+      name: 'apex-state:state',
+      enabled,
+    })
+    const unsub2 = devtools(store._concerns, {
+      name: 'apex-state:concerns',
+      enabled,
+    })
     unsubRef.current = [unsub1, unsub2].filter(
       (fn): fn is () => void => typeof fn === 'function',
     )

@@ -48,7 +48,7 @@
     "docs:llms": "npx tsx scripts/generate-llms-txt.ts --outdir ./demo/dist",
     "release": "npx --package @sladg/release-utils utils shipit --gitUser @sladg --gitEmail jan@ssoukup.com --changelog",
     "test": "npm run test:smoke && npm run test:all && npm run bench",
-    "test:all": "vitest run",
+    "test:all": "vitest run && npm run wasm:test",
     "test:bench": "npm run test:parity && npm run bench",
     "test:coverage": "vitest run --coverage",
     "test:parity": "vitest run tests/integration/wasm-vs-legacy-parity.test.ts",

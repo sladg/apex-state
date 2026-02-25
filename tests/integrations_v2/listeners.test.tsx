@@ -1145,6 +1145,351 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
     })
   })
 
+  describe('Listener: path filtering and relativization (topic_path vs scope_path)', () => {
+    it('should filter changes by topic_path and relativize child paths', async () => {
+      // The core bug scenario: listener with path='user' scope='$form'
+      // Legacy: filterAndRelativize filters by topic_path, relativizes children
+      // WASM must match: filter by topic_path (not scope_path), relativize children
+
+      interface FormState {
+        user: { name: string; email: string; age: number }
+        settings: { theme: string }
+      }
+
+      const store = createGenericStore<FormState>(config)
+      let capturedChanges: any[] = []
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        {
+          user: { name: 'Alice', email: 'a@b.com', age: 30 },
+          settings: { theme: 'dark' },
+        },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user',
+                scope: null,
+                fn: (changes) => {
+                  capturedChanges = changes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('user.name', 'Bob')
+      await flushEffects()
+
+      // Legacy filterAndRelativize: 'user.name' with topic='user' → 'name'
+      expect(capturedChanges).toEqual([['name', 'Bob', expect.any(Object)]])
+    })
+
+    it('should pass exact path match through unchanged', async () => {
+      // Legacy behavior: exact path match keeps the full path
+      // e.g., change 'user' with topic='user' → path stays 'user'
+
+      interface FormState {
+        user: { name: string; email: string }
+        other: string
+      }
+
+      const store = createGenericStore<FormState>(config)
+      let capturedChanges: any[] = []
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        { user: { name: 'Alice', email: 'a@b.com' }, other: '' },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user',
+                scope: null,
+                fn: (changes) => {
+                  capturedChanges = changes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      // Change the exact topic path
+      setValue('user', { name: 'Bob', email: 'bob@b.com' })
+      await flushEffects()
+
+      // Legacy: exact match → keeps full path 'user'
+      expect(capturedChanges).toEqual([
+        ['user', { name: 'Bob', email: 'bob@b.com' }, expect.any(Object)],
+      ])
+    })
+
+    it('should NOT include changes outside topic_path', async () => {
+      // Listener watches 'user' — changes to 'settings' should NOT appear
+
+      interface FormState {
+        user: { name: string }
+        settings: { theme: string }
+      }
+
+      const store = createGenericStore<FormState>(config)
+      let capturedChanges: any[] = []
+      let callCount = 0
+
+      const { storeInstance: _si, setChanges } = mountStore(
+        store,
+        { user: { name: 'Alice' }, settings: { theme: 'dark' } },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user',
+                scope: null,
+                fn: (changes) => {
+                  callCount++
+                  capturedChanges = changes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      // Change both user.name and settings.theme in one batch
+      setChanges([
+        ['user.name', 'Bob'],
+        ['settings.theme', 'light'],
+      ])
+      await flushEffects()
+
+      // Listener watching 'user' should only see 'user.name' (relativized to 'name')
+      expect(callCount).toBe(1)
+      expect(capturedChanges).toEqual([['name', 'Bob', expect.any(Object)]])
+    })
+
+    it('should relativize deeply nested paths under topic', async () => {
+      // Listener on 'g.1.p.2.data' should receive 'strike' for change at 'g.1.p.2.data.strike'
+
+      interface DeepFormState {
+        g: { '1': { p: { '2': { data: { strike: number; extra: string } } } } }
+      }
+
+      const store = createGenericStore<DeepFormState>(config)
+      let capturedChanges: any[] = []
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        { g: { '1': { p: { '2': { data: { strike: 0, extra: '' } } } } } },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'g.1.p.2.data',
+                scope: null,
+                fn: (changes) => {
+                  capturedChanges = changes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('g.1.p.2.data.strike', 42)
+      await flushEffects()
+
+      // Legacy: 'g.1.p.2.data.strike' with topic='g.1.p.2.data' → 'strike'
+      expect(capturedChanges).toEqual([['strike', 42, expect.any(Object)]])
+    })
+
+    it('should filter by topic_path when scope differs from path', async () => {
+      // The exact bug scenario: path (topic) = 'user.profile', scope = wider '$form'
+      // Changes should be filtered by topic_path='user.profile', not scope
+
+      interface ScopedState {
+        user: {
+          profile: { name: string; bio: string }
+          settings: { notify: boolean }
+        }
+      }
+
+      const store = createGenericStore<ScopedState>(config)
+      let capturedChanges: any[] = []
+      let callCount = 0
+
+      const { storeInstance: _si, setChanges } = mountStore(
+        store,
+        {
+          user: {
+            profile: { name: 'Alice', bio: '' },
+            settings: { notify: true },
+          },
+        },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user.profile',
+                scope: 'user',
+                fn: (changes) => {
+                  callCount++
+                  capturedChanges = changes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      // Change both profile.name and settings.notify
+      setChanges([
+        ['user.profile.name', 'Bob'],
+        ['user.settings.notify', false],
+      ])
+      await flushEffects()
+
+      // Listener watches topic='user.profile', so only 'user.profile.name' matches.
+      // 'user.settings.notify' should NOT be included (it's under scope 'user' but not topic 'user.profile')
+      expect(callCount).toBe(1)
+      // Path relativized to topic: 'user.profile.name' → 'name'
+      expect(capturedChanges).toEqual([['name', 'Bob', expect.any(Object)]])
+    })
+
+    it('should only include top-level paths for root topic listener', async () => {
+      // Root listener (path=null/'') should only see top-level changes (no dots)
+
+      interface FlatState {
+        fieldA: string
+        nested: { child: string }
+      }
+
+      const store = createGenericStore<FlatState>(config)
+      let capturedChanges: any[] = []
+
+      const { storeInstance: _si, setChanges } = mountStore(
+        store,
+        { fieldA: '', nested: { child: '' } },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  capturedChanges = changes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setChanges([
+        ['fieldA', 'hello'],
+        ['nested.child', 'deep'],
+      ])
+      await flushEffects()
+
+      // Root listener: only 'fieldA' (no dots), NOT 'nested.child'
+      expect(capturedChanges).toEqual([['fieldA', 'hello', expect.any(Object)]])
+    })
+
+    it('should relativize multiple child changes under the same topic', async () => {
+      // Multiple changes under the same topic should all be relativized
+
+      const store = createGenericStore<ListenerTestState>(config)
+      let capturedChanges: any[] = []
+
+      const { storeInstance: _si, setChanges } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user',
+                scope: null,
+                fn: (changes) => {
+                  capturedChanges = changes
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setChanges([
+        ['user.name', 'Bob'],
+        ['user.email', 'bob@example.com'],
+      ])
+      await flushEffects()
+
+      // Both changes should be relativized: 'user.name' → 'name', 'user.email' → 'email'
+      expect(capturedChanges).toEqual(
+        expect.arrayContaining([
+          ['name', 'Bob', expect.any(Object)],
+          ['email', 'bob@example.com', expect.any(Object)],
+        ]),
+      )
+      expect(capturedChanges).toHaveLength(2)
+    })
+
+    it('should provide scoped state from scope_path while filtering by topic_path', async () => {
+      // Scope determines what state the listener sees
+      // Topic determines which changes are delivered
+      // Both should work correctly together
+
+      interface FormWithScope {
+        form: { user: { name: string; age: number }; meta: { valid: boolean } }
+      }
+
+      const store = createGenericStore<FormWithScope>(config)
+      let capturedChanges: any[] = []
+      let capturedState: unknown = null
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        { form: { user: { name: 'Alice', age: 30 }, meta: { valid: true } } },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'form.user',
+                scope: 'form',
+                fn: (changes, state) => {
+                  capturedChanges = changes
+                  capturedState = state
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('form.user.name', 'Bob')
+      await flushEffects()
+
+      // Changes filtered by topic='form.user', relativized: 'form.user.name' → 'name'
+      expect(capturedChanges).toEqual([['name', 'Bob', expect.any(Object)]])
+
+      // State scoped to 'form' — should have user and meta subtrees
+      expect(capturedState).toBeDefined()
+      expect((capturedState as FormWithScope['form']).meta).toBeDefined()
+      expect((capturedState as FormWithScope['form']).meta.valid).toBe(true)
+    })
+  })
+
   describe('Listener: state consistency', () => {
     it('should see state consistent after mutations', async () => {
       // Create store with listeners

@@ -1081,7 +1081,9 @@ impl ProcessingPipeline {
                         // Skip sync to paths whose parent structure no longer exists.
                         // Prevents stale sync writes when React hasn't unmounted old
                         // components yet but the target subtree was replaced.
-                        if self.shadow.get(peer_path).is_none() {
+                        // Only check parent — the peer path itself may not exist yet
+                        // (sync can create new leaf values).
+                        if !self.shadow.parent_exists(peer_path) {
                             continue;
                         }
 
@@ -1136,7 +1138,7 @@ impl ProcessingPipeline {
                         if let Some(peer_path) = self.intern.resolve(peer_id) {
                             // Skip flip to paths whose parent structure no longer exists.
                             // Same guard as sync: prevents writes to stale paths.
-                            if self.shadow.get(peer_path).is_none() {
+                            if !self.shadow.parent_exists(peer_path) {
                                 continue;
                             }
 
@@ -2503,7 +2505,7 @@ mod tests {
     #[test]
     fn full_pipeline_sync_only() {
         let mut p = make_pipeline();
-        p.shadow_init(r#"{"user.name": "alice", "profile.name": "bob"}"#)
+        p.shadow_init(r#"{"user": {"name": "alice"}, "profile": {"name": "bob"}}"#)
             .unwrap();
 
         p.register_sync_batch(r#"[["user.name", "profile.name"]]"#)
