@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [v3.11.2](https://github.com/sladg/apex-state/compare/v3.11.0...v3.11.2)
+
+* fix: use parent_exists guard for sync/flip stale path detection [[44332140d8d1ebdd4168781189a77e8399d34145](https://github.com/sladg/apex-state/commit/44332140d8d1ebdd4168781189a77e8399d34145))]
+* fix: skip sync/flip to paths whose parent structure was replaced [[b5773f13bb705f22145d8b08e2f3c468004bfb73](https://github.com/sladg/apex-state/commit/b5773f13bb705f22145d8b08e2f3c468004bfb73))]
+
+
 ## [v3.11.0](https://github.com/sladg/apex-state/compare/v3.9.1...v3.11.0)
 
 * refactor: decouple applyChangesToObject from GenericMeta constraint [[62aa7c8f2c303b175a16c2604d4572bdcc5f2eab](https://github.com/sladg/apex-state/commit/62aa7c8f2c303b175a16c2604d4572bdcc5f2eab))]
@@ -182,6 +188,8 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* fix: use parent_exists guard for sync/flip stale path detection [[44332140d8d1ebdd4168781189a77e8399d34145](https://github.com/sladg/apex-state/commit/44332140d8d1ebdd4168781189a77e8399d34145))]
+* fix: skip sync/flip to paths whose parent structure was replaced [[b5773f13bb705f22145d8b08e2f3c468004bfb73](https://github.com/sladg/apex-state/commit/b5773f13bb705f22145d8b08e2f3c468004bfb73))]
 * refactor: decouple applyChangesToObject from GenericMeta constraint [[62aa7c8f2c303b175a16c2604d4572bdcc5f2eab](https://github.com/sladg/apex-state/commit/62aa7c8f2c303b175a16c2604d4572bdcc5f2eab))]
 * feat: add pipeline DevTools with nested tree visualization and unified observer [[7161a6b2c6efa559ebf748cac9b93ed50f2858db](https://github.com/sladg/apex-state/commit/7161a6b2c6efa559ebf748cac9b93ed50f2858db))]
 * fix: add missing pair helper re-exports to testing module [[3722e4a14fc5def7f0b843093317501923cf4d5c](https://github.com/sladg/apex-state/commit/3722e4a14fc5def7f0b843093317501923cf4d5c))]
