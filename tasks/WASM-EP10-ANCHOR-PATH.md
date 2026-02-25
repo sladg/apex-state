@@ -114,29 +114,225 @@ useSideEffects({
 
 ### Implementation Plan — Multi-Path
 
-**Rust (`rust/src/pipeline.rs`)**:
+#### Step 1: Registration structs (`rust/src/router.rs`)
 
-- `ListenerRegistration`: `topic_path: String` → `topic_paths: Vec<String>`
-- `register_side_effects`: for each listener, iterate `topic_paths`, call
-  `router.register(subscriber_id, topic)` once per path
-- Router plan builder (`router.rs`): deduplicate `subscriber_id` across matched topics;
-  merge `input_change_ids` into a single `DispatchEntry` per subscriber
+`ListenerRegistration` (the deserialization boundary type) changes from a single `topic_path`
+to a vec:
 
-**TypeScript**:
+```rust
+// Before
+pub struct ListenerRegistration {
+    pub subscriber_id: u32,
+    pub topic_path: String,
+    pub scope_path: String,
+}
 
-- `ListenerRegistration<DATA>`: `path: DeepKey<DATA> | DeepKey<DATA>[] | null`
-- `registerSideEffects`: normalize `path` to array before serializing to WASM
-- Bridge type: `topic_paths: string[]` on the listener input object
+// After
+pub struct ListenerRegistration {
+    pub subscriber_id: u32,
+    pub topic_paths: Vec<String>,   // renamed + pluralized
+    pub scope_path: String,
+}
+```
+
+`SubscriberMeta` (router-internal) tracks all topic paths so `input_change_ids` can be computed
+against all of them:
+
+```rust
+// Before
+struct SubscriberMeta {
+    topic_id: u32,
+    scope_path: String,
+    topic_path: String,
+}
+
+// After
+struct SubscriberMeta {
+    primary_topic_id: u32,    // first path's topic — used for unregistration cleanup
+    scope_path: String,
+    topic_paths: Vec<String>, // all watched paths — used for input_change_ids matching
+}
+```
+
+#### Step 2: `register_listeners_batch` (`rust/src/router.rs`)
+
+For each `ListenerRegistration`, iterate `topic_paths`, get-or-create a topic for each path,
+and add `subscriber_id` to each topic's subscriber list. The first path's `topic_id` is stored
+as `primary_topic_id`.
+
+```
+for topic_path in reg.topic_paths:
+    topic_id = get_or_create_topic(topic_path)
+    subscribers[topic_id].push(reg.subscriber_id)
+
+subscriber_meta[reg.subscriber_id] = SubscriberMeta {
+    primary_topic_id: first_topic_id,
+    scope_path: reg.scope_path,
+    topic_paths: reg.topic_paths,
+}
+```
+
+Topology re-sort and route recomputation fire if any new topics were created (unchanged logic).
+
+#### Step 3: `unregister_listeners_batch` (`rust/src/router.rs`)
+
+Currently looks up one `topic_id` from `subscriber_meta` to remove from. After the change,
+iterate `topic_paths` from `subscriber_meta`, look up each topic, remove subscriber from each.
+Topic cleanup (remove topic if no subscribers remain) applies per topic as before.
+
+#### Step 4: Deduplication in `create_dispatch_plan` (`rust/src/router.rs`)
+
+Currently: for each matched topic at each depth, for each subscriber → emit one `ListenerDispatch`.
+A subscriber registered on `['user.email', 'user.name']` would appear in both topics at depth 2
+if both matched → two dispatches for the same subscriber.
+
+Fix: track seen subscribers **per depth level** and merge changes when the same subscriber
+appears again at the same depth. A subscriber that matches at depth 3 and depth 2 fires only at
+depth 3 (deepest wins — processed first since topics are sorted deepest-first).
+
+```rust
+// In create_dispatch_plan, replacing the inner loop:
+
+// Per-run: subscriber_id → index of its ListenerDispatch in `dispatches`
+let mut seen_at_depth: HashMap<u32, usize> = HashMap::new();
+
+for depth in &depths {  // descending
+    let topic_ids = &depth_groups[depth];
+    let mut dispatches: Vec<ListenerDispatch> = Vec::new();
+    seen_at_depth.clear();
+
+    for &topic_id in topic_ids {
+        let prefix = &topic_meta[topic_id].prefix;
+        let relevant_changes = filter_and_relativize(changes, prefix);
+        if relevant_changes.is_empty() { continue; }
+
+        for &sub_id in &subscribers[topic_id] {
+            if globally_seen.contains(&sub_id) {
+                // Already dispatched at a deeper depth — skip entirely
+                continue;
+            }
+            if let Some(&existing_idx) = seen_at_depth.get(&sub_id) {
+                // Same depth, different topic matched — merge changes
+                dispatches[existing_idx].changes.extend(relevant_changes.clone());
+            } else {
+                seen_at_depth.insert(sub_id, dispatches.len());
+                dispatches.push(ListenerDispatch { subscriber_id: sub_id, ... });
+            }
+        }
+    }
+
+    for d in &dispatches {
+        globally_seen.insert(d.subscriber_id);
+    }
+    levels.push(DispatchLevel { depth: *depth, dispatches });
+}
+```
+
+`globally_seen: HashSet<u32>` is initialised once per `create_dispatch_plan` call and prevents
+the same subscriber from appearing at a shallower depth after already firing at a deeper one.
+
+#### Step 5: `input_change_ids` in `create_full_execution_plan` (`rust/src/router.rs`)
+
+Currently looks up a single `topic_path` from `subscriber_meta` and filters input changes
+against it. After the change, iterate all `topic_paths` and union the matched change indices:
+
+```rust
+// Before
+let topic_path = subscriber_meta[sub_id].topic_path.as_str();
+let input_change_ids = changes.iter().enumerate()
+    .filter(|(_, c)| matches_topic(&c.path, topic_path))
+    .map(|(i, _)| i as u32)
+    .collect();
+
+// After
+let topic_paths = &subscriber_meta[sub_id].topic_paths;
+let mut input_change_ids: Vec<u32> = changes.iter().enumerate()
+    .filter(|(_, c)| topic_paths.iter().any(|tp| matches_topic(&c.path, tp)))
+    .map(|(i, _)| i as u32)
+    .collect();
+// No dedup needed — each change index can only match once per subscriber
+```
+
+The `matches_topic` helper is the existing inline logic:
+`path.is_empty() || c.path == path || c.path.starts_with(path) && c.path[path.len()] == b'.'`
+
+#### Step 6: `pipeline.rs` — `ListenerRegistration` input struct
+
+`pipeline.rs` has its own `ListenerRegistration` (separate from `router.rs`'s) used in
+`SideEffectsRegistration`. This also changes `topic_path → topic_paths`:
+
+```rust
+// rust/src/pipeline.rs
+pub struct ListenerRegistration {
+    pub subscriber_id: u32,
+    pub topic_paths: Vec<String>,  // was topic_path: String
+    pub scope_path: String,
+}
+```
+
+`register_side_effects` already serializes listeners to JSON before calling
+`register_listeners_batch`. Update the `serde_json::json!` object to emit `topic_paths`:
+
+```rust
+serde_json::json!({
+    "subscriber_id": l.subscriber_id,
+    "topic_paths": l.topic_paths,   // was "topic_path"
+    "scope_path": l.scope_path,
+})
+```
+
+#### Step 7: TypeScript — API type (`src/core/types.ts`)
+
+```typescript
+// Before
+path: DeepKey<DATA, Depth> | null
+
+// After
+path: DeepKey<DATA, Depth> | DeepKey<DATA, Depth>[] | null
+```
+
+#### Step 8: TypeScript — normalize before boundary (`src/sideEffects/registration.wasm-impl.ts`)
+
+```typescript
+// Before
+return {
+    subscriber_id: subscriberId,
+    topic_path: listener.path ?? '',
+    scope_path: effectiveScope ?? '',
+}
+
+// After
+const topicPaths = Array.isArray(listener.path)
+    ? (listener.path as string[])
+    : [(listener.path ?? '') as string]
+
+return {
+    subscriber_id: subscriberId,
+    topic_paths: topicPaths,
+    scope_path: effectiveScope ?? '',
+}
+```
+
+#### Step 9: TypeScript — bridge type (`src/wasm/bridge.ts`)
+
+```typescript
+// Listener input to WASM
+interface WasmListenerRegistration {
+    subscriber_id: number
+    topic_paths: string[]    // was topic_path: string
+    scope_path: string
+}
+```
 
 ### Files Touched — Multi-Path
 
 | File | Change |
 |---|---|
-| `rust/src/pipeline.rs` | `ListenerRegistration.topic_paths: Vec<String>`; iterate in `register_side_effects` |
-| `rust/src/router.rs` | Dedup by `subscriber_id` in plan builder; merge `input_change_ids` |
+| `rust/src/router.rs` | `ListenerRegistration.topic_paths`, `SubscriberMeta.topic_paths`, registration loop, dedup in `create_dispatch_plan`, union in `input_change_ids` |
+| `rust/src/pipeline.rs` | `ListenerRegistration.topic_paths`; update `serde_json::json!` in `register_side_effects` |
 | `src/core/types.ts` | `path: DeepKey<DATA> \| DeepKey<DATA>[] \| null` on `ListenerRegistration` |
-| `src/sideEffects/registration.wasm-impl.ts` | Normalize path to array before sending |
-| `src/wasm/bridge.ts` | `topic_paths: string[]` on listener input type |
+| `src/sideEffects/registration.wasm-impl.ts` | Normalize to `topic_paths` array before serializing |
+| `src/wasm/bridge.ts` | `topic_paths: string[]` on WASM listener input type |
 
 ---
 
