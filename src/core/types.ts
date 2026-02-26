@@ -211,6 +211,7 @@ export interface ListenerHandlerRef {
   scope: string | null
   fn: (...args: any[]) => unknown
   name: string
+  registrationId: string
 }
 
 export interface Registrations {

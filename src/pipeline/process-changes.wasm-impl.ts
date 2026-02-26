@@ -15,7 +15,7 @@ import type {
 import type { ArrayOfChanges, GenericMeta } from '../types'
 import { changes } from '../types/changes'
 import { dot } from '../utils/dot'
-import type { ListenerLogEntry } from '../utils/log'
+import type { ListenerLogEntry, UnifiedPipelineTrace } from '../utils/log'
 import type { Change, Wasm, WasmPipeline } from '../wasm/bridge'
 import { applyBatch } from './apply-batch'
 
@@ -236,6 +236,7 @@ const executeFullExecutionPlan = <DATA extends object>(
       scope: scope || '(root)',
       input: input as [string, unknown, unknown][],
       output: producedChanges,
+      currentState: scopedState,
       durationMs,
       slow,
     })
@@ -456,24 +457,8 @@ export const processChangesWasm = <
 
   // Single flat array: listener output + validator output (with _concerns. prefix)
   const jsChanges = produced.concat(validationResults)
-  const { state_changes: finalChanges, trace } =
+  const { state_changes: finalChanges, trace: wasmTrace } =
     pipeline.pipelineFinalize(jsChanges)
-
-  // Append listener stages to WASM trace (WASM only sees prepare+finalize, not JS listener execution)
-  if (trace && listenerLog.length > 0) {
-    for (const entry of listenerLog) {
-      trace.stages.push({
-        stage: 'listeners',
-        duration_us: entry.durationMs * 1000,
-        accepted: entry.input.map(([p]) => p as string),
-        produced: entry.output.map(
-          (c) => [c.path, c.value] as [string, string],
-        ),
-        skipped: [],
-        followup: [],
-      })
-    }
-  }
 
   // Apply NEW changes from listeners/validators to valtio
   // Phase 1 changes were already applied above, so filter them out
@@ -492,13 +477,42 @@ export const processChangesWasm = <
 
   const durationMs = performance.now() - t0
 
+  // Build unified trace (composes WASM trace + JS listener dispatches + wall-clock timing)
+  const allDispatches =
+    execution_plan?.groups.flatMap((g) => g.dispatches) ?? []
+  const unifiedTrace: UnifiedPipelineTrace | null = wasmTrace
+    ? {
+        wasm: wasmTrace,
+        listeners: listenerLog.map((entry, i) => ({
+          dispatchId: allDispatches[i]?.dispatch_id ?? i,
+          subscriberId: entry.subscriberId,
+          fnName: entry.fnName,
+          scope: entry.scope,
+          topic: allDispatches[i]?.topic_path ?? '',
+          registrationId:
+            store._internal.registrations.listenerHandlers.get(
+              entry.subscriberId,
+            )?.registrationId ?? '',
+          input: entry.input,
+          output: entry.output,
+          currentState: entry.currentState,
+          durationMs: entry.durationMs,
+          slow: entry.slow,
+        })),
+        totalDurationMs: durationMs,
+        wasmDurationMs: wasmTrace.total_duration_us / 1000,
+        listenerDurationMs: listenerLog.reduce(
+          (sum, e) => sum + e.durationMs,
+          0,
+        ),
+      }
+    : null
+
   // Single log call with all pipeline data (no-op when log/devtools is disabled)
   const allApplied = [...late.stateChanges, ...late.concernChanges]
   const logData = {
     initialChanges: changes.toWasm(initialChanges),
-    trace,
-    listenerLog,
-    durationMs,
+    trace: unifiedTrace,
     appliedChanges: allApplied,
     stateSnapshot: snapshot(store.state),
   }

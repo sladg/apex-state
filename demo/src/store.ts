@@ -230,7 +230,7 @@ const boolEquals = (
   path: DeepKey<SheetState>,
   value: boolean | string,
 ): { boolLogic: SheetBool } => ({
-  boolLogic: { IS_EQUAL: [path, value] },
+  boolLogic: { IS_EQUAL: [path, value] as never },
 })
 
 const quarterConcern = (row: RowKey, q: string) => ({
@@ -346,4 +346,10 @@ export const {
   useFieldStore,
   useSideEffects,
   useConcerns,
-} = createGenericStore<SheetState>()
+} = createGenericStore<SheetState>({
+  debug: {
+    devtools: true,
+    log: true,
+    track: true
+  }
+})

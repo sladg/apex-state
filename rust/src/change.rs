@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use ts_rs::TS;
 
@@ -118,8 +119,14 @@ impl Change {
 #[serde(rename_all = "snake_case")]
 #[derive(TS)]
 pub enum SkipReason {
+    /// Change kind doesn't match what this stage processes.
     WrongKind,
+    /// Stage guard condition was not met.
     GuardFailed,
+    /// Value matches current shadow state — no-op.
+    Redundant,
+    /// Anchor path not present in state — resource skipped.
+    AnchorMissing,
 }
 
 /// A change that was rejected by a stage (captured in StageTrace only).
@@ -130,6 +137,29 @@ pub struct SkippedChange {
     pub kind: ChangeKind,
     #[ts(inline)]
     pub reason: SkipReason,
+    /// Human-readable explanation of why this change was skipped.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    /// Which registration owns the resource that was skipped (if applicable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registration_id: Option<String>,
+    /// Anchor path that caused the skip (if applicable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_path: Option<String>,
+}
+
+/// A change produced by a pipeline stage (richer than a simple path-value pair).
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+pub struct ProducedChange {
+    pub path: String,
+    /// JSON-encoded value.
+    pub value: String,
+    /// Which registration produced this change (if traceable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registration_id: Option<String>,
+    /// What input path caused this (e.g. sync source path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
 }
 
 /// Execution record for one StagePolicy within a pipeline call.
@@ -138,11 +168,13 @@ pub struct StageTrace {
     #[ts(inline)]
     pub stage: Stage,
     pub duration_us: u64,
-    pub accepted: Vec<String>,
+    /// Paths (with JSON-encoded values) that this stage processed.
+    pub matched: Vec<[String; 2]>,
     #[ts(inline)]
     pub skipped: Vec<SkippedChange>,
-    /// Path-value pairs produced by this stage.
-    pub produced: Vec<[String; 2]>,
+    /// Changes produced by this stage.
+    #[ts(inline)]
+    pub produced: Vec<ProducedChange>,
     pub followup: Vec<StageTrace>,
 }
 
@@ -151,6 +183,9 @@ pub struct StageTrace {
 pub struct PipelineTrace {
     pub total_duration_us: u64,
     pub stages: Vec<StageTrace>,
+    /// Anchor path → present? Gives display layer full context on anchor-dependent resources.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub anchor_states: HashMap<String, bool>,
 }
 
 /// Raw sentinel value for JS `undefined` (without JSON quotes).

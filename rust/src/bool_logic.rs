@@ -312,6 +312,7 @@ pub(crate) struct BoolLogicMetadata {
     pub output_path: String,
     pub tree: BoolLogicNode,
     pub anchor_path_id: Option<u32>,
+    pub registration_id: Option<String>,
 }
 
 /// Registry of BoolLogic expressions keyed by sequential u32 IDs.
@@ -339,6 +340,7 @@ impl BoolLogicRegistry {
         intern: &mut InternTable,
         rev_index: &mut ReverseDependencyIndex,
         anchor_path_id: Option<u32>,
+        registration_id: Option<String>,
     ) -> u32 {
         let logic_id = self.next_id;
         self.next_id += 1;
@@ -361,6 +363,7 @@ impl BoolLogicRegistry {
                 output_path,
                 tree,
                 anchor_path_id,
+                registration_id,
             },
         );
 
@@ -385,11 +388,11 @@ impl BoolLogicRegistry {
         self.logics.len()
     }
 
-    /// Dump all registered entries as (id, output_path) pairs (debug only).
-    pub(crate) fn dump_infos(&self) -> Vec<(u32, String)> {
+    /// Dump all registered entries as (id, output_path, tree) triples (debug only).
+    pub(crate) fn dump_infos(&self) -> Vec<(u32, String, BoolLogicNode)> {
         self.logics
             .iter()
-            .map(|(&id, meta)| (id, meta.output_path.clone()))
+            .map(|(&id, meta)| (id, meta.output_path.clone(), meta.tree.clone()))
             .collect()
     }
 
@@ -1227,6 +1230,7 @@ mod tests {
             &mut intern,
             &mut rev,
             None,
+            None,
         );
 
         assert_eq!(id, 0);
@@ -1248,6 +1252,7 @@ mod tests {
             &mut intern,
             &mut rev,
             None,
+            None,
         );
         let id1 = registry.register(
             "out1".into(),
@@ -1255,12 +1260,14 @@ mod tests {
             &mut intern,
             &mut rev,
             None,
+            None,
         );
         let id2 = registry.register(
             "out2".into(),
             BoolLogicNode::Exists("c".into()),
             &mut intern,
             &mut rev,
+            None,
             None,
         );
 
@@ -1282,6 +1289,7 @@ mod tests {
             &mut intern,
             &mut rev,
             None,
+            None,
         );
         assert_eq!(registry.len(), 1);
 
@@ -1297,7 +1305,7 @@ mod tests {
         let mut rev = ReverseDependencyIndex::new();
 
         let tree = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
-        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None, None);
 
         let path_id = intern.intern("user.role");
         let affected = rev.affected_by_path(path_id);
@@ -1315,7 +1323,7 @@ mod tests {
             BoolLogicNode::Exists("user.email".into()),
             BoolLogicNode::Gt("user.age".into(), 18.0),
         ]);
-        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None, None);
 
         // All three paths should map to the same logic_id
         for path in &["user.role", "user.email", "user.age"] {
@@ -1337,12 +1345,14 @@ mod tests {
             &mut intern,
             &mut rev,
             None,
+            None,
         );
         let id1 = registry.register(
             "out1".into(),
             BoolLogicNode::In("user.role".into(), vec![json!("editor")]),
             &mut intern,
             &mut rev,
+            None,
             None,
         );
 
@@ -1364,12 +1374,14 @@ mod tests {
             &mut intern,
             &mut rev,
             None,
+            None,
         );
         let id1 = registry.register(
             "out1".into(),
             BoolLogicNode::Exists("user.role".into()),
             &mut intern,
             &mut rev,
+            None,
             None,
         );
 
@@ -1401,6 +1413,7 @@ mod tests {
             &mut intern,
             &mut rev,
             None,
+            None,
         );
 
         let unrelated_pid = intern.intern("document.title");
@@ -1420,7 +1433,7 @@ mod tests {
             ]),
             BoolLogicNode::Not(Box::new(BoolLogicNode::IsEmpty("user.bio".into()))),
         ]);
-        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None, None);
 
         // Three distinct paths
         for path in &["stats.views", "user.premium", "user.bio"] {

@@ -7,10 +7,14 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { PipelineLogData } from '../../src/utils/log'
+import type {
+  ListenerDispatchTrace,
+  PipelineLogData,
+  UnifiedPipelineTrace,
+} from '../../src/utils/log'
 import {
-  addTraceSummary,
   buildConsoleSummary,
+  buildTraceSummary,
   createLogger,
 } from '../../src/utils/log'
 import {
@@ -26,33 +30,94 @@ const noop = () => {}
 // Helpers — synthetic data builders
 // ---------------------------------------------------------------------------
 
+const makeProduced = (
+  path: string,
+  value: string,
+  registration_id: string | null = null,
+  source_path: string | null = null,
+): Wasm.StageTrace['produced'][0] => ({
+  path,
+  value,
+  registration_id,
+  source_path,
+})
+
+const makeSkipped = (
+  overrides: Partial<Wasm.StageTrace['skipped'][0]> = {},
+): Wasm.StageTrace['skipped'][0] => ({
+  path: 'unknown',
+  kind: 'real',
+  reason: 'wrong_kind',
+  detail: '',
+  registration_id: null,
+  anchor_path: null,
+  ...overrides,
+})
+
 const makeStage = (
   overrides: Partial<Wasm.StageTrace> = {},
 ): Wasm.StageTrace => ({
   stage: 'diff',
   duration_us: 0,
-  accepted: [],
+  matched: [],
   skipped: [],
   produced: [],
   followup: [],
   ...overrides,
 })
 
-const makeTrace = (
+const makeWasmTrace = (
   stages: Wasm.StageTrace[],
   total_duration_us = 0,
 ): Wasm.PipelineTrace => ({
   total_duration_us,
   stages,
+  anchor_states: {},
 })
+
+const makeListenerDispatch = (
+  overrides: Partial<ListenerDispatchTrace> = {},
+): ListenerDispatchTrace => ({
+  dispatchId: 0,
+  subscriberId: 0,
+  fnName: '',
+  scope: '',
+  topic: '',
+  registrationId: '',
+  input: [],
+  output: [],
+  currentState: undefined,
+  durationMs: 0,
+  slow: false,
+  ...overrides,
+})
+
+const makeUnifiedTrace = (
+  wasmTrace: Wasm.PipelineTrace,
+  listeners: ListenerDispatchTrace[] = [],
+  totalDurationMs = 1.5,
+): UnifiedPipelineTrace => ({
+  wasm: wasmTrace,
+  listeners,
+  totalDurationMs,
+  wasmDurationMs: wasmTrace.total_duration_us / 1000,
+  listenerDurationMs: listeners.reduce((sum, e) => sum + e.durationMs, 0),
+})
+
+/** Find a stage entry in the prefixed stages object by stage name. */
+const findStage = (
+  stages: Record<string, unknown>,
+  name: string,
+): Record<string, unknown> | undefined => {
+  const key = Object.keys(stages).find((k) => k.endsWith(` ${name}`))
+  return key ? (stages[key] as Record<string, unknown>) : undefined
+}
 
 const makePipelineData = (
   overrides: Partial<PipelineLogData> = {},
 ): PipelineLogData => ({
   initialChanges: [{ path: 'user.name', value: 'Alice' }],
   trace: null,
-  listenerLog: [],
-  durationMs: 1.5,
   ...overrides,
 })
 
@@ -62,11 +127,11 @@ const makePipelineData = (
 
 describe('buildConsoleSummary', () => {
   describe('without trace', () => {
-    it('should include input and duration', () => {
-      // Basic summary with input changes and total duration
+    it('should include input as [path, value] tuples and duration', () => {
+      // Basic summary with input changes as tuples and total duration
       const summary = buildConsoleSummary(makePipelineData())
-      expect(summary['input']).toEqual({ 'user.name': 'Alice' })
-      expect(summary['duration']).toBe('1.50ms')
+      expect(summary['input']).toEqual([['user.name', 'Alice']])
+      expect(summary['duration']).toBe('0.00ms')
     })
 
     it('should not have stages key when trace is null', () => {
@@ -90,49 +155,55 @@ describe('buildConsoleSummary', () => {
   // ---------------------------------------------------------------------------
 
   describe('with trace', () => {
-    it('should include stages from trace', () => {
-      // Trace with active stages shows stage details (raw spread)
-      const trace = makeTrace([
+    it('should include stages from trace with prefixed keys', () => {
+      // Trace with active stages shows stage details keyed by [NN] stageName
+      const wasmTrace = makeWasmTrace([
         makeStage({
           stage: 'diff',
-          accepted: ['user.name'],
-          produced: [['user.name', 'Alice']],
+          matched: [['user.name', '']],
+          produced: [makeProduced('user.name', 'Alice')],
         }),
         makeStage({
           stage: 'sync',
-          accepted: ['user.name'],
-          produced: [['profile.name', 'Bob']],
+          matched: [['user.name', '']],
+          produced: [makeProduced('profile.name', 'Bob')],
         }),
       ])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
       expect(stages).toBeDefined()
-      expect(stages['diff']).toEqual(
+      expect(findStage(stages, 'diff')).toEqual(
         expect.objectContaining({
-          accepted: ['user.name'],
-          produced: [['user.name', 'Alice']],
+          matched: [['user.name', '']],
+          produced: [
+            expect.objectContaining({ path: 'user.name', value: 'Alice' }),
+          ],
         }),
       )
-      expect(stages['sync']).toEqual(
+      expect(findStage(stages, 'sync')).toEqual(
         expect.objectContaining({
-          accepted: ['user.name'],
-          produced: [['profile.name', 'Bob']],
+          matched: [['user.name', '']],
+          produced: [
+            expect.objectContaining({ path: 'profile.name', value: 'Bob' }),
+          ],
         }),
       )
     })
 
     it('should include empty stages with raw data', () => {
       // Stages with no activity still appear with all fields (spread)
-      const trace = makeTrace([
-        makeStage({ stage: 'diff', accepted: ['x'] }),
+      const wasmTrace = makeWasmTrace([
+        makeStage({ stage: 'diff', matched: [['x', '']] }),
         makeStage({ stage: 'flip' }),
       ])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['flip']).toEqual(
+      expect(findStage(stages, 'flip')).toEqual(
         expect.objectContaining({
           stage: 'flip',
-          accepted: [],
+          matched: [],
           produced: [],
         }),
       )
@@ -140,47 +211,59 @@ describe('buildConsoleSummary', () => {
 
     it('should include wasmDuration when total_duration_us > 0', () => {
       // Total WASM duration formatted in ms
-      const trace = makeTrace(
-        [makeStage({ stage: 'diff', accepted: ['x'] })],
+      const wasmTrace = makeWasmTrace(
+        [makeStage({ stage: 'diff', matched: [['x', '']] })],
         2500,
       )
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       expect(summary['wasmDuration']).toBe('2.50ms')
     })
 
     it('should omit wasmDuration when total_duration_us is 0', () => {
       // Zero total duration not shown
-      const trace = makeTrace(
-        [makeStage({ stage: 'diff', accepted: ['x'] })],
+      const wasmTrace = makeWasmTrace(
+        [makeStage({ stage: 'diff', matched: [['x', '']] })],
         0,
       )
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       expect(summary['wasmDuration']).toBeUndefined()
     })
 
     it('should handle empty stages array', () => {
       // Trace with no stages — no stages key added
-      const trace = makeTrace([])
+      const wasmTrace = makeWasmTrace([])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       expect(summary['stages']).toBeUndefined()
     })
 
     it('should include stages with only skipped entries', () => {
       // Stage with only skipped changes should still appear with raw skipped data
-      const trace = makeTrace([
+      const wasmTrace = makeWasmTrace([
         makeStage({
           stage: 'sync',
           skipped: [
-            { path: 'user.name', kind: 'redundant', reason: 'wrong_kind' },
+            makeSkipped({
+              path: 'user.name',
+              kind: 'redundant',
+              reason: 'wrong_kind',
+            }),
           ],
         }),
       ])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['sync']).toEqual(
+      expect(findStage(stages, 'sync')).toEqual(
         expect.objectContaining({
           skipped: [
-            { path: 'user.name', kind: 'redundant', reason: 'wrong_kind' },
+            expect.objectContaining({
+              path: 'user.name',
+              kind: 'redundant',
+              reason: 'wrong_kind',
+            }),
           ],
         }),
       )
@@ -192,30 +275,42 @@ describe('buildConsoleSummary', () => {
   // ---------------------------------------------------------------------------
 
   describe('listener entries', () => {
-    it('should format listener entries with scope/input/output', () => {
-      // Listener entries keyed by index, subscriber ID, and function name
-      const data = makePipelineData({
-        listenerLog: [
-          {
-            subscriberId: 42,
-            fnName: 'onNameChange',
-            scope: 'user',
-            input: [['user.name', 'Alice', 'Bob']],
-            output: [{ path: 'user.greeting', value: 'Hello Bob' }],
-            durationMs: 0.8,
-            slow: false,
-          },
-        ],
-      })
-      const summary = buildConsoleSummary(data)
-      const listenerKey = Object.keys(summary).find((k) =>
-        k.includes('listener:42'),
-      )
-      expect(listenerKey).toBeDefined()
-      expect(listenerKey).toContain('onNameChange')
-      expect(listenerKey).toContain('0.80ms')
+    /** Helper: extract listener runs from summary stages. */
+    const getListenerRuns = (
+      summary: Record<string, unknown>,
+    ): Record<string, unknown> => {
+      const stages = summary['stages'] as Record<string, unknown>
+      const listenersStage = findStage(stages, 'listeners') as Record<
+        string,
+        unknown
+      >
+      return listenersStage['runs'] as Record<string, unknown>
+    }
 
-      const entry = summary[listenerKey!] as Record<string, unknown>
+    it('should format listener entries with scope/input/output', () => {
+      // Listener runs are nested inside the "listeners" stage's runs key
+      const wasmTrace = makeWasmTrace([
+        makeStage({ stage: 'listeners', matched: [['user.name', '']] }),
+      ])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({
+          subscriberId: 42,
+          fnName: 'onNameChange',
+          scope: 'user',
+          input: [['user.name', 'Alice', 'Bob']],
+          output: [{ path: 'user.greeting', value: 'Hello Bob' }],
+          durationMs: 0.8,
+        }),
+      ])
+      const data = makePipelineData({ trace })
+      const summary = buildConsoleSummary(data)
+      const runs = getListenerRuns(summary)
+      const runKey = Object.keys(runs).find((k) => k.includes('listener:42'))
+      expect(runKey).toBeDefined()
+      expect(runKey).toContain('onNameChange')
+      expect(runKey).toContain('0.80ms')
+
+      const entry = runs[runKey!] as Record<string, unknown>
       expect(entry['scope']).toBe('user')
       expect(entry['input']).toEqual([['user.name', 'Alice', 'Bob']])
       expect(entry['output']).toEqual({ 'user.greeting': 'Hello Bob' })
@@ -223,97 +318,68 @@ describe('buildConsoleSummary', () => {
 
     it('should mark slow listeners with [SLOW]', () => {
       // Slow listener flagged in the key
-      const data = makePipelineData({
-        listenerLog: [
-          {
-            subscriberId: 1,
-            fnName: 'heavyComputation',
-            scope: '',
-            input: [],
-            output: [],
-            durationMs: 50,
-            slow: true,
-          },
-        ],
-      })
+      const wasmTrace = makeWasmTrace([makeStage({ stage: 'listeners' })])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({
+          subscriberId: 1,
+          fnName: 'heavyComputation',
+          durationMs: 50,
+          slow: true,
+        }),
+      ])
+      const data = makePipelineData({ trace })
       const summary = buildConsoleSummary(data)
-      const listenerKey = Object.keys(summary).find((k) =>
-        k.includes('listener:1'),
-      )
-      expect(listenerKey).toContain('[SLOW]')
+      const runs = getListenerRuns(summary)
+      const runKey = Object.keys(runs).find((k) => k.includes('listener:1'))
+      expect(runKey).toContain('[SLOW]')
     })
 
     it('should use "(anonymous)" for unnamed listeners', () => {
       // Missing fnName defaults to "(anonymous)"
-      const data = makePipelineData({
-        listenerLog: [
-          {
-            subscriberId: 5,
-            fnName: '',
-            scope: 'root',
-            input: [],
-            output: [],
-            durationMs: 0,
-            slow: false,
-          },
-        ],
-      })
+      const wasmTrace = makeWasmTrace([makeStage({ stage: 'listeners' })])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({
+          subscriberId: 5,
+          fnName: '',
+          scope: 'root',
+        }),
+      ])
+      const data = makePipelineData({ trace })
       const summary = buildConsoleSummary(data)
-      const listenerKey = Object.keys(summary).find((k) =>
-        k.includes('listener:5'),
-      )
-      expect(listenerKey).toContain('(anonymous)')
+      const runs = getListenerRuns(summary)
+      const runKey = Object.keys(runs).find((k) => k.includes('listener:5'))
+      expect(runKey).toContain('(anonymous)')
     })
 
     it('should use "(root)" for empty scope', () => {
       // Empty scope string formatted as "(root)"
-      const data = makePipelineData({
-        listenerLog: [
-          {
-            subscriberId: 3,
-            fnName: 'handler',
-            scope: '',
-            input: [],
-            output: [],
-            durationMs: 0,
-            slow: false,
-          },
-        ],
-      })
+      const wasmTrace = makeWasmTrace([makeStage({ stage: 'listeners' })])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({
+          subscriberId: 3,
+          fnName: 'handler',
+          scope: '',
+        }),
+      ])
+      const data = makePipelineData({ trace })
       const summary = buildConsoleSummary(data)
-      const listenerKey = Object.keys(summary).find((k) =>
-        k.includes('listener:3'),
-      )
-      const entry = summary[listenerKey!] as Record<string, unknown>
+      const runs = getListenerRuns(summary)
+      const runKey = Object.keys(runs).find((k) => k.includes('listener:3'))
+      const entry = runs[runKey!] as Record<string, unknown>
       expect(entry['scope']).toBe('(root)')
     })
 
     it('should order listener entries by index', () => {
       // Multiple listeners keyed with zero-padded index
-      const data = makePipelineData({
-        listenerLog: [
-          {
-            subscriberId: 1,
-            fnName: 'first',
-            scope: '',
-            input: [],
-            output: [],
-            durationMs: 0,
-            slow: false,
-          },
-          {
-            subscriberId: 2,
-            fnName: 'second',
-            scope: '',
-            input: [],
-            output: [],
-            durationMs: 0,
-            slow: false,
-          },
-        ],
-      })
+      const wasmTrace = makeWasmTrace([makeStage({ stage: 'listeners' })])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({ subscriberId: 1, fnName: 'first' }),
+        makeListenerDispatch({ subscriberId: 2, fnName: 'second' }),
+      ])
+      const data = makePipelineData({ trace })
       const summary = buildConsoleSummary(data)
-      const keys = Object.keys(summary).filter((k) => k.includes('listener:'))
+      const runs = getListenerRuns(summary)
+      const keys = Object.keys(runs).filter((k) => k.includes('listener:'))
       expect(keys[0]).toContain('[00]')
       expect(keys[1]).toContain('[01]')
     })
@@ -342,19 +408,22 @@ describe('buildConsoleSummary', () => {
     ]
 
     /** Build a full pipeline trace with all 13 stage entries (computation appears twice). */
-    const makeFullTrace = (): Wasm.PipelineTrace =>
-      makeTrace(ALL_STAGES.map((stage) => makeStage({ stage })))
+    const makeFullTrace = (): UnifiedPipelineTrace =>
+      makeUnifiedTrace(
+        makeWasmTrace(ALL_STAGES.map((stage) => makeStage({ stage }))),
+      )
 
-    it('should display all stages', () => {
-      // WASM emits all stages — all unique stage names should be present
+    it('should display all non-input stages', () => {
+      // WASM emits all stages — buildTraceSummary filters out 'input', rest present with prefixed keys
       const trace = makeFullTrace()
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
       expect(stages).toBeDefined()
 
-      // All unique stage names should be present
+      // All unique stage names except 'input' should be present (input is filtered)
       for (const stageName of new Set(ALL_STAGES)) {
-        expect(stages[stageName]).toBeDefined()
+        if (stageName === 'input') continue
+        expect(findStage(stages, stageName)).toBeDefined()
       }
     })
 
@@ -364,13 +433,14 @@ describe('buildConsoleSummary', () => {
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
 
-      // All stages are empty but still have raw fields
+      // All non-input stages are empty but still have raw fields
       for (const stageName of new Set(ALL_STAGES)) {
-        const detail = stages[stageName] as Record<string, unknown>
+        if (stageName === 'input') continue
+        const detail = findStage(stages, stageName) as Record<string, unknown>
         expect(detail).toEqual(
           expect.objectContaining({
             stage: stageName,
-            accepted: [],
+            matched: [],
             produced: [],
           }),
         )
@@ -379,147 +449,185 @@ describe('buildConsoleSummary', () => {
 
     it('should show a mix of active and empty stages', () => {
       // Realistic trace: some stages have activity, others are empty
-      const trace = makeTrace([
+      const wasmTrace = makeWasmTrace([
         makeStage({
           stage: 'input',
-          accepted: ['user.name'],
+          matched: [['user.name', '']],
         }),
         makeStage({ stage: 'aggregation_write' }),
         makeStage({ stage: 'computation' }),
         makeStage({
           stage: 'diff',
-          accepted: ['user.name'],
+          matched: [['user.name', '']],
         }),
         makeStage({ stage: 'clear_path' }),
         makeStage({
           stage: 'sync',
-          accepted: ['user.name'],
-          produced: [['profile.name', 'value1']],
+          matched: [['user.name', '']],
+          produced: [makeProduced('profile.name', 'value1')],
         }),
         makeStage({ stage: 'flip' }),
         makeStage({ stage: 'aggregation_read' }),
         makeStage({ stage: 'computation' }),
         makeStage({
           stage: 'bool_logic',
-          accepted: ['1'],
-          produced: [['_concerns.user.name.disabled', 'true']],
+          matched: [['1', '']],
+          produced: [makeProduced('_concerns.user.name.disabled', 'true')],
         }),
         makeStage({ stage: 'value_logic' }),
         makeStage({
           stage: 'listeners',
-          accepted: ['user.name', 'profile.name'],
+          matched: [
+            ['user.name', ''],
+            ['profile.name', ''],
+          ],
         }),
         makeStage({
           stage: 'apply',
-          accepted: ['4 changes'],
+          matched: [['4 changes', '']],
         }),
       ])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
 
-      // Active stages have detail with data
-      expect(stages['input']).toEqual(
-        expect.objectContaining({ accepted: ['user.name'] }),
-      )
-      expect(stages['sync']).toEqual(
+      // 'input' stage is filtered out by buildTraceSummary
+      expect(findStage(stages, 'input')).toBeUndefined()
+
+      // Active stages have detail with data (accessed via findStage with prefixed keys)
+      expect(findStage(stages, 'sync')).toEqual(
         expect.objectContaining({
-          accepted: ['user.name'],
-          produced: [['profile.name', 'value1']],
+          matched: [['user.name', '']],
+          produced: [
+            expect.objectContaining({ path: 'profile.name', value: 'value1' }),
+          ],
         }),
       )
-      expect(stages['bool_logic']).toEqual(
+      expect(findStage(stages, 'bool_logic')).toEqual(
         expect.objectContaining({
-          accepted: ['1'],
-          produced: [['_concerns.user.name.disabled', 'true']],
+          matched: [['1', '']],
+          produced: [
+            expect.objectContaining({
+              path: '_concerns.user.name.disabled',
+              value: 'true',
+            }),
+          ],
         }),
       )
 
       // Empty stages still present with raw data
-      expect(stages['aggregation_write']).toEqual(
-        expect.objectContaining({ accepted: [], produced: [] }),
+      expect(findStage(stages, 'aggregation_write')).toEqual(
+        expect.objectContaining({ matched: [], produced: [] }),
       )
-      expect(stages['flip']).toEqual(
-        expect.objectContaining({ accepted: [], produced: [] }),
+      expect(findStage(stages, 'flip')).toEqual(
+        expect.objectContaining({ matched: [], produced: [] }),
       )
-      expect(stages['value_logic']).toEqual(
-        expect.objectContaining({ accepted: [], produced: [] }),
+      expect(findStage(stages, 'value_logic')).toEqual(
+        expect.objectContaining({ matched: [], produced: [] }),
       )
     })
 
-    it('should handle duplicate computation stage (filter + read)', () => {
-      // Computation appears twice: once for filter (skipped), once for reads (produced)
-      // The second entry overwrites the first in the stages object (keyed by stage name)
-      const trace = makeTrace([
+    it('should handle duplicate computation stage (both get unique prefixed keys)', () => {
+      // Computation appears twice — each gets its own [NN] prefixed key
+      const wasmTrace = makeWasmTrace([
         makeStage({
           stage: 'computation',
           skipped: [
-            {
+            makeSkipped({
               path: 'total',
               kind: 'real',
               reason: 'guard_failed',
-            },
+            }),
           ],
         }),
         makeStage({
           stage: 'computation',
-          accepted: ['price', 'quantity'],
-          produced: [['total', '100']],
+          matched: [
+            ['price', ''],
+            ['quantity', ''],
+          ],
+          produced: [makeProduced('total', '100')],
         }),
       ])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
 
-      // Second computation entry wins (last-write-wins for same key)
-      expect(stages['computation']).toEqual(
+      // Both computation entries are present with different prefixed keys
+      const compKeys = Object.keys(stages).filter((k) =>
+        k.includes('computation'),
+      )
+      expect(compKeys).toHaveLength(2)
+
+      // Second computation entry has produced data
+      const secondComp = stages[compKeys[1]!] as Record<string, unknown>
+      expect(secondComp).toEqual(
         expect.objectContaining({
-          accepted: ['price', 'quantity'],
-          produced: [['total', '100']],
+          matched: [
+            ['price', ''],
+            ['quantity', ''],
+          ],
+          produced: [expect.objectContaining({ path: 'total', value: '100' })],
         }),
       )
     })
 
     it('should show skipped entries in aggregation_read as raw data', () => {
       // AggregationRead can skip paths due to disabled anchors
-      const trace = makeTrace([
+      const wasmTrace = makeWasmTrace([
         makeStage({
           stage: 'aggregation_read',
-          accepted: ['cart.item1.price', 'cart.item2.price'],
-          produced: [['cart.total', '150']],
+          matched: [
+            ['cart.item1.price', ''],
+            ['cart.item2.price', ''],
+          ],
+          produced: [makeProduced('cart.total', '150')],
           skipped: [
-            {
+            makeSkipped({
               path: 'cart.summary',
               kind: 'real',
               reason: 'guard_failed',
-            },
+            }),
           ],
         }),
       ])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['aggregation_read']).toEqual(
+      expect(findStage(stages, 'aggregation_read')).toEqual(
         expect.objectContaining({
-          accepted: ['cart.item1.price', 'cart.item2.price'],
-          produced: [['cart.total', '150']],
+          matched: [
+            ['cart.item1.price', ''],
+            ['cart.item2.price', ''],
+          ],
+          produced: [
+            expect.objectContaining({ path: 'cart.total', value: '150' }),
+          ],
           skipped: [
-            { path: 'cart.summary', kind: 'real', reason: 'guard_failed' },
+            expect.objectContaining({
+              path: 'cart.summary',
+              kind: 'real',
+              reason: 'guard_failed',
+            }),
           ],
         }),
       )
     })
 
     it('should show apply stage with change count', () => {
-      // Apply stage shows the final change count as accepted
-      const trace = makeTrace([
+      // Apply stage shows the final change count as matched
+      const wasmTrace = makeWasmTrace([
         makeStage({
           stage: 'apply',
-          accepted: ['7 changes'],
+          matched: [['7 changes', '']],
         }),
       ])
+      const trace = makeUnifiedTrace(wasmTrace)
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['apply']).toEqual(
+      expect(findStage(stages, 'apply')).toEqual(
         expect.objectContaining({
-          accepted: ['7 changes'],
+          matched: [['7 changes', '']],
         }),
       )
     })
@@ -527,72 +635,68 @@ describe('buildConsoleSummary', () => {
 })
 
 // ---------------------------------------------------------------------------
-// addTraceSummary — direct tests
+// buildTraceSummary — direct tests
 // ---------------------------------------------------------------------------
 
-describe('addTraceSummary', () => {
-  it('should add stages key to target object', () => {
-    // Verifies addTraceSummary mutates the target object
-    const obj: Record<string, unknown> = {}
-    const trace = makeTrace([
-      makeStage({ stage: 'diff', accepted: ['user.name'] }),
+describe('buildTraceSummary', () => {
+  it('should return stages key for non-empty trace', () => {
+    // Verifies buildTraceSummary returns an object with stages (prefixed keys)
+    const wasmTrace = makeWasmTrace([
+      makeStage({ stage: 'diff', matched: [['user.name', '']] }),
     ])
-    addTraceSummary(obj, trace)
-    expect(obj['stages']).toBeDefined()
-    const stages = obj['stages'] as Record<string, unknown>
-    expect(stages['diff']).toEqual(
-      expect.objectContaining({ accepted: ['user.name'] }),
+    const result = buildTraceSummary(wasmTrace)
+    expect(result['stages']).toBeDefined()
+    const stages = result['stages'] as Record<string, unknown>
+    expect(findStage(stages, 'diff')).toEqual(
+      expect.objectContaining({ matched: [['user.name', '']] }),
     )
   })
 
-  it('should not add stages key for empty trace', () => {
-    // Empty stages array → no stages key
-    const obj: Record<string, unknown> = {}
-    addTraceSummary(obj, makeTrace([]))
-    expect(obj['stages']).toBeUndefined()
+  it('should return empty object for empty trace', () => {
+    // Empty stages array → empty object
+    const result = buildTraceSummary(makeWasmTrace([]))
+    expect(result).toEqual({})
   })
 
-  it('should add wasmDuration when total_duration_us > 0', () => {
-    // Non-zero total duration adds wasmDuration key
-    const obj: Record<string, unknown> = {}
-    addTraceSummary(obj, makeTrace([makeStage()], 5000))
-    expect(obj['wasmDuration']).toBe('5.00ms')
+  it('should include wasmDuration when total_duration_us > 0', () => {
+    // Non-zero total duration includes wasmDuration key
+    const result = buildTraceSummary(makeWasmTrace([makeStage()], 5000))
+    expect(result['wasmDuration']).toBe('5.00ms')
   })
 
-  it('should not add wasmDuration when total_duration_us is 0', () => {
+  it('should not include wasmDuration when total_duration_us is 0', () => {
     // Zero total duration → no wasmDuration key
-    const obj: Record<string, unknown> = {}
-    addTraceSummary(obj, makeTrace([makeStage()], 0))
-    expect(obj['wasmDuration']).toBeUndefined()
+    const result = buildTraceSummary(makeWasmTrace([makeStage()], 0))
+    expect(result['wasmDuration']).toBeUndefined()
   })
 
-  it('should show all stages including empty ones', () => {
-    // Even empty stages appear when included in the trace
-    const obj: Record<string, unknown> = {}
-    const trace = makeTrace([
-      makeStage({ stage: 'input', accepted: ['x'] }),
+  it('should show all non-input stages including empty ones', () => {
+    // Even empty stages appear when included in the trace (input is filtered)
+    const wasmTrace = makeWasmTrace([
+      makeStage({ stage: 'input', matched: [['x', '']] }),
       makeStage({ stage: 'sync' }),
       makeStage({ stage: 'flip' }),
     ])
-    addTraceSummary(obj, trace)
-    const stages = obj['stages'] as Record<string, unknown>
-    expect(stages['input']).toEqual(
-      expect.objectContaining({ accepted: ['x'] }),
+    const result = buildTraceSummary(wasmTrace)
+    const stages = result['stages'] as Record<string, unknown>
+    // 'input' stage is filtered out
+    expect(findStage(stages, 'input')).toBeUndefined()
+    expect(findStage(stages, 'sync')).toEqual(
+      expect.objectContaining({ stage: 'sync', matched: [], produced: [] }),
     )
-    expect(stages['sync']).toEqual(
-      expect.objectContaining({ stage: 'sync', accepted: [], produced: [] }),
-    )
-    expect(stages['flip']).toEqual(
-      expect.objectContaining({ stage: 'flip', accepted: [], produced: [] }),
+    expect(findStage(stages, 'flip')).toEqual(
+      expect.objectContaining({ stage: 'flip', matched: [], produced: [] }),
     )
   })
 
-  it('should preserve existing keys on target object', () => {
-    // addTraceSummary should not clobber existing keys
-    const obj: Record<string, unknown> = { existing: 'value' }
-    addTraceSummary(obj, makeTrace([makeStage({ stage: 'diff' })]))
-    expect(obj['existing']).toBe('value')
-    expect(obj['stages']).toBeDefined()
+  it('should compose with spread to preserve existing keys', () => {
+    // buildTraceSummary result can be spread into an existing object
+    const result: Record<string, unknown> = {
+      existing: 'value',
+      ...buildTraceSummary(makeWasmTrace([makeStage({ stage: 'diff' })])),
+    }
+    expect(result['existing']).toBe('value')
+    expect(result['stages']).toBeDefined()
   })
 })
 
@@ -613,31 +717,28 @@ describe('createLogger — console output', () => {
     spyGroupEnd.mockClear()
   })
 
-  describe('logPipeline', () => {
-    it('should emit groupCollapsed → log → groupEnd in order', () => {
-      // Pipeline log should be a single collapsed group with one log call
+  describe('logPipeline — no trace', () => {
+    it('should emit groupCollapsed → log detail keys → groupEnd when trace is null', () => {
+      // Pipeline log with no trace shows inputChanges detail key
       const logger = createLogger({ log: true })
       logger.logPipeline(makePipelineData())
 
       expect(spyGroupCollapsed).toHaveBeenCalledTimes(1)
+      // When no trace, buildDetail returns { inputChanges: [...] } → 1 log call
       expect(spyLog).toHaveBeenCalledTimes(1)
+      const firstLogLabel = spyLog.mock.calls[0]![0] as string
+      expect(firstLogLabel).toContain('inputChanges')
       expect(spyGroupEnd).toHaveBeenCalledTimes(1)
-
-      // Verify call order: groupCollapsed before log before groupEnd
-      const gcOrder = spyGroupCollapsed.mock.invocationCallOrder[0]
-      const logOrder = spyLog.mock.invocationCallOrder[0]
-      const geOrder = spyGroupEnd.mock.invocationCallOrder[0]
-      expect(gcOrder).toBeLessThan(logOrder!)
-      expect(logOrder).toBeLessThan(geOrder!)
     })
 
-    it('should use "apex-state:pipeline" prefix in group label', () => {
-      // Group label starts with prefix and includes path summary
+    it('should use "apex-state:pipeline" prefix with %c color codes', () => {
+      // Group label uses CSS color codes for styled output
       const logger = createLogger({ log: true })
       logger.logPipeline(makePipelineData())
 
       const label = spyGroupCollapsed.mock.calls[0]![0] as string
-      expect(label).toMatch(/^apex-state:pipeline \| /)
+      expect(label).toContain('%c')
+      expect(label).toContain('apex-state:pipeline')
     })
 
     it('should include input paths in group label', () => {
@@ -668,203 +769,252 @@ describe('createLogger — console output', () => {
       expect(label).toContain('a')
       expect(label).toContain('+4 more')
     })
+  })
 
-    it('should log summary object with input and duration', () => {
-      // The console.log argument is the full summary object
+  describe('logPipeline — with trace (renderTrace)', () => {
+    it('should render as single groupCollapsed with flat log lines', () => {
+      // renderTrace uses one groupCollapsed + flat console.log per detail key
       const logger = createLogger({ log: true })
-      logger.logPipeline(makePipelineData())
+      const wasmTrace = makeWasmTrace([
+        makeStage({ stage: 'diff', matched: [['x', '']] }),
+      ])
+      const trace = makeUnifiedTrace(wasmTrace, [], 1.5)
 
-      const summary = spyLog.mock.calls[0]![0] as Record<string, unknown>
-      expect(summary['input']).toEqual({ 'user.name': 'Alice' })
-      expect(summary['duration']).toBe('1.50ms')
+      logger.logPipeline(makePipelineData({ trace }))
+
+      // Single groupCollapsed (the outer pipeline group)
+      expect(spyGroupCollapsed).toHaveBeenCalledTimes(1)
+      const outerLabel = spyGroupCollapsed.mock.calls[0]![0] as string
+      expect(outerLabel).toContain('apex-state:pipeline')
+
+      // Flat log lines: inputChanges, stages, timing
+      expect(spyLog.mock.calls.length).toBeGreaterThanOrEqual(2)
+
+      // Single groupEnd
+      expect(spyGroupEnd).toHaveBeenCalledTimes(1)
     })
 
-    it('should include stages in summary when trace is present', () => {
-      // With trace data, summary contains stages + wasmDuration
+    it('should log stages as a single detail object', () => {
+      // Stages are rendered as a single console.log with "stages" key
       const logger = createLogger({ log: true })
-      const trace = makeTrace(
-        [
-          makeStage({
-            stage: 'diff',
-            accepted: ['user.name'],
-            produced: [['user.name', 'Alice']],
-            duration_us: 120,
-          }),
-          makeStage({
-            stage: 'sync',
-            accepted: ['user.name'],
-            produced: [['profile.name', 'Bob']],
-            duration_us: 80,
-          }),
-          makeStage({ stage: 'flip' }),
-        ],
-        350,
-      )
-      logger.logPipeline(makePipelineData({ trace, durationMs: 2.1 }))
+      const wasmTrace = makeWasmTrace([
+        makeStage({ stage: 'diff', matched: [['user.name', '']] }),
+      ])
+      const trace = makeUnifiedTrace(wasmTrace)
 
-      const summary = spyLog.mock.calls[0]![0] as Record<string, unknown>
-      expect(summary['wasmDuration']).toBe('0.35ms')
-      expect(summary['stages']).toBeDefined()
+      logger.logPipeline(makePipelineData({ trace }))
 
-      const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['diff']).toEqual(
-        expect.objectContaining({
-          accepted: ['user.name'],
-          produced: [['user.name', 'Alice']],
-          duration_ms: '0.12ms',
-        }),
+      // Find the stages log call (label contains '%cstages')
+      const stagesCall = spyLog.mock.calls.find(
+        (c) => typeof c[0] === 'string' && (c[0] as string).includes('stages'),
       )
-      expect(stages['sync']).toEqual(
-        expect.objectContaining({
-          accepted: ['user.name'],
-          produced: [['profile.name', 'Bob']],
-          duration_ms: '0.08ms',
-        }),
-      )
-      expect(stages['flip']).toEqual(
-        expect.objectContaining({ stage: 'flip', accepted: [], produced: [] }),
-      )
+      expect(stagesCall).toBeDefined()
+      // The value is the stages object
+      const stagesObj = stagesCall![2] as Record<string, unknown>
+      expect(stagesObj).toBeDefined()
     })
 
-    it('should include listener entries in summary', () => {
-      // Listener entries appear as keys in the summary object
+    it('should include produced and skipped in stage detail objects', () => {
+      // Produced and skipped entries are included in the stages detail object
       const logger = createLogger({ log: true })
-      logger.logPipeline(
-        makePipelineData({
-          listenerLog: [
-            {
-              subscriberId: 7,
-              fnName: 'onEmailChange',
-              scope: 'user',
-              input: [['user.email', 'old@test.com', 'new@test.com']],
-              output: [{ path: 'user.emailVerified', value: false }],
-              durationMs: 1.2,
-              slow: false,
-            },
+      const wasmTrace = makeWasmTrace([
+        makeStage({
+          stage: 'diff',
+          skipped: [
+            makeSkipped({
+              path: 'user.name',
+              reason: 'redundant',
+              detail: 'redundant: value unchanged',
+            }),
           ],
         }),
-      )
+        makeStage({
+          stage: 'sync',
+          produced: [
+            makeProduced('target', '"hello"', 'sideEffects-sync', 'source'),
+          ],
+        }),
+      ])
+      const trace = makeUnifiedTrace(wasmTrace)
 
-      const summary = spyLog.mock.calls[0]![0] as Record<string, unknown>
-      const listenerKey = Object.keys(summary).find((k) =>
-        k.includes('listener:7'),
+      logger.logPipeline(makePipelineData({ trace }))
+
+      // Find the stages log call
+      const stagesCall = spyLog.mock.calls.find(
+        (c) => typeof c[0] === 'string' && (c[0] as string).includes('stages'),
+      )
+      expect(stagesCall).toBeDefined()
+      const stagesObj = stagesCall![2] as Record<string, unknown>
+
+      // Diff stage has skipped
+      const diffKey = Object.keys(stagesObj).find((k) => k.includes('diff'))
+      expect(diffKey).toBeDefined()
+      const diffDetail = stagesObj[diffKey!] as Record<string, unknown>
+      expect(diffDetail['skipped']).toBeDefined()
+
+      // Sync stage has produced
+      const syncKey = Object.keys(stagesObj).find((k) => k.includes('sync'))
+      expect(syncKey).toBeDefined()
+      const syncDetail = stagesObj[syncKey!] as Record<string, unknown>
+      expect(syncDetail['produced']).toBeDefined()
+    })
+
+    it('should include listeners in detail object', () => {
+      // Listener dispatches appear as a "listeners" detail key
+      const logger = createLogger({ log: true })
+      const wasmTrace = makeWasmTrace([])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({
+          subscriberId: 42,
+          fnName: 'onNameChange',
+          scope: 'user',
+          topic: 'user.name',
+          registrationId: 'sideEffects-test',
+          durationMs: 0.8,
+        }),
+      ])
+
+      logger.logPipeline(makePipelineData({ trace }))
+
+      // Only 1 groupCollapsed (outer pipeline group, no nested listener groups)
+      expect(spyGroupCollapsed).toHaveBeenCalledTimes(1)
+
+      // Find the listeners log call
+      const listenersCall = spyLog.mock.calls.find(
+        (c) =>
+          typeof c[0] === 'string' && (c[0] as string).includes('listeners'),
+      )
+      expect(listenersCall).toBeDefined()
+      // Value contains listener keyed by name/scope/regId
+      const listenersObj = listenersCall![2] as Record<string, unknown>
+      const listenerKey = Object.keys(listenersObj).find((k) =>
+        k.includes('onNameChange'),
       )
       expect(listenerKey).toBeDefined()
-      expect(listenerKey).toContain('onEmailChange')
-      expect(listenerKey).toContain('1.20ms')
-
-      const entry = summary[listenerKey!] as Record<string, unknown>
-      expect(entry['scope']).toBe('user')
-      expect(entry['output']).toEqual({ 'user.emailVerified': false })
+      expect(listenerKey).toContain('scope:user')
+      expect(listenerKey).toContain('[reg: sideEffects-test]')
     })
 
-    it('should produce a readable realistic pipeline log', () => {
-      // Full realistic scenario: input → trace with mixed stages → listener output
+    it('should include slow listener flag in listener key', () => {
+      // Slow listeners get [SLOW] in the key but still within flat detail
       const logger = createLogger({ log: true })
-      const trace = makeTrace(
-        [
-          makeStage({ stage: 'input', accepted: ['user.name'] }),
-          makeStage({ stage: 'aggregation_write' }),
-          makeStage({ stage: 'computation' }),
-          makeStage({
-            stage: 'diff',
-            accepted: ['user.name'],
-            duration_us: 50,
-          }),
-          makeStage({ stage: 'clear_path' }),
-          makeStage({
-            stage: 'sync',
-            accepted: ['user.name'],
-            produced: [['profile.displayName', 'Bob']],
-            duration_us: 30,
-          }),
-          makeStage({ stage: 'flip' }),
-          makeStage({ stage: 'aggregation_read' }),
-          makeStage({ stage: 'computation' }),
-          makeStage({
-            stage: 'bool_logic',
-            accepted: ['1'],
-            produced: [['_concerns.user.name.disabled', 'true']],
-            duration_us: 20,
-          }),
-          makeStage({ stage: 'value_logic' }),
-          makeStage({
-            stage: 'listeners',
-            accepted: ['user.name', 'profile.displayName'],
-          }),
-          makeStage({ stage: 'apply', accepted: ['3 changes'] }),
-        ],
-        200,
-      )
-
-      logger.logPipeline(
-        makePipelineData({
-          initialChanges: [{ path: 'user.name', value: 'Bob' }],
-          trace,
-          listenerLog: [
-            {
-              subscriberId: 1,
-              fnName: 'notifyNameChange',
-              scope: 'user',
-              input: [['user.name', 'Alice', 'Bob']],
-              output: [{ path: 'user.greeting', value: 'Hello Bob' }],
-              durationMs: 0.5,
-              slow: false,
-            },
-          ],
-          durationMs: 3.2,
+      const wasmTrace = makeWasmTrace([])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({
+          subscriberId: 1,
+          fnName: 'slowHandler',
+          durationMs: 50,
+          slow: true,
         }),
+      ])
+
+      logger.logPipeline(makePipelineData({ trace }))
+
+      const listenersCall = spyLog.mock.calls.find(
+        (c) =>
+          typeof c[0] === 'string' && (c[0] as string).includes('listeners'),
       )
-
-      // Verify group label is readable
-      const label = spyGroupCollapsed.mock.calls[0]![0] as string
-      expect(label).toBe('apex-state:pipeline | user.name')
-
-      // Verify summary structure has the right shape
-      const summary = spyLog.mock.calls[0]![0] as Record<string, unknown>
-      const keys = Object.keys(summary)
-
-      // Should have: input, duration, stages, wasmDuration, [00] listener:1 ...
-      expect(keys).toContain('input')
-      expect(keys).toContain('duration')
-      expect(keys).toContain('stages')
-      expect(keys).toContain('wasmDuration')
-      expect(keys.some((k) => k.includes('listener:1'))).toBe(true)
-
-      // Verify key order: input and duration come first
-      expect(keys[0]).toBe('input')
-      expect(keys[1]).toBe('duration')
-
-      // Active stages have detail with data
-      const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['input']).toEqual(
-        expect.objectContaining({ accepted: ['user.name'] }),
+      expect(listenersCall).toBeDefined()
+      const listenersObj = listenersCall![2] as Record<string, unknown>
+      const key = Object.keys(listenersObj).find((k) =>
+        k.includes('slowHandler'),
       )
-      expect(stages['sync']).toEqual(
-        expect.objectContaining({
-          accepted: ['user.name'],
-          produced: [['profile.displayName', 'Bob']],
-          duration_ms: '0.03ms',
+      expect(key).toContain('slow')
+    })
+
+    it('should include listener input and output in detail value', () => {
+      // Listener input/output are included in the detail value, not separate log calls
+      const logger = createLogger({ log: true })
+      const wasmTrace = makeWasmTrace([])
+      const trace = makeUnifiedTrace(wasmTrace, [
+        makeListenerDispatch({
+          subscriberId: 1,
+          fnName: 'handler',
+          input: [['name', 'Bob', {}]],
+          output: [{ path: 'greeting', value: 'Hello' }],
         }),
+      ])
+
+      logger.logPipeline(makePipelineData({ trace }))
+
+      const listenersCall = spyLog.mock.calls.find(
+        (c) =>
+          typeof c[0] === 'string' && (c[0] as string).includes('listeners'),
       )
-      expect(stages['bool_logic']).toEqual(
-        expect.objectContaining({
-          accepted: ['1'],
-          produced: [['_concerns.user.name.disabled', 'true']],
-          duration_ms: '0.02ms',
-        }),
+      expect(listenersCall).toBeDefined()
+      const listenersObj = listenersCall![2] as Record<string, unknown>
+      const key = Object.keys(listenersObj).find((k) => k.includes('handler'))
+      expect(key).toBeDefined()
+      const entry = listenersObj[key!] as Record<string, unknown>
+      expect(entry['input']).toBeDefined()
+      expect(entry['output']).toBeDefined()
+    })
+
+    it('should log anchor states when present', () => {
+      // Trace with anchor states logs them as a detail key
+      const logger = createLogger({ log: true })
+      const wasmTrace = makeWasmTrace([])
+      wasmTrace.anchor_states = { 'items.0': true, 'user.profile': false }
+      const trace = makeUnifiedTrace(wasmTrace)
+
+      logger.logPipeline(makePipelineData({ trace }))
+
+      const anchorCall = spyLog.mock.calls.find(
+        (c) => typeof c[0] === 'string' && (c[0] as string).includes('anchors'),
+      )
+      expect(anchorCall).toBeDefined()
+      expect(anchorCall![2]).toEqual({
+        'items.0': true,
+        'user.profile': false,
+      })
+    })
+
+    it('should log timing summary at the end', () => {
+      // Timing summary as last detail key with wasm, listeners, and total durations
+      const logger = createLogger({ log: true })
+      const wasmTrace = makeWasmTrace([], 1500)
+      const trace = makeUnifiedTrace(
+        wasmTrace,
+        [makeListenerDispatch({ durationMs: 0.8 })],
+        2.3,
       )
 
-      // Empty stages still present with raw data
-      expect(stages['flip']).toEqual(
-        expect.objectContaining({ accepted: [], produced: [] }),
-      )
+      logger.logPipeline(makePipelineData({ trace }))
+
+      // Last log call is timing detail — the timing VALUE is in args[2]
+      const lastLogCall = spyLog.mock.calls[spyLog.mock.calls.length - 1]!
+      const timingLabel = lastLogCall[0] as string
+      expect(timingLabel).toContain('timing')
+      const timingValue = lastLogCall[2] as string
+      expect(timingValue).toContain('wasm:')
+      expect(timingValue).toContain('listeners:')
+      expect(timingValue).toContain('total:')
+    })
+
+    it('should use color codes in detail key labels', () => {
+      // Each detail key label includes %c for CSS color coding
+      const logger = createLogger({ log: true })
+      const wasmTrace = makeWasmTrace([makeStage({ stage: 'diff' })])
+      const trace = makeUnifiedTrace(wasmTrace)
+
+      logger.logPipeline(makePipelineData({ trace }))
+
+      // All log calls use %c colored key labels
+      for (const call of spyLog.mock.calls) {
+        const label = call[0] as string
+        expect(label).toContain('%c')
+      }
+
+      // CSS argument is the color style
+      const cssArg = spyLog.mock.calls[0]![1] as string
+      expect(cssArg).toContain('color:')
+      expect(cssArg).toContain('font-weight:bold')
     })
   })
 
   describe('logRegistration', () => {
-    it('should log registration with "add" prefix', () => {
-      // Register event uses "add" action, wrapped in groupCollapsed
+    it('should log registration with "add" prefix using groupCollapsed', () => {
+      // Register event uses "add" action inside a groupCollapsed section
       const logger = createLogger({ log: true })
       const snapshot = {
         sync_pairs: [['user.name', 'profile.name'] as [string, string]],
@@ -879,15 +1029,21 @@ describe('createLogger — console output', () => {
 
       expect(spyGroupCollapsed).toHaveBeenCalledTimes(1)
       const label = spyGroupCollapsed.mock.calls[0]![0] as string
-      expect(label).toBe('apex-state:registration | add concern-123')
-      expect(spyLog).toHaveBeenCalledTimes(1)
-      const summary = spyLog.mock.calls[0]![0] as Record<string, unknown>
-      expect(summary).toHaveProperty('snapshot', snapshot)
+      expect(label).toContain('apex-state:registration')
+      expect(label).toContain('add')
+      expect(label).toContain('concern-123')
+      // Non-empty graph entry (syncPairs) is logged
+      expect(spyLog).toHaveBeenCalled()
+      const syncCall = spyLog.mock.calls.find(
+        (c) =>
+          typeof c[0] === 'string' && (c[0] as string).includes('syncPairs'),
+      )
+      expect(syncCall).toBeDefined()
       expect(spyGroupEnd).toHaveBeenCalledTimes(1)
     })
 
     it('should log unregistration with "remove" prefix', () => {
-      // Unregister event uses "remove" action, wrapped in groupCollapsed
+      // Unregister event uses "remove" action inside a groupCollapsed section
       const logger = createLogger({ log: true })
       logger.logRegistration('unregister', 'concern-456', {
         sync_pairs: [],
@@ -901,7 +1057,10 @@ describe('createLogger — console output', () => {
 
       expect(spyGroupCollapsed).toHaveBeenCalledTimes(1)
       const label = spyGroupCollapsed.mock.calls[0]![0] as string
-      expect(label).toBe('apex-state:registration | remove concern-456')
+      expect(label).toContain('apex-state:registration')
+      expect(label).toContain('remove')
+      expect(label).toContain('concern-456')
+      expect(spyGroupEnd).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -988,8 +1147,8 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     expect(stageNames).toContain('apply')
   })
 
-  it('should show accepted paths in the input stage', () => {
-    // The input stage should show which paths were accepted after diff filtering
+  it('should show matched paths in the input stage', () => {
+    // The input stage should show which paths were matched after diff filtering
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
@@ -1001,41 +1160,33 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     )
 
     expect(inputStage).toBeDefined()
-    expect(inputStage!.accepted).toContain('user.name')
+    expect(inputStage!.matched.some(([p]) => p === 'user.name')).toBe(true)
   })
 
   it('should show skipped changes when value is unchanged', () => {
     // Sending same value should be filtered in input stage as skipped
     pipeline = createWasmPipeline({ debug: true })
-    pipeline.shadowInit({ user: { name: 'Alice' } })
-
-    processAndFinalize(pipeline, [{ path: 'user.name', value: 'Alice' }])
-
-    // Pipeline returns early on no-op, but if trace exists, input should show skip
-    // When all changes are redundant, processChanges returns early with no trace
-    // So we test with a mix: one real change + one redundant
-    pipeline.destroy()
-
-    pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ user: { name: 'Alice', age: 25 } })
 
-    const result2 = processAndFinalize(pipeline, [
+    // When all changes are redundant, processChanges returns early with no trace
+    // So we test with a mix: one real change + one redundant
+    const result = processAndFinalize(pipeline, [
       { path: 'user.name', value: 'Alice' }, // redundant
       { path: 'user.age', value: 30 }, // real change
     ])
 
-    expect(result2.trace).not.toBeNull()
-    const inputStage = result2.trace!.stages.find(
+    expect(result.trace).not.toBeNull()
+    const inputStage = result.trace!.stages.find(
       (s: Wasm.StageTrace) => s.stage === 'input',
     )
     expect(inputStage).toBeDefined()
-    // user.age accepted, user.name skipped (redundant)
-    expect(inputStage!.accepted).toContain('user.age')
+    // user.age matched, user.name skipped (redundant)
+    expect(inputStage!.matched.some(([p]) => p === 'user.age')).toBe(true)
     expect(inputStage!.skipped.some((s) => s.path === 'user.name')).toBe(true)
   })
 
-  it('should show sync stage producing synced paths', () => {
-    // Register sync pairs and verify the sync stage shows produced paths
+  it('should show sync stage producing synced paths with ProducedChange', () => {
+    // Register sync pairs and verify the sync stage shows produced paths as ProducedChange objects
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ source: 'hello', target: '' })
 
@@ -1053,11 +1204,36 @@ describe('E2E: WASM pipeline trace → logger display', () => {
       (s: Wasm.StageTrace) => s.stage === 'sync',
     )
     expect(syncStage).toBeDefined()
-    expect(syncStage!.produced).toContainEqual(['target', expect.any(String)])
+    // ProducedChange has { path, value, registration_id, source_path }
+    expect(syncStage!.produced).toContainEqual(
+      expect.objectContaining({ path: 'target' }),
+    )
+  })
+
+  it('should include enriched skipped change fields', () => {
+    // Skipped changes should have detail, registration_id, anchor_path fields
+    pipeline = createWasmPipeline({ debug: true })
+    pipeline.shadowInit({ user: { name: 'Alice', age: 25 } })
+
+    const result = processAndFinalize(pipeline, [
+      { path: 'user.name', value: 'Alice' }, // redundant
+      { path: 'user.age', value: 30 }, // real change
+    ])
+
+    expect(result.trace).not.toBeNull()
+    const inputStage = result.trace!.stages.find(
+      (s: Wasm.StageTrace) => s.stage === 'input',
+    )
+    const skipped = inputStage!.skipped.find((s) => s.path === 'user.name')
+    expect(skipped).toBeDefined()
+    // Enriched fields
+    expect(skipped!.reason).toBe('redundant')
+    expect(skipped!.detail).toBeDefined()
+    expect(typeof skipped!.detail).toBe('string')
   })
 
   it('should flow trace through buildConsoleSummary correctly', () => {
-    // End-to-end: WASM trace → buildConsoleSummary → readable output
+    // End-to-end: WASM trace → wrap in UnifiedPipelineTrace → buildConsoleSummary → readable output
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ source: 'hello', target: '' })
 
@@ -1070,31 +1246,35 @@ describe('E2E: WASM pipeline trace → logger display', () => {
       { path: 'source', value: 'world' },
     ])
 
-    // Build the console summary as the logger would
+    // Wrap WASM trace in UnifiedPipelineTrace
+    const trace: UnifiedPipelineTrace = {
+      wasm: result.trace!,
+      listeners: [],
+      totalDurationMs: 1.0,
+      wasmDurationMs: result.trace!.total_duration_us / 1000,
+      listenerDurationMs: 0,
+    }
+
     const logData: PipelineLogData = {
       initialChanges: [{ path: 'source', value: 'world' }],
-      trace: result.trace,
-      listenerLog: [],
-      durationMs: 1.0,
+      trace,
     }
     const summary = buildConsoleSummary(logData)
 
-    // Summary should have stages from real WASM trace
+    // Summary should have stages from real WASM trace (input filtered out)
     expect(summary['stages']).toBeDefined()
     const stages = summary['stages'] as Record<string, unknown>
 
-    // Input stage should have accepted paths
-    const inputDetail = stages['input'] as Record<string, unknown>
-    expect(inputDetail).toBeDefined()
-    expect(inputDetail['accepted']).toContain('source')
+    // Input stage is filtered out by buildTraceSummary
+    expect(findStage(stages, 'input')).toBeUndefined()
 
-    // Sync stage should show produced target
-    const syncDetail = stages['sync'] as Record<string, unknown>
+    // Sync stage should show produced target (accessed via prefixed key)
+    const syncDetail = findStage(stages, 'sync') as Record<string, unknown>
     expect(syncDetail).toBeDefined()
     expect(syncDetail['produced']).toBeDefined()
   })
 
-  it('should produce readable console output for createLogger', () => {
+  it('should produce readable console output for createLogger with renderTrace', () => {
     // Full e2e: WASM → trace → createLogger → console spy
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ x: 1, y: 2 })
@@ -1105,29 +1285,37 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     const spyL = vi.spyOn(console, 'log').mockImplementation(noop)
     const spyGE = vi.spyOn(console, 'groupEnd').mockImplementation(noop)
 
+    // Wrap WASM trace in UnifiedPipelineTrace
+    const trace: UnifiedPipelineTrace = {
+      wasm: result.trace!,
+      listeners: [],
+      totalDurationMs: 0.5,
+      wasmDurationMs: result.trace!.total_duration_us / 1000,
+      listenerDurationMs: 0,
+    }
+
     const logger = createLogger({ log: true })
     logger.logPipeline({
       initialChanges: [{ path: 'x', value: 10 }],
-      trace: result.trace,
-      listenerLog: [],
-      durationMs: 0.5,
+      trace,
     })
 
-    // Verify grouped output
+    // Verify outer group label (single groupCollapsed in new flat format)
     expect(spyGC).toHaveBeenCalledTimes(1)
-    const label = spyGC.mock.calls[0]![0] as string
-    expect(label).toBe('apex-state:pipeline | x')
+    const outerLabel = spyGC.mock.calls[0]![0] as string
+    expect(outerLabel).toContain('apex-state:pipeline')
+    expect(outerLabel).toContain('x')
 
-    // Verify summary has real WASM trace data
-    const summary = spyL.mock.calls[0]![0] as Record<string, unknown>
-    expect(summary['stages']).toBeDefined()
-    expect(summary['input']).toEqual({ x: 10 })
-    expect(summary['duration']).toBe('0.50ms')
+    // Flat log lines should include at least inputChanges, stages, timing
+    expect(spyL.mock.calls.length).toBeGreaterThanOrEqual(2)
 
-    // Stages should contain real data
-    const stages = summary['stages'] as Record<string, unknown>
-    const inputStage = stages['input'] as Record<string, unknown>
-    expect(inputStage['accepted']).toContain('x')
+    // Timing summary is the last log call — value is in args[2]
+    const lastLog = spyL.mock.calls[spyL.mock.calls.length - 1]!
+    const timingLabel = lastLog[0] as string
+    expect(timingLabel).toContain('timing')
+    const timingValue = lastLog[2] as string
+    expect(timingValue).toContain('wasm:')
+    expect(timingValue).toContain('total:')
 
     spyGC.mockRestore()
     spyL.mockRestore()

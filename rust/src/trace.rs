@@ -3,7 +3,7 @@
 //! All methods are no-ops when disabled (zero cost in production).
 
 use crate::change::{
-    Change, ChangeKind, PipelineTrace, SkipReason, SkippedChange, Stage, StageTrace,
+    Change, ChangeKind, PipelineTrace, ProducedChange, SkipReason, SkippedChange, Stage, StageTrace,
 };
 
 /// Scoped trace recorder. All methods are no-ops when disabled (zero cost in production).
@@ -28,8 +28,8 @@ impl<'a> TraceRecorder<'a> {
     pub fn stage(
         &mut self,
         stage: Stage,
-        accepted: Vec<String>,
-        produced: Vec<[String; 2]>,
+        matched: Vec<[String; 2]>,
+        produced: Vec<ProducedChange>,
         skipped: Vec<SkippedChange>,
     ) {
         if !self.enabled {
@@ -38,23 +38,16 @@ impl<'a> TraceRecorder<'a> {
         self.trace.stages.push(StageTrace {
             stage,
             duration_us: 0,
-            accepted,
+            matched,
             produced,
             skipped,
             followup: Vec::new(),
         });
     }
 
-    /// Collect paths from changes. Returns empty Vec when disabled.
-    pub fn collect_paths(&self, changes: &[Change]) -> Vec<String> {
-        if !self.enabled {
-            return Vec::new();
-        }
-        changes.iter().map(|c| c.path.clone()).collect()
-    }
-
-    /// Collect path-value pairs from changes. Returns empty Vec when disabled.
-    pub fn collect_path_value_pairs(&self, changes: &[Change]) -> Vec<[String; 2]> {
+    /// Collect [path, value] pairs from changes for the `matched` field.
+    /// Returns empty Vec when disabled.
+    pub fn collect_matched(&self, changes: &[Change]) -> Vec<[String; 2]> {
         if !self.enabled {
             return Vec::new();
         }
@@ -64,28 +57,149 @@ impl<'a> TraceRecorder<'a> {
             .collect()
     }
 
-    /// Create a SkippedChange with GuardFailed reason.
-    pub fn skipped_guard(path: &str, kind: &ChangeKind) -> SkippedChange {
+    /// Collect paths-only as matched entries (value set to empty string).
+    /// Used for stages where only identifiers are available (e.g. BoolLogic IDs).
+    /// Returns empty Vec when disabled.
+    #[allow(dead_code)]
+    pub fn collect_matched_labels(&self, labels: &[String]) -> Vec<[String; 2]> {
+        if !self.enabled {
+            return Vec::new();
+        }
+        labels.iter().map(|l| [l.clone(), String::new()]).collect()
+    }
+
+    /// Collect ProducedChange entries from changes (simple path+value, no provenance).
+    /// Returns empty Vec when disabled.
+    pub fn collect_produced(&self, changes: &[Change]) -> Vec<ProducedChange> {
+        if !self.enabled {
+            return Vec::new();
+        }
+        changes
+            .iter()
+            .map(|c| ProducedChange {
+                path: c.path.clone(),
+                value: c.value_json.clone(),
+                registration_id: None,
+                source_path: None,
+            })
+            .collect()
+    }
+
+    /// Collect ProducedChange entries with provenance (registration_id and/or source_path).
+    /// Returns empty Vec when disabled.
+    #[allow(dead_code)]
+    pub fn collect_produced_with_provenance(
+        &self,
+        changes: &[Change],
+        registration_id: Option<&str>,
+        source_path: Option<&str>,
+    ) -> Vec<ProducedChange> {
+        if !self.enabled {
+            return Vec::new();
+        }
+        changes
+            .iter()
+            .map(|c| ProducedChange {
+                path: c.path.clone(),
+                value: c.value_json.clone(),
+                registration_id: registration_id.map(|s| s.to_owned()),
+                source_path: source_path.map(|s| s.to_owned()),
+            })
+            .collect()
+    }
+
+    /// Create a SkippedChange with GuardFailed reason and detail string.
+    #[allow(dead_code)]
+    pub fn skipped_guard(path: &str, kind: &ChangeKind, detail: &str) -> SkippedChange {
         SkippedChange {
             path: path.to_owned(),
             kind: kind.clone(),
             reason: SkipReason::GuardFailed,
+            detail: if detail.is_empty() {
+                "guard_failed: stage guard condition not met".to_owned()
+            } else {
+                detail.to_owned()
+            },
+            registration_id: None,
+            anchor_path: None,
+        }
+    }
+
+    /// Create a SkippedChange with WrongKind reason.
+    #[allow(dead_code)]
+    pub fn skipped_wrong_kind(path: &str, kind: &ChangeKind, detail: &str) -> SkippedChange {
+        SkippedChange {
+            path: path.to_owned(),
+            kind: kind.clone(),
+            reason: SkipReason::WrongKind,
+            detail: if detail.is_empty() {
+                "wrong_kind: change kind not handled by this stage".to_owned()
+            } else {
+                detail.to_owned()
+            },
+            registration_id: None,
+            anchor_path: None,
+        }
+    }
+
+    /// Create a SkippedChange for a missing anchor.
+    pub fn skipped_anchor(
+        path: &str,
+        kind: &ChangeKind,
+        anchor_path: &str,
+        registration_id: Option<&str>,
+    ) -> SkippedChange {
+        SkippedChange {
+            path: path.to_owned(),
+            kind: kind.clone(),
+            reason: SkipReason::AnchorMissing,
+            detail: format!("anchor_missing: anchor '{}' not in state", anchor_path),
+            registration_id: registration_id.map(|s| s.to_owned()),
+            anchor_path: Some(anchor_path.to_owned()),
+        }
+    }
+
+    /// Create a SkippedChange for a redundant value (matches shadow state).
+    pub fn skipped_redundant(path: &str) -> SkippedChange {
+        SkippedChange {
+            path: path.to_owned(),
+            kind: ChangeKind::Redundant,
+            reason: SkipReason::Redundant,
+            detail: "redundant: value unchanged".to_owned(),
+            registration_id: None,
+            anchor_path: None,
         }
     }
 
     /// Compute paths in `all` but not in `kept`, as SkippedChange entries.
+    /// Both arguments are `[path, value]` matched pairs.
     /// Returns empty Vec when disabled.
-    pub fn diff_skipped(&self, all: &[String], kept: &[String]) -> Vec<SkippedChange> {
+    pub fn diff_skipped(&self, all: &[[String; 2]], kept: &[[String; 2]]) -> Vec<SkippedChange> {
         if !self.enabled {
             return Vec::new();
         }
+        let kept_paths: Vec<&str> = kept.iter().map(|pair| pair[0].as_str()).collect();
         all.iter()
-            .filter(|p| !kept.contains(p))
-            .map(|p| SkippedChange {
-                path: p.clone(),
-                kind: ChangeKind::Real,
-                reason: SkipReason::GuardFailed,
-            })
+            .filter(|pair| !kept_paths.contains(&pair[0].as_str()))
+            .map(|pair| TraceRecorder::skipped_redundant(&pair[0]))
             .collect()
+    }
+
+    /// Set anchor states on the trace. No-op when disabled.
+    pub fn set_anchor_states(
+        &mut self,
+        states: &std::collections::HashMap<u32, bool>,
+        intern: &crate::intern::InternTable,
+    ) {
+        if !self.enabled {
+            return;
+        }
+        for (&path_id, &present) in states {
+            if let Some(path_str) = intern.resolve(path_id) {
+                self.trace
+                    .anchor_states
+                    .insert(path_str.to_owned(), present);
+            }
+        }
     }
 }

@@ -5,30 +5,14 @@
  * WASM call for efficiency. No legacy fallback logic - assumes WASM is loaded.
  */
 
+import { snapshot } from 'valtio'
+
 import type { MultiPathListener, StoreInstance } from '../core/types'
 import { applyBatch } from '../pipeline/apply-batch'
 import type { GenericMeta } from '../types'
-import type { Change } from '../types/changes'
 import { changes } from '../types/changes'
 import { pairs } from '../types/pairs'
 import type { SideEffects } from '../types/side-effects'
-import type { Wasm } from '../wasm/bridge'
-
-/** Build a StageTrace from a stage name and change array. Returns null if empty. */
-const stageFromChanges = (
-  stage: Wasm.StageTrace['stage'],
-  ch: Change[],
-): Wasm.StageTrace | null => {
-  if (ch.length === 0) return null
-  return {
-    stage,
-    duration_us: 0,
-    accepted: [],
-    produced: ch.map((c) => [c.path, c.value] as [string, string]),
-    skipped: [],
-    followup: [],
-  }
-}
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -46,6 +30,8 @@ export const registerSideEffects = <
   id: string,
   effects: SideEffects<DATA, META>,
 ): (() => void) => {
+  const t0 = performance.now()
+
   // Build consolidated side effects registration
   const syncPairs = effects.syncPaths ?? []
   const flipPairs = effects.flipPaths ?? []
@@ -97,6 +83,7 @@ export const registerSideEffects = <
       scope: effectiveScope,
       fn: originalFn,
       name: originalFn.name || '(anonymous)',
+      registrationId: `sideEffects-${id}`,
     })
 
     return {
@@ -119,27 +106,8 @@ export const registerSideEffects = <
     listeners: listeners ?? [],
     anchor_path: effects.anchorPath as string,
   }
-  const result = pipeline.registerSideEffects(registration)
 
-  // Log registration with graph snapshot and initial stage trace (no-op when log is disabled)
-  const snapshot = pipeline.getGraphSnapshot()
-  const traceStages = [
-    stageFromChanges('sync', result.sync_changes),
-    stageFromChanges('aggregation_read', result.aggregation_changes),
-    stageFromChanges('computation', result.computation_changes),
-  ].filter((s): s is Wasm.StageTrace => s !== null)
-  const trace: Wasm.PipelineTrace | undefined =
-    traceStages.length > 0
-      ? { total_duration_us: 0, stages: traceStages }
-      : undefined
-  store._internal.logger.logRegistration(
-    'register',
-    id,
-    snapshot,
-    trace,
-    result,
-  )
-  store._internal.devtools?.notifyRegistration('register', id, snapshot)
+  const result = pipeline.registerSideEffects(registration)
 
   // Apply sync changes directly to valtio state.
   // IMPORTANT: Do NOT route through processChanges() here — it would diff against shadow,
@@ -153,6 +121,11 @@ export const registerSideEffects = <
   //   - Navigation remount with preserved pipeline reuses stale shadow
   // In both cases, applyBatch correctly writes the synced value to valtio even
   // when shadow already has it.
+  const appliedChanges = [
+    ...result.sync_changes,
+    ...result.aggregation_changes,
+    ...result.computation_changes,
+  ]
   if (result.sync_changes.length > 0) {
     applyBatch(changes.fromWasm<DATA>(result.sync_changes), store.state)
   }
@@ -167,11 +140,28 @@ export const registerSideEffects = <
     applyBatch(changes.fromWasm<DATA>(result.computation_changes), store.state)
   }
 
+  const durationMs = performance.now() - t0
+
+  // Log registration with graph snapshot (no-op when log is disabled)
+  const graphSnapshot = pipeline.getGraphSnapshot()
+  store._internal.logger.logRegistration('register', id, graphSnapshot, {
+    result,
+    appliedChanges,
+    stateSnapshot: snapshot(store.state),
+    durationMs,
+  })
+  store._internal.devtools?.notifyRegistration('register', id, graphSnapshot)
+
   // Create cleanup function
   const cleanup = () => {
+    const ut0 = performance.now()
     pipeline.unregisterSideEffects(registrationId)
+    const unregDurationMs = performance.now() - ut0
     const unregSnapshot = pipeline.getGraphSnapshot()
-    store._internal.logger.logRegistration('unregister', id, unregSnapshot)
+    store._internal.logger.logRegistration('unregister', id, unregSnapshot, {
+      stateSnapshot: snapshot(store.state),
+      durationMs: unregDurationMs,
+    })
     store._internal.devtools?.notifyRegistration(
       'unregister',
       id,

@@ -13,6 +13,7 @@ import { devtools } from 'valtio/utils'
 
 import pkg from '../../package.json'
 import type { StoreConfig } from '../core/types'
+import { is } from '../testing'
 import type { DeepRequired } from '../types'
 import type { PipelineLogData } from '../utils/log'
 import type { Wasm } from '../wasm/bridge'
@@ -31,7 +32,10 @@ interface DevToolsExtension {
   connect: (options: { name: string; features?: object }) => DevToolsInstance
 }
 
-let devtoolsIdCounter = 0
+const nextDevtoolsId = (() => {
+  let id = 0
+  return () => ++id
+})()
 
 const getDevToolsExtension = (): DevToolsExtension | undefined =>
   typeof window !== 'undefined'
@@ -75,27 +79,35 @@ const buildPathLabel = (paths: string[]): string => {
 }
 
 /** Build DevTools tree object for a pipeline run. */
-const buildDevToolsTree = (data: PipelineLogData): Record<string, unknown> => {
-  const tree: Record<string, unknown> = {
-    input: data.initialChanges,
-    duration: `${data.durationMs.toFixed(2)}ms`,
-  }
-  if (data.trace) tree['trace'] = data.trace
-  for (const [i, entry] of data.listenerLog.entries()) {
-    const n = entry.fnName || '(anonymous)'
-    const key = `[${String(i).padStart(2, '0')}] listener:${String(entry.subscriberId)} ${n}`
-    tree[key] = {
-      fn: n,
-      scope: entry.scope,
-      input: entry.input,
-      output: entry.output,
-      ...(entry.durationMs > 0
-        ? { duration: entry.durationMs.toFixed(2) + 'ms' }
-        : {}),
-    }
-  }
-  return tree
-}
+const buildDevToolsTree = (data: PipelineLogData): Record<string, unknown> => ({
+  input: data.initialChanges,
+  ...(data.trace
+    ? {
+        duration: `${data.trace.totalDurationMs.toFixed(2)}ms`,
+        trace: data.trace.wasm,
+        ...Object.fromEntries(
+          data.trace.listeners.map((entry, i) => {
+            const n = entry.fnName || '(anonymous)'
+            const key = `[${String(i).padStart(2, '0')}] listener:${String(entry.subscriberId)} ${n}`
+            return [
+              key,
+              {
+                fn: n,
+                scope: entry.scope,
+                topic: entry.topic,
+                registrationId: entry.registrationId,
+                input: entry.input,
+                output: entry.output,
+                ...(entry.durationMs > 0
+                  ? { duration: entry.durationMs.toFixed(2) + 'ms' }
+                  : {}),
+              },
+            ]
+          }),
+        ),
+      }
+    : {}),
+})
 
 // ---------------------------------------------------------------------------
 // Proxy DevTools — eager connection (no hooks needed)
@@ -140,19 +152,17 @@ export const attachDevtools = (
 ): DevToolsNotifier | null => {
   if (!config.debug.devtools) return null
 
-  devtoolsIdCounter++
-  const prefix = `apex-state@${pkg.version}:${config.name}-${String(devtoolsIdCounter)}`
+  const prefix = `apex-state@${pkg.version}:${config.name}-${String(nextDevtoolsId())}`
 
   // Pipeline DevTools connection
   const pipelineInstance = connectPipelineDevTools(prefix)
   if (!pipelineInstance) return null
 
   // Proxy DevTools connections (state + concerns inspection)
-  const proxyUnsubs: (() => void)[] = []
-  const unsub1 = connectProxy(stateProxy, `${prefix}:state`)
-  if (unsub1) proxyUnsubs.push(unsub1)
-  const unsub2 = connectProxy(concernsProxy, `${prefix}:concerns`)
-  if (unsub2) proxyUnsubs.push(unsub2)
+  const proxyUnsubs = [
+    connectProxy(stateProxy, `${prefix}:state`),
+    connectProxy(concernsProxy, `${prefix}:concerns`),
+  ].filter(is.not.undefined)
 
   return {
     notifyPipeline: (data) => {
@@ -169,11 +179,12 @@ export const attachDevtools = (
         type === 'register'
           ? `REGISTER_SIDE_EFFECTS ${id}`
           : `UNREGISTER_SIDE_EFFECTS ${id}`
+
       pipelineInstance.send({ type: actionType }, { id, snapshot })
     },
 
     destroy: () => {
-      for (const unsub of proxyUnsubs) unsub()
+      proxyUnsubs.forEach((unsub) => unsub())
       pipelineInstance.unsubscribe()
     },
   }
