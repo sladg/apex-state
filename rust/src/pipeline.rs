@@ -1914,11 +1914,11 @@ impl ProcessingPipeline {
         let input_paths_for_agg = rec.collect_paths(&input_changes);
         let changes = process_aggregation_writes(&self.aggregations, input_changes, &working);
         {
-            let produced: Vec<String> = if rec.enabled() {
+            let produced: Vec<[String; 2]> = if rec.enabled() {
                 changes
                     .iter()
                     .filter(|c| !input_paths_for_agg.contains(&c.path))
-                    .map(|c| c.path.clone())
+                    .map(|c| [c.path.clone(), c.value_json.clone()])
                     .collect()
             } else {
                 Vec::new()
@@ -1993,7 +1993,7 @@ impl ProcessingPipeline {
             } else {
                 Vec::new()
             };
-            let produced = rec.collect_paths(&clear_changes);
+            let produced = rec.collect_path_value_pairs(&clear_changes);
             rec.stage(Stage::ClearPath, trigger_paths, produced, Vec::new());
         }
 
@@ -2021,7 +2021,7 @@ impl ProcessingPipeline {
         rec.stage(
             Stage::Sync,
             rec.collect_paths(&changes_for_sync),
-            rec.collect_paths(&sync_buf),
+            rec.collect_path_value_pairs(&sync_buf),
             Vec::new(),
         );
 
@@ -2039,7 +2039,7 @@ impl ProcessingPipeline {
         rec.stage(
             Stage::Flip,
             rec.collect_paths(&changes_for_flip),
-            rec.collect_paths(&flip_buf),
+            rec.collect_path_value_pairs(&flip_buf),
             Vec::new(),
         );
 
@@ -2049,7 +2049,7 @@ impl ProcessingPipeline {
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let aggregation_reads =
             process_aggregation_reads(&self.aggregations, &working, &all_changed_paths);
-        let mut agg_read_produced: Vec<String> = Vec::new();
+        let mut agg_read_produced: Vec<[String; 2]> = Vec::new();
         let mut agg_read_skipped: Vec<SkippedChange> = Vec::new();
         for change in &aggregation_reads {
             // Skip if target path's anchor is disabled
@@ -2064,7 +2064,7 @@ impl ProcessingPipeline {
                 }
             }
             if rec.enabled() {
-                agg_read_produced.push(change.path.clone());
+                agg_read_produced.push([change.path.clone(), change.value_json.clone()]);
             }
             working.set(&change.path, &change.value_json)?;
             self.mark_affected_logic(&working, &change.path);
@@ -2083,7 +2083,7 @@ impl ProcessingPipeline {
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let computation_reads =
             process_computation_reads(&self.computations, &working, &all_changed_paths);
-        let mut comp_read_produced: Vec<String> = Vec::new();
+        let mut comp_read_produced: Vec<[String; 2]> = Vec::new();
         let mut comp_read_skipped: Vec<SkippedChange> = Vec::new();
         for change in &computation_reads {
             // Skip if target path's anchor is disabled
@@ -2098,7 +2098,7 @@ impl ProcessingPipeline {
                 }
             }
             if rec.enabled() {
-                comp_read_produced.push(change.path.clone());
+                comp_read_produced.push([change.path.clone(), change.value_json.clone()]);
             }
             working.set(&change.path, &change.value_json)?;
             self.mark_affected_logic(&working, &change.path);
@@ -2134,7 +2134,7 @@ impl ProcessingPipeline {
         }
 
         // Steps 8-9: Evaluate affected BoolLogic expressions (against working shadow)
-        let mut bl_produced: Vec<String> = Vec::new();
+        let mut bl_produced: Vec<[String; 2]> = Vec::new();
         let mut bl_skipped: Vec<SkippedChange> = Vec::new();
         for logic_id in &self.ctx.affected_bool_logic {
             if let Some(meta) = self.registry.get(*logic_id) {
@@ -2149,16 +2149,17 @@ impl ProcessingPipeline {
                     continue;
                 }
                 let result = meta.tree.evaluate(&working);
+                let result_json = if result {
+                    "true".to_owned()
+                } else {
+                    "false".to_owned()
+                };
                 if rec.enabled() {
-                    bl_produced.push(meta.output_path.clone());
+                    bl_produced.push([meta.output_path.clone(), result_json.clone()]);
                 }
                 concern_changes.push(Change {
                     path: meta.output_path.clone(),
-                    value_json: if result {
-                        "true".to_owned()
-                    } else {
-                        "false".to_owned()
-                    },
+                    value_json: result_json,
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
@@ -2179,7 +2180,7 @@ impl ProcessingPipeline {
         }
 
         // Step 8b: Evaluate affected ValueLogic expressions (against working shadow)
-        let mut vl_produced: Vec<String> = Vec::new();
+        let mut vl_produced: Vec<[String; 2]> = Vec::new();
         let mut vl_skipped: Vec<SkippedChange> = Vec::new();
         for vl_id in &self.ctx.affected_value_logics {
             if let Some(meta) = self.value_logic_registry.get(*vl_id) {
@@ -2194,12 +2195,13 @@ impl ProcessingPipeline {
                     continue;
                 }
                 let result = meta.tree.evaluate(&working);
+                let result_json = serde_json::to_string(&result).unwrap_or_else(|_| "null".into());
                 if rec.enabled() {
-                    vl_produced.push(meta.output_path.clone());
+                    vl_produced.push([meta.output_path.clone(), result_json.clone()]);
                 }
                 concern_changes.push(Change {
                     path: meta.output_path.clone(),
-                    value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
+                    value_json: result_json,
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,

@@ -32,6 +32,27 @@ export interface PipelineLogData {
   durationMs: number
 }
 
+/** Maps SideEffectsResult field names to trace stage names. */
+const RESULT_TO_STAGE: Record<string, string> = {
+  sync_changes: 'sync',
+  aggregation_changes: 'aggregation_read',
+  computation_changes: 'computation',
+}
+
+/** Extract { stageName: Change[] } from a SideEffectsResult-shaped object. */
+const extractProducedValues = (
+  result: Record<string, unknown>,
+): Record<string, Change[]> => {
+  const out: Record<string, Change[]> = {}
+  for (const [field, stage] of Object.entries(RESULT_TO_STAGE)) {
+    const arr = result[field]
+    if (Array.isArray(arr) && arr.length > 0) {
+      out[stage] = arr as Change[]
+    }
+  }
+  return out
+}
+
 export interface ApexLogger {
   logPipeline: (data: PipelineLogData) => void
   logRegistration: (
@@ -39,6 +60,8 @@ export interface ApexLogger {
     id: string,
     snapshot: Wasm.GraphSnapshot,
     trace?: Wasm.PipelineTrace,
+    /** Registration result — changes are shown as { path: value } in produced. */
+    result?: Record<string, unknown>,
   ) => void
   destroy: () => void
 }
@@ -100,16 +123,11 @@ export const formatStageDetail = (
   }
 
   if (s.produced.length > 0) {
-    detail['produced'] =
-      s.produced.length <= 5
-        ? s.produced
-        : {
-            count: s.produced.length,
-            paths: [
-              ...s.produced.slice(0, 3),
-              `+${String(s.produced.length - 3)} more`,
-            ],
-          }
+    const producedObj: Record<string, unknown> = {}
+    for (const [path, value] of s.produced) {
+      producedObj[path] = value
+    }
+    detail['produced'] = producedObj
   }
 
   if (s.skipped.length > 0) {
@@ -127,6 +145,7 @@ export const formatStageDetail = (
 export const addTraceSummary = (
   obj: Record<string, unknown>,
   trace: Wasm.PipelineTrace,
+  _producedValues?: Record<string, Change[]>,
 ): void => {
   if (trace.stages.length === 0) return
   const stagesSummary: Record<string, unknown> = {}
@@ -189,11 +208,14 @@ export const createLogger = (config: DebugConfig): ApexLogger => {
       console.groupEnd()
     },
 
-    logRegistration: (type, id, snapshot, trace) => {
+    logRegistration: (type, id, snapshot, trace, result) => {
       const action = type === 'register' ? 'add' : 'remove'
       const summary: Record<string, unknown> = { snapshot }
 
-      if (trace) addTraceSummary(summary, trace)
+      if (trace) {
+        const values = result ? extractProducedValues(result) : undefined
+        addTraceSummary(summary, trace, values)
+      }
 
       console.groupCollapsed(`${PREFIX}:registration | ${action} ${id}`)
       console.log(summary)

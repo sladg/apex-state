@@ -29,7 +29,7 @@ impl<'a> TraceRecorder<'a> {
         &mut self,
         stage: Stage,
         accepted: Vec<String>,
-        produced: Vec<String>,
+        produced: Vec<[String; 2]>,
         skipped: Vec<SkippedChange>,
     ) {
         if !self.enabled {
@@ -51,6 +51,17 @@ impl<'a> TraceRecorder<'a> {
             return Vec::new();
         }
         changes.iter().map(|c| c.path.clone()).collect()
+    }
+
+    /// Collect path-value pairs from changes. Returns empty Vec when disabled.
+    pub fn collect_path_value_pairs(&self, changes: &[Change]) -> Vec<[String; 2]> {
+        if !self.enabled {
+            return Vec::new();
+        }
+        changes
+            .iter()
+            .map(|c| [c.path.clone(), c.value_json.clone()])
+            .collect()
     }
 
     /// Create a SkippedChange with GuardFailed reason.

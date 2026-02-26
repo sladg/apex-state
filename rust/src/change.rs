@@ -141,7 +141,8 @@ pub struct StageTrace {
     pub accepted: Vec<String>,
     #[ts(inline)]
     pub skipped: Vec<SkippedChange>,
-    pub produced: Vec<String>,
+    /// Path-value pairs produced by this stage.
+    pub produced: Vec<[String; 2]>,
     pub followup: Vec<StageTrace>,
 }
 

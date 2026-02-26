@@ -87,20 +87,33 @@ describe('formatStageDetail', () => {
   })
 
   it('should show produced paths inline when ≤5', () => {
-    // Small number of produced paths shown as array
+    // Small number of produced [path, value] pairs shown as object
     const result = formatStageDetail(
-      makeStage({ produced: ['_concerns.user.name.disabled'] }),
+      makeStage({ produced: [['_concerns.user.name.disabled', 'true']] }),
     )
-    expect(result['produced']).toEqual(['_concerns.user.name.disabled'])
+    expect(result['produced']).toEqual({
+      '_concerns.user.name.disabled': 'true',
+    })
   })
 
-  it('should truncate produced paths when >5', () => {
-    // Large number of produced paths collapsed to count + first 3
-    const paths = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6']
-    const result = formatStageDetail(makeStage({ produced: paths }))
+  it('should show all produced paths when >5', () => {
+    // Large number of produced [path, value] pairs all shown
+    const pairs: [string, string][] = [
+      ['p1', 'v1'],
+      ['p2', 'v2'],
+      ['p3', 'v3'],
+      ['p4', 'v4'],
+      ['p5', 'v5'],
+      ['p6', 'v6'],
+    ]
+    const result = formatStageDetail(makeStage({ produced: pairs }))
     expect(result['produced']).toEqual({
-      count: 6,
-      paths: ['p1', 'p2', 'p3', '+3 more'],
+      p1: 'v1',
+      p2: 'v2',
+      p3: 'v3',
+      p4: 'v4',
+      p5: 'v5',
+      p6: 'v6',
     })
   })
 
@@ -190,12 +203,12 @@ describe('buildConsoleSummary', () => {
         makeStage({
           stage: 'diff',
           accepted: ['user.name'],
-          produced: ['user.name'],
+          produced: [['user.name', 'Alice']],
         }),
         makeStage({
           stage: 'sync',
           accepted: ['user.name'],
-          produced: ['profile.name'],
+          produced: [['profile.name', 'Bob']],
         }),
       ])
       const summary = buildConsoleSummary(makePipelineData({ trace }))
@@ -203,11 +216,11 @@ describe('buildConsoleSummary', () => {
       expect(stages).toBeDefined()
       expect(stages['diff']).toEqual({
         accepted: ['user.name'],
-        produced: ['user.name'],
+        produced: { 'user.name': 'Alice' },
       })
       expect(stages['sync']).toEqual({
         accepted: ['user.name'],
-        produced: ['profile.name'],
+        produced: { 'profile.name': 'Bob' },
       })
     })
 
@@ -467,7 +480,7 @@ describe('buildConsoleSummary', () => {
         makeStage({
           stage: 'sync',
           accepted: ['user.name'],
-          produced: ['profile.name'],
+          produced: [['profile.name', 'value1']],
         }),
         makeStage({ stage: 'flip' }),
         makeStage({ stage: 'aggregation_read' }),
@@ -475,7 +488,7 @@ describe('buildConsoleSummary', () => {
         makeStage({
           stage: 'bool_logic',
           accepted: ['1'],
-          produced: ['_concerns.user.name.disabled'],
+          produced: [['_concerns.user.name.disabled', 'true']],
         }),
         makeStage({ stage: 'value_logic' }),
         makeStage({
@@ -494,11 +507,11 @@ describe('buildConsoleSummary', () => {
       expect(stages['input']).toEqual({ accepted: ['user.name'] })
       expect(stages['sync']).toEqual({
         accepted: ['user.name'],
-        produced: ['profile.name'],
+        produced: { 'profile.name': 'value1' },
       })
       expect(stages['bool_logic']).toEqual({
         accepted: ['1'],
-        produced: ['_concerns.user.name.disabled'],
+        produced: { '_concerns.user.name.disabled': 'true' },
       })
 
       // Idle stages show "(idle)"
@@ -524,7 +537,7 @@ describe('buildConsoleSummary', () => {
         makeStage({
           stage: 'computation',
           accepted: ['price', 'quantity'],
-          produced: ['total'],
+          produced: [['total', '100']],
         }),
       ])
       const summary = buildConsoleSummary(makePipelineData({ trace }))
@@ -533,7 +546,7 @@ describe('buildConsoleSummary', () => {
       // Second computation entry wins (last-write-wins for same key)
       expect(stages['computation']).toEqual({
         accepted: ['price', 'quantity'],
-        produced: ['total'],
+        produced: { total: '100' },
       })
     })
 
@@ -543,7 +556,7 @@ describe('buildConsoleSummary', () => {
         makeStage({
           stage: 'aggregation_read',
           accepted: ['cart.item1.price', 'cart.item2.price'],
-          produced: ['cart.total'],
+          produced: [['cart.total', '150']],
           skipped: [
             {
               path: 'cart.summary',
@@ -557,7 +570,7 @@ describe('buildConsoleSummary', () => {
       const stages = summary['stages'] as Record<string, unknown>
       expect(stages['aggregation_read']).toEqual({
         accepted: ['cart.item1.price', 'cart.item2.price'],
-        produced: ['cart.total'],
+        produced: { 'cart.total': '150' },
         skipped: ['cart.summary (guard_failed)'],
       })
     })
@@ -732,13 +745,13 @@ describe('createLogger — console output', () => {
           makeStage({
             stage: 'diff',
             accepted: ['user.name'],
-            produced: ['user.name'],
+            produced: [['user.name', 'Alice']],
             duration_us: 120,
           }),
           makeStage({
             stage: 'sync',
             accepted: ['user.name'],
-            produced: ['profile.name'],
+            produced: [['profile.name', 'Bob']],
             duration_us: 80,
           }),
           makeStage({ stage: 'flip' }),
@@ -754,12 +767,12 @@ describe('createLogger — console output', () => {
       const stages = summary['stages'] as Record<string, unknown>
       expect(stages['diff']).toEqual({
         accepted: ['user.name'],
-        produced: ['user.name'],
+        produced: { 'user.name': 'Alice' },
         duration: '0.12ms',
       })
       expect(stages['sync']).toEqual({
         accepted: ['user.name'],
-        produced: ['profile.name'],
+        produced: { 'profile.name': 'Bob' },
         duration: '0.08ms',
       })
       expect(stages['flip']).toBe('(idle)')
@@ -814,7 +827,7 @@ describe('createLogger — console output', () => {
           makeStage({
             stage: 'sync',
             accepted: ['user.name'],
-            produced: ['profile.displayName'],
+            produced: [['profile.displayName', 'Bob']],
             duration_us: 30,
           }),
           makeStage({ stage: 'flip' }),
@@ -823,7 +836,7 @@ describe('createLogger — console output', () => {
           makeStage({
             stage: 'bool_logic',
             accepted: ['1'],
-            produced: ['_concerns.user.name.disabled'],
+            produced: [['_concerns.user.name.disabled', 'true']],
             duration_us: 20,
           }),
           makeStage({ stage: 'value_logic' }),
@@ -880,12 +893,12 @@ describe('createLogger — console output', () => {
       expect(stages['aggregation_write']).toBe('(idle)')
       expect(stages['sync']).toEqual({
         accepted: ['user.name'],
-        produced: ['profile.displayName'],
+        produced: { 'profile.displayName': 'Bob' },
         duration: '0.03ms',
       })
       expect(stages['bool_logic']).toEqual({
         accepted: ['1'],
-        produced: ['_concerns.user.name.disabled'],
+        produced: { '_concerns.user.name.disabled': 'true' },
         duration: '0.02ms',
       })
       expect(stages['flip']).toBe('(idle)')
@@ -1083,7 +1096,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
       (s: Wasm.StageTrace) => s.stage === 'sync',
     )
     expect(syncStage).toBeDefined()
-    expect(syncStage!.produced).toContain('target')
+    expect(syncStage!.produced).toContainEqual(['target', expect.any(String)])
   })
 
   it('should flow trace through buildConsoleSummary correctly', () => {

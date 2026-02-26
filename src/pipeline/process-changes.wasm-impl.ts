@@ -488,7 +488,9 @@ export const processChangesWasm = <
         stage: 'listeners',
         duration_us: entry.durationMs * 1000,
         accepted: entry.input.map(([p]) => p as string),
-        produced: entry.output.map((c) => c.path),
+        produced: entry.output.map(
+          (c) => [c.path, c.value] as [string, string],
+        ),
         skipped: [],
         followup: [],
       })

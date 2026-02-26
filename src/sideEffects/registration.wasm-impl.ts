@@ -24,7 +24,7 @@ const stageFromChanges = (
     stage,
     duration_us: 0,
     accepted: [],
-    produced: ch.map((c) => c.path),
+    produced: ch.map((c) => [c.path, c.value] as [string, string]),
     skipped: [],
     followup: [],
   }
@@ -132,7 +132,13 @@ export const registerSideEffects = <
     traceStages.length > 0
       ? { total_duration_us: 0, stages: traceStages }
       : undefined
-  store._internal.logger.logRegistration('register', id, snapshot, trace)
+  store._internal.logger.logRegistration(
+    'register',
+    id,
+    snapshot,
+    trace,
+    result,
+  )
   store._internal.devtools?.notifyRegistration('register', id, snapshot)
 
   // Apply sync changes directly to valtio state.
