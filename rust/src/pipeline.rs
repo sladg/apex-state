@@ -519,12 +519,12 @@ impl ProcessingPipeline {
 
     /// Rebuild anchor_states from shadow — call once per pipeline run after shadow is updated.
     /// Uses field-level borrow splitting to avoid intermediate Vec allocation.
-    fn update_anchor_states(&mut self) {
+    fn update_anchor_states(&mut self, shadow: &ShadowState) {
         self.anchor_states.clear();
         let ids: Vec<u32> = self.anchor_path_ids.iter().copied().collect();
         for id in ids {
             if let Some(path) = self.intern.resolve(id) {
-                let is_present = self.shadow.get(path).is_some();
+                let is_present = shadow.get(path).is_some();
                 self.anchor_states.insert(id, is_present);
             }
         }
@@ -609,14 +609,8 @@ impl ProcessingPipeline {
     }
 
     /// Initialize shadow state from a JSON string.
-    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn shadow_init(&mut self, state_json: &str) -> Result<(), String> {
         self.shadow.init(state_json)
-    }
-
-    /// Initialize shadow state from a pre-parsed serde_json::Value (no string intermediary).
-    pub(crate) fn shadow_init_value(&mut self, value: serde_json::Value) -> Result<(), String> {
-        self.shadow.init_value(value)
     }
 
     /// Register a BoolLogic expression. Returns logic_id for later cleanup.
@@ -1530,7 +1524,12 @@ impl ProcessingPipeline {
     /// 1. Exact match: change path is directly in sync graph
     /// 2. Child expansion: change path is deeper than a registered sync pair
     /// 3. Parent expansion: change path is shallower than registered sync pairs
-    fn process_sync_paths_into(&mut self, changes: &[Change], output: &mut Vec<Change>) {
+    fn process_sync_paths_into(
+        &mut self,
+        shadow: &ShadowState,
+        changes: &[Change],
+        output: &mut Vec<Change>,
+    ) {
         output.clear();
         for change in changes {
             let path_id = self.intern.intern(&change.path);
@@ -1548,12 +1547,7 @@ impl ProcessingPipeline {
                         }
                         if let Some(peer_path) = self.intern.resolve(peer_id) {
                             let peer_path = peer_path.to_owned();
-                            Self::emit_sync_change(
-                                &self.shadow,
-                                &peer_path,
-                                &change.value_json,
-                                output,
-                            );
+                            Self::emit_sync_change(shadow, &peer_path, &change.value_json, output);
                         }
                     }
                 }
@@ -1579,7 +1573,7 @@ impl ProcessingPipeline {
                                 if let Some(peer_base) = self.intern.resolve(peer_id) {
                                     let peer_path = format!("{}{}", peer_base, suffix);
                                     Self::emit_sync_change(
-                                        &self.shadow,
+                                        shadow,
                                         &peer_path,
                                         &change.value_json,
                                         output,
@@ -1595,12 +1589,12 @@ impl ProcessingPipeline {
             // Case 3: Parent expansion — change is shallower than registered pairs
             // Enumerate leaf paths under this change in shadow, sync any that are registered
             if peer_ids.is_empty() {
-                let leaves = self.shadow.affected_paths(&change.path);
+                let leaves = shadow.affected_paths(&change.path);
                 for leaf in &leaves {
                     if let Some(leaf_id) = self.intern.get_id(leaf) {
                         let leaf_peers = self.sync_graph.get_component_paths_public(leaf_id);
                         if !leaf_peers.is_empty() {
-                            if let Some(leaf_value) = self.shadow.get(leaf) {
+                            if let Some(leaf_value) = shadow.get(leaf) {
                                 let value_json = serde_json::to_string(&leaf_value.to_json_value())
                                     .unwrap_or_else(|_| "null".to_owned());
                                 for peer_id in leaf_peers {
@@ -1614,7 +1608,7 @@ impl ProcessingPipeline {
                                         if let Some(peer_path) = self.intern.resolve(peer_id) {
                                             let peer_path = peer_path.to_owned();
                                             Self::emit_sync_change(
-                                                &self.shadow,
+                                                shadow,
                                                 &peer_path,
                                                 &value_json,
                                                 output,
@@ -1662,7 +1656,12 @@ impl ProcessingPipeline {
     /// 2. Parent expansion: change path is shallower — decompose into boolean leaves
     ///
     /// No child expansion for flip (by design).
-    fn process_flip_paths_into(&mut self, changes: &[Change], output: &mut Vec<Change>) {
+    fn process_flip_paths_into(
+        &mut self,
+        shadow: &ShadowState,
+        changes: &[Change],
+        output: &mut Vec<Change>,
+    ) {
         output.clear();
         for change in changes {
             let path_id = self.intern.intern(&change.path);
@@ -1686,7 +1685,7 @@ impl ProcessingPipeline {
                             }
                             if let Some(peer_path) = self.intern.resolve(peer_id) {
                                 let peer_path = peer_path.to_owned();
-                                Self::emit_flip_change(&self.shadow, &peer_path, inverted, output);
+                                Self::emit_flip_change(shadow, &peer_path, inverted, output);
                             }
                         }
                     }
@@ -1701,7 +1700,7 @@ impl ProcessingPipeline {
                 continue;
             }
 
-            let leaves = self.shadow.affected_paths(&change.path);
+            let leaves = shadow.affected_paths(&change.path);
 
             // Collect all leaf paths from this parent change that are in the flip graph.
             // Used to detect when both sides of a flip pair are under the same parent —
@@ -1727,7 +1726,7 @@ impl ProcessingPipeline {
                     }
 
                     // Only flip booleans
-                    let leaf_value = self.shadow.get(leaf);
+                    let leaf_value = shadow.get(leaf);
                     let inverted = match leaf_value {
                         Some(crate::shadow::ValueRepr::Bool(true)) => "false",
                         Some(crate::shadow::ValueRepr::Bool(false)) => "true",
@@ -1751,7 +1750,7 @@ impl ProcessingPipeline {
                         }
                         if let Some(peer_path) = self.intern.resolve(*peer_id) {
                             let peer_path = peer_path.to_owned();
-                            Self::emit_flip_change(&self.shadow, &peer_path, inverted, output);
+                            Self::emit_flip_change(shadow, &peer_path, inverted, output);
                         }
                     }
                 }
@@ -1826,7 +1825,7 @@ impl ProcessingPipeline {
     }
 
     /// Collect validator dispatches for all validators affected in the current processing pass.
-    fn collect_validator_dispatches(&self) -> Vec<ValidatorDispatch> {
+    fn collect_validator_dispatches(&self, shadow: &ShadowState) -> Vec<ValidatorDispatch> {
         self.ctx
             .affected_validators
             .iter()
@@ -1836,8 +1835,7 @@ impl ProcessingPipeline {
                     .dependency_paths
                     .iter()
                     .map(|dep_path| {
-                        let value_json = self
-                            .shadow
+                        let value_json = shadow
                             .get(dep_path)
                             .map(|v| {
                                 serde_json::to_string(&v.to_json_value())
@@ -1883,20 +1881,24 @@ impl ProcessingPipeline {
         // Clear per-call scratch space
         self.ctx.clear();
 
+        // Working shadow: clone of self.shadow used for all reads/writes during the pipeline.
+        // self.shadow stays untouched until the atomic commit at the end.
+        let mut working = self.shadow.clone();
+
         // Local buffers for sync/flip (avoid storing on struct — they're pure temporaries)
         let mut sync_buf: Vec<Change> = Vec::new();
         let mut flip_buf: Vec<Change> = Vec::new();
         // Local buffer for concern changes produced by BoolLogic/ValueLogic evaluation
         let mut concern_changes: Vec<Change> = Vec::new();
 
-        // Step 0: Diff pre-pass — filter no-op changes early
-        let input_changes = self.diff_changes(&input_changes);
+        // Step 0: Diff pre-pass — filter no-op changes early (against working, == self.shadow here)
+        let input_changes = crate::diff::diff_changes(&working, &input_changes);
         if input_changes.is_empty() {
             return Ok(false);
         }
 
         // Steps 1-2: Process aggregation writes (distribute target → sources)
-        let changes = process_aggregation_writes(&self.aggregations, input_changes, &self.shadow);
+        let changes = process_aggregation_writes(&self.aggregations, input_changes, &working);
 
         // Step 1.5: Filter out writes to computation targets (silent no-op)
         let changes: Vec<Change> = changes
@@ -1904,28 +1906,28 @@ impl ProcessingPipeline {
             .filter(|c| !self.computations.is_computation_target(&c.path))
             .collect();
 
-        // Step 3: Apply aggregated changes to shadow state and collect affected paths.
-        // Only process genuine changes (diff against shadow before applying).
+        // Step 3: Apply aggregated changes to working shadow and collect affected paths.
+        // Only process genuine changes (diff against working shadow before applying).
         let mut genuine_path_ids: Vec<u32> = Vec::new();
         for change in &changes {
-            let current = self.shadow.get(&change.path);
+            let current = working.get(&change.path);
             let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
             {
                 Ok(v) => v,
                 Err(_) => {
                     // Can't parse → treat as genuine change
-                    self.shadow.set(&change.path, &change.value_json)?;
+                    working.set(&change.path, &change.value_json)?;
                     self.ctx.changes.push(change.clone());
                     genuine_path_ids.push(self.intern.intern(&change.path));
-                    self.mark_affected_logic(&change.path);
+                    self.mark_affected_logic(&working, &change.path);
                     continue;
                 }
             };
             if crate::diff::is_different(&current, &new_value) {
-                self.shadow.set(&change.path, &change.value_json)?;
+                working.set(&change.path, &change.value_json)?;
                 self.ctx.changes.push(change.clone());
                 genuine_path_ids.push(self.intern.intern(&change.path));
-                self.mark_affected_logic(&change.path);
+                self.mark_affected_logic(&working, &change.path);
             }
         }
 
@@ -1933,34 +1935,43 @@ impl ProcessingPipeline {
         // Only original genuine changes (Step 3) feed into clear processing (no self-cascading).
         let clear_changes =
             self.clear_registry
-                .process(&genuine_path_ids, &mut self.intern, &mut self.shadow);
+                .process(&genuine_path_ids, &mut self.intern, &mut working);
         for change in &clear_changes {
-            self.mark_affected_logic(&change.path);
+            self.mark_affected_logic(&working, &change.path);
         }
         self.ctx.changes.extend(clear_changes.clone());
 
-        // Steps 4-5: Process sync paths and update shadow state.
+        // Step 3.6: Early anchor evaluation — evaluate anchors BEFORE sync/flip
+        // so that sync/flip correctly skip paths whose anchors are now disabled.
+        let anchor_states_after_input = if !self.anchor_path_ids.is_empty() {
+            self.update_anchor_states(&working);
+            Some(self.anchor_states.clone())
+        } else {
+            None
+        };
+
+        // Steps 4-5: Process sync paths and update working shadow.
         // Must process ALL aggregated changes (not just genuine ones) because even if
         // a change is a no-op for path A, it might need to sync to path B that differs.
         // Include clear changes so sync sees cleared paths.
         let mut changes_for_sync = changes.clone();
         changes_for_sync.extend(clear_changes.clone());
-        self.process_sync_paths_into(&changes_for_sync, &mut sync_buf);
+        self.process_sync_paths_into(&working, &changes_for_sync, &mut sync_buf);
         for change in &sync_buf {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
+            working.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&working, &change.path);
         }
         self.ctx.changes.extend_from_slice(&sync_buf);
 
-        // Steps 6-7: Process flip paths and update shadow state.
+        // Steps 6-7: Process flip paths and update working shadow.
         // Must process ALL aggregated changes + clear changes + sync outputs.
         let mut changes_for_flip = changes.clone();
         changes_for_flip.extend(clear_changes);
         changes_for_flip.extend_from_slice(&sync_buf);
-        self.process_flip_paths_into(&changes_for_flip, &mut flip_buf);
+        self.process_flip_paths_into(&working, &changes_for_flip, &mut flip_buf);
         for change in &flip_buf {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
+            working.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&working, &change.path);
         }
         self.ctx.changes.extend_from_slice(&flip_buf);
 
@@ -1969,7 +1980,7 @@ impl ProcessingPipeline {
         let all_changed_paths: Vec<String> =
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let aggregation_reads =
-            process_aggregation_reads(&self.aggregations, &self.shadow, &all_changed_paths);
+            process_aggregation_reads(&self.aggregations, &working, &all_changed_paths);
         for change in &aggregation_reads {
             // Skip if target path's anchor is disabled
             let target_id = self.intern.intern(&change.path);
@@ -1978,8 +1989,8 @@ impl ProcessingPipeline {
                     continue;
                 }
             }
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
+            working.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&working, &change.path);
             self.ctx.changes.push(change.clone());
         }
 
@@ -1988,7 +1999,7 @@ impl ProcessingPipeline {
         let all_changed_paths: Vec<String> =
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let computation_reads =
-            process_computation_reads(&self.computations, &self.shadow, &all_changed_paths);
+            process_computation_reads(&self.computations, &working, &all_changed_paths);
         for change in &computation_reads {
             // Skip if target path's anchor is disabled
             let target_id = self.intern.intern(&change.path);
@@ -1997,17 +2008,17 @@ impl ProcessingPipeline {
                     continue;
                 }
             }
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
+            working.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&working, &change.path);
             self.ctx.changes.push(change.clone());
         }
 
-        // Step 7.7: Update anchor states after shadow is fully current.
-        // Must run after all shadow writes (sync, flip, aggregation, computation).
-        // Detect disabled→enabled transitions and re-evaluate affected logic.
+        // Step 7.7: Re-evaluate anchor states for transitions (sync/flip/agg/comp may
+        // create or remove anchor paths). Compare against Step 3.6 snapshot to detect
+        // disabled→enabled transitions and mark affected logic for re-evaluation.
         if !self.anchor_path_ids.is_empty() {
-            let old_states = self.anchor_states.clone();
-            self.update_anchor_states();
+            let old_states = anchor_states_after_input.unwrap_or_default();
+            self.update_anchor_states(&working);
 
             // Find anchors that transitioned disabled→enabled
             for (&anchor_id, &is_now_present) in &self.anchor_states {
@@ -2024,14 +2035,14 @@ impl ProcessingPipeline {
             }
         }
 
-        // Steps 8-9: Evaluate affected BoolLogic expressions
+        // Steps 8-9: Evaluate affected BoolLogic expressions (against working shadow)
         for logic_id in &self.ctx.affected_bool_logic {
             if let Some(meta) = self.registry.get(*logic_id) {
                 // Skip if anchor path is missing from shadow state
                 if !self.is_anchor_enabled(meta.anchor_path_id) {
                     continue;
                 }
-                let result = meta.tree.evaluate(&self.shadow);
+                let result = meta.tree.evaluate(&working);
                 concern_changes.push(Change {
                     path: meta.output_path.clone(),
                     value_json: if result {
@@ -2046,14 +2057,14 @@ impl ProcessingPipeline {
             }
         }
 
-        // Step 8b: Evaluate affected ValueLogic expressions
+        // Step 8b: Evaluate affected ValueLogic expressions (against working shadow)
         for vl_id in &self.ctx.affected_value_logics {
             if let Some(meta) = self.value_logic_registry.get(*vl_id) {
                 // Skip if anchor path is missing from shadow state
                 if !self.is_anchor_enabled(meta.anchor_path_id) {
                     continue;
                 }
-                let result = meta.tree.evaluate(&self.shadow);
+                let result = meta.tree.evaluate(&working);
                 concern_changes.push(Change {
                     path: meta.output_path.clone(),
                     value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
@@ -2065,7 +2076,7 @@ impl ProcessingPipeline {
         }
 
         // Step 10: Collect affected validators with their dependency values
-        let validators_to_run = self.collect_validator_dispatches();
+        let validators_to_run = self.collect_validator_dispatches(&working);
 
         // Step 11: Create full execution plan if listeners are registered
         let execution_plan = self.build_execution_plan();
@@ -2088,6 +2099,10 @@ impl ProcessingPipeline {
 
         self.ctx.validators_to_run = validators_to_run;
         self.ctx.execution_plan = execution_plan;
+
+        // Atomic commit: replace self.shadow with the fully-processed working copy.
+        // self.shadow was untouched during the entire pipeline — one update, like valtio's batchApply.
+        self.shadow = working;
 
         Ok(true)
     }
@@ -2129,8 +2144,8 @@ impl ProcessingPipeline {
     }
 
     /// Mark all BoolLogic expressions, ValueLogic expressions, and validators affected by a change at the given path.
-    fn mark_affected_logic(&mut self, path: &str) {
-        let affected_paths = self.shadow.affected_paths(path);
+    fn mark_affected_logic(&mut self, shadow: &ShadowState, path: &str) {
+        let affected_paths = shadow.affected_paths(path);
         for affected_path in &affected_paths {
             let path_id = self.intern.intern(affected_path);
             // Mark affected BoolLogic

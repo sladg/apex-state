@@ -132,11 +132,14 @@ pub fn pipeline_destroy(pipeline_id: u32) {
     });
 }
 
-/// Initialize shadow state directly from a JS object (no JSON serialization).
+/// Initialize shadow state from a JSON string (produced by fastStringify on the JS side).
+///
+/// Uses the JSON string path so that `undefined` values encoded as the
+/// `__APEX_UNDEFINED__` sentinel survive the boundary crossing consistently
+/// (serde-wasm-bindgen would convert JS `undefined` to `null` instead).
 #[wasm_bindgen]
-pub fn shadow_init(pipeline_id: u32, state: JsValue) -> Result<(), JsValue> {
-    let value: serde_json::Value = from_js(state)?;
-    with_pipeline(pipeline_id, |p| p.shadow_init_value(value))
+pub fn shadow_init(pipeline_id: u32, state_json: &str) -> Result<(), JsValue> {
+    with_pipeline(pipeline_id, |p| p.shadow_init(state_json))
 }
 
 /// Register a BoolLogic expression. Returns logic_id for cleanup.

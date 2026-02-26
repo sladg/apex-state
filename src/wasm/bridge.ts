@@ -81,9 +81,9 @@ export const createWasmPipeline = (options?: { debug?: boolean }) => {
     },
 
     shadowInit: (state: object) => {
-      wasm.shadow_init(id, state)
+      wasm.shadow_init(id, fastStringify(state))
     },
-    shadowDump: () => JSON.parse(wasm.shadow_dump(id)) as unknown,
+    shadowDump: () => fastParse(wasm.shadow_dump(id)),
     processChanges: (changes: Change[]) => {
       const result = wasm.process_changes(
         id,

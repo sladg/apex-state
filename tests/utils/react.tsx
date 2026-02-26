@@ -11,6 +11,7 @@ import React, { type ReactElement } from 'react'
 
 import { act, fireEvent as tlFireEvent, render } from '@testing-library/react'
 import { proxy, ref, useSnapshot } from 'valtio'
+import { expect } from 'vitest'
 
 import type { ConcernType } from '~/concerns'
 import { defaultConcerns } from '~/concerns'
@@ -334,6 +335,49 @@ export const flushSync = async () => {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+// ---------------------------------------------------------------------------
+// Shadow state parity assertion
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively snapshot a valtio proxy to a plain object.
+ * Skips getter properties (which are not part of reactive state data).
+ */
+const snapshotToPlain = (obj: unknown): unknown => {
+  if (obj === null || obj === undefined || typeof obj !== 'object') return obj
+  if (Array.isArray(obj)) return obj.map(snapshotToPlain)
+  const result: Record<string, unknown> = {}
+  for (const key of Object.keys(obj as Record<string, unknown>)) {
+    const desc = Object.getOwnPropertyDescriptor(obj, key)
+    if (desc && desc.get && !desc.set) continue // skip read-only getters
+    result[key] = snapshotToPlain((obj as Record<string, unknown>)[key])
+  }
+  return result
+}
+
+/**
+ * Assert that valtio proxy state matches WASM shadow state.
+ *
+ * - Valtio: recursively walk proxy, skip getters
+ * - Shadow: `pipeline.shadowDump()` uses `fastParse` which converts
+ *   `__APEX_UNDEFINED__` sentinels back to `undefined` via `createFastJson`
+ *
+ * Both sides use `undefined` consistently because `shadowInit` encodes via
+ * `fastStringify` (undefined → sentinel) and `shadowDump` decodes via
+ * `fastParse` (sentinel → undefined).
+ */
+export const expectShadowMatch = <T extends object>(
+  storeInstance: StoreInstance<T>,
+) => {
+  const pipeline = storeInstance._internal.pipeline
+  if (!pipeline) throw new Error('No pipeline on store instance')
+
+  const valtioSnapshot = snapshotToPlain(storeInstance.state)
+  const shadowSnapshot = pipeline.shadowDump()
+
+  expect(shadowSnapshot).toEqual(valtioSnapshot)
 }
 
 // ---------------------------------------------------------------------------

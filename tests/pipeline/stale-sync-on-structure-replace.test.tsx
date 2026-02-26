@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest'
 import { registerSideEffects } from '~/sideEffects/registration.wasm-impl'
 import type { ArrayOfChanges, GenericMeta } from '~/types'
 
-import { createTestStore } from '../utils/react'
+import { createTestStore, expectShadowMatch } from '../utils/react'
 
 // ---------------------------------------------------------------------------
 // Tests — WASM only (fix is in Rust pipeline)
@@ -73,6 +73,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
       (storeInstance.state.nested as Record<string, unknown>)['deep'],
     ).toBeUndefined()
 
+    expectShadowMatch(storeInstance)
     oldCleanup()
   })
 
@@ -113,6 +114,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
     // Sync IS expected here: parent 'data' exists, sync pair is still registered
     expect((storeInstance.state.data as Record<string, unknown>)['b']).toBe(77)
 
+    expectShadowMatch(storeInstance)
     oldCleanup()
   })
 
@@ -153,6 +155,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
     expect(data['a']).toBe(77)
     expect(data['b']).toBe(77)
 
+    expectShadowMatch(storeInstance)
     oldCleanup()
   })
 
@@ -195,6 +198,7 @@ describe('[WASM] Stale sync pairs on structure replacement', () => {
       (storeInstance.state.form as Record<string, unknown>)['fields'],
     ).toBeUndefined()
 
+    expectShadowMatch(storeInstance)
     oldCleanup()
   })
 })

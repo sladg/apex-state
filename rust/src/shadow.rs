@@ -69,6 +69,7 @@ impl ValueRepr {
 ///
 /// Supports deep path traversal, partial updates, subtree replacement,
 /// and affected path calculation.
+#[derive(Clone)]
 pub(crate) struct ShadowState {
     root: ValueRepr,
 }
@@ -81,17 +82,10 @@ impl ShadowState {
     }
 
     /// Initialize shadow state from a JSON string.
-    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn init(&mut self, state_json: &str) -> Result<(), String> {
         let json: serde_json::Value =
             serde_json::from_str(state_json).map_err(|e| format!("JSON parse error: {}", e))?;
         self.root = ValueRepr::from(json);
-        Ok(())
-    }
-
-    /// Initialize shadow state from a pre-parsed serde_json::Value (no string intermediary).
-    pub(crate) fn init_value(&mut self, value: serde_json::Value) -> Result<(), String> {
-        self.root = ValueRepr::from(value);
         Ok(())
     }
 

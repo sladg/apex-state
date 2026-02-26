@@ -24,7 +24,12 @@ import {
   listenerTestFixtures,
   syncFlipFixtures,
 } from '../mocks'
-import { flushEffects, MODES, mountStore } from '../utils/react'
+import {
+  expectShadowMatch,
+  flushEffects,
+  MODES,
+  mountStore,
+} from '../utils/react'
 
 describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
   describe('Basic sync behavior', () => {
@@ -50,6 +55,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBe('new-value')
+      expectShadowMatch(storeInstance)
     })
 
     it('should work when source already has value', async () => {
@@ -74,6 +80,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBe('updated-value')
+      expectShadowMatch(storeInstance)
     })
 
     it('should update target to empty string if source cleared', async () => {
@@ -127,6 +134,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.age).toBe(0)
+      expectShadowMatch(storeInstance)
     })
 
     it('should handle boolean sync values', async () => {
@@ -157,6 +165,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.flag2).toBe(false)
+      expectShadowMatch(storeInstance)
     })
   })
 
@@ -196,6 +205,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
 
       expect(storeInstance.state.target2).toBe('new-source2')
       expect(storeInstance.state.target).toBe('new-source')
+      expectShadowMatch(storeInstance)
     })
 
     it('should sync multiple targets from one source', async () => {
@@ -258,6 +268,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
 
       expect(storeInstance.state.fieldB).toBe('chain-value')
       expect(storeInstance.state.source).toBe('chain-value')
+      expectShadowMatch(storeInstance)
     })
   })
 
@@ -292,6 +303,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
 
       expect(storeInstance.state.fieldB).toBe('circular-value')
       expect(storeInstance.state.fieldA).toBe('circular-value')
+      expectShadowMatch(storeInstance)
     })
 
     it('should break circular chains at some point', async () => {
@@ -326,6 +338,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       expect(storeInstance.state.fieldA).toBe('loop-value')
       expect(storeInstance.state.fieldB).toBe('loop-value')
       expect(storeInstance.state.source).toBe('loop-value')
+      expectShadowMatch(storeInstance)
     })
 
     it('should handle self-reference gracefully', async () => {
@@ -610,6 +623,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.level1.level2.level3.value).toBe('synced-deep')
+      expectShadowMatch(storeInstance)
     })
 
     it('should sync deeply nested leaf between two deep paths', async () => {
@@ -636,6 +650,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       expect(storeInstance.state.level1.level2.level3.level4.value).toBe(
         'deep-sync',
       )
+      expectShadowMatch(storeInstance)
     })
 
     it('should sync across different nesting depths', async () => {
@@ -659,6 +674,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       expect(storeInstance.state.level1.level2.level3.level4.level5.value).toBe(
         'shallow-to-deep',
       )
+      expectShadowMatch(storeInstance)
     })
 
     it('should sync from deep to shallow path', async () => {
@@ -680,6 +696,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.level1.value).toBe('deep-to-shallow')
+      expectShadowMatch(storeInstance)
     })
   })
 
@@ -759,6 +776,7 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       expect(storeInstance.state.level1.level2.value).toBe('cascade')
       // Chained sync target (level2.value syncs to level3.value)
       expect(storeInstance.state.level1.level2.level3.value).toBe('cascade')
+      expectShadowMatch(storeInstance)
     })
 
     it('should handle bidirectional sync on nested paths', async () => {
