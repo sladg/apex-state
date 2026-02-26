@@ -38,6 +38,7 @@ export interface ApexLogger {
     type: 'register' | 'unregister',
     id: string,
     snapshot: Wasm.GraphSnapshot,
+    trace?: Wasm.PipelineTrace,
   ) => void
   destroy: () => void
 }
@@ -188,9 +189,15 @@ export const createLogger = (config: DebugConfig): ApexLogger => {
       console.groupEnd()
     },
 
-    logRegistration: (type, id, snapshot) => {
+    logRegistration: (type, id, snapshot, trace) => {
       const action = type === 'register' ? 'add' : 'remove'
-      console.log(`${PREFIX}:registration | ${action} ${id}`, snapshot)
+      const summary: Record<string, unknown> = { snapshot }
+
+      if (trace) addTraceSummary(summary, trace)
+
+      console.groupCollapsed(`${PREFIX}:registration | ${action} ${id}`)
+      console.log(summary)
+      console.groupEnd()
     },
 
     destroy: noop,

@@ -8,9 +8,27 @@
 import type { MultiPathListener, StoreInstance } from '../core/types'
 import { applyBatch } from '../pipeline/apply-batch'
 import type { GenericMeta } from '../types'
+import type { Change } from '../types/changes'
 import { changes } from '../types/changes'
 import { pairs } from '../types/pairs'
 import type { SideEffects } from '../types/side-effects'
+import type { Wasm } from '../wasm/bridge'
+
+/** Build a StageTrace from a stage name and change array. Returns null if empty. */
+const stageFromChanges = (
+  stage: Wasm.StageTrace['stage'],
+  ch: Change[],
+): Wasm.StageTrace | null => {
+  if (ch.length === 0) return null
+  return {
+    stage,
+    duration_us: 0,
+    accepted: [],
+    produced: ch.map((c) => c.path),
+    skipped: [],
+    followup: [],
+  }
+}
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -103,9 +121,18 @@ export const registerSideEffects = <
   }
   const result = pipeline.registerSideEffects(registration)
 
-  // Log registration with graph snapshot (no-op when log is disabled)
+  // Log registration with graph snapshot and initial stage trace (no-op when log is disabled)
   const snapshot = pipeline.getGraphSnapshot()
-  store._internal.logger.logRegistration('register', id, snapshot)
+  const traceStages = [
+    stageFromChanges('sync', result.sync_changes),
+    stageFromChanges('aggregation_read', result.aggregation_changes),
+    stageFromChanges('computation', result.computation_changes),
+  ].filter((s): s is Wasm.StageTrace => s !== null)
+  const trace: Wasm.PipelineTrace | undefined =
+    traceStages.length > 0
+      ? { total_duration_us: 0, stages: traceStages }
+      : undefined
+  store._internal.logger.logRegistration('register', id, snapshot, trace)
   store._internal.devtools?.notifyRegistration('register', id, snapshot)
 
   // Apply sync changes directly to valtio state.

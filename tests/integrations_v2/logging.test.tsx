@@ -894,7 +894,7 @@ describe('createLogger — console output', () => {
 
   describe('logRegistration', () => {
     it('should log registration with "add" prefix', () => {
-      // Register event uses "add" action
+      // Register event uses "add" action, wrapped in groupCollapsed
       const logger = createLogger({ log: true })
       const snapshot = {
         sync_pairs: [['user.name', 'profile.name'] as [string, string]],
@@ -907,14 +907,17 @@ describe('createLogger — console output', () => {
       }
       logger.logRegistration('register', 'concern-123', snapshot)
 
-      expect(spyLog).toHaveBeenCalledTimes(1)
-      const label = spyLog.mock.calls[0]![0] as string
+      expect(spyGroupCollapsed).toHaveBeenCalledTimes(1)
+      const label = spyGroupCollapsed.mock.calls[0]![0] as string
       expect(label).toBe('apex-state:registration | add concern-123')
-      expect(spyLog.mock.calls[0]![1]).toBe(snapshot)
+      expect(spyLog).toHaveBeenCalledTimes(1)
+      const summary = spyLog.mock.calls[0]![0] as Record<string, unknown>
+      expect(summary).toHaveProperty('snapshot', snapshot)
+      expect(spyGroupEnd).toHaveBeenCalledTimes(1)
     })
 
     it('should log unregistration with "remove" prefix', () => {
-      // Unregister event uses "remove" action
+      // Unregister event uses "remove" action, wrapped in groupCollapsed
       const logger = createLogger({ log: true })
       logger.logRegistration('unregister', 'concern-456', {
         sync_pairs: [],
@@ -926,7 +929,8 @@ describe('createLogger — console output', () => {
         computations: [],
       })
 
-      const label = spyLog.mock.calls[0]![0] as string
+      expect(spyGroupCollapsed).toHaveBeenCalledTimes(1)
+      const label = spyGroupCollapsed.mock.calls[0]![0] as string
       expect(label).toBe('apex-state:registration | remove concern-456')
     })
   })
@@ -964,12 +968,21 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline?.destroy()
   })
 
+  /** Helper: processChanges + pipelineFinalize, returning trace from finalize. */
+  const processAndFinalize = (
+    p: WasmPipeline,
+    changes: { path: string; value: unknown }[],
+  ) => {
+    p.processChanges(changes)
+    return p.pipelineFinalize([])
+  }
+
   it('should return populated trace when debug is enabled', () => {
     // Create pipeline with debug: true, process a change, verify trace is not null
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ user: { name: 'Alice', age: 25 } })
 
-    const result = pipeline.processChanges([
+    const result = processAndFinalize(pipeline, [
       { path: 'user.name', value: 'Bob' },
     ])
 
@@ -982,7 +995,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline = createWasmPipeline()
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
-    const result = pipeline.processChanges([
+    const result = processAndFinalize(pipeline, [
       { path: 'user.name', value: 'Bob' },
     ])
 
@@ -994,10 +1007,10 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
-    const result = pipeline.processChanges([
+    const result = processAndFinalize(pipeline, [
       { path: 'user.name', value: 'Bob' },
     ])
-    const stageNames = result.trace!.stages.map((s) => s.stage)
+    const stageNames = result.trace!.stages.map((s: Wasm.StageTrace) => s.stage)
 
     // At minimum these stages should be present for any change
     expect(stageNames).toContain('input')
@@ -1010,10 +1023,12 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
-    const result = pipeline.processChanges([
+    const result = processAndFinalize(pipeline, [
       { path: 'user.name', value: 'Bob' },
     ])
-    const inputStage = result.trace!.stages.find((s) => s.stage === 'input')
+    const inputStage = result.trace!.stages.find(
+      (s: Wasm.StageTrace) => s.stage === 'input',
+    )
 
     expect(inputStage).toBeDefined()
     expect(inputStage!.accepted).toContain('user.name')
@@ -1024,7 +1039,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
-    pipeline.processChanges([{ path: 'user.name', value: 'Alice' }])
+    processAndFinalize(pipeline, [{ path: 'user.name', value: 'Alice' }])
 
     // Pipeline returns early on no-op, but if trace exists, input should show skip
     // When all changes are redundant, processChanges returns early with no trace
@@ -1034,13 +1049,15 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ user: { name: 'Alice', age: 25 } })
 
-    const result2 = pipeline.processChanges([
+    const result2 = processAndFinalize(pipeline, [
       { path: 'user.name', value: 'Alice' }, // redundant
       { path: 'user.age', value: 30 }, // real change
     ])
 
     expect(result2.trace).not.toBeNull()
-    const inputStage = result2.trace!.stages.find((s) => s.stage === 'input')
+    const inputStage = result2.trace!.stages.find(
+      (s: Wasm.StageTrace) => s.stage === 'input',
+    )
     expect(inputStage).toBeDefined()
     // user.age accepted, user.name skipped (redundant)
     expect(inputStage!.accepted).toContain('user.age')
@@ -1057,10 +1074,14 @@ describe('E2E: WASM pipeline trace → logger display', () => {
       sync_pairs: [['source', 'target']],
     })
 
-    const result = pipeline.processChanges([{ path: 'source', value: 'world' }])
+    const result = processAndFinalize(pipeline, [
+      { path: 'source', value: 'world' },
+    ])
 
     expect(result.trace).not.toBeNull()
-    const syncStage = result.trace!.stages.find((s) => s.stage === 'sync')
+    const syncStage = result.trace!.stages.find(
+      (s: Wasm.StageTrace) => s.stage === 'sync',
+    )
     expect(syncStage).toBeDefined()
     expect(syncStage!.produced).toContain('target')
   })
@@ -1075,7 +1096,9 @@ describe('E2E: WASM pipeline trace → logger display', () => {
       sync_pairs: [['source', 'target']],
     })
 
-    const result = pipeline.processChanges([{ path: 'source', value: 'world' }])
+    const result = processAndFinalize(pipeline, [
+      { path: 'source', value: 'world' },
+    ])
 
     // Build the console summary as the logger would
     const logData: PipelineLogData = {
@@ -1106,7 +1129,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ x: 1, y: 2 })
 
-    const result = pipeline.processChanges([{ path: 'x', value: 10 }])
+    const result = processAndFinalize(pipeline, [{ path: 'x', value: 10 }])
 
     const spyGC = vi.spyOn(console, 'groupCollapsed').mockImplementation(noop)
     const spyL = vi.spyOn(console, 'log').mockImplementation(noop)

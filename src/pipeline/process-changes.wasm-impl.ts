@@ -438,7 +438,7 @@ export const processChangesWasm = <
   const t0 = performance.now()
 
   // 1. WASM Phase 1: aggregation → sync → flip → BoolLogic
-  const { state_changes, execution_plan, validators_to_run, has_work, trace } =
+  const { state_changes, execution_plan, validators_to_run, has_work } =
     pipeline.processChanges(bridgeChanges)
 
   // Early exit if WASM signals no work to do
@@ -478,11 +478,26 @@ export const processChangesWasm = <
   // 5. WASM Phase 2: merge, diff, update shadow
   // Single flat array: listener output + validator output (with _concerns. prefix)
   const jsChanges = produced.concat(validationResults)
-  const final = pipeline.pipelineFinalize(jsChanges)
+  const { state_changes: finalChanges, trace } =
+    pipeline.pipelineFinalize(jsChanges)
+
+  // Append listener stages to WASM trace (WASM only sees prepare+finalize, not JS listener execution)
+  if (trace && listenerLog.length > 0) {
+    for (const entry of listenerLog) {
+      trace.stages.push({
+        stage: 'listeners',
+        duration_us: entry.durationMs * 1000,
+        accepted: entry.input.map(([p]) => p as string),
+        produced: entry.output.map((c) => c.path),
+        skipped: [],
+        followup: [],
+      })
+    }
+  }
 
   // 6. Apply NEW changes from listeners/validators to valtio
   // Phase 1 changes were already applied above, so filter them out
-  const late = partitionChanges(final.state_changes)
+  const late = partitionChanges(finalChanges)
 
   // Apply only NEW changes (listener/validator output)
   if (late.stateChanges.length > 0) {

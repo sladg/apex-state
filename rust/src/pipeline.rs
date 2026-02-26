@@ -62,9 +62,6 @@ pub struct PrepareResult {
     /// Whether there's work to do (validators, listeners, or concern changes to apply).
     /// If false, JS can return early without calling pipeline_finalize.
     pub has_work: bool,
-    /// Trace data for debug logging. Only Some when debug_enabled is true on the pipeline.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trace: Option<PipelineTrace>,
 }
 
 /// Snapshot of all registered graphs and registries (debug only).
@@ -121,6 +118,9 @@ pub struct ComputationInfo {
 pub struct FinalizeResult {
     /// All changes including state and concerns (concern paths have _concerns. prefix).
     pub state_changes: Vec<Change>,
+    /// Trace data for debug logging. Only Some when debug_enabled is true on the pipeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<PipelineTrace>,
 }
 
 // ---------------------------------------------------------------------------
@@ -2383,7 +2383,6 @@ impl ProcessingPipeline {
                 validators_to_run: Vec::new(),
                 execution_plan: None,
                 has_work: false,
-                trace: None,
             });
         }
 
@@ -2409,11 +2408,6 @@ impl ProcessingPipeline {
             validators_to_run: std::mem::take(&mut self.ctx.validators_to_run),
             execution_plan: self.ctx.execution_plan.take(),
             has_work,
-            trace: if self.debug_enabled {
-                Some(std::mem::take(&mut self.ctx.trace))
-            } else {
-                None
-            },
         })
     }
 
@@ -2507,6 +2501,11 @@ impl ProcessingPipeline {
 
         Ok(FinalizeResult {
             state_changes: all_changes,
+            trace: if self.debug_enabled {
+                Some(std::mem::take(&mut self.ctx.trace))
+            } else {
+                None
+            },
         })
     }
 }

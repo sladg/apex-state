@@ -97,7 +97,6 @@ export const createWasmPipeline = (options?: { debug?: boolean }) => {
         validators_to_run: result.validators_to_run,
         execution_plan: result.execution_plan,
         has_work: result.has_work,
-        trace: result.trace,
       }
     },
 
@@ -109,6 +108,7 @@ export const createWasmPipeline = (options?: { debug?: boolean }) => {
 
       return {
         state_changes: wasmChangesToJs(result.state_changes),
+        trace: result.trace ?? null,
       }
     },
 
