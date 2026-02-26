@@ -1,4 +1,4 @@
-use crate::pipeline::UNDEFINED_SENTINEL;
+use crate::change::UNDEFINED_SENTINEL;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

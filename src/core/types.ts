@@ -8,6 +8,7 @@
 import type { ReactNode } from 'react'
 
 import type { ConcernType } from '../concerns/types'
+import type { DevToolsNotifier } from '../store/devtools'
 import type {
   ArrayOfChanges,
   DeepKey,
@@ -15,27 +16,21 @@ import type {
   DefaultDepth,
   GenericMeta,
 } from '../types'
-import type { DevToolsRef, PipelineObserver } from '../utils/debug-log'
-import type { Timing } from '../utils/timing'
+import type { ApexLogger } from '../utils/log'
 import type { WasmPipeline } from '../wasm/bridge'
-import type { FlipGraph, SyncGraph } from './graph-types'
 
 /**
  * Debug configuration for development tooling
  */
 export interface DebugConfig {
-  /** Enable timing measurement for concerns and listeners */
+  /** Enable console logging for pipeline runs and registrations */
+  log?: boolean
+  /** Enable timing warnings for slow listeners */
   timing?: boolean
-  /** Threshold in milliseconds for slow operation warnings (default: 5ms) */
+  /** Threshold in milliseconds for slow listener warnings (default: 5ms) */
   timingThreshold?: number
   /** Enable tracking of processChanges calls and applied changes for testing/debugging */
   track?: boolean
-  /** Log pipeline phases, state changes, sync/flip expansions */
-  logPipeline?: boolean
-  /** Log listener dispatch inputs and outputs */
-  logListeners?: boolean
-  /** Log concern evaluations and validator runs */
-  logConcerns?: boolean
   /** Connect to Redux DevTools Extension for state inspection */
   devtools?: boolean
 }
@@ -74,8 +69,6 @@ export interface StoreConfig {
   maxIterations?: number
   /** Debug configuration for development tooling */
   debug?: DebugConfig
-  /** Use legacy TypeScript implementation instead of WASM (default: false) */
-  useLegacyImplementation?: boolean
 }
 
 export interface ProviderProps<DATA extends object> {
@@ -180,65 +173,36 @@ export interface ListenerRegistration<
 
 export interface ListenerHandlerRef {
   scope: string | null
-  fn: (...args: unknown[]) => unknown
+  fn: (...args: any[]) => unknown
   name: string
-}
-
-export interface SideEffectGraphs<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
-> {
-  sync: SyncGraph
-  flip: FlipGraph
-  listeners: Map<string, ListenerRegistration<DATA, META>[]>
-  sortedListenerPaths: string[]
-  /** O(1) lookup: subscriber_id -> handler ref. Populated by registerListener. */
-  listenerHandlers: Map<number, ListenerHandlerRef>
 }
 
 export interface Registrations {
   concerns: Map<string, ConcernType[]>
   effectCleanups: Set<() => void>
   sideEffectCleanups: Map<string, () => void>
-  aggregations: Map<string, Aggregation[]>
-}
-
-export interface ProcessingState<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
-> {
-  queue: ArrayOfChanges<DATA, META>
+  /** O(1) lookup: subscriber_id -> handler ref. Populated by registerListener. */
+  listenerHandlers: Map<number, ListenerHandlerRef>
 }
 
 /** Internal store state (NOT tracked - wrapped in ref()) */
-export interface InternalState<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
-> {
-  graphs: SideEffectGraphs<DATA, META>
+export interface InternalState {
   registrations: Registrations
-  processing: ProcessingState<DATA, META>
-  timing: Timing
-  observer: PipelineObserver
   config: DeepRequired<StoreConfig>
-  /** Redux DevTools state — prefix for naming + shared connection instance. */
-  _devtools: DevToolsRef
-  /** Per-store WASM pipeline instance (null when using legacy implementation). */
+  logger: ApexLogger
+  /** DevTools — pipeline notifier + proxy inspection. Null when devtools disabled. */
+  devtools: DevToolsNotifier | null
+  /** Per-store WASM pipeline instance (null after destroy). */
   pipeline: WasmPipeline | null
-  /** Pending deferred destroy timer — cancelled on StrictMode re-mount. */
-  _destroyTimer?: ReturnType<typeof setTimeout> | undefined
 }
 
 export type ConcernValues = Record<string, Record<string, unknown>>
 
 /** Two-proxy pattern: state and _concerns are independent to prevent infinite loops */
-export interface StoreInstance<
-  DATA extends object,
-  META extends GenericMeta = GenericMeta,
-> {
+export interface StoreInstance<DATA extends object> {
   state: DATA
   _concerns: ConcernValues
-  _internal: InternalState<DATA, META>
+  _internal: InternalState
   /** Debug tracking data, only populated when debug.track is enabled */
   _debug: DebugTrack | null
 }

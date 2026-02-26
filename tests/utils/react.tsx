@@ -75,7 +75,7 @@ interface MountStoreResult<
   T extends object,
   META extends GenericMeta = GenericMeta,
 > {
-  storeInstance: StoreInstance<T, META>
+  storeInstance: StoreInstance<T>
   setValue: <P extends DeepKey<T>>(
     path: P,
     value: DeepValue<T, P>,
@@ -169,11 +169,11 @@ export function mountStore<
     options = (initialStateOrOptions ?? {}) as MountStoreOptions<T, META>
   }
 
-  let storeInstance: StoreInstance<T, META> | null = null
+  let storeInstance: StoreInstance<T> | null = null
 
   // Wrapper to capture store instance and register concerns/side-effects
   const WrapperComponent = ({ children }: { children: React.ReactNode }) => {
-    storeInstance = useStoreContext<T, META>()
+    storeInstance = useStoreContext<T>()
 
     if (options.concerns) {
       store.useConcerns(options.concernsId ?? 'test', options.concerns)
@@ -375,9 +375,9 @@ export const createTestStore = <
   initialState: T,
   options?: CreateTestStoreOptions<T, META>,
 ): {
-  storeInstance: StoreInstance<T, META>
+  storeInstance: StoreInstance<T>
   processChanges: (
-    store: StoreInstance<T, META>,
+    store: StoreInstance<T>,
     changes: ArrayOfChanges<T, META>,
   ) => void
 } => {
@@ -387,10 +387,7 @@ export const createTestStore = <
   ) as DeepRequired<StoreConfig>
 
   // Initialize WASM pipeline
-  const internal = createInternalState<T, META>(resolvedConfig, {
-    prefix: 'test:store-0',
-    pipeline: null,
-  })
+  const internal = createInternalState(resolvedConfig)
   if (!isWasmLoaded()) {
     throw new Error(
       '[createTestStore] WASM is not loaded. ' +
@@ -401,7 +398,7 @@ export const createTestStore = <
   pipeline.shadowInit(initialState as Record<string, unknown>)
   internal.pipeline = pipeline
 
-  const storeInstance: StoreInstance<T, META> = {
+  const storeInstance: StoreInstance<T> = {
     state: proxy(initialState),
     _concerns: proxy({} as Record<string, Record<string, unknown>>),
     _internal: ref(internal),
@@ -429,7 +426,7 @@ export const createTestStore = <
   return {
     storeInstance,
     processChanges: processChanges as (
-      store: StoreInstance<T, META>,
+      store: StoreInstance<T>,
       changes: ArrayOfChanges<T, META>,
     ) => void,
   }

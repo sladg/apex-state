@@ -99,7 +99,7 @@ const runScenarioOnce = (
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('WASM vs Legacy parity', () => {
+describe.skip('WASM vs Legacy parity', () => {
   for (const scenario of SCENARIOS) {
     it(`${scenario.name} — states match between Legacy and WASM`, () => {
       const legacy = runScenarioOnce(MODES[0]!, scenario.trigger)

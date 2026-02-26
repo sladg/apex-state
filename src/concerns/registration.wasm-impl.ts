@@ -10,7 +10,7 @@ import { effect } from 'valtio-reactive'
 import type { StoreInstance } from '../core/types'
 import type { ConcernRegistrationMap } from '../types'
 import { dot } from '../utils/dot'
-import type { WasmPipeline } from '../wasm/bridge'
+import type { Wasm, WasmPipeline } from '../wasm/bridge'
 import type { BaseConcernProps, ConcernType } from './types'
 
 /** Check if a concern config has a `boolLogic` field (BoolLogic concern). */
@@ -43,14 +43,9 @@ let nextRegistrationId = 0
 /** Batch-register BoolLogics, validators, and ValueLogics with WASM, apply initial results. */
 const registerWasmBatch = (
   pipeline: WasmPipeline,
-  boolLogics: { output_path: string; tree_json: string }[],
-  validators: {
-    validator_id: number
-    output_path: string
-    dependency_paths: string[]
-    scope: string
-  }[],
-  valueLogics: { output_path: string; tree_json: string }[],
+  boolLogics: Wasm.BoolLogicRegistration[],
+  validators: Wasm.ValidatorRegistration[],
+  valueLogics: Wasm.ValueLogicRegistration[],
   validatorConfigs: Map<
     number,
     {
@@ -66,9 +61,9 @@ const registerWasmBatch = (
   const registrationId = `concerns-${nextRegistrationId++}`
   const result = pipeline.registerConcerns({
     registration_id: registrationId,
-    ...(boolLogics.length > 0 && { bool_logics: boolLogics }),
-    ...(validators.length > 0 && { validators }),
-    ...(valueLogics.length > 0 && { value_logics: valueLogics }),
+    bool_logics: boolLogics,
+    validators,
+    value_logics: valueLogics,
   })
 
   // Apply initial BoolLogic evaluations to _concerns
@@ -175,14 +170,9 @@ const isAdHocConcern = (
 
 /** Collected registration data from single-pass classification. */
 interface CollectedRegistrations {
-  boolLogics: { output_path: string; tree_json: string }[]
-  validators: {
-    validator_id: number
-    output_path: string
-    dependency_paths: string[]
-    scope: string
-  }[]
-  valueLogics: { output_path: string; tree_json: string }[]
+  boolLogics: Wasm.BoolLogicRegistration[]
+  validators: Wasm.ValidatorRegistration[]
+  valueLogics: Wasm.ValueLogicRegistration[]
   validatorConfigs: Map<
     number,
     {
@@ -221,7 +211,6 @@ const collectValidator = <DATA extends object>(
     validator_id: validatorId,
     output_path: `_concerns.${path}.${concernName}`,
     dependency_paths: depPaths,
-    scope: '',
   })
 
   // Store schema and initial value info for post-registration processing
@@ -355,7 +344,7 @@ const cleanupConcerns = <DATA extends object>(
   }
 }
 
-const registerConcernEffectsImpl = <DATA extends object>(
+export const registerConcernEffects = <DATA extends object>(
   store: StoreInstance<DATA>,
   registration: ConcernRegistrationMap<DATA>,
   concerns: readonly ConcernType[],
@@ -416,9 +405,3 @@ const registerConcernEffectsImpl = <DATA extends object>(
     cleanupConcerns(store, registrationEntries)
   }
 }
-
-export const registerConcernEffects = <DATA extends object>(
-  store: StoreInstance<DATA>,
-  registration: ConcernRegistrationMap<DATA>,
-  concerns: readonly ConcernType[],
-): (() => void) => registerConcernEffectsImpl(store, registration, concerns)

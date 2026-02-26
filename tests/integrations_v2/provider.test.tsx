@@ -8,7 +8,7 @@
  * - Provides proper context isolation
  */
 
-import React, { act } from 'react'
+import React, { act, memo, useEffect, useLayoutEffect, useState } from 'react'
 
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
@@ -1002,6 +1002,202 @@ describe.each(MODES)('[$name] Provider & Context', ({ config }) => {
       await flushEffects()
 
       expect(screen.getByTestId('value')).toHaveTextContent('after-strict-mode')
+    })
+
+    it('should support useSideEffects in children under React.StrictMode', async () => {
+      // Regression guard for Guard 2 (useInsertionEffect rebuild).
+      // useSideEffects registers via useLayoutEffect (bottom-up). During StrictMode's
+      // cleanup → re-run cycle, children's useLayoutEffect fires BEFORE the parent's.
+      // Guard 2 uses useInsertionEffect which fires before ALL layout effects, ensuring
+      // the pipeline is rebuilt before useSideEffects registration runs.
+
+      const store = createGenericStore<BasicTestState>(config)
+
+      const Child = () => {
+        store.useSideEffects('strict-sync', {
+          syncPaths: [['source', 'target']],
+        })
+        const [source, setSource] = store.useStore('source')
+        const [target] = store.useStore('target')
+        return (
+          <div>
+            <span data-testid="source">{source}</span>
+            <span data-testid="target">{target}</span>
+            <button
+              data-testid="set-source"
+              onClick={() => setSource('synced-value')}
+            />
+          </div>
+        )
+      }
+
+      render(
+        <React.StrictMode>
+          <store.Provider initialState={basicTestFixtures.empty}>
+            <Child />
+          </store.Provider>
+        </React.StrictMode>,
+      )
+      await flushEffects()
+
+      // syncPaths registered correctly — sync still works after StrictMode re-mount
+      fireEvent.click(screen.getByTestId('set-source'))
+      await flushEffects()
+
+      expect(screen.getByTestId('source')).toHaveTextContent('synced-value')
+      expect(screen.getByTestId('target')).toHaveTextContent('synced-value')
+    })
+
+    it('should support useSideEffects in children after Provider remount', async () => {
+      // Regression guard for Guard 1 (render-phase init).
+      // On remount, React fires children's useLayoutEffect BEFORE the parent's
+      // (bottom-up order). useSideEffects registers via useLayoutEffect, so it needs
+      // the pipeline to already exist. Guard 1 (render-phase init) guarantees this.
+      // If Guard 1 were removed and init moved to useLayoutEffect, this test would crash.
+
+      // Create store with a syncPaths side effect
+      const store = createGenericStore<BasicTestState>(config)
+
+      const Child = () => {
+        store.useSideEffects('remount-sync', {
+          syncPaths: [['source', 'target']],
+        })
+        const [source, setSource] = store.useStore('source')
+        const [target] = store.useStore('target')
+        return (
+          <div>
+            <span data-testid="source">{source}</span>
+            <span data-testid="target">{target}</span>
+            <button
+              data-testid="set-source"
+              onClick={() => setSource('synced-value')}
+            />
+          </div>
+        )
+      }
+
+      // Wrapper that can conditionally mount/unmount the Provider
+      let setMounted!: (v: boolean) => void
+      const Wrapper = () => {
+        const [mounted, _setMounted] = useState(true)
+        setMounted = _setMounted
+        return mounted ? (
+          <store.Provider initialState={basicTestFixtures.empty}>
+            <Child />
+          </store.Provider>
+        ) : null
+      }
+
+      render(<Wrapper />)
+
+      // Unmount the Provider — destroys pipeline
+      act(() => setMounted(false))
+      await flushEffects()
+
+      // Remount — Guard 1 (render-phase init) rebuilds pipeline before Child's
+      // useLayoutEffect fires and calls pipeline.registerSideEffects()
+      act(() => setMounted(true))
+      await flushEffects()
+
+      // Side effect registered correctly — syncPaths works after remount
+      fireEvent.click(screen.getByTestId('set-source'))
+      await flushEffects()
+
+      expect(screen.getByTestId('source')).toHaveTextContent('synced-value')
+      expect(screen.getByTestId('target')).toHaveTextContent('synced-value')
+    })
+
+    it('should support setValue called from useLayoutEffect after StrictMode', async () => {
+      // Verifies no crash when setValue is called from a child's useLayoutEffect under StrictMode.
+      // useLayoutEffect fires bottom-up (child before parent). During StrictMode's simulated
+      // re-mount, the child's layout effect re-runs BEFORE the parent's Guard 2 can rebuild
+      // the pipeline. processChangesWasm defensively returns early when pipeline is null, so
+      // the StrictMode second-invocation write is a no-op (correct — StrictMode effects should
+      // be idempotent). The value is set correctly on the initial mount.
+      const store = createGenericStore<BasicTestState>(config)
+
+      const Child = () => {
+        const [, setValue] = store.useStore('fieldA')
+        useLayoutEffect(() => {
+          setValue('from-layout-effect')
+        }, [setValue])
+        const [value] = store.useStore('fieldA')
+        return <span data-testid="value">{value}</span>
+      }
+
+      render(
+        <React.StrictMode>
+          <store.Provider initialState={basicTestFixtures.empty}>
+            <Child />
+          </store.Provider>
+        </React.StrictMode>,
+      )
+      await flushEffects()
+
+      expect(screen.getByTestId('value')).toHaveTextContent(
+        'from-layout-effect',
+      )
+    })
+
+    it('should support setValue called from useEffect after StrictMode', async () => {
+      // Same as above but for useEffect (passive effects — fires after paint, async).
+      const store = createGenericStore<BasicTestState>(config)
+
+      const Child = () => {
+        const [, setValue] = store.useStore('fieldA')
+        useEffect(() => {
+          setValue('from-effect')
+        }, [setValue])
+        const [value] = store.useStore('fieldA')
+        return <span data-testid="value">{value}</span>
+      }
+
+      render(
+        <React.StrictMode>
+          <store.Provider initialState={basicTestFixtures.empty}>
+            <Child />
+          </store.Provider>
+        </React.StrictMode>,
+      )
+      await flushEffects()
+
+      expect(screen.getByTestId('value')).toHaveTextContent('from-effect')
+    })
+    it('should support setValue in a memo() child after StrictMode', async () => {
+      // memo() prevents re-renders when props do not change. Verifies that StrictMode's
+      // double-effect cycle still completes correctly when the child is memoized —
+      // memo does not skip effect re-runs, only renders, so the pipeline gap still applies.
+      const store = createGenericStore<BasicTestState>(config)
+
+      const MemoChild = memo(() => {
+        const [value, setValue] = store.useStore('fieldA')
+        return (
+          <div>
+            <span data-testid="value">{String(value)}</span>
+            <button
+              data-testid="update"
+              onClick={() => setValue('from-memo')}
+            />
+          </div>
+        )
+      })
+
+      render(
+        <React.StrictMode>
+          <store.Provider initialState={basicTestFixtures.empty}>
+            <MemoChild />
+          </store.Provider>
+        </React.StrictMode>,
+      )
+
+      // memo child rendered after StrictMode cycle
+      expect(screen.getByTestId('value')).toHaveTextContent('')
+
+      // setValue works — pipeline valid after StrictMode, memo does not affect this
+      fireEvent.click(screen.getByTestId('update'))
+      await flushEffects()
+
+      expect(screen.getByTestId('value')).toHaveTextContent('from-memo')
     })
   })
 })

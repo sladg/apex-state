@@ -60,6 +60,7 @@
     "wasm:check": "cargo check --manifest-path rust/Cargo.toml",
     "wasm:fmt": "cargo fmt --manifest-path rust/Cargo.toml",
     "wasm:fmt:check": "cargo fmt --manifest-path rust/Cargo.toml -- --check",
+    "wasm:generate-types": "cargo run --manifest-path rust/Cargo.toml --bin ts-export",
     "wasm:lint": "cargo clippy --manifest-path rust/Cargo.toml -- -D warnings",
     "wasm:test": "cargo test --manifest-path rust/Cargo.toml"
   },

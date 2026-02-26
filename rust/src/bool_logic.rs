@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use ts_rs::TS;
+
 // ---------------------------------------------------------------------------
 // BoolLogicNode
 // ---------------------------------------------------------------------------
@@ -26,7 +28,8 @@ use std::collections::{HashMap, HashSet};
 /// Accepts two JSON formats (see module-level docs for details).
 #[derive(Serialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub(crate) enum BoolLogicNode {
+#[derive(TS)]
+pub enum BoolLogicNode {
     IsEqual(String, Value),
     Exists(String),
     IsEmpty(String),
@@ -372,6 +375,14 @@ impl BoolLogicRegistry {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.logics.len()
+    }
+
+    /// Dump all registered entries as (id, output_path) pairs (debug only).
+    pub(crate) fn dump_infos(&self) -> Vec<(u32, String)> {
+        self.logics
+            .iter()
+            .map(|(&id, meta)| (id, meta.output_path.clone()))
+            .collect()
     }
 }
 

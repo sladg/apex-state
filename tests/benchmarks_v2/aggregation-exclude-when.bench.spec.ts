@@ -54,7 +54,7 @@ const buildAggregationSetup = (sourceCount: number, excludedCount: number) => {
 const createSetup = (sourceCount: number, excludedCount: number) => {
   const { state, pairs } = buildAggregationSetup(sourceCount, excludedCount)
   const pipeline = createWasmPipeline()
-  pipeline.shadowInit(state as Record<string, unknown>)
+  pipeline.shadowInit(state)
   pipeline.registerSideEffects({
     registration_id: 'bench',
     aggregation_pairs: pairs,
@@ -92,7 +92,7 @@ describe('Registration: excludeWhen parsing overhead', () => {
       () => {
         const { state, pairs } = buildAggregationSetup(sources, excluded)
         const pipeline = createWasmPipeline()
-        pipeline.shadowInit(state as Record<string, unknown>)
+        pipeline.shadowInit(state)
         pipeline.registerSideEffects({
           registration_id: 'bench',
           aggregation_pairs: pairs,

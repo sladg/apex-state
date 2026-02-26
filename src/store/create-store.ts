@@ -167,11 +167,11 @@ export const createGenericStore = <
 >(
   config?: StoreConfig,
 ): GenericStoreApi<DATA, META, CONCERNS> => {
-  const Provider = createProvider<DATA, META>(config)
+  const Provider = createProvider<DATA>(config)
 
   // Internal helper hook for field state access
   const _useFieldValue = <P extends DeepKey<DATA>>(path: P) => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     const snap = useSnapshot(store.state) as DATA
     const value = dot.get(snap, path)
 
@@ -214,7 +214,7 @@ export const createGenericStore = <
     setChanges: (changes: ArrayOfChanges<DATA, META>) => void
     getState: () => DATA
   } => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     const proxyValue = useSnapshot(store.state) as DATA
 
     const setChanges = useCallback(
@@ -235,7 +235,7 @@ export const createGenericStore = <
     id: string,
     effects: SideEffects<DATA, META>,
   ): void => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     useLayoutEffect(() => {
       return registerSideEffects(store, id, effects)
     }, [store, id, effects])
@@ -252,7 +252,7 @@ export const createGenericStore = <
     >,
     customConcerns?: readonly ConcernType<string, any, any>[],
   ): void => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     const concerns = (customConcerns ||
       defaultConcerns) as readonly ConcernType<any, any, any>[]
 

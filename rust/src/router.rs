@@ -5,9 +5,12 @@
 //! each changed path upward, groups subscribers by depth level (deepest
 //! first), relativizes changes per subscriber, and produces a DispatchPlan.
 
-use crate::pipeline::Change;
+use crate::change::Change;
+use crate::pipeline::ListenerRegistration;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+use ts_rs::TS;
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -54,13 +57,6 @@ pub(crate) struct TopicRouter {
 // ---------------------------------------------------------------------------
 // Serialization types (JS boundary)
 // ---------------------------------------------------------------------------
-
-#[derive(Deserialize)]
-pub(crate) struct ListenerRegistration {
-    pub subscriber_id: u32,
-    pub topic_path: String,
-    pub scope_path: String,
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct DispatchPlan {
@@ -114,8 +110,8 @@ pub(crate) struct ListenerDispatch {
 // ---------------------------------------------------------------------------
 
 /// A single dispatch entry with a sequential ID and references to input changes by index.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct DispatchEntry {
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+pub struct DispatchEntry {
     pub dispatch_id: u32,
     pub subscriber_id: u32,
     pub scope_path: String,
@@ -125,14 +121,15 @@ pub(crate) struct DispatchEntry {
 }
 
 /// A group of dispatches to execute sequentially (flattened from depth levels + batches).
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct DispatchGroup {
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+pub struct DispatchGroup {
+    #[ts(inline)]
     pub dispatches: Vec<DispatchEntry>,
 }
 
 /// A target for propagating produced changes from a child dispatch to a parent dispatch.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct PropagationTarget {
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+pub struct PropagationTarget {
     pub target_dispatch_id: u32,
     /// Prefix to prepend to child's relative paths for the target's scope.
     pub remap_prefix: String,
@@ -140,12 +137,14 @@ pub(crate) struct PropagationTarget {
 
 /// Pre-computed execution plan with propagation map.
 /// TS side becomes a trivial loop with map lookups — no ancestor walking needed.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct FullExecutionPlan {
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+pub struct FullExecutionPlan {
     /// Sequential groups of dispatches (flattened from depth levels + batches).
+    #[ts(inline)]
     pub groups: Vec<DispatchGroup>,
     /// propagation_map[dispatch_id] = targets to forward produced changes to.
     /// Flat array indexed by dispatch_id, empty vec = no propagation.
+    #[ts(inline)]
     pub propagation_map: Vec<Vec<PropagationTarget>>,
 }
 
@@ -450,6 +449,7 @@ impl TopicRouter {
         let mut matched = HashSet::new();
 
         for change in changes {
+            // Walk UP: child change triggers ancestor listeners (existing behavior)
             let mut path = change.path.clone();
             loop {
                 if let Some(&topic_id) = self.path_to_topic.get(&path) {
@@ -465,6 +465,15 @@ impl TopicRouter {
                         }
                         break;
                     }
+                }
+            }
+
+            // Walk DOWN: parent change triggers child listeners
+            // A change at "form" should trigger listeners on "form.billing", etc.
+            let prefix_dot = format!("{}.", &change.path);
+            for (topic_path, &topic_id) in &self.path_to_topic {
+                if topic_path.starts_with(&prefix_dot) {
+                    matched.insert(topic_id);
                 }
             }
         }
@@ -515,7 +524,11 @@ impl TopicRouter {
                     None => continue,
                 };
 
-                // Filter changes that fall under this topic's prefix
+                // Filter changes that fall under this topic's prefix.
+                // Three match types:
+                // - Exact: change path == prefix
+                // - Child change: change path is deeper than prefix (e.g., "form.billing.city" for "form.billing")
+                // - Parent change: change path is shallower than prefix (e.g., "form" for "form.billing")
                 let relevant_changes: Vec<Change> = changes
                     .iter()
                     .filter(|c| {
@@ -525,12 +538,16 @@ impl TopicRouter {
                             c.path == *prefix
                                 || (c.path.starts_with(prefix.as_str())
                                     && c.path.as_bytes().get(prefix.len()) == Some(&b'.'))
+                                || (prefix.starts_with(c.path.as_str())
+                                    && prefix.as_bytes().get(c.path.len()) == Some(&b'.'))
                         }
                     })
                     .map(|c| Change {
                         path: relativize_path(&c.path, prefix),
                         value_json: c.value_json.clone(),
-                        origin: c.origin.clone(),
+                        kind: c.kind.clone(),
+                        lineage: c.lineage.clone(),
+                        audit: c.audit.clone(),
                     })
                     .collect();
 
@@ -841,7 +858,9 @@ impl TopicRouter {
                     .map(|c| Change {
                         path: relativize_path(&c.path, prefix),
                         value_json: c.value_json.clone(),
-                        origin: c.origin.clone(),
+                        kind: c.kind.clone(),
+                        lineage: c.lineage.clone(),
+                        audit: c.audit.clone(),
                     })
                     .collect();
 
@@ -884,6 +903,14 @@ impl TopicRouter {
         let plan = self.route_produced_changes(depth, &changes);
         serde_json::to_string(&plan).map_err(|e| format!("Serialize error: {}", e))
     }
+
+    /// Dump all registered listeners as (subscriber_id, topic_path, scope_path) triples (debug only).
+    pub(crate) fn dump_listeners(&self) -> Vec<(u32, String, String)> {
+        self.subscriber_meta
+            .iter()
+            .map(|(&id, meta)| (id, meta.topic_path.clone(), meta.scope_path.clone()))
+            .collect()
+    }
 }
 
 impl Default for TopicRouter {
@@ -899,6 +926,7 @@ impl Default for TopicRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::change::{ChangeKind, Lineage};
 
     fn register(router: &mut TopicRouter, sub_id: u32, topic: &str, scope: &str) {
         let json = format!(
@@ -912,7 +940,9 @@ mod tests {
         Change {
             path: path.to_owned(),
             value_json: value.to_owned(),
-            origin: None,
+            kind: ChangeKind::Real,
+            lineage: Lineage::Input,
+            audit: None,
         }
     }
 
@@ -1680,5 +1710,225 @@ mod tests {
             assert_eq!(d.topic_path, "");
             assert_eq!(d.scope_path, "");
         }
+    }
+
+    // --- child change triggers parent-scoped listener (already works via seed_topics walk-up) ---
+
+    #[test]
+    fn dispatch_child_change_triggers_parent_listener() {
+        // Listener on topic "form.billing", change form.billing.city → should dispatch
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "form.billing", "form.billing");
+
+        let changes = vec![make_change("form.billing.city", r#""Brno""#)];
+        let plan = router.create_dispatch_plan(&changes);
+
+        assert_eq!(plan.levels.len(), 1, "parent listener should be dispatched");
+        assert_eq!(plan.levels[0].dispatches[0].subscriber_id, 1);
+        // Change should be relativized to scope
+        assert_eq!(plan.levels[0].dispatches[0].changes[0].path, "city");
+    }
+
+    #[test]
+    fn dispatch_deeply_nested_child_triggers_ancestor_listener() {
+        // Listener on topic "app", change app.config.theme.color → should dispatch
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "app", "app");
+
+        let changes = vec![make_change("app.config.theme.color", r#""red""#)];
+        let plan = router.create_dispatch_plan(&changes);
+
+        assert_eq!(plan.levels.len(), 1);
+        assert_eq!(plan.levels[0].dispatches[0].subscriber_id, 1);
+        assert_eq!(
+            plan.levels[0].dispatches[0].changes[0].path,
+            "config.theme.color"
+        );
+    }
+
+    #[test]
+    fn dispatch_child_change_triggers_multiple_ancestor_listeners() {
+        // Listeners at different depths: "form", "form.billing"
+        // Change form.billing.city → both should dispatch
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "form.billing", "form.billing");
+        register(&mut router, 2, "form", "form");
+
+        let changes = vec![make_change("form.billing.city", r#""Brno""#)];
+        let plan = router.create_dispatch_plan(&changes);
+
+        assert_eq!(plan.levels.len(), 2, "both depth levels should dispatch");
+        // Deepest first
+        let sub_ids: Vec<u32> = plan
+            .levels
+            .iter()
+            .flat_map(|l| l.dispatches.iter().map(|d| d.subscriber_id))
+            .collect();
+        assert!(
+            sub_ids.contains(&1),
+            "form.billing listener should dispatch"
+        );
+        assert!(sub_ids.contains(&2), "form listener should dispatch");
+    }
+
+    // --- parent change triggers child-scoped listener (GAP — seed_topics only walks UP) ---
+    // Listeners are always registered on OBJECTS, never on leafs.
+    // When a parent object changes, child-scoped listeners (on intermediate objects
+    // below the change path) should be triggered with relativized changes.
+
+    #[test]
+    fn dispatch_parent_change_triggers_child_object_listener() {
+        // Listener on topic "form.billing" (object), change "form" (parent object)
+        // form = {billing: {city: "Brno", zip: "60200"}}
+        // Listener should fire with changes relativized to "form.billing"
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "form.billing", "form.billing");
+
+        let changes = vec![make_change(
+            "form",
+            r#"{"billing": {"city": "Brno", "zip": "60200"}}"#,
+        )];
+        let plan = router.create_dispatch_plan(&changes);
+
+        assert_eq!(
+            plan.levels.len(),
+            1,
+            "child object listener should be dispatched when parent changes"
+        );
+        assert_eq!(plan.levels[0].dispatches[0].subscriber_id, 1);
+    }
+
+    #[test]
+    fn dispatch_parent_change_triggers_multiple_child_object_listeners() {
+        // Listeners on "form.billing" and "form.shipping" (both objects)
+        // Change "form" (parent) → both should dispatch
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "form.billing", "form.billing");
+        register(&mut router, 2, "form.shipping", "form.shipping");
+
+        let changes = vec![make_change(
+            "form",
+            r#"{"billing": {"city": "Brno"}, "shipping": {"city": "Prague"}}"#,
+        )];
+        let plan = router.create_dispatch_plan(&changes);
+
+        let sub_ids: Vec<u32> = plan
+            .levels
+            .iter()
+            .flat_map(|l| l.dispatches.iter().map(|d| d.subscriber_id))
+            .collect();
+        assert!(
+            sub_ids.contains(&1),
+            "form.billing listener should fire on parent change"
+        );
+        assert!(
+            sub_ids.contains(&2),
+            "form.shipping listener should fire on parent change"
+        );
+    }
+
+    #[test]
+    fn dispatch_grandparent_change_triggers_deep_object_listener() {
+        // Listener on "app.config.theme" (object), change "app" (grandparent)
+        // app = {config: {theme: {color: "red", font: "sans"}}}
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "app.config.theme", "app.config.theme");
+
+        let changes = vec![make_change(
+            "app",
+            r#"{"config": {"theme": {"color": "red", "font": "sans"}}}"#,
+        )];
+        let plan = router.create_dispatch_plan(&changes);
+
+        assert_eq!(
+            plan.levels.len(),
+            1,
+            "deep object listener should dispatch on grandparent change"
+        );
+        assert_eq!(plan.levels[0].dispatches[0].subscriber_id, 1);
+    }
+
+    #[test]
+    fn dispatch_parent_change_with_mixed_depth_object_listeners() {
+        // Listeners at different object depths:
+        // Listener 1 on "form" (root-ish), Listener 2 on "form.billing" (nested)
+        // Change "form" → both should dispatch (listener 1 is exact match, listener 2 is child)
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "form", "form");
+        register(&mut router, 2, "form.billing", "form.billing");
+
+        let changes = vec![make_change(
+            "form",
+            r#"{"billing": {"city": "Brno", "zip": "60200"}}"#,
+        )];
+        let plan = router.create_dispatch_plan(&changes);
+
+        let sub_ids: Vec<u32> = plan
+            .levels
+            .iter()
+            .flat_map(|l| l.dispatches.iter().map(|d| d.subscriber_id))
+            .collect();
+        assert!(
+            sub_ids.contains(&1),
+            "form listener should fire (exact match)"
+        );
+        assert!(
+            sub_ids.contains(&2),
+            "form.billing listener should fire on parent change"
+        );
+    }
+
+    #[test]
+    fn dispatch_parent_change_unrelated_object_listener_not_triggered() {
+        // Listener on "settings" (object), change "form" → should NOT dispatch
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "settings", "settings");
+
+        let changes = vec![make_change("form", r#"{"billing": {"city": "Brno"}}"#)];
+        let plan = router.create_dispatch_plan(&changes);
+
+        assert!(
+            plan.levels.is_empty(),
+            "settings listener should not fire on form change"
+        );
+    }
+
+    #[test]
+    fn dispatch_parent_change_child_listener_receives_relativized_changes() {
+        // Listener on "form.billing", scope "form.billing"
+        // Change "form" with billing data
+        // Listener should receive the change relativized: path should be relative to topic prefix
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "form.billing", "form.billing");
+
+        let changes = vec![make_change("form", r#"{"billing": {"city": "Brno"}}"#)];
+        let plan = router.create_dispatch_plan(&changes);
+
+        // When parent change triggers child listener, the change should be present
+        // and the path should be relativized to the listener's topic prefix
+        assert_eq!(
+            plan.levels.len(),
+            1,
+            "child listener should dispatch on parent change"
+        );
+        assert_eq!(plan.levels[0].dispatches[0].subscriber_id, 1);
+        // The change path "form" relativized to prefix "form.billing" — this is a parent
+        // change so the entire object arrives; the relativization behavior may differ
+        // from child-change relativization
+    }
+
+    #[test]
+    fn dispatch_sibling_object_change_does_not_trigger_listener() {
+        // Listener on "form.billing" (object), change "form.shipping" (sibling) → no dispatch
+        let mut router = TopicRouter::new();
+        register(&mut router, 1, "form.billing", "form.billing");
+
+        let changes = vec![make_change("form.shipping", r#"{"city": "Prague"}"#)];
+        let plan = router.create_dispatch_plan(&changes);
+
+        assert!(
+            plan.levels.is_empty(),
+            "form.billing listener should NOT fire when form.shipping changes (sibling)"
+        );
     }
 }

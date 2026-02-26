@@ -6,8 +6,8 @@
 //!
 //! See docs/CLEAR_PATHS.md for full architecture.
 
+use crate::change::{Change, ChangeKind, Lineage};
 use crate::intern::InternTable;
-use crate::pipeline::Change;
 use crate::shadow::ShadowState;
 use std::collections::{HashMap, HashSet};
 
@@ -362,7 +362,9 @@ fn resolve_and_clear(
                             clears.push(Change {
                                 path,
                                 value_json: "null".to_owned(),
-                                origin: Some("clear".to_owned()),
+                                kind: ChangeKind::Real,
+                                lineage: Lineage::Input,
+                                audit: None,
                             });
                         }
                     }
@@ -377,7 +379,9 @@ fn resolve_and_clear(
                         clears.push(Change {
                             path,
                             value_json: "null".to_owned(),
-                            origin: Some("clear".to_owned()),
+                            kind: ChangeKind::Real,
+                            lineage: Lineage::Input,
+                            audit: None,
                         });
                     }
                 }
@@ -390,6 +394,10 @@ fn resolve_and_clear(
 mod tests {
     use super::*;
     use crate::pipeline::ProcessingPipeline;
+
+    fn agg_pairs(json: &str) -> Vec<crate::pipeline::AggregationPairInput> {
+        serde_json::from_str(json).unwrap()
+    }
 
     // =========================================================================
     // Test helpers
@@ -830,7 +838,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -860,7 +870,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"same\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         assert!(result.changes.is_empty());
@@ -881,7 +893,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         assert_eq!(result.changes.len(), 1);
@@ -921,7 +935,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"b\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -965,7 +981,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "toggle".to_owned(),
                 value_json: "true".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1006,7 +1024,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         // BoolLogic concern should be in output
@@ -1043,16 +1063,18 @@ mod tests {
             )
             .unwrap();
         pipeline
-            .register_aggregation_batch(
+            .register_aggregation_batch(&agg_pairs(
                 r#"[["totals.price", "items.a.price"], ["totals.price", "items.b.price"]]"#,
-            )
+            ))
             .unwrap();
 
         let result = pipeline
             .process_changes_vec(vec![Change {
                 path: "items.a.price".to_owned(),
                 value_json: "20".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1082,7 +1104,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "a".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1118,7 +1142,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.fields.email.value".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1159,7 +1185,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.fields.email.value".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1187,7 +1215,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "other.fields.email.value".to_owned(),
                 value_json: "\"z\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         assert_eq!(result.changes.len(), 1);
@@ -1212,7 +1242,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1225,7 +1257,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.name".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths2: Vec<&str> = result2.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1252,12 +1286,16 @@ mod tests {
                 Change {
                     path: "a".to_owned(),
                     value_json: "\"x2\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
                 },
                 Change {
                     path: "b".to_owned(),
                     value_json: "\"y2\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
                 },
             ])
             .unwrap();
@@ -1290,7 +1328,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let errors_change = result.changes.iter().find(|c| c.path == "form.errors");
@@ -1329,7 +1369,9 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "app.section1.fieldA.value".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1362,12 +1404,16 @@ mod tests {
                 Change {
                     path: "form.fields.email.value".to_owned(),
                     value_json: "\"new1\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
                 },
                 Change {
                     path: "form.fields.name.value".to_owned(),
                     value_json: "\"new2\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
                 },
             ])
             .unwrap();

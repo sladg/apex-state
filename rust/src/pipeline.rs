@@ -9,6 +9,10 @@ use crate::aggregation::{
     process_aggregation_reads, process_aggregation_writes, AggregationRegistry, AggregationSource,
 };
 use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry};
+#[allow(unused_imports)]
+use crate::change::{
+    Change, ChangeContext, ChangeKind, Lineage, PipelineTrace, Stage, UNDEFINED_SENTINEL_JSON,
+};
 use crate::clear_paths::ClearPathsRegistry;
 use crate::computation::{
     process_computation_reads, ComputationOp, ComputationRegistry, ComputationSource,
@@ -23,27 +27,11 @@ use crate::value_logic::{ValueLogicNode, ValueLogicRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-/// A single change in the input/output format.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub(crate) struct Change {
-    pub path: String,
-    pub value_json: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub origin: Option<String>,
-}
-
-/// Raw sentinel value for JS `undefined` (without JSON quotes).
-/// Used by shadow state to recognize undefined values during traversal.
-pub(crate) const UNDEFINED_SENTINEL: &str = "__APEX_UNDEFINED__";
-
-/// JSON-encoded sentinel for JS `undefined` values crossing the WASM boundary.
-/// JS sends `JSON.stringify("__APEX_UNDEFINED__")` = `"\"__APEX_UNDEFINED__\""`.
-/// Treated as null-equivalent in aggregation, sync filtering, and shadow traversal.
-pub(crate) const UNDEFINED_SENTINEL_JSON: &str = "\"__APEX_UNDEFINED__\"";
+use ts_rs::TS;
 
 /// Validator dispatch info for JS-side execution.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct ValidatorDispatch {
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+pub struct ValidatorDispatch {
     pub validator_id: u32,
     pub output_path: String,
     pub dependency_values: std::collections::HashMap<String, String>,
@@ -61,8 +49,8 @@ pub(crate) struct ProcessResult {
 }
 
 /// Result from processChanges: orchestrates pipeline, buffers concern results for finalization.
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct PrepareResult {
+#[derive(Serialize, Debug, TS)]
+pub struct PrepareResult {
     /// State changes (readonly context for JS listener execution, not for applying to valtio yet).
     pub state_changes: Vec<Change>,
     /// Validators to run on JS side with their dependency values.
@@ -72,11 +60,63 @@ pub(crate) struct PrepareResult {
     /// Whether there's work to do (validators, listeners, or concern changes to apply).
     /// If false, JS can return early without calling pipeline_finalize.
     pub has_work: bool,
+    /// Trace data for debug logging. Only Some when debug_enabled is true on the pipeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<PipelineTrace>,
+}
+
+/// Snapshot of all registered graphs and registries (debug only).
+#[derive(Serialize, Debug, TS)]
+pub struct GraphSnapshot {
+    pub sync_pairs: Vec<[String; 2]>,
+    pub flip_pairs: Vec<[String; 2]>,
+    #[ts(inline)]
+    pub listeners: Vec<ListenerInfo>,
+    #[ts(inline)]
+    pub bool_logics: Vec<BoolLogicInfo>,
+    #[ts(inline)]
+    pub value_logics: Vec<ValueLogicInfo>,
+    #[ts(inline)]
+    pub aggregations: Vec<AggregationInfo>,
+    #[ts(inline)]
+    pub computations: Vec<ComputationInfo>,
+}
+
+#[derive(Serialize, Debug, TS)]
+pub struct ListenerInfo {
+    pub id: u32,
+    pub topic: String,
+    pub scope: String,
+}
+
+#[derive(Serialize, Debug, TS)]
+pub struct BoolLogicInfo {
+    pub id: u32,
+    pub output_path: String,
+}
+
+#[derive(Serialize, Debug, TS)]
+pub struct ValueLogicInfo {
+    pub id: u32,
+    pub output_path: String,
+}
+
+#[derive(Serialize, Debug, TS)]
+pub struct AggregationInfo {
+    pub target: String,
+    pub sources: Vec<String>,
+}
+
+#[derive(Serialize, Debug, TS)]
+pub struct ComputationInfo {
+    pub target: String,
+    pub op: String,
+    pub sources: Vec<String>,
 }
 
 /// Finalize result: merged changes, diffed, ready for valtio application.
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct FinalizeResult {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct FinalizeResult {
     /// All changes including state and concerns (concern paths have _concerns. prefix).
     pub state_changes: Vec<Change>,
 }
@@ -86,41 +126,60 @@ pub(crate) struct FinalizeResult {
 // ---------------------------------------------------------------------------
 
 /// Input for a clear-path rule from JS.
-#[derive(Deserialize, Debug)]
-pub(crate) struct ClearPathInput {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct ClearPathInput {
     pub triggers: Vec<String>,
     pub targets: Vec<String>,
 }
 
+/// Aggregation pair: [target, source] or [target, source, condition_json].
+#[derive(Serialize, Deserialize, Debug, TS)]
+#[serde(untagged)]
+pub enum AggregationPairInput {
+    Plain(String, String),
+    WithCondition(String, String, String),
+}
+
+/// Computation pair: [op, target, source] or [op, target, source, condition_json].
+#[derive(Serialize, Deserialize, Debug, TS)]
+#[serde(untagged)]
+pub enum ComputationPairInput {
+    Plain(String, String, String),
+    WithCondition(String, String, String, String),
+}
+
 /// Input for consolidated side effects registration.
-#[derive(Deserialize, Debug)]
-pub(crate) struct SideEffectsRegistration {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct SideEffectsRegistration {
     pub registration_id: String,
     #[serde(default)]
     pub sync_pairs: Vec<[String; 2]>,
     #[serde(default)]
     pub flip_pairs: Vec<[String; 2]>,
     #[serde(default)]
-    pub aggregation_pairs: Vec<serde_json::Value>,
+    #[ts(inline)]
+    pub aggregation_pairs: Vec<AggregationPairInput>,
     #[serde(default)]
+    #[ts(inline)]
     pub clear_paths: Vec<ClearPathInput>,
     #[serde(default)]
-    pub computation_pairs: Vec<serde_json::Value>,
+    #[ts(inline)]
+    pub computation_pairs: Vec<ComputationPairInput>,
     #[serde(default)]
     pub listeners: Vec<ListenerRegistration>,
 }
 
 /// Listener entry for consolidated registration.
-#[derive(Deserialize, Debug)]
-pub(crate) struct ListenerRegistration {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct ListenerRegistration {
     pub subscriber_id: u32,
     pub topic_path: String,
     pub scope_path: String,
 }
 
 /// Output from consolidated side effects registration.
-#[derive(Serialize, Debug)]
-pub(crate) struct SideEffectsResult {
+#[derive(Serialize, Debug, TS)]
+pub struct SideEffectsResult {
     pub sync_changes: Vec<Change>,
     pub aggregation_changes: Vec<Change>,
     pub computation_changes: Vec<Change>,
@@ -128,33 +187,37 @@ pub(crate) struct SideEffectsResult {
 }
 
 /// Input for consolidated concerns registration.
-#[derive(Deserialize, Debug)]
-pub(crate) struct ConcernsRegistration {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct ConcernsRegistration {
+    /// Used by JS for unregister tracking; not consumed by Rust pipeline logic.
     #[serde(default)]
+    #[allow(dead_code)]
+    pub registration_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bool_logics: Vec<BoolLogicRegistration>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub validators: Vec<ValidatorRegistration>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_logics: Vec<ValueLogicRegistration>,
 }
 
 /// ValueLogic entry for consolidated registration.
-#[derive(Deserialize, Debug)]
-pub(crate) struct ValueLogicRegistration {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct ValueLogicRegistration {
     pub output_path: String,
     pub tree_json: String,
 }
 
 /// BoolLogic entry for consolidated registration.
-#[derive(Deserialize, Debug)]
-pub(crate) struct BoolLogicRegistration {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct BoolLogicRegistration {
     pub output_path: String,
     pub tree_json: String,
 }
 
 /// Validator entry for consolidated registration.
-#[derive(Deserialize, Debug)]
-pub(crate) struct ValidatorRegistration {
+#[derive(Serialize, Deserialize, Debug, TS)]
+pub struct ValidatorRegistration {
     pub validator_id: u32,
     pub output_path: String,
     pub dependency_paths: Vec<String>,
@@ -169,14 +232,177 @@ pub(crate) struct ValidatorInput {
 }
 
 /// Output from consolidated concerns registration.
-#[derive(Serialize, Debug)]
-pub(crate) struct ConcernsResult {
+#[derive(Serialize, Debug, TS)]
+pub struct ConcernsResult {
     pub bool_logic_changes: Vec<Change>,
     pub registered_logic_ids: Vec<u32>,
     pub registered_validator_ids: Vec<u32>,
     pub value_logic_changes: Vec<Change>,
     pub registered_value_logic_ids: Vec<u32>,
 }
+
+/// All per-call mutable state, unified into one struct.
+/// Cleared at the start of every `run_pipeline_core` call.
+/// Never freshly allocated — `clear()` reuses capacity.
+#[allow(dead_code)]
+pub(crate) struct PipelineContext {
+    /// The accumulator: all changes produced this call.
+    pub changes: Vec<Change>,
+
+    /// HashSets kept persistent — avoid rehash cost across calls.
+    pub affected_bool_logic: HashSet<u32>,
+    pub affected_validators: HashSet<u32>,
+    pub affected_value_logics: HashSet<u32>,
+
+    /// Assembled during the call, read by callers after run_pipeline_core.
+    pub validators_to_run: Vec<ValidatorDispatch>,
+    pub execution_plan: Option<FullExecutionPlan>,
+
+    /// Built by execute_policy when ProcessingPipeline.debug == true.
+    pub trace: PipelineTrace,
+}
+
+#[allow(dead_code)]
+impl PipelineContext {
+    pub fn new() -> Self {
+        Self {
+            changes: Vec::with_capacity(64),
+            affected_bool_logic: HashSet::with_capacity(16),
+            affected_validators: HashSet::with_capacity(16),
+            affected_value_logics: HashSet::with_capacity(16),
+            validators_to_run: Vec::new(),
+            execution_plan: None,
+            trace: PipelineTrace::default(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.changes.clear();
+        self.affected_bool_logic.clear();
+        self.affected_validators.clear();
+        self.affected_value_logics.clear();
+        self.validators_to_run.clear();
+        self.execution_plan = None;
+        self.trace.stages.clear();
+    }
+}
+
+/// How a stage assigns ChangeContext to the changes it produces.
+#[allow(dead_code)]
+pub(crate) enum ContextRule {
+    /// Produced changes inherit the parent's ChangeContext directly.
+    Inherit,
+    /// Produced changes always get this context, regardless of parent.
+    Always(ChangeContext),
+}
+
+/// Declares how one pipeline stage processes and produces changes.
+#[allow(dead_code)]
+pub(crate) struct StagePolicy {
+    pub stage: Stage,
+    /// ChangeKinds this stage will process.
+    pub accepts: &'static [ChangeKind],
+    /// Additional guard checked after `accepts`.
+    pub guard: fn(&Change) -> bool,
+    /// Primary ChangeKind assigned to changes this stage produces.
+    pub emits: ChangeKind,
+    /// How produced changes inherit ChangeContext from their parent.
+    pub context_rule: ContextRule,
+    /// Sub-pipeline: run these policies on the changes THIS stage produced.
+    pub followup: &'static [StagePolicy],
+}
+
+#[allow(dead_code)]
+pub(crate) static STAGE_POLICIES: &[StagePolicy] = &[
+    StagePolicy {
+        stage: Stage::AggregationWrite,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Consumed,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::Diff,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Breakdown,
+        context_rule: ContextRule::Always(ChangeContext::Mutation),
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::Sync,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::Flip,
+        accepts: &[ChangeKind::Real],
+        guard: |c| matches!(c.lineage.context(), ChangeContext::Mutation),
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::ClearPath,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Always(ChangeContext::Mutation),
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::AggregationRead,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::Computation,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::BoolLogic,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::ValueLogic,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::Listeners,
+        accepts: &[ChangeKind::Real, ChangeKind::Redundant],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+    StagePolicy {
+        stage: Stage::Apply,
+        accepts: &[ChangeKind::Real],
+        guard: |_| true,
+        emits: ChangeKind::Real,
+        context_rule: ContextRule::Inherit,
+        followup: &[],
+    },
+];
 
 /// Owns all WASM-internal state and orchestrates change processing.
 pub(crate) struct ProcessingPipeline {
@@ -192,20 +418,18 @@ pub(crate) struct ProcessingPipeline {
     sync_graph: Graph,
     flip_graph: Graph,
     router: TopicRouter,
-    // Pre-allocated buffers for hot-path processing (reused across calls)
-    buf_output: Vec<Change>,
-    buf_sync: Vec<Change>,
-    buf_flip: Vec<Change>,
-    buf_affected_ids: HashSet<u32>,
-    buf_concern_changes: Vec<Change>,
-    buf_affected_validators: HashSet<u32>,
-    // ValueLogic registry and reverse dependency index
     value_logic_registry: ValueLogicRegistry,
     value_logic_rev_index: ReverseDependencyIndex,
-    buf_affected_value_logics: HashSet<u32>,
-    // Pending changes for round-trip refactor (EP5)
+
+    // Per-call scratch space (replaces seven buf_* fields)
+    ctx: PipelineContext,
+
+    // Cross-call: survives between prepare_changes() and pipeline_finalize()
     buf_pending_state_changes: Vec<Change>,
     buf_pending_concern_changes: Vec<Change>,
+
+    // Debug flag — set once at init time, controls trace collection and snapshot availability.
+    debug_enabled: bool,
 }
 
 impl ProcessingPipeline {
@@ -223,17 +447,66 @@ impl ProcessingPipeline {
             sync_graph: Graph::new(),
             flip_graph: Graph::new(),
             router: TopicRouter::new(),
-            buf_output: Vec::with_capacity(64),
-            buf_sync: Vec::with_capacity(16),
-            buf_flip: Vec::with_capacity(16),
-            buf_affected_ids: HashSet::with_capacity(16),
-            buf_concern_changes: Vec::with_capacity(16),
-            buf_affected_validators: HashSet::with_capacity(16),
             value_logic_registry: ValueLogicRegistry::new(),
             value_logic_rev_index: ReverseDependencyIndex::new(),
-            buf_affected_value_logics: HashSet::with_capacity(16),
+            ctx: PipelineContext::new(),
             buf_pending_state_changes: Vec::with_capacity(64),
             buf_pending_concern_changes: Vec::with_capacity(16),
+            debug_enabled: false,
+        }
+    }
+
+    /// Enable or disable debug tracing for this pipeline.
+    pub(crate) fn set_debug(&mut self, enabled: bool) {
+        self.debug_enabled = enabled;
+    }
+
+    /// Assemble a snapshot of all registered graphs and registries (debug only).
+    pub(crate) fn get_graph_snapshot(&self) -> GraphSnapshot {
+        let sync_pairs = self.sync_graph.dump_pairs(&self.intern);
+        let flip_pairs = self.flip_graph.dump_pairs(&self.intern);
+        let listeners = self
+            .router
+            .dump_listeners()
+            .into_iter()
+            .map(|(id, topic, scope)| ListenerInfo { id, topic, scope })
+            .collect();
+        let bool_logics = self
+            .registry
+            .dump_infos()
+            .into_iter()
+            .map(|(id, output_path)| BoolLogicInfo { id, output_path })
+            .collect();
+        let value_logics = self
+            .value_logic_registry
+            .dump_infos()
+            .into_iter()
+            .map(|(id, output_path)| ValueLogicInfo { id, output_path })
+            .collect();
+        let aggregations = self
+            .aggregations
+            .dump_infos()
+            .into_iter()
+            .map(|(target, sources)| AggregationInfo { target, sources })
+            .collect();
+        let computations = self
+            .computations
+            .dump_infos()
+            .into_iter()
+            .map(|(target, op, sources)| ComputationInfo {
+                target,
+                op,
+                sources,
+            })
+            .collect();
+        GraphSnapshot {
+            sync_pairs,
+            flip_pairs,
+            listeners,
+            bool_logics,
+            value_logics,
+            aggregations,
+            computations,
         }
     }
 
@@ -290,50 +563,30 @@ impl ProcessingPipeline {
     /// Output: JSON array of initial changes
     pub(crate) fn register_aggregation_batch(
         &mut self,
-        pairs_json: &str,
-    ) -> Result<String, String> {
-        // Parse raw pairs as JSON arrays (2 or 3 elements each)
-        let raw_pairs: Vec<serde_json::Value> = serde_json::from_str(pairs_json)
-            .map_err(|e| format!("Aggregation pairs parse error: {}", e))?;
-
+        pairs: &[AggregationPairInput],
+    ) -> Result<Vec<Change>, String> {
         // Collect all targets and sources for validation
         let mut targets = std::collections::HashSet::new();
         let mut sources = std::collections::HashSet::new();
 
-        // Parse each pair into (target, source, optional condition)
+        // Convert typed pairs into (target, AggregationSource)
         let mut parsed: Vec<(String, AggregationSource)> = Vec::new();
 
-        for pair in &raw_pairs {
-            let arr = pair
-                .as_array()
-                .ok_or_else(|| "Aggregation pair must be an array".to_string())?;
+        for pair in pairs {
+            let (target, source_path, condition_json) = match pair {
+                AggregationPairInput::Plain(t, s) => (t.clone(), s.clone(), None),
+                AggregationPairInput::WithCondition(t, s, c) => {
+                    (t.clone(), s.clone(), Some(c.as_str()))
+                }
+            };
 
-            if arr.len() < 2 || arr.len() > 3 {
-                return Err(format!(
-                    "Aggregation pair must have 2 or 3 elements, got {}",
-                    arr.len()
-                ));
-            }
-
-            let target = arr[0]
-                .as_str()
-                .ok_or_else(|| "Aggregation target must be a string".to_string())?
-                .to_string();
-            let source_path = arr[1]
-                .as_str()
-                .ok_or_else(|| "Aggregation source must be a string".to_string())?
-                .to_string();
-
-            let exclude_when = if arr.len() == 3 {
-                // Third element is a JSON string of BoolLogic tree
-                let tree_json = arr[2]
-                    .as_str()
-                    .ok_or_else(|| "Aggregation condition must be a JSON string".to_string())?;
-                let node: BoolLogicNode = serde_json::from_str(tree_json)
-                    .map_err(|e| format!("Aggregation condition parse error: {}", e))?;
-                Some(node)
-            } else {
-                None
+            let exclude_when = match condition_json {
+                Some(json) => {
+                    let node: BoolLogicNode = serde_json::from_str(json)
+                        .map_err(|e| format!("Aggregation condition parse error: {}", e))?;
+                    Some(node)
+                }
+                None => None,
             };
 
             targets.insert(target.clone());
@@ -378,12 +631,11 @@ impl ProcessingPipeline {
         }
 
         // Compute initial values using reactive logic
-        let initial_changes =
-            process_aggregation_reads(&self.aggregations, &self.shadow, &all_sources);
-
-        // Return changes as JSON
-        serde_json::to_string(&initial_changes)
-            .map_err(|e| format!("Failed to serialize initial changes: {}", e))
+        Ok(process_aggregation_reads(
+            &self.aggregations,
+            &self.shadow,
+            &all_sources,
+        ))
     }
 
     /// Unregister a batch of aggregations.
@@ -411,54 +663,36 @@ impl ProcessingPipeline {
     /// Returns initial computation changes.
     pub(crate) fn register_computation_batch(
         &mut self,
-        raw_pairs: &[serde_json::Value],
+        pairs: &[ComputationPairInput],
     ) -> Result<Vec<Change>, String> {
         // Collect all targets and sources for validation
         let mut targets = std::collections::HashSet::new();
         let mut sources = std::collections::HashSet::new();
 
-        // Parse each pair into (op, target, source, optional condition)
+        // Convert typed pairs into (op, target, source, optional condition)
         let mut parsed: Vec<(ComputationOp, String, ComputationSource)> = Vec::new();
 
-        for pair in raw_pairs {
-            let arr = pair
-                .as_array()
-                .ok_or_else(|| "Computation pair must be an array".to_string())?;
+        for pair in pairs {
+            let (op_str, target, source_path, condition_json) = match pair {
+                ComputationPairInput::Plain(o, t, s) => (o.as_str(), t.clone(), s.clone(), None),
+                ComputationPairInput::WithCondition(o, t, s, c) => {
+                    (o.as_str(), t.clone(), s.clone(), Some(c.as_str()))
+                }
+            };
 
-            if arr.len() < 3 || arr.len() > 4 {
-                return Err(format!(
-                    "Computation pair must have 3 or 4 elements, got {}",
-                    arr.len()
-                ));
-            }
-
-            let op_str = arr[0]
-                .as_str()
-                .ok_or_else(|| "Computation operation must be a string".to_string())?;
             let op = match op_str {
                 "SUM" => ComputationOp::Sum,
                 "AVG" => ComputationOp::Avg,
                 _ => return Err(format!("Unknown computation operation: {}", op_str)),
             };
 
-            let target = arr[1]
-                .as_str()
-                .ok_or_else(|| "Computation target must be a string".to_string())?
-                .to_string();
-            let source_path = arr[2]
-                .as_str()
-                .ok_or_else(|| "Computation source must be a string".to_string())?
-                .to_string();
-
-            let exclude_when = if arr.len() == 4 {
-                let tree_json = arr[3]
-                    .as_str()
-                    .ok_or_else(|| "Computation condition must be a JSON string".to_string())?;
-                let node: BoolLogicNode = serde_json::from_str(tree_json)
-                    .map_err(|e| format!("Computation condition parse error: {}", e))?;
-                Some(node)
-            } else {
-                None
+            let exclude_when = match condition_json {
+                Some(json) => {
+                    let node: BoolLogicNode = serde_json::from_str(json)
+                        .map_err(|e| format!("Computation condition parse error: {}", e))?;
+                    Some(node)
+                }
+                None => None,
             };
 
             targets.insert(target.clone());
@@ -550,8 +784,8 @@ impl ProcessingPipeline {
             self.sync_graph.add_edge_public(id1, id2);
         }
 
-        // Compute initial sync changes from shadow state
-        let initial_changes = self.compute_sync_initial_changes(&pairs)?;
+        // Compute initial sync changes from shadow state, then filter no-ops
+        let initial_changes = self.diff_changes(&self.compute_sync_initial_changes(&pairs)?);
 
         // Update shadow state with sync changes
         for change in &initial_changes {
@@ -568,7 +802,8 @@ impl ProcessingPipeline {
     /// Compute initial sync changes for newly registered pairs.
     ///
     /// For each connected component, finds the most common value (excluding null/undefined)
-    /// and generates changes to sync all paths to that value.
+    /// and emits a change for every path in the component. The caller is responsible
+    /// for filtering no-ops via `diff_changes`.
     fn compute_sync_initial_changes(&self, pairs: &[[String; 2]]) -> Result<Vec<Change>, String> {
         use std::collections::{HashMap, HashSet};
 
@@ -617,34 +852,40 @@ impl ProcessingPipeline {
         let mut changes = Vec::new();
 
         for component in components {
-            // Count value occurrences (excluding null/undefined)
-            // Also track which path provided each value (for tie-breaking)
+            // Count value occurrences for "substantive" values only.
+            // Excluded from voting (treated as "no value"):
+            //   - None: path absent from shadow (e.g. JSON.stringify stripped undefined)
+            //   - UNDEFINED_SENTINEL: path explicitly set to JS undefined
+            //   - "null": path set to null (JS undefined → null via serde, or explicit null)
+            // This matches legacy JS `is.not.nil()` which skips both null and undefined.
             let mut value_counts: HashMap<String, usize> = HashMap::new();
             let mut value_to_path: HashMap<String, String> = HashMap::new();
 
             for path in &component {
-                if let Some(value_repr) = self.shadow.get(path) {
-                    // Serialize to JSON string
-                    let value_json = serde_json::to_string(&value_repr.to_json_value())
-                        .unwrap_or_else(|_| "null".to_string());
+                let value_json = match self.shadow.get(path) {
+                    Some(v) => serde_json::to_string(&v.to_json_value())
+                        .unwrap_or_else(|_| "null".to_string()),
+                    None => continue, // Path absent from shadow — skip voting
+                };
 
-                    // Skip undefined sentinel (missing/blank) — null is a valid value
-                    if value_json != UNDEFINED_SENTINEL_JSON {
-                        *value_counts.entry(value_json.clone()).or_insert(0) += 1;
+                // Skip nil-equivalent values (matches legacy JS `is.not.nil()`)
+                if value_json == UNDEFINED_SENTINEL_JSON || value_json == "null" {
+                    continue;
+                }
 
-                        // Track path for this value (prefer shallowest path in case of tie)
-                        value_to_path
-                            .entry(value_json.clone())
-                            .or_insert_with(|| path.clone());
+                *value_counts.entry(value_json.clone()).or_insert(0) += 1;
 
-                        // If we find a shallower path for this value, use it instead
-                        if let Some(existing_path) = value_to_path.get(&value_json) {
-                            let existing_depth = existing_path.matches('.').count();
-                            let new_depth = path.matches('.').count();
-                            if new_depth < existing_depth {
-                                value_to_path.insert(value_json, path.clone());
-                            }
-                        }
+                // Track path for this value (prefer shallowest path in case of tie)
+                value_to_path
+                    .entry(value_json.clone())
+                    .or_insert_with(|| path.clone());
+
+                // If we find a shallower path for this value, use it instead
+                if let Some(existing_path) = value_to_path.get(&value_json) {
+                    let existing_depth = existing_path.matches('.').count();
+                    let new_depth = path.matches('.').count();
+                    if new_depth < existing_depth {
+                        value_to_path.insert(value_json, path.clone());
                     }
                 }
             }
@@ -694,24 +935,15 @@ impl ProcessingPipeline {
                 .map(|(value, _)| value.clone());
 
             if let Some(target_value) = most_common {
-                // Generate changes for paths that differ from the most common value
+                // Emit change for every path — diff_changes in the caller filters no-ops
                 for path in &component {
-                    let current_value = self
-                        .shadow
-                        .get(path)
-                        .map(|v| {
-                            serde_json::to_string(&v.to_json_value())
-                                .unwrap_or_else(|_| "null".to_string())
-                        })
-                        .unwrap_or_else(|| "null".to_string());
-
-                    if current_value != target_value {
-                        changes.push(Change {
-                            path: path.clone(),
-                            value_json: target_value.clone(),
-                            origin: Some("sync".to_owned()),
-                        });
-                    }
+                    changes.push(Change {
+                        path: path.clone(),
+                        value_json: target_value.clone(),
+                        kind: ChangeKind::Real,
+                        lineage: Lineage::Input,
+                        audit: None,
+                    });
                 }
             }
         }
@@ -919,12 +1151,7 @@ impl ProcessingPipeline {
 
         // 3. Register aggregations
         if !reg.aggregation_pairs.is_empty() {
-            let changes = self.register_aggregation_batch(
-                &serde_json::to_string(&reg.aggregation_pairs)
-                    .map_err(|e| format!("Aggregation pairs serialization error: {}", e))?,
-            )?;
-            aggregation_changes = serde_json::from_str(&changes)
-                .map_err(|e| format!("Aggregation changes parse error: {}", e))?;
+            aggregation_changes = self.register_aggregation_batch(&reg.aggregation_pairs)?;
         }
 
         // 4. Register clear paths
@@ -1003,7 +1230,9 @@ impl ProcessingPipeline {
                     } else {
                         "false".to_owned()
                     },
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
                 });
             }
         }
@@ -1044,7 +1273,9 @@ impl ProcessingPipeline {
                 value_logic_changes.push(Change {
                     path: vl.output_path.clone(),
                     value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
                 });
             }
         }
@@ -1068,48 +1299,123 @@ impl ProcessingPipeline {
         Ok(())
     }
 
-    /// Process sync paths into buf_sync (pre-allocated buffer).
+    /// Emit a sync change to a peer path, with parent_exists and is_different guards.
+    fn emit_sync_change(
+        shadow: &ShadowState,
+        peer_path: &str,
+        value_json: &str,
+        output: &mut Vec<Change>,
+    ) {
+        if !shadow.parent_exists(peer_path) {
+            return;
+        }
+        let current = shadow.get(peer_path);
+        let new_value: crate::shadow::ValueRepr = match serde_json::from_str(value_json) {
+            Ok(v) => v,
+            Err(_) => {
+                // Can't parse → treat as genuine change
+                output.push(Change {
+                    path: peer_path.to_owned(),
+                    value_json: value_json.to_owned(),
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                });
+                return;
+            }
+        };
+        if crate::diff::is_different(&current, &new_value) {
+            output.push(Change {
+                path: peer_path.to_owned(),
+                value_json: value_json.to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+            });
+        }
+    }
+
+    /// Process sync paths and write into the provided output buffer.
     /// Only adds genuine changes by diffing against shadow state before pushing.
-    fn process_sync_paths_into(&mut self, changes: &[Change]) {
-        self.buf_sync.clear();
+    /// Handles three cases (non-exclusive — a path can match multiple):
+    /// 1. Exact match: change path is directly in sync graph
+    /// 2. Child expansion: change path is deeper than a registered sync pair
+    /// 3. Parent expansion: change path is shallower than registered sync pairs
+    fn process_sync_paths_into(&mut self, changes: &[Change], output: &mut Vec<Change>) {
+        output.clear();
         for change in changes {
             let path_id = self.intern.intern(&change.path);
             let peer_ids = self.sync_graph.get_component_paths_public(path_id);
-            for peer_id in peer_ids {
-                if peer_id != path_id {
-                    if let Some(peer_path) = self.intern.resolve(peer_id) {
-                        // Skip sync to paths whose parent structure no longer exists.
-                        // Prevents stale sync writes when React hasn't unmounted old
-                        // components yet but the target subtree was replaced.
-                        // Only check parent — the peer path itself may not exist yet
-                        // (sync can create new leaf values).
-                        if !self.shadow.parent_exists(peer_path) {
-                            continue;
+
+            // Case 1: Exact match — change path is directly registered
+            if !peer_ids.is_empty() {
+                for &peer_id in &peer_ids {
+                    if peer_id != path_id {
+                        if let Some(peer_path) = self.intern.resolve(peer_id) {
+                            let peer_path = peer_path.to_owned();
+                            Self::emit_sync_change(
+                                &self.shadow,
+                                &peer_path,
+                                &change.value_json,
+                                output,
+                            );
                         }
+                    }
+                }
+            }
 
-                        // Check if this sync change is a no-op against current shadow state
-                        let current = self.shadow.get(peer_path);
-                        let new_value: crate::shadow::ValueRepr =
-                            match serde_json::from_str(&change.value_json) {
-                                Ok(v) => v,
-                                Err(_) => {
-                                    // Can't parse → treat as genuine change
-                                    self.buf_sync.push(Change {
-                                        path: peer_path.to_owned(),
-                                        value_json: change.value_json.clone(),
-                                        origin: Some("sync".to_owned()),
-                                    });
-                                    continue;
+            // Case 2: Child expansion — walk ancestors to find a registered sync pair
+            // A path can be both an exact match AND a child of another pair
+            let change_path = &change.path;
+            for (i, _) in change_path.rmatch_indices('.') {
+                let ancestor = &change_path[..i];
+                if let Some(ancestor_id) = self.intern.get_id(ancestor) {
+                    let ancestor_peers = self.sync_graph.get_component_paths_public(ancestor_id);
+                    if !ancestor_peers.is_empty() {
+                        let suffix = &change_path[i..]; // includes leading "."
+                        for peer_id in ancestor_peers {
+                            if peer_id != ancestor_id {
+                                if let Some(peer_base) = self.intern.resolve(peer_id) {
+                                    let peer_path = format!("{}{}", peer_base, suffix);
+                                    Self::emit_sync_change(
+                                        &self.shadow,
+                                        &peer_path,
+                                        &change.value_json,
+                                        output,
+                                    );
                                 }
-                            };
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
 
-                        // Only add if different from current shadow value
-                        if crate::diff::is_different(&current, &new_value) {
-                            self.buf_sync.push(Change {
-                                path: peer_path.to_owned(),
-                                value_json: change.value_json.clone(),
-                                origin: Some("sync".to_owned()),
-                            });
+            // Case 3: Parent expansion — change is shallower than registered pairs
+            // Enumerate leaf paths under this change in shadow, sync any that are registered
+            if peer_ids.is_empty() {
+                let leaves = self.shadow.affected_paths(&change.path);
+                for leaf in &leaves {
+                    if let Some(leaf_id) = self.intern.get_id(leaf) {
+                        let leaf_peers = self.sync_graph.get_component_paths_public(leaf_id);
+                        if !leaf_peers.is_empty() {
+                            if let Some(leaf_value) = self.shadow.get(leaf) {
+                                let value_json = serde_json::to_string(&leaf_value.to_json_value())
+                                    .unwrap_or_else(|_| "null".to_owned());
+                                for peer_id in leaf_peers {
+                                    if peer_id != leaf_id {
+                                        if let Some(peer_path) = self.intern.resolve(peer_id) {
+                                            let peer_path = peer_path.to_owned();
+                                            Self::emit_sync_change(
+                                                &self.shadow,
+                                                &peer_path,
+                                                &value_json,
+                                                output,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1117,44 +1423,116 @@ impl ProcessingPipeline {
         }
     }
 
-    /// Process flip paths into buf_flip (pre-allocated buffer).
+    /// Emit a flip change (inverted boolean) to a peer path, with guards.
+    fn emit_flip_change(
+        shadow: &ShadowState,
+        peer_path: &str,
+        inverted_json: &str,
+        output: &mut Vec<Change>,
+    ) {
+        if !shadow.parent_exists(peer_path) {
+            return;
+        }
+        let current = shadow.get(peer_path);
+        let inverted_bool = inverted_json == "true";
+        let new_value = crate::shadow::ValueRepr::Bool(inverted_bool);
+        if crate::diff::is_different(&current, &new_value) {
+            output.push(Change {
+                path: peer_path.to_owned(),
+                value_json: inverted_json.to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+            });
+        }
+    }
+
+    /// Process flip paths and write into the provided output buffer.
     /// Only adds genuine changes by diffing against shadow state before pushing.
-    fn process_flip_paths_into(&mut self, changes: &[Change]) {
-        self.buf_flip.clear();
+    ///
+    /// Handles two cases:
+    /// 1. Exact match: change path is directly in flip graph (must be boolean)
+    /// 2. Parent expansion: change path is shallower — decompose into boolean leaves
+    ///
+    /// No child expansion for flip (by design).
+    fn process_flip_paths_into(&mut self, changes: &[Change], output: &mut Vec<Change>) {
+        output.clear();
         for change in changes {
             let path_id = self.intern.intern(&change.path);
             let peer_ids = self.flip_graph.get_component_paths_public(path_id);
-            if peer_ids.is_empty() {
+
+            if !peer_ids.is_empty() {
+                // Case 1: Exact match — flip only if boolean
+                let inverted_value = match change.value_json.trim() {
+                    "true" => Some("false"),
+                    "false" => Some("true"),
+                    _ => None,
+                };
+                if let Some(inverted) = inverted_value {
+                    for peer_id in peer_ids {
+                        if peer_id != path_id {
+                            if let Some(peer_path) = self.intern.resolve(peer_id) {
+                                let peer_path = peer_path.to_owned();
+                                Self::emit_flip_change(&self.shadow, &peer_path, inverted, output);
+                            }
+                        }
+                    }
+                }
                 continue;
             }
-            let inverted_value = match change.value_json.trim() {
-                "true" => Some("false".to_owned()),
-                "false" => Some("true".to_owned()),
-                _ => None,
-            };
-            if let Some(inverted) = inverted_value {
-                for peer_id in peer_ids {
-                    if peer_id != path_id {
-                        if let Some(peer_path) = self.intern.resolve(peer_id) {
-                            // Skip flip to paths whose parent structure no longer exists.
-                            // Same guard as sync: prevents writes to stale paths.
-                            if !self.shadow.parent_exists(peer_path) {
-                                continue;
-                            }
 
-                            // Check if this flip change is a no-op against current shadow state
-                            let current = self.shadow.get(peer_path);
-                            let inverted_bool = inverted == "true";
-                            let new_value = crate::shadow::ValueRepr::Bool(inverted_bool);
+            // Case 2: Parent expansion — decompose into leaf boolean paths
+            // Only applies when change value is an object
+            let trimmed = change.value_json.trim();
+            if !trimmed.starts_with('{') {
+                continue;
+            }
 
-                            // Only add if different from current shadow value
-                            if crate::diff::is_different(&current, &new_value) {
-                                self.buf_flip.push(Change {
-                                    path: peer_path.to_owned(),
-                                    value_json: inverted.clone(),
-                                    origin: Some("flip".to_owned()),
-                                });
-                            }
+            let leaves = self.shadow.affected_paths(&change.path);
+
+            // Collect all leaf paths from this parent change that are in the flip graph.
+            // Used to detect when both sides of a flip pair are under the same parent —
+            // in that case the user explicitly set both values, so flip should not fire.
+            let mut flip_leaf_ids: HashSet<u32> = HashSet::new();
+            for leaf in &leaves {
+                if let Some(leaf_id) = self.intern.get_id(leaf) {
+                    if !self
+                        .flip_graph
+                        .get_component_paths_public(leaf_id)
+                        .is_empty()
+                    {
+                        flip_leaf_ids.insert(leaf_id);
+                    }
+                }
+            }
+
+            for leaf in &leaves {
+                if let Some(leaf_id) = self.intern.get_id(leaf) {
+                    let leaf_peers = self.flip_graph.get_component_paths_public(leaf_id);
+                    if leaf_peers.is_empty() {
+                        continue;
+                    }
+
+                    // Only flip booleans
+                    let leaf_value = self.shadow.get(leaf);
+                    let inverted = match leaf_value {
+                        Some(crate::shadow::ValueRepr::Bool(true)) => "false",
+                        Some(crate::shadow::ValueRepr::Bool(false)) => "true",
+                        _ => continue,
+                    };
+
+                    for peer_id in &leaf_peers {
+                        if *peer_id == leaf_id {
+                            continue;
+                        }
+                        // If peer is also a leaf under this parent change and in the
+                        // flip graph, both sides are explicitly set → skip flip.
+                        if flip_leaf_ids.contains(peer_id) {
+                            continue;
+                        }
+                        if let Some(peer_path) = self.intern.resolve(*peer_id) {
+                            let peer_path = peer_path.to_owned();
+                            Self::emit_flip_change(&self.shadow, &peer_path, inverted, output);
                         }
                     }
                 }
@@ -1228,6 +1606,228 @@ impl ProcessingPipeline {
         self.router.route_produced_changes(depth, produced_changes)
     }
 
+    /// Collect validator dispatches for all validators affected in the current processing pass.
+    fn collect_validator_dispatches(&self) -> Vec<ValidatorDispatch> {
+        self.ctx
+            .affected_validators
+            .iter()
+            .filter_map(|&validator_id| {
+                let meta = self.function_registry.get(validator_id)?;
+                let dependency_values = meta
+                    .dependency_paths
+                    .iter()
+                    .map(|dep_path| {
+                        let value_json = self
+                            .shadow
+                            .get(dep_path)
+                            .map(|v| {
+                                serde_json::to_string(&v.to_json_value())
+                                    .unwrap_or_else(|_| "null".to_owned())
+                            })
+                            .unwrap_or_else(|| "null".to_owned());
+                        (dep_path.clone(), value_json)
+                    })
+                    .collect();
+                Some(ValidatorDispatch {
+                    validator_id,
+                    output_path: meta.output_path.clone().unwrap_or_default(),
+                    dependency_values,
+                })
+            })
+            .collect()
+    }
+
+    /// Build a full execution plan if any listeners are registered and any fire.
+    /// Returns `None` if no listeners or no groups matched.
+    fn build_execution_plan(&self) -> Option<FullExecutionPlan> {
+        if !self.router.has_listeners() {
+            return None;
+        }
+        let plan = self.router.create_full_execution_plan(&self.ctx.changes);
+        if plan.groups.is_empty() {
+            None
+        } else {
+            Some(plan)
+        }
+    }
+
+    /// Shared pipeline core: steps 0–11.
+    ///
+    /// Clears processing buffers, runs the full change pipeline
+    /// (diff → aggregation writes → shadow apply → clear paths → sync → flip →
+    /// aggregation reads → computation reads → BoolLogic → ValueLogic → validators → plan),
+    /// and returns intermediate results.
+    ///
+    /// Returns `None` if all input changes are no-ops (caller should return an empty result).
+    fn run_pipeline_core(&mut self, input_changes: Vec<Change>) -> Result<bool, String> {
+        // Clear per-call scratch space
+        self.ctx.clear();
+
+        // Local buffers for sync/flip (avoid storing on struct — they're pure temporaries)
+        let mut sync_buf: Vec<Change> = Vec::new();
+        let mut flip_buf: Vec<Change> = Vec::new();
+        // Local buffer for concern changes produced by BoolLogic/ValueLogic evaluation
+        let mut concern_changes: Vec<Change> = Vec::new();
+
+        // Step 0: Diff pre-pass — filter no-op changes early
+        let input_changes = self.diff_changes(&input_changes);
+        if input_changes.is_empty() {
+            return Ok(false);
+        }
+
+        // Steps 1-2: Process aggregation writes (distribute target → sources)
+        let changes = process_aggregation_writes(&self.aggregations, input_changes, &self.shadow);
+
+        // Step 1.5: Filter out writes to computation targets (silent no-op)
+        let changes: Vec<Change> = changes
+            .into_iter()
+            .filter(|c| !self.computations.is_computation_target(&c.path))
+            .collect();
+
+        // Step 3: Apply aggregated changes to shadow state and collect affected paths.
+        // Only process genuine changes (diff against shadow before applying).
+        let mut genuine_path_ids: Vec<u32> = Vec::new();
+        for change in &changes {
+            let current = self.shadow.get(&change.path);
+            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
+            {
+                Ok(v) => v,
+                Err(_) => {
+                    // Can't parse → treat as genuine change
+                    self.shadow.set(&change.path, &change.value_json)?;
+                    self.ctx.changes.push(change.clone());
+                    genuine_path_ids.push(self.intern.intern(&change.path));
+                    self.mark_affected_logic(&change.path);
+                    continue;
+                }
+            };
+            if crate::diff::is_different(&current, &new_value) {
+                self.shadow.set(&change.path, &change.value_json)?;
+                self.ctx.changes.push(change.clone());
+                genuine_path_ids.push(self.intern.intern(&change.path));
+                self.mark_affected_logic(&change.path);
+            }
+        }
+
+        // Step 3.5: Clear paths — "when X changes, set Y to null".
+        // Only original genuine changes (Step 3) feed into clear processing (no self-cascading).
+        let clear_changes =
+            self.clear_registry
+                .process(&genuine_path_ids, &mut self.intern, &mut self.shadow);
+        for change in &clear_changes {
+            self.mark_affected_logic(&change.path);
+        }
+        self.ctx.changes.extend(clear_changes.clone());
+
+        // Steps 4-5: Process sync paths and update shadow state.
+        // Must process ALL aggregated changes (not just genuine ones) because even if
+        // a change is a no-op for path A, it might need to sync to path B that differs.
+        // Include clear changes so sync sees cleared paths.
+        let mut changes_for_sync = changes.clone();
+        changes_for_sync.extend(clear_changes.clone());
+        self.process_sync_paths_into(&changes_for_sync, &mut sync_buf);
+        for change in &sync_buf {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.ctx.changes.extend_from_slice(&sync_buf);
+
+        // Steps 6-7: Process flip paths and update shadow state.
+        // Must process ALL aggregated changes + clear changes + sync outputs.
+        let mut changes_for_flip = changes.clone();
+        changes_for_flip.extend(clear_changes);
+        changes_for_flip.extend_from_slice(&sync_buf);
+        self.process_flip_paths_into(&changes_for_flip, &mut flip_buf);
+        for change in &flip_buf {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.ctx.changes.extend_from_slice(&flip_buf);
+
+        // Step 7.5: Process aggregation reads (sources → target recomputation).
+        // After sync/flip, check if any aggregation sources changed and recompute targets.
+        let all_changed_paths: Vec<String> =
+            self.ctx.changes.iter().map(|c| c.path.clone()).collect();
+        let aggregation_reads =
+            process_aggregation_reads(&self.aggregations, &self.shadow, &all_changed_paths);
+        for change in &aggregation_reads {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.ctx.changes.extend(aggregation_reads);
+
+        // Step 7.6: Process computation reads (sources → target recomputation).
+        // Sees aggregation-produced changes because we re-collect all_changed_paths.
+        let all_changed_paths: Vec<String> =
+            self.ctx.changes.iter().map(|c| c.path.clone()).collect();
+        let computation_reads =
+            process_computation_reads(&self.computations, &self.shadow, &all_changed_paths);
+        for change in &computation_reads {
+            self.shadow.set(&change.path, &change.value_json)?;
+            self.mark_affected_logic(&change.path);
+        }
+        self.ctx.changes.extend(computation_reads);
+
+        // Steps 8-9: Evaluate affected BoolLogic expressions
+        for logic_id in &self.ctx.affected_bool_logic {
+            if let Some(meta) = self.registry.get(*logic_id) {
+                let result = meta.tree.evaluate(&self.shadow);
+                concern_changes.push(Change {
+                    path: meta.output_path.clone(),
+                    value_json: if result {
+                        "true".to_owned()
+                    } else {
+                        "false".to_owned()
+                    },
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                });
+            }
+        }
+
+        // Step 8b: Evaluate affected ValueLogic expressions
+        for vl_id in &self.ctx.affected_value_logics {
+            if let Some(meta) = self.value_logic_registry.get(*vl_id) {
+                let result = meta.tree.evaluate(&self.shadow);
+                concern_changes.push(Change {
+                    path: meta.output_path.clone(),
+                    value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                });
+            }
+        }
+
+        // Step 10: Collect affected validators with their dependency values
+        let validators_to_run = self.collect_validator_dispatches();
+
+        // Step 11: Create full execution plan if listeners are registered
+        let execution_plan = self.build_execution_plan();
+
+        // Store concern changes in ctx.changes (prefixed with _concerns.)
+        for c in concern_changes {
+            let path = if c.path.starts_with("_concerns.") {
+                c.path
+            } else {
+                crate::join_path("_concerns", &c.path)
+            };
+            self.ctx.changes.push(Change {
+                path,
+                value_json: c.value_json,
+                kind: c.kind,
+                lineage: c.lineage,
+                audit: c.audit,
+            });
+        }
+
+        self.ctx.validators_to_run = validators_to_run;
+        self.ctx.execution_plan = execution_plan;
+
+        Ok(true)
+    }
+
     /// Process a batch of changes from a JSON string (legacy path, used by Rust tests).
     #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn process_changes(&mut self, changes_json: &str) -> Result<String, String> {
@@ -1239,216 +1839,28 @@ impl ProcessingPipeline {
 
     /// Process a batch of changes from a pre-parsed Vec (serde-wasm-bindgen path).
     #[allow(dead_code)] // Called via WASM export chain
-    ///
-    /// Uses pre-allocated buffers to avoid per-call allocations.
-    ///
-    /// Three-checkpoint diff strategy:
-    /// - Checkpoint 1: Diff input changes before pipeline (early exit if all no-ops)
-    /// - Checkpoint 2: Inline filtering during aggregation/sync/flip (only add genuine changes to buffers)
-    /// - Checkpoint 3: JS-side diff of final queue before applyBatch (including listener changes)
     pub(crate) fn process_changes_vec(
         &mut self,
         input_changes: Vec<Change>,
     ) -> Result<ProcessResult, String> {
-        // Clear pre-allocated buffers
-        self.buf_output.clear();
-        self.buf_sync.clear();
-        self.buf_flip.clear();
-        self.buf_affected_ids.clear();
-        self.buf_concern_changes.clear();
-        self.buf_affected_validators.clear();
-        self.buf_affected_value_logics.clear();
-
-        // Step 0: Diff pre-pass (always-on)
-        let input_changes: Vec<Change> = {
-            // Use diff engine to filter out no-op changes
-            let diffed = self.diff_changes(&input_changes);
-            // Early exit if all changes are no-ops
-            if diffed.is_empty() {
-                return Ok(ProcessResult {
-                    changes: Vec::new(),
-                    validators_to_run: Vec::new(),
-                    execution_plan: None,
-                });
-            }
-            diffed
-        };
-
-        // Step 1-2: Process aggregation writes (distribute target → sources)
-        let changes = process_aggregation_writes(&self.aggregations, input_changes, &self.shadow);
-
-        // Step 1.5: Filter out writes to computation targets (silent no-op)
-        let changes: Vec<Change> = changes
-            .into_iter()
-            .filter(|c| !self.computations.is_computation_target(&c.path))
-            .collect();
-
-        // Step 3: Apply aggregated changes to shadow state and collect affected paths
-        // Only process genuine changes (diff against shadow before applying)
-        let mut genuine_path_ids: Vec<u32> = Vec::new();
-        for change in &changes {
-            // Check if this aggregated change is a no-op against current shadow state
-            let current = self.shadow.get(&change.path);
-            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
-            {
-                Ok(v) => v,
-                Err(_) => {
-                    // Can't parse → treat as genuine change
-                    self.shadow.set(&change.path, &change.value_json)?;
-                    self.buf_output.push(change.clone());
-                    genuine_path_ids.push(self.intern.intern(&change.path));
-                    self.mark_affected_logic(&change.path);
-                    continue;
-                }
-            };
-
-            // Only apply and track if different from current shadow value
-            if crate::diff::is_different(&current, &new_value) {
-                self.shadow.set(&change.path, &change.value_json)?;
-                self.buf_output.push(change.clone());
-                genuine_path_ids.push(self.intern.intern(&change.path));
-                self.mark_affected_logic(&change.path);
-            }
+        if !self.run_pipeline_core(input_changes)? {
+            return Ok(ProcessResult {
+                changes: Vec::new(),
+                validators_to_run: Vec::new(),
+                execution_plan: None,
+            });
         }
 
-        // Step 3.5: Clear paths — "when X changes, set Y to null"
-        // Only original genuine changes (Step 3) feed into clear processing (no self-cascading)
-        let clear_changes =
-            self.clear_registry
-                .process(&genuine_path_ids, &mut self.intern, &mut self.shadow);
-        for change in &clear_changes {
-            self.mark_affected_logic(&change.path);
+        // In production, only Real changes are returned to JS.
+        // In debug mode, all change kinds are returned for DevTools.
+        if !self.debug_enabled {
+            self.ctx.changes.retain(|c| c.kind == ChangeKind::Real);
         }
-        self.buf_output.extend(clear_changes.clone());
-
-        // Step 4-5: Process sync paths and update shadow state
-        // Must process ALL aggregated changes (not just genuine ones) because even if
-        // a change is a no-op for path A, it might need to sync to path B that differs
-        // Include clear changes so sync sees cleared paths
-        let mut changes_for_sync = changes.clone();
-        changes_for_sync.extend(clear_changes.clone());
-        self.process_sync_paths_into(&changes_for_sync);
-        // Drain buf_sync to avoid borrow conflict with self.shadow/self.mark_affected_logic
-        let sync_changes: Vec<Change> = self.buf_sync.drain(..).collect();
-        for change in &sync_changes {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend_from_slice(&sync_changes);
-
-        // Step 6-7: Process flip paths and update shadow state
-        // Must process ALL aggregated changes + clear changes + sync outputs
-        let mut changes_for_flip = changes.clone();
-        changes_for_flip.extend(clear_changes);
-        changes_for_flip.extend(sync_changes.clone());
-        self.process_flip_paths_into(&changes_for_flip);
-        let flip_changes: Vec<Change> = self.buf_flip.drain(..).collect();
-        for change in &flip_changes {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend(flip_changes.clone());
-
-        // Step 7.5: Process aggregation reads (sources → target recomputation)
-        // After sync/flip, check if any aggregation sources changed and recompute targets
-        let all_changed_paths: Vec<String> =
-            self.buf_output.iter().map(|c| c.path.clone()).collect();
-        let aggregation_reads =
-            process_aggregation_reads(&self.aggregations, &self.shadow, &all_changed_paths);
-        for change in &aggregation_reads {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend(aggregation_reads);
-
-        // Step 7.6: Process computation reads (sources → target recomputation)
-        let all_changed_paths: Vec<String> =
-            self.buf_output.iter().map(|c| c.path.clone()).collect();
-        let computation_reads =
-            process_computation_reads(&self.computations, &self.shadow, &all_changed_paths);
-        for change in &computation_reads {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend(computation_reads);
-
-        // Step 8-9: Evaluate affected BoolLogic expressions
-        for logic_id in &self.buf_affected_ids {
-            if let Some(meta) = self.registry.get(*logic_id) {
-                let result = meta.tree.evaluate(&self.shadow);
-                self.buf_concern_changes.push(Change {
-                    path: meta.output_path.clone(),
-                    value_json: if result {
-                        "true".to_owned()
-                    } else {
-                        "false".to_owned()
-                    },
-                    origin: None,
-                });
-            }
-        }
-
-        // Step 8b: Evaluate affected ValueLogic expressions
-        for vl_id in &self.buf_affected_value_logics {
-            if let Some(meta) = self.value_logic_registry.get(*vl_id) {
-                let result = meta.tree.evaluate(&self.shadow);
-                self.buf_concern_changes.push(Change {
-                    path: meta.output_path.clone(),
-                    value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
-                    origin: None,
-                });
-            }
-        }
-
-        // Step 10: Collect affected validators with their dependency values
-        let validators_to_run: Vec<ValidatorDispatch> = self
-            .buf_affected_validators
-            .iter()
-            .filter_map(|&validator_id| {
-                let meta = self.function_registry.get(validator_id)?;
-
-                // Gather dependency values from shadow state
-                let mut dependency_values = std::collections::HashMap::new();
-                for dep_path in &meta.dependency_paths {
-                    if let Some(value) = self.shadow.get(dep_path) {
-                        let value_json = serde_json::to_string(&value.to_json_value())
-                            .unwrap_or_else(|_| "null".to_owned());
-                        dependency_values.insert(dep_path.clone(), value_json);
-                    } else {
-                        dependency_values.insert(dep_path.clone(), "null".to_owned());
-                    }
-                }
-
-                Some(ValidatorDispatch {
-                    validator_id,
-                    output_path: meta.output_path.clone().unwrap_or_default(),
-                    dependency_values,
-                })
-            })
-            .collect();
-
-        // Step 11: Create full execution plan if listeners are registered
-        // Only genuine changes in buf_output (filtered inline during sync/flip/aggregation)
-        let execution_plan = if self.router.has_listeners() {
-            let plan = self.router.create_full_execution_plan(&self.buf_output);
-            if plan.groups.is_empty() {
-                None
-            } else {
-                Some(plan)
-            }
-        } else {
-            None
-        };
-
-        // Move buffers into result (swap with empty vecs to avoid cloning)
-        // Merge concern changes into output_changes (keep _concerns. prefix)
-        let mut all_changes = std::mem::take(&mut self.buf_output);
-        all_changes.extend(std::mem::take(&mut self.buf_concern_changes));
 
         Ok(ProcessResult {
-            changes: all_changes,
-            validators_to_run,
-            execution_plan,
+            changes: std::mem::take(&mut self.ctx.changes),
+            validators_to_run: std::mem::take(&mut self.ctx.validators_to_run),
+            execution_plan: self.ctx.execution_plan.take(),
         })
     }
 
@@ -1459,29 +1871,29 @@ impl ProcessingPipeline {
             let path_id = self.intern.intern(affected_path);
             // Mark affected BoolLogic
             for logic_id in self.rev_index.affected_by_path(path_id) {
-                self.buf_affected_ids.insert(logic_id);
+                self.ctx.affected_bool_logic.insert(logic_id);
             }
             // Mark affected validators (now in function registry)
             for validator_id in self.function_rev_index.affected_by_path(path_id) {
-                self.buf_affected_validators.insert(validator_id);
+                self.ctx.affected_validators.insert(validator_id);
             }
             // Mark affected ValueLogic
             for vl_id in self.value_logic_rev_index.affected_by_path(path_id) {
-                self.buf_affected_value_logics.insert(vl_id);
+                self.ctx.affected_value_logics.insert(vl_id);
             }
         }
         let path_id = self.intern.intern(path);
         // Mark affected BoolLogic
         for logic_id in self.rev_index.affected_by_path(path_id) {
-            self.buf_affected_ids.insert(logic_id);
+            self.ctx.affected_bool_logic.insert(logic_id);
         }
         // Mark affected validators (now in function registry)
         for validator_id in self.function_rev_index.affected_by_path(path_id) {
-            self.buf_affected_validators.insert(validator_id);
+            self.ctx.affected_validators.insert(validator_id);
         }
         // Mark affected ValueLogic
         for vl_id in self.value_logic_rev_index.affected_by_path(path_id) {
-            self.buf_affected_value_logics.insert(vl_id);
+            self.ctx.affected_value_logics.insert(vl_id);
         }
     }
 
@@ -1514,9 +1926,7 @@ impl ProcessingPipeline {
 
     /// Process changes through pipeline: aggregation → sync → flip → BoolLogic → validators.
     ///
-    /// Updates shadow state during processing (needed for BoolLogic evaluation).
-    /// Buffers BoolLogic concern results in buf_pending_concern_changes.
-    /// Creates execution plan for listeners and collects validators to run.
+    /// Buffers results in buf_pending_* for pipeline_finalize() to consume.
     /// Returns: { state_changes, validators_to_run, execution_plan, has_work }
     ///
     /// After JS executes listeners/validators, call pipeline_finalize() with their results.
@@ -1524,210 +1934,43 @@ impl ProcessingPipeline {
         &mut self,
         input_changes: Vec<Change>,
     ) -> Result<PrepareResult, String> {
-        // Clear buffers
-        self.buf_output.clear();
-        self.buf_sync.clear();
-        self.buf_flip.clear();
-        self.buf_affected_ids.clear();
-        self.buf_concern_changes.clear();
-        self.buf_affected_validators.clear();
-        self.buf_affected_value_logics.clear();
+        // Clear pending buffers from any prior prepare call
         self.buf_pending_state_changes.clear();
         self.buf_pending_concern_changes.clear();
 
-        // Step 0: Diff pre-pass (always-on)
-        let input_changes: Vec<Change> = {
-            let diffed = self.diff_changes(&input_changes);
-            if diffed.is_empty() {
-                return Ok(PrepareResult {
-                    state_changes: Vec::new(),
-                    validators_to_run: Vec::new(),
-                    execution_plan: None,
-                    has_work: false,
-                });
+        if !self.run_pipeline_core(input_changes)? {
+            return Ok(PrepareResult {
+                state_changes: Vec::new(),
+                validators_to_run: Vec::new(),
+                execution_plan: None,
+                has_work: false,
+                trace: None,
+            });
+        }
+
+        // Partition ctx.changes: _concerns. paths go to concern buffer, rest to state
+        for change in self.ctx.changes.drain(..) {
+            if !self.debug_enabled && change.kind != ChangeKind::Real {
+                continue;
             }
-            diffed
-        };
-
-        // Step 1-2: Process aggregation writes
-        let changes = process_aggregation_writes(&self.aggregations, input_changes, &self.shadow);
-
-        // Step 1.5: Filter out writes to computation targets (silent no-op)
-        let changes: Vec<Change> = changes
-            .into_iter()
-            .filter(|c| !self.computations.is_computation_target(&c.path))
-            .collect();
-
-        // Step 3: Apply aggregated changes to shadow state
-        let mut genuine_path_ids: Vec<u32> = Vec::new();
-        for change in &changes {
-            let current = self.shadow.get(&change.path);
-            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
-            {
-                Ok(v) => v,
-                Err(_) => {
-                    self.shadow.set(&change.path, &change.value_json)?;
-                    self.buf_output.push(change.clone());
-                    genuine_path_ids.push(self.intern.intern(&change.path));
-                    self.mark_affected_logic(&change.path);
-                    continue;
-                }
-            };
-
-            if crate::diff::is_different(&current, &new_value) {
-                self.shadow.set(&change.path, &change.value_json)?;
-                self.buf_output.push(change.clone());
-                genuine_path_ids.push(self.intern.intern(&change.path));
-                self.mark_affected_logic(&change.path);
-            }
-        }
-
-        // Step 3.5: Clear paths — "when X changes, set Y to null"
-        // Only original genuine changes (Step 3) feed into clear processing (no self-cascading)
-        let clear_changes =
-            self.clear_registry
-                .process(&genuine_path_ids, &mut self.intern, &mut self.shadow);
-        for change in &clear_changes {
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend(clear_changes.clone());
-
-        // Step 4-5: Process sync paths
-        // Include clear changes so sync sees cleared paths
-        let mut changes_for_sync = changes.clone();
-        changes_for_sync.extend(clear_changes.clone());
-        self.process_sync_paths_into(&changes_for_sync);
-        let sync_changes: Vec<Change> = self.buf_sync.drain(..).collect();
-        for change in &sync_changes {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend_from_slice(&sync_changes);
-
-        // Step 6-7: Process flip paths
-        // Include clear changes + sync changes
-        let mut changes_for_flip = changes.clone();
-        changes_for_flip.extend(clear_changes);
-        changes_for_flip.extend(sync_changes.clone());
-        self.process_flip_paths_into(&changes_for_flip);
-        let flip_changes: Vec<Change> = self.buf_flip.drain(..).collect();
-        for change in &flip_changes {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend(flip_changes);
-
-        // Step 7.5: Process aggregation reads (sources → target recomputation)
-        // After sync/flip, check if any aggregation sources changed and recompute targets
-        let all_changed_paths: Vec<String> =
-            self.buf_output.iter().map(|c| c.path.clone()).collect();
-        let aggregation_reads =
-            process_aggregation_reads(&self.aggregations, &self.shadow, &all_changed_paths);
-        for change in &aggregation_reads {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend(aggregation_reads);
-
-        // Step 7.6: Process computation reads (sources → target recomputation)
-        // After aggregation reads, check if any computation sources changed and recompute targets
-        let all_changed_paths: Vec<String> =
-            self.buf_output.iter().map(|c| c.path.clone()).collect();
-        let computation_reads =
-            process_computation_reads(&self.computations, &self.shadow, &all_changed_paths);
-        for change in &computation_reads {
-            self.shadow.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&change.path);
-        }
-        self.buf_output.extend(computation_reads);
-
-        // Step 8-9: Evaluate affected BoolLogic expressions
-        for logic_id in &self.buf_affected_ids {
-            if let Some(meta) = self.registry.get(*logic_id) {
-                let result = meta.tree.evaluate(&self.shadow);
-                // Keep full path with _concerns. prefix (strip happens in finalize)
-                self.buf_concern_changes.push(Change {
-                    path: meta.output_path.clone(),
-                    value_json: if result {
-                        "true".to_owned()
-                    } else {
-                        "false".to_owned()
-                    },
-                    origin: None,
-                });
-            }
-        }
-
-        // Step 8b: Evaluate affected ValueLogic expressions
-        for vl_id in &self.buf_affected_value_logics {
-            if let Some(meta) = self.value_logic_registry.get(*vl_id) {
-                let result = meta.tree.evaluate(&self.shadow);
-                self.buf_concern_changes.push(Change {
-                    path: meta.output_path.clone(),
-                    value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
-                    origin: None,
-                });
-            }
-        }
-
-        // Step 10: Collect affected validators
-        let validators_to_run: Vec<ValidatorDispatch> = self
-            .buf_affected_validators
-            .iter()
-            .filter_map(|&validator_id| {
-                let meta = self.function_registry.get(validator_id)?;
-
-                let mut dependency_values = std::collections::HashMap::new();
-                for dep_path in &meta.dependency_paths {
-                    if let Some(value) = self.shadow.get(dep_path) {
-                        let value_json = serde_json::to_string(&value.to_json_value())
-                            .unwrap_or_else(|_| "null".to_owned());
-                        dependency_values.insert(dep_path.clone(), value_json);
-                    } else {
-                        dependency_values.insert(dep_path.clone(), "null".to_owned());
-                    }
-                }
-
-                // Keep full path with _concerns. prefix (strip happens in finalize)
-                Some(ValidatorDispatch {
-                    validator_id,
-                    output_path: meta.output_path.clone().unwrap_or_default(),
-                    dependency_values,
-                })
-            })
-            .collect();
-
-        // Step 11: Create execution plan
-        let execution_plan = if self.router.has_listeners() {
-            let plan = self.router.create_full_execution_plan(&self.buf_output);
-            if plan.groups.is_empty() {
-                None
+            if change.path.starts_with("_concerns.") {
+                self.buf_pending_concern_changes.push(change);
             } else {
-                Some(plan)
+                self.buf_pending_state_changes.push(change);
             }
-        } else {
-            None
-        };
+        }
 
-        // Store pending changes for finalize
-        self.buf_pending_state_changes = std::mem::take(&mut self.buf_output);
-        self.buf_pending_concern_changes = std::mem::take(&mut self.buf_concern_changes);
-
-        // Determine if there's work to do:
-        // - If there are validators or listeners, JS needs to execute them
-        // - If there are concern changes (BoolLogic results), they need to be applied
-        // - If there are state changes, they need to be finalized
-        let has_work = !validators_to_run.is_empty()
-            || execution_plan.is_some()
+        let has_work = !self.buf_pending_state_changes.is_empty()
             || !self.buf_pending_concern_changes.is_empty()
-            || !self.buf_pending_state_changes.is_empty();
+            || !self.ctx.validators_to_run.is_empty()
+            || self.ctx.execution_plan.is_some();
 
-        // Return readonly context for JS listener execution
         Ok(PrepareResult {
             state_changes: self.buf_pending_state_changes.clone(),
-            validators_to_run,
-            execution_plan,
+            validators_to_run: std::mem::take(&mut self.ctx.validators_to_run),
+            execution_plan: self.ctx.execution_plan.take(),
             has_work,
+            trace: None, // Trace will be wired up when StageTrace is fully implemented
         })
     }
 
@@ -1752,7 +1995,9 @@ impl ProcessingPipeline {
                 js_concern_changes.push(Change {
                     path: stripped_path,
                     value_json: change.value_json,
-                    origin: change.origin,
+                    kind: change.kind,
+                    lineage: change.lineage,
+                    audit: change.audit,
                 });
             } else {
                 js_state_changes.push(change);
@@ -1783,7 +2028,9 @@ impl ProcessingPipeline {
                     Change {
                         path: crate::join_path("_concerns", &c.path),
                         value_json: c.value_json,
-                        origin: c.origin,
+                        kind: c.kind,
+                        lineage: c.lineage,
+                        audit: c.audit,
                     }
                 }
             })
@@ -1800,7 +2047,9 @@ impl ProcessingPipeline {
             .map(|c| Change {
                 path: crate::join_path("_concerns", &c.path),
                 value_json: c.value_json,
-                origin: c.origin,
+                kind: c.kind,
+                lineage: c.lineage,
+                audit: c.audit,
             })
             .collect();
         let diffed_js_concerns = self.diff_changes(&js_concerns_prefixed);
@@ -1825,18 +2074,6 @@ impl Default for ProcessingPipeline {
     }
 }
 
-// Re-export for lib.rs boundary
-impl Change {
-    #[allow(dead_code)] // Called via WASM export chain
-    pub fn new(path: String, value_json: String) -> Self {
-        Self {
-            path,
-            value_json,
-            origin: None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1846,6 +2083,16 @@ mod tests {
         p.shadow_init(r#"{"user": {"role": "guest", "age": 20, "email": "test@test.com"}}"#)
             .unwrap();
         p
+    }
+
+    /// Parse JSON string into typed aggregation pairs (test convenience).
+    fn agg_pairs(json: &str) -> Vec<AggregationPairInput> {
+        serde_json::from_str(json).unwrap()
+    }
+
+    /// Parse JSON string into typed computation pairs (test convenience).
+    fn comp_pairs(json: &str) -> Vec<ComputationPairInput> {
+        serde_json::from_str(json).unwrap()
     }
 
     /// Helper to extract concern changes from ProcessResult (those starting with _concerns.)
@@ -2144,9 +2391,9 @@ mod tests {
         let mut p = make_pipeline();
 
         // Register aggregation: allUsers -> [user1, user2, user3]
-        p.register_aggregation_batch(
+        p.register_aggregation_batch(&agg_pairs(
             r#"[["allUsers", "user1"], ["allUsers", "user2"], ["allUsers", "user3"]]"#,
-        )
+        ))
         .unwrap();
 
         // Write to aggregation target
@@ -2174,9 +2421,9 @@ mod tests {
     fn aggregation_removes_target_change() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(
+        p.register_aggregation_batch(&agg_pairs(
             r#"[["form.allChecked", "item1"], ["form.allChecked", "item2"]]"#,
-        )
+        ))
         .unwrap();
 
         let result = p
@@ -2196,8 +2443,10 @@ mod tests {
     fn aggregation_with_child_path() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
-            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#,
+        ))
+        .unwrap();
 
         // Write to a child path of the aggregation target
         let result = p
@@ -2218,12 +2467,12 @@ mod tests {
     fn aggregation_with_multiple_aggregations() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(
+        p.register_aggregation_batch(&agg_pairs(
             r#"[
                 ["allUsers", "user1"], ["allUsers", "user2"],
                 ["allItems", "item1"], ["allItems", "item2"], ["allItems", "item3"]
             ]"#,
-        )
+        ))
         .unwrap();
 
         let result = p
@@ -2253,8 +2502,10 @@ mod tests {
     fn aggregation_unregister() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
-            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#,
+        ))
+        .unwrap();
 
         // After unregister, aggregation should not apply
         p.unregister_aggregation_batch(r#"["allUsers"]"#).unwrap();
@@ -2296,19 +2547,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // Note: sync propagation tests are in Phase 2 (WASM-015) when process_sync_paths
-    // is integrated into process_changes. For now, we only test registration/unregistration.
-    //
-    // #[test]
-    // fn sync_propagates_change_to_peers() {
-    //     // TODO: Implement in WASM-015: processChanges() Phase 2
-    // }
-    //
-    // #[test]
-    // fn sync_with_multiple_peers() {
-    //     // TODO: Implement in WASM-015: processChanges() Phase 2
-    // }
-
     #[test]
     fn sync_isolated_paths_no_propagation() {
         let mut p = make_pipeline();
@@ -2323,6 +2561,351 @@ mod tests {
         // Should only have input change, no sync propagation
         assert_eq!(parsed.changes.len(), 1);
         assert_eq!(parsed.changes[0].path, "x");
+    }
+
+    // --- sync propagation tests ---
+
+    #[test]
+    fn sync_propagates_exact_match() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": "old", "target": "old"}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["source", "target"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "source", "value_json": "\"new\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let target_change = parsed.changes.iter().find(|c| c.path == "target");
+        assert!(target_change.is_some(), "target should receive sync change");
+        assert_eq!(target_change.unwrap().value_json, r#""new""#);
+    }
+
+    #[test]
+    fn sync_propagates_to_multiple_peers() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "old", "b": "old", "c": "old"}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"], ["a", "c"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"synced\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(paths.contains(&"b"), "b should be synced");
+        assert!(paths.contains(&"c"), "c should be synced");
+    }
+
+    #[test]
+    fn sync_chained_pairs() {
+        // a→b, b→c — changing a should cascade to b AND c
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "old", "b": "old", "c": "old"}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"], ["b", "c"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"chain\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b_change = parsed.changes.iter().find(|c| c.path == "b");
+        let c_change = parsed.changes.iter().find(|c| c.path == "c");
+        assert!(b_change.is_some(), "b should be synced from a");
+        assert!(c_change.is_some(), "c should be synced from b (chained)");
+        assert_eq!(b_change.unwrap().value_json, r#""chain""#);
+        assert_eq!(c_change.unwrap().value_json, r#""chain""#);
+    }
+
+    #[test]
+    fn sync_bidirectional_no_infinite_loop() {
+        // a↔b — changing a should sync to b, but not loop infinitely
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "old", "b": "old"}"#).unwrap();
+        p.register_sync_batch(r#"[["a", "b"], ["b", "a"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"bidir\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b_change = parsed.changes.iter().find(|c| c.path == "b");
+        assert!(b_change.is_some(), "b should be synced");
+        assert_eq!(b_change.unwrap().value_json, r#""bidir""#);
+    }
+
+    #[test]
+    fn sync_nested_paths_exact() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"user": {"name": "Alice", "email": "a@b.com"}, "profile": {"name": "old", "email": "old"}}"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["user.name", "profile.name"], ["user.email", "profile.email"]]"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "user.name", "value_json": "\"Bob\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let profile_name = parsed.changes.iter().find(|c| c.path == "profile.name");
+        assert!(profile_name.is_some(), "profile.name should be synced");
+        assert_eq!(profile_name.unwrap().value_json, r#""Bob""#);
+
+        // profile.email should NOT be affected
+        let profile_email = parsed.changes.iter().find(|c| c.path == "profile.email");
+        assert!(
+            profile_email.is_none(),
+            "profile.email should not change when user.name changes"
+        );
+    }
+
+    #[test]
+    fn sync_deeply_nested_paths() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"l1": {"l2": {"value": "old", "l3": {"value": "old"}}}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["l1.l2.value", "l1.l2.l3.value"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "l1.l2.value", "value_json": "\"deep-sync\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let deep = parsed.changes.iter().find(|c| c.path == "l1.l2.l3.value");
+        assert!(deep.is_some(), "deeply nested target should be synced");
+        assert_eq!(deep.unwrap().value_json, r#""deep-sync""#);
+    }
+
+    #[test]
+    fn sync_shallow_to_deep() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"shallow": "old", "a": {"b": {"c": {"deep": "old"}}}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["shallow", "a.b.c.deep"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "shallow", "value_json": "\"s2d\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let deep = parsed.changes.iter().find(|c| c.path == "a.b.c.deep");
+        assert!(deep.is_some(), "deep target should be synced from shallow");
+        assert_eq!(deep.unwrap().value_json, r#""s2d""#);
+    }
+
+    #[test]
+    fn sync_deep_to_shallow() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"shallow": "old", "a": {"b": {"c": {"deep": "old"}}}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a.b.c.deep", "shallow"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a.b.c.deep", "value_json": "\"d2s\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let shallow = parsed.changes.iter().find(|c| c.path == "shallow");
+        assert!(
+            shallow.is_some(),
+            "shallow target should be synced from deep"
+        );
+        assert_eq!(shallow.unwrap().value_json, r#""d2s""#);
+    }
+
+    #[test]
+    fn sync_skips_no_op_when_values_match() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": "same", "target": "same"}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["source", "target"]]"#).unwrap();
+
+        // Source set to same value as target — sync should be a no-op
+        let result = p
+            .process_changes(r#"[{"path": "source", "value_json": "\"same\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Diff pre-pass drops this because source is already "same" in shadow
+        // So no changes at all
+        assert!(
+            parsed.changes.is_empty() || !parsed.changes.iter().any(|c| c.path == "target"),
+            "target should not get a redundant sync"
+        );
+    }
+
+    #[test]
+    fn sync_boolean_values() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"flag1": false, "flag2": true}"#).unwrap();
+        p.register_sync_batch(r#"[["flag1", "flag2"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "flag1", "value_json": "true"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let flag2 = parsed.changes.iter().find(|c| c.path == "flag2");
+        assert!(flag2.is_some(), "flag2 should be synced");
+        assert_eq!(flag2.unwrap().value_json, "true");
+    }
+
+    #[test]
+    fn sync_numeric_values() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"count": 0, "mirror": 99}"#).unwrap();
+        p.register_sync_batch(r#"[["count", "mirror"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "count", "value_json": "42"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let mirror = parsed.changes.iter().find(|c| c.path == "mirror");
+        assert!(mirror.is_some(), "mirror should be synced");
+        assert_eq!(mirror.unwrap().value_json, "42");
+    }
+
+    #[test]
+    fn sync_empty_string() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "value", "b": "value"}"#).unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b = parsed.changes.iter().find(|c| c.path == "b");
+        assert!(b.is_some(), "b should be synced to empty string");
+        assert_eq!(b.unwrap().value_json, r#""""#);
+    }
+
+    #[test]
+    fn sync_independent_pairs_dont_interfere() {
+        // Two independent sync pairs on different paths
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "old", "b": "old", "x": "old", "y": "old"}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"], ["x", "y"]]"#)
+            .unwrap();
+
+        // Change only "a" — should sync to "b" but NOT touch x/y
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"new-a\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b = parsed.changes.iter().find(|c| c.path == "b");
+        assert!(b.is_some(), "b should be synced");
+        assert_eq!(b.unwrap().value_json, r#""new-a""#);
+
+        let y = parsed.changes.iter().find(|c| c.path == "y");
+        assert!(y.is_none(), "y should not be affected by a→b sync");
+    }
+
+    #[test]
+    fn sync_multiple_changes_in_batch() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"s1": "old1", "t1": "old1", "s2": "old2", "t2": "old2"}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["s1", "t1"], ["s2", "t2"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "s1", "value_json": "\"v1\""}, {"path": "s2", "value_json": "\"v2\""}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let t1 = parsed.changes.iter().find(|c| c.path == "t1");
+        let t2 = parsed.changes.iter().find(|c| c.path == "t2");
+        assert!(t1.is_some(), "t1 should be synced from s1");
+        assert!(t2.is_some(), "t2 should be synced from s2");
+        assert_eq!(t1.unwrap().value_json, r#""v1""#);
+        assert_eq!(t2.unwrap().value_json, r#""v2""#);
+    }
+
+    #[test]
+    fn sync_overlapping_hierarchy_cascades() {
+        // l1.value→l2.value, l2.value→l3.value — changing l1.value cascades through
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"l1": {"value": "old"}, "l2": {"value": "old"}, "l3": {"value": "old"}}"#,
+        )
+        .unwrap();
+        p.register_sync_batch(r#"[["l1.value", "l2.value"], ["l2.value", "l3.value"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "l1.value", "value_json": "\"cascade\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let l2 = parsed.changes.iter().find(|c| c.path == "l2.value");
+        let l3 = parsed.changes.iter().find(|c| c.path == "l3.value");
+        assert!(l2.is_some(), "l2.value should be synced directly");
+        assert!(l3.is_some(), "l3.value should be synced via cascade");
+        assert_eq!(l2.unwrap().value_json, r#""cascade""#);
+        assert_eq!(l3.unwrap().value_json, r#""cascade""#);
+    }
+
+    #[test]
+    fn sync_self_reference_no_crash() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "old"}"#).unwrap();
+        p.register_sync_batch(r#"[["a", "a"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"self\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Self-sync should be a no-op (peer_id == path_id is skipped)
+        let a_changes: Vec<&Change> = parsed.changes.iter().filter(|c| c.path == "a").collect();
+        assert_eq!(a_changes.len(), 1, "only the original change, no self-sync");
+    }
+
+    #[test]
+    fn sync_after_unregister_stops() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "old", "b": "old"}"#).unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+
+        // Verify sync works
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"v1\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+        assert!(parsed.changes.iter().any(|c| c.path == "b"));
+
+        // Unregister
+        p.unregister_sync_batch(r#"[["a", "b"]]"#).unwrap();
+
+        // Sync should no longer happen
+        let result = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"v2\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+        assert!(
+            !parsed.changes.iter().any(|c| c.path == "b"),
+            "b should NOT sync after unregister"
+        );
     }
 
     // --- flip graph tests ---
@@ -2486,8 +3069,10 @@ mod tests {
     fn full_pipeline_aggregation_only() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
-            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#,
+        ))
+        .unwrap();
 
         let result = p
             .process_changes(r#"[{"path": "allUsers", "value_json": "\"alice\""}]"#)
@@ -2564,8 +3149,10 @@ mod tests {
         .unwrap();
 
         // Register aggregation
-        p.register_aggregation_batch(r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#)
-            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#,
+        ))
+        .unwrap();
 
         // Register sync: user.status <-> profile.status
         p.register_sync_batch(
@@ -2821,8 +3408,10 @@ mod tests {
     fn full_pipeline_aggregation_with_boollogic() {
         let mut p = make_pipeline();
 
-        p.register_aggregation_batch(r#"[["allFlags", "flag1"], ["allFlags", "flag2"]]"#)
-            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allFlags", "flag1"], ["allFlags", "flag2"]]"#,
+        ))
+        .unwrap();
 
         p.register_boollogic(
             "_concerns.panel.visibleWhen",
@@ -3614,5 +4203,1562 @@ mod tests {
                 "Missing validator concern change"
             );
         }
+
+        /// Regression: initial sync must propagate to peer paths that are absent
+        /// from shadow state (e.g., stripped by JSON.stringify when value was undefined).
+        /// The parent object exists but the leaf key does not.
+        #[test]
+        fn initial_sync_propagates_to_absent_peer_path() {
+            let mut p = make_pipeline();
+
+            // Shadow has $shared.selectedCcy as a real object,
+            // but product ccyPair is absent (parent exists, leaf stripped)
+            p.shadow_init(
+                r#"{
+                    "$shared": {
+                        "selectedCcy": {"id": "EUR/USD", "forCurrency": {"id": "EUR"}}
+                    },
+                    "g": {"1": {"p": {"2": {"data": {"optionsCommon": {"base": {}}}}}}}
+                }"#,
+            )
+            .unwrap();
+
+            // Register sync pair: $shared.selectedCcy ↔ product ccyPair
+            let result = p
+                .register_sync_batch(
+                    r#"[["$shared.selectedCcy", "g.1.p.2.data.optionsCommon.base.ccyPair"]]"#,
+                )
+                .unwrap();
+
+            let changes: Vec<Change> = serde_json::from_str(&result).unwrap();
+
+            // The absent ccyPair should be synced FROM $shared.selectedCcy
+            assert!(
+                !changes.is_empty(),
+                "Expected initial sync to propagate to absent peer path"
+            );
+
+            let ccy_change = changes
+                .iter()
+                .find(|c| c.path == "g.1.p.2.data.optionsCommon.base.ccyPair");
+            assert!(
+                ccy_change.is_some(),
+                "Expected change for ccyPair, got: {:?}",
+                changes
+            );
+
+            // Value should match $shared.selectedCcy
+            let value_json = &ccy_change.unwrap().value_json;
+            let value: serde_json::Value = serde_json::from_str(value_json).unwrap();
+            assert_eq!(value["id"], "EUR/USD");
+            assert_eq!(value["forCurrency"]["id"], "EUR");
+        }
+    }
+
+    // =======================================================================
+    // EP9 integration tests: ChangeKind, Lineage, ChangeContext, stages
+    // =======================================================================
+
+    use crate::change::{ChangeContext, ChangeKind, Lineage};
+
+    /// Helper: create Change with Real/Input defaults (simulates JS input).
+    fn input_change(path: &str, value_json: &str) -> Change {
+        Change::new(path.to_owned(), value_json.to_owned())
+    }
+
+    /// Helper: find a change by path in a result set.
+    fn find_change<'a>(changes: &'a [Change], path: &str) -> Option<&'a Change> {
+        changes.iter().find(|c| c.path == path)
+    }
+
+    /// Helper: assert a change has expected kind.
+    fn assert_kind(change: &Change, expected: ChangeKind) {
+        assert_eq!(
+            change.kind, expected,
+            "change at '{}' expected kind {:?}",
+            change.path, expected
+        );
+    }
+
+    // --- Group 1: ChangeKind propagation ---
+
+    #[test]
+    fn test_input_changes_are_real() {
+        let mut p = make_pipeline();
+        let result = p
+            .process_changes_vec(vec![input_change("user.role", r#""admin""#)])
+            .unwrap();
+        assert!(!result.changes.is_empty());
+        for c in &result.changes {
+            assert_kind(c, ChangeKind::Real);
+        }
+    }
+
+    #[test]
+    fn test_sync_produced_changes_are_real() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "hello", "b": "hello"}"#).unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("a", r#""world""#)])
+            .unwrap();
+        // Should have both a and b changes
+        assert!(result.changes.len() >= 2);
+        for c in &result.changes {
+            assert_kind(c, ChangeKind::Real);
+        }
+        // Verify sync propagated
+        let b_change = find_change(&result.changes, "b");
+        assert!(b_change.is_some(), "sync should propagate a → b");
+        assert_eq!(b_change.unwrap().value_json, r#""world""#);
+    }
+
+    #[test]
+    fn test_flip_produced_changes_are_real() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"visible": false, "hidden": true}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["visible", "hidden"]]"#).unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("visible", "true")])
+            .unwrap();
+        assert!(result.changes.len() >= 2);
+        for c in &result.changes {
+            assert_kind(c, ChangeKind::Real);
+        }
+        let hidden = find_change(&result.changes, "hidden");
+        assert!(hidden.is_some(), "flip should produce hidden change");
+        assert_eq!(hidden.unwrap().value_json, "false");
+    }
+
+    #[test]
+    fn test_aggregation_write_distributes_and_recomputes() {
+        // Aggregation writes distribute target → sources (write stage removes target),
+        // then aggregation-read recomputes target from sources (all-equal → target restored).
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"allUsers": null, "user1": null, "user2": null}"#)
+            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allUsers", "user1"], ["allUsers", "user2"]]"#,
+        ))
+        .unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("allUsers", r#""shared""#)])
+            .unwrap();
+
+        // Source changes should be present and Real
+        let u1 = find_change(&result.changes, "user1");
+        let u2 = find_change(&result.changes, "user2");
+        assert!(u1.is_some(), "user1 should receive distributed value");
+        assert!(u2.is_some(), "user2 should receive distributed value");
+        assert_kind(u1.unwrap(), ChangeKind::Real);
+        assert_kind(u2.unwrap(), ChangeKind::Real);
+
+        // Target recomputed by aggregation-read (all sources equal → target gets same value)
+        let target = find_change(&result.changes, "allUsers");
+        assert!(
+            target.is_some(),
+            "aggregation-read should recompute target from sources"
+        );
+        assert_kind(target.unwrap(), ChangeKind::Real);
+        assert_eq!(target.unwrap().value_json, r#""shared""#);
+    }
+
+    #[test]
+    fn test_no_op_changes_filtered() {
+        // If value matches shadow state, diff filters it out (0 changes returned).
+        let mut p = make_pipeline();
+        // Shadow has user.role = "guest" already
+        let result = p
+            .process_changes_vec(vec![input_change("user.role", r#""guest""#)])
+            .unwrap();
+        assert_eq!(
+            result.changes.len(),
+            0,
+            "no-op change should be filtered by diff"
+        );
+    }
+
+    // --- Group 2: Lineage tracking ---
+
+    #[test]
+    fn test_input_changes_have_lineage_input() {
+        let mut p = make_pipeline();
+        let result = p
+            .process_changes_vec(vec![input_change("user.role", r#""admin""#)])
+            .unwrap();
+        for c in &result.changes {
+            assert_eq!(
+                c.lineage,
+                Lineage::Input,
+                "input change at '{}' should have Lineage::Input",
+                c.path
+            );
+        }
+    }
+
+    #[test]
+    fn test_sync_changes_have_lineage_input() {
+        // Current behavior: sync/flip changes are created with Lineage::Input.
+        // (Proper Derived lineage is a future step once stage policies are wired.)
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"x": 1, "y": 2}"#).unwrap();
+        p.register_sync_batch(r#"[["x", "y"]]"#).unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("x", "10")])
+            .unwrap();
+        for c in &result.changes {
+            assert_eq!(
+                c.lineage,
+                Lineage::Input,
+                "change at '{}' currently has Lineage::Input",
+                c.path
+            );
+        }
+    }
+
+    #[test]
+    fn test_concern_changes_have_lineage_input() {
+        let mut p = make_pipeline();
+        p.register_boollogic(
+            "_concerns.user.role.disabledWhen",
+            r#"{"IS_EQUAL": ["user.role", "admin"]}"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("user.role", r#""admin""#)])
+            .unwrap();
+
+        let concern_changes: Vec<&Change> = result
+            .changes
+            .iter()
+            .filter(|c| c.path.starts_with("_concerns."))
+            .collect();
+        assert!(
+            !concern_changes.is_empty(),
+            "BoolLogic should produce concern changes"
+        );
+        for c in &concern_changes {
+            assert_eq!(c.lineage, Lineage::Input);
+        }
+    }
+
+    #[test]
+    fn test_lineage_context_defaults_to_mutation() {
+        // Lineage::Input.context() returns ChangeContext::Mutation
+        let mut p = make_pipeline();
+        let result = p
+            .process_changes_vec(vec![input_change("user.age", "30")])
+            .unwrap();
+        for c in &result.changes {
+            assert_eq!(
+                c.lineage.context(),
+                ChangeContext::Mutation,
+                "Input lineage context should be Mutation"
+            );
+        }
+    }
+
+    // --- Group 3: Debug mode behavior ---
+
+    #[test]
+    fn test_debug_mode_preserves_all_changes() {
+        // Debug mode skips the retain(Real) filter, preserving all change kinds.
+        let mut p = make_pipeline();
+        p.set_debug(true);
+
+        let debug_result = p
+            .process_changes_vec(vec![input_change("user.role", r#""admin""#)])
+            .unwrap();
+        assert!(
+            !debug_result.changes.is_empty(),
+            "debug mode should return changes"
+        );
+
+        let mut p2 = make_pipeline();
+        let prod_result = p2
+            .process_changes_vec(vec![input_change("user.role", r#""admin""#)])
+            .unwrap();
+
+        assert!(
+            debug_result.changes.len() >= prod_result.changes.len(),
+            "debug mode should return >= production changes"
+        );
+    }
+
+    #[test]
+    fn test_production_mode_all_changes_real() {
+        // In production mode, retain(|c| c.kind == Real) runs.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": 1, "b": 2}"#).unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("a", "10")])
+            .unwrap();
+        for c in &result.changes {
+            assert_kind(c, ChangeKind::Real);
+        }
+    }
+
+    #[test]
+    fn test_debug_mode_no_filtering() {
+        // Debug mode skips the retain(Real) filter.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": 1, "b": 2}"#).unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+        p.set_debug(true);
+
+        let result = p
+            .process_changes_vec(vec![input_change("a", "10")])
+            .unwrap();
+        assert!(
+            result.changes.len() >= 2,
+            "debug mode should not filter changes"
+        );
+    }
+
+    // --- Group 4: Full pipeline integration (multi-stage) ---
+
+    #[test]
+    fn test_sync_then_flip_chain() {
+        // sync(a ↔ b) + flip(b ↔ c): change a=true → b=true (sync), c=false (flip)
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": false, "b": false, "c": true}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+        p.register_flip_batch(r#"[["b", "c"]]"#).unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("a", "true")])
+            .unwrap();
+
+        let a = find_change(&result.changes, "a");
+        let b = find_change(&result.changes, "b");
+        let c = find_change(&result.changes, "c");
+
+        assert!(a.is_some(), "a should be in output");
+        assert!(b.is_some(), "b should be synced from a");
+        assert!(c.is_some(), "c should be flipped from b");
+
+        assert_eq!(a.unwrap().value_json, "true");
+        assert_eq!(b.unwrap().value_json, "true");
+        assert_eq!(c.unwrap().value_json, "false");
+
+        for c in &result.changes {
+            assert_kind(c, ChangeKind::Real);
+        }
+    }
+
+    #[test]
+    fn test_aggregation_then_sync_then_boollogic() {
+        // aggregation(total ← price1, price2) + sync(total ↔ displayTotal) + BoolLogic on total
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"price1": 10, "price2": 20, "total": 10, "displayTotal": 10}"#)
+            .unwrap();
+
+        p.register_aggregation_batch(&agg_pairs(r#"[["total", "price1"], ["total", "price2"]]"#))
+            .unwrap();
+        p.register_sync_batch(r#"[["total", "displayTotal"]]"#)
+            .unwrap();
+        p.register_boollogic(
+            "_concerns.total.highlight",
+            r#"{"IS_EQUAL": ["total", 100]}"#,
+        )
+        .unwrap();
+
+        // Change price1 → triggers aggregation read recompute of total
+        let result = p
+            .process_changes_vec(vec![input_change("price1", "50")])
+            .unwrap();
+
+        let price1 = find_change(&result.changes, "price1");
+        assert!(price1.is_some(), "price1 should be in output");
+
+        for c in result
+            .changes
+            .iter()
+            .filter(|c| !c.path.starts_with("_concerns."))
+        {
+            assert_kind(c, ChangeKind::Real);
+        }
+    }
+
+    #[test]
+    fn test_clear_path_then_sync() {
+        // clearPath(trigger=email, target=errors) + sync(errors ↔ displayErrors)
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"email": "old@test.com", "errors": "some error", "displayErrors": "some error"}"#,
+        )
+        .unwrap();
+
+        p.register_clear_paths("test", &["email".to_owned()], &["errors".to_owned()])
+            .unwrap();
+        p.register_sync_batch(r#"[["errors", "displayErrors"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes_vec(vec![input_change("email", r#""new@test.com""#)])
+            .unwrap();
+
+        let errors = find_change(&result.changes, "errors");
+        assert!(errors.is_some(), "errors should be cleared");
+        assert_eq!(errors.unwrap().value_json, "null");
+
+        let display = find_change(&result.changes, "displayErrors");
+        assert!(display.is_some(), "displayErrors should sync");
+        assert_eq!(display.unwrap().value_json, "null");
+
+        for c in &result.changes {
+            assert_kind(c, ChangeKind::Real);
+        }
+    }
+
+    #[test]
+    fn test_computation_then_boollogic() {
+        // computation(SUM, total ← a, b) + BoolLogic(IS_EQUAL(total, 0))
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": 0, "b": 0, "total": 0}"#).unwrap();
+
+        p.register_computation_batch(&comp_pairs(
+            r#"[["SUM", "total", "a"], ["SUM", "total", "b"]]"#,
+        ))
+        .unwrap();
+
+        p.register_boollogic("_concerns.x.disabledWhen", r#"{"IS_EQUAL": ["total", 0]}"#)
+            .unwrap();
+
+        // Change a from 0 to 5 → total recomputes to 5, BoolLogic evaluates to false
+        let result = p.process_changes_vec(vec![input_change("a", "5")]).unwrap();
+
+        let total = find_change(&result.changes, "total");
+        assert!(total.is_some(), "total should be recomputed");
+        assert_eq!(total.unwrap().value_json, "5");
+
+        let concern = find_change(&result.changes, "_concerns.x.disabledWhen");
+        assert!(concern.is_some(), "BoolLogic should produce concern change");
+        assert_eq!(concern.unwrap().value_json, "false");
+    }
+
+    // --- Group 5: prepare_changes / pipeline_finalize round-trip ---
+
+    #[test]
+    fn test_prepare_finalize_round_trip() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"x": 1, "y": 2}"#).unwrap();
+        p.register_sync_batch(r#"[["x", "y"]]"#).unwrap();
+        p.register_boollogic("_concerns.x.active", r#"{"GT": ["x", 5]}"#)
+            .unwrap();
+
+        let prep = p.prepare_changes(vec![input_change("x", "10")]).unwrap();
+        assert!(prep.has_work, "should have work");
+
+        let y_change = prep.state_changes.iter().find(|c| c.path == "y");
+        assert!(y_change.is_some(), "prepare should include sync to y");
+
+        let fin = p.pipeline_finalize(vec![]).unwrap();
+        assert!(
+            !fin.state_changes.is_empty(),
+            "finalize should return changes"
+        );
+    }
+
+    #[test]
+    fn test_prepare_finalize_with_js_changes() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"x": 1, "extra": null}"#).unwrap();
+
+        let prep = p.prepare_changes(vec![input_change("x", "10")]).unwrap();
+        assert!(prep.has_work);
+
+        let js_changes = vec![input_change("extra", r#""from-listener""#)];
+        let fin = p.pipeline_finalize(js_changes).unwrap();
+
+        let extra = fin.state_changes.iter().find(|c| c.path == "extra");
+        assert!(
+            extra.is_some(),
+            "finalize should include js_changes in output"
+        );
+        assert_eq!(extra.unwrap().value_json, r#""from-listener""#);
+    }
+
+    #[test]
+    fn test_prepare_no_work_returns_early() {
+        let mut p = make_pipeline();
+
+        let prep = p.prepare_changes(vec![]).unwrap();
+        assert!(!prep.has_work, "empty changes should have no work");
+
+        let prep2 = p
+            .prepare_changes(vec![input_change("user.role", r#""guest""#)])
+            .unwrap();
+        assert!(
+            !prep2.has_work || prep2.state_changes.is_empty(),
+            "no-op change should result in no work"
+        );
+    }
+
+    // --- Group 6: PipelineContext isolation ---
+
+    #[test]
+    fn test_ctx_clears_between_calls() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": 1, "b": 2, "c": 3}"#).unwrap();
+
+        p.register_boollogic("_concerns.a.flag", r#"{"GT": ["a", 10]}"#)
+            .unwrap();
+        p.register_boollogic("_concerns.c.flag", r#"{"GT": ["c", 10]}"#)
+            .unwrap();
+
+        // First call: change a → triggers BoolLogic on a
+        let result1 = p
+            .process_changes_vec(vec![input_change("a", "20")])
+            .unwrap();
+        let has_a_concern = result1.changes.iter().any(|c| c.path == "_concerns.a.flag");
+        assert!(has_a_concern, "first call should trigger a's BoolLogic");
+
+        // Second call: change c → triggers BoolLogic on c, NOT a's
+        let result2 = p
+            .process_changes_vec(vec![input_change("c", "20")])
+            .unwrap();
+        let has_c_concern = result2.changes.iter().any(|c| c.path == "_concerns.c.flag");
+        assert!(has_c_concern, "second call should trigger c's BoolLogic");
+
+        let has_a_in_second = result2.changes.iter().any(|c| c.path == "_concerns.a.flag");
+        assert!(
+            !has_a_in_second,
+            "second call should not contain first call's concern changes"
+        );
+    }
+
+    #[test]
+    fn test_multiple_prepare_calls_clear_pending() {
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"x": 1, "y": 2}"#).unwrap();
+
+        // First prepare without finalize
+        let _prep1 = p.prepare_changes(vec![input_change("x", "10")]).unwrap();
+
+        // Second prepare should start fresh (buffers cleared)
+        let prep2 = p.prepare_changes(vec![input_change("y", "20")]).unwrap();
+
+        let has_x = prep2.state_changes.iter().any(|c| c.path == "x");
+        assert!(
+            !has_x,
+            "second prepare should not contain first prepare's data"
+        );
+        let has_y = prep2.state_changes.iter().any(|c| c.path == "y");
+        assert!(has_y, "second prepare should contain y's change");
+    }
+
+    // --- child path sync/flip tests (change DEEPER than registered path) ---
+
+    #[test]
+    fn sync_child_path_propagates_to_peer() {
+        // Sync pair ["source", "target"], change source.name → expect target.name
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": {"name": "old"}, "target": {"name": "old"}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["source", "target"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "source.name", "value_json": "\"Bob\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let target_change = parsed.changes.iter().find(|c| c.path == "target.name");
+        assert!(
+            target_change.is_some(),
+            "target.name should receive sync when source.name changes (child path propagation)"
+        );
+        assert_eq!(target_change.unwrap().value_json, r#""Bob""#);
+    }
+
+    #[test]
+    fn sync_deeply_nested_child_propagates() {
+        // Sync pair ["a", "b"], change a.x.y → expect b.x.y
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": {"x": {"y": "old"}}, "b": {"x": {"y": "old"}}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a.x.y", "value_json": "\"deep\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b_change = parsed.changes.iter().find(|c| c.path == "b.x.y");
+        assert!(
+            b_change.is_some(),
+            "b.x.y should receive sync when a.x.y changes (deeply nested child propagation)"
+        );
+        assert_eq!(b_change.unwrap().value_json, r#""deep""#);
+    }
+
+    #[test]
+    fn sync_child_path_multiple_peers() {
+        // Sync pairs ["a", "b"] and ["a", "c"], change a.name → expect b.name and c.name
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": {"name": "old"}, "b": {"name": "old"}, "c": {"name": "old"}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"], ["a", "c"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a.name", "value_json": "\"synced\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(
+            paths.contains(&"b.name"),
+            "b.name should be synced from a.name (child path, multiple peers)"
+        );
+        assert!(
+            paths.contains(&"c.name"),
+            "c.name should be synced from a.name (child path, multiple peers)"
+        );
+    }
+
+    #[test]
+    fn flip_child_path_does_not_propagate() {
+        // Flip pair ["flags", "inverted"], change flags.visible (child) → flip should NOT fire
+        // Flip only works on exact path match, not children of paired objects
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"flags": {"visible": false}, "inverted": {"visible": true}}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["flags", "inverted"]]"#).unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "flags.visible", "value_json": "true"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let inv_changes: Vec<&Change> = parsed
+            .changes
+            .iter()
+            .filter(|c| c.path.starts_with("inverted"))
+            .collect();
+        assert!(
+            inv_changes.is_empty(),
+            "flip should NOT propagate when a child of the paired object changes"
+        );
+    }
+
+    // --- parent path sync/flip tests (change SHALLOWER than registered path) ---
+
+    #[test]
+    fn sync_parent_object_breaks_down_to_leaf_sync() {
+        // Sync pair ["user.name", "profile.name"], change user (object) → expect profile.name
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"user": {"name": "old", "age": 20}, "profile": {"name": "old"}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["user.name", "profile.name"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "user", "value_json": "{\"name\": \"Alice\", \"age\": 30}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let profile_name = parsed.changes.iter().find(|c| c.path == "profile.name");
+        assert!(
+            profile_name.is_some(),
+            "profile.name should be synced when parent 'user' changes (parent breakdown)"
+        );
+        assert_eq!(profile_name.unwrap().value_json, r#""Alice""#);
+    }
+
+    #[test]
+    fn sync_parent_with_multiple_registered_leaves() {
+        // Sync pairs for user.name→profile.name and user.email→profile.email
+        // Change parent user → both leaves should sync
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"user": {"name": "old", "email": "old@x.com"}, "profile": {"name": "old", "email": "old@x.com"}}"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["user.name", "profile.name"], ["user.email", "profile.email"]]"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "user", "value_json": "{\"name\": \"Bob\", \"email\": \"bob@x.com\"}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let profile_name = parsed.changes.iter().find(|c| c.path == "profile.name");
+        let profile_email = parsed.changes.iter().find(|c| c.path == "profile.email");
+        assert!(
+            profile_name.is_some(),
+            "profile.name should be synced from parent user change"
+        );
+        assert!(
+            profile_email.is_some(),
+            "profile.email should be synced from parent user change"
+        );
+        assert_eq!(profile_name.unwrap().value_json, r#""Bob""#);
+        assert_eq!(profile_email.unwrap().value_json, r#""bob@x.com""#);
+    }
+
+    #[test]
+    fn sync_parent_ignores_unregistered_leaves() {
+        // Sync pair only for user.name→profile.name (not user.age)
+        // Change parent user with name+age → profile.age should NOT appear
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"user": {"name": "old", "age": 20}, "profile": {"name": "old"}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["user.name", "profile.name"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "user", "value_json": "{\"name\": \"Bob\", \"age\": 30}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let profile_age = parsed.changes.iter().find(|c| c.path == "profile.age");
+        assert!(
+            profile_age.is_none(),
+            "profile.age should NOT appear — no sync pair registered for user.age"
+        );
+    }
+
+    #[test]
+    fn sync_parent_with_missing_nested_value() {
+        // Sync pair ["user.name", "profile.name"], change user to {email: "x"} (no name key)
+        // Should NOT sync profile.name since the value doesn't exist in the new object
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"user": {"name": "old"}, "profile": {"name": "old"}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["user.name", "profile.name"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "user", "value_json": "{\"email\": \"x\"}"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let profile_name = parsed.changes.iter().find(|c| c.path == "profile.name");
+        assert!(
+            profile_name.is_none(),
+            "profile.name should NOT be synced when source object lacks 'name' key"
+        );
+    }
+
+    #[test]
+    fn flip_parent_change_breaks_down_to_leaf_flip() {
+        // Flip pair on leaves ["flags.a", "flags.b"], change parent "flags" (object)
+        // Parent change should decompose into leaf changes, then flip fires on matched leaves
+        // Shadow: a=false, b=true. Parent sets a=true → flip should produce b=false
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"flags": {"a": false, "b": true}}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["flags.a", "flags.b"]]"#)
+            .unwrap();
+
+        // Set flags = {a: true} — parent change (only one side of the flip pair)
+        // Decompose: flags.a = true (changed from false), flags.b not present
+        // Flip: flags.a = true → flags.b should become false
+        let result = p
+            .process_changes(r#"[{"path": "flags", "value_json": "{\"a\": true}"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b_change = parsed.changes.iter().find(|c| c.path == "flags.b");
+        assert!(
+            b_change.is_some(),
+            "flags.b should receive flip when parent 'flags' changes and flags.a is a leaf flip source"
+        );
+        assert_eq!(b_change.unwrap().value_json, "false");
+    }
+
+    #[test]
+    fn flip_parent_change_with_multiple_leaf_pairs() {
+        // Flip pairs: ["panel.open", "panel.closed"], ["panel.visible", "panel.hidden"]
+        // Change parent "panel" → both flip pairs should fire
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"panel": {"open": false, "closed": true, "visible": false, "hidden": true}}"#,
+        )
+        .unwrap();
+        p.register_flip_batch(
+            r#"[["panel.open", "panel.closed"], ["panel.visible", "panel.hidden"]]"#,
+        )
+        .unwrap();
+
+        // Set panel = {open: true, visible: true} — only one side of each flip pair
+        // Decompose: open=true (was false), visible=true (was false)
+        // closed and hidden are NOT in the parent object → flip fires for them
+        // Flip: open=true → closed=false, visible=true → hidden=false
+        let result = p
+            .process_changes(
+                r#"[{"path": "panel", "value_json": "{\"open\": true, \"visible\": true}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let closed = parsed.changes.iter().find(|c| c.path == "panel.closed");
+        let hidden = parsed.changes.iter().find(|c| c.path == "panel.hidden");
+        assert!(
+            closed.is_some(),
+            "panel.closed should flip from parent decomposition of panel.open"
+        );
+        assert!(
+            hidden.is_some(),
+            "panel.hidden should flip from parent decomposition of panel.visible"
+        );
+        assert_eq!(closed.unwrap().value_json, "false");
+        assert_eq!(hidden.unwrap().value_json, "false");
+    }
+
+    #[test]
+    fn flip_parent_change_both_sides_present_no_flip() {
+        // Flip pair ["flags.a", "flags.b"], parent change sets BOTH a and b
+        // When both sides of the flip pair are present in the parent change,
+        // there's no point flipping — user explicitly set both values
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"flags": {"a": false, "b": true}}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["flags.a", "flags.b"]]"#)
+            .unwrap();
+
+        // User sets both: a=true, b=true (intentionally NOT inverted)
+        // Since both sides are explicitly set, flip should NOT override b
+        let result = p
+            .process_changes(r#"[{"path": "flags", "value_json": "{\"a\": true, \"b\": true}"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // The parent change decomposes to flags.a=true and flags.b=true
+        // Since both sides of the flip pair are in the same parent change,
+        // flip should NOT run — the user's explicit values should be respected
+        let flip_b = parsed
+            .changes
+            .iter()
+            .filter(|c| c.path == "flags.b" && c.value_json == "false")
+            .count();
+        assert_eq!(
+            flip_b, 0,
+            "flip should NOT override flags.b when both sides are explicitly set in parent change"
+        );
+    }
+
+    #[test]
+    fn flip_parent_change_only_one_side_present_does_flip() {
+        // Flip pair ["flags.a", "flags.b"], parent change sets only a (not b)
+        // Only one side present → flip SHOULD fire for the missing side
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"flags": {"a": false, "b": true, "other": "x"}}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["flags.a", "flags.b"]]"#)
+            .unwrap();
+
+        // User sets flags = {a: true, other: "y"} — b is NOT in the new object
+        // Decompose: flags.a = true (changed)
+        // Flip: flags.a=true → flags.b should become false
+        let result = p
+            .process_changes(
+                r#"[{"path": "flags", "value_json": "{\"a\": true, \"other\": \"y\"}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b_change = parsed.changes.iter().find(|c| c.path == "flags.b");
+        assert!(
+            b_change.is_some(),
+            "flags.b should flip when only flags.a is in the parent change"
+        );
+        assert_eq!(b_change.unwrap().value_json, "false");
+    }
+
+    // --- overlapping hierarchy tests ---
+
+    #[test]
+    fn sync_parent_and_child_changes_in_same_batch() {
+        // Two changes in same batch: user (parent object) AND settings.theme (leaf)
+        // Sync pairs on leaves of both
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "user": {"name": "old"},
+                "profile": {"name": "old"},
+                "settings": {"theme": "light"},
+                "prefs": {"theme": "light"}
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["user.name", "profile.name"], ["settings.theme", "prefs.theme"]]"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[
+                    {"path": "user", "value_json": "{\"name\": \"Alice\"}"},
+                    {"path": "settings.theme", "value_json": "\"dark\""}
+                ]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let profile_name = parsed.changes.iter().find(|c| c.path == "profile.name");
+        let prefs_theme = parsed.changes.iter().find(|c| c.path == "prefs.theme");
+        assert!(
+            profile_name.is_some(),
+            "profile.name should be synced from parent 'user' change"
+        );
+        assert!(
+            prefs_theme.is_some(),
+            "prefs.theme should be synced from exact match settings.theme"
+        );
+        assert_eq!(profile_name.unwrap().value_json, r#""Alice""#);
+        assert_eq!(prefs_theme.unwrap().value_json, r#""dark""#);
+    }
+
+    // --- object-level sync/flip pairs with nested data ---
+
+    #[test]
+    fn sync_object_pair_leaf_change_propagates() {
+        // Sync pair on objects: ["form.billing", "form.shipping"]
+        // Change a leaf inside billing → expect same leaf in shipping
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "form": {
+                    "billing": {"city": "Prague", "zip": "10000"},
+                    "shipping": {"city": "Prague", "zip": "10000"}
+                }
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(r#"[["form.billing", "form.shipping"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "form.billing.city", "value_json": "\"Brno\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let shipping_city = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "form.shipping.city");
+        assert!(
+            shipping_city.is_some(),
+            "form.shipping.city should sync when form.billing.city changes"
+        );
+        assert_eq!(shipping_city.unwrap().value_json, r#""Brno""#);
+
+        // zip should NOT be touched
+        let shipping_zip = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "form.shipping.zip");
+        assert!(
+            shipping_zip.is_none(),
+            "form.shipping.zip should not change when only city changed"
+        );
+    }
+
+    #[test]
+    fn sync_object_pair_multiple_leaf_changes_in_batch() {
+        // Sync pair on objects, two leaf changes in same batch
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "form": {
+                    "billing": {"city": "Prague", "zip": "10000"},
+                    "shipping": {"city": "Prague", "zip": "10000"}
+                }
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(r#"[["form.billing", "form.shipping"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[
+                    {"path": "form.billing.city", "value_json": "\"Brno\""},
+                    {"path": "form.billing.zip", "value_json": "\"60200\""}
+                ]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let shipping_city = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "form.shipping.city");
+        let shipping_zip = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "form.shipping.zip");
+        assert!(
+            shipping_city.is_some(),
+            "form.shipping.city should sync from billing.city"
+        );
+        assert!(
+            shipping_zip.is_some(),
+            "form.shipping.zip should sync from billing.zip"
+        );
+        assert_eq!(shipping_city.unwrap().value_json, r#""Brno""#);
+        assert_eq!(shipping_zip.unwrap().value_json, r#""60200""#);
+    }
+
+    #[test]
+    fn sync_object_pair_deeply_nested_leaf() {
+        // Sync pair on mid-level objects, change a deep leaf
+        // ["app.config.theme", "app.backup.theme"], change app.config.theme.colors.primary
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r##"{
+                "app": {
+                    "config": {"theme": {"colors": {"primary": "#000"}, "font": "sans"}},
+                    "backup": {"theme": {"colors": {"primary": "#000"}, "font": "sans"}}
+                }
+            }"##,
+        )
+        .unwrap();
+        p.register_sync_batch(r#"[["app.config.theme", "app.backup.theme"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r##"[{"path": "app.config.theme.colors.primary", "value_json": "\"#f00\""}]"##,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let backup_color = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "app.backup.theme.colors.primary");
+        assert!(
+            backup_color.is_some(),
+            "deep leaf under synced object should propagate to peer"
+        );
+        assert_eq!(backup_color.unwrap().value_json, r##""#f00""##);
+
+        // font should be untouched
+        let backup_font = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "app.backup.theme.font");
+        assert!(
+            backup_font.is_none(),
+            "sibling leaves under synced object should not be touched"
+        );
+    }
+
+    #[test]
+    fn sync_object_pair_replace_entire_subtree() {
+        // Sync pair on objects, replace the entire synced object with new value
+        // This is an exact match on the pair path itself
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "source": {"a": 1, "b": 2},
+                "target": {"a": 1, "b": 2}
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(r#"[["source", "target"]]"#).unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "source", "value_json": "{\"a\": 10, \"b\": 20, \"c\": 30}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let target_change = parsed.changes.iter().find(|c| c.path == "target");
+        assert!(
+            target_change.is_some(),
+            "exact match on object pair should still propagate"
+        );
+        assert_eq!(
+            target_change.unwrap().value_json,
+            r#"{"a": 10, "b": 20, "c": 30}"#
+        );
+    }
+
+    #[test]
+    fn flip_object_pair_child_change_does_not_propagate() {
+        // Flip pair on objects: ["ui.panel", "ui.overlay"]
+        // Change a boolean leaf INSIDE the object → flip should NOT fire
+        // Flip only works on exact path match (whole object), not children
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "ui": {
+                    "panel": {"visible": false, "expanded": true},
+                    "overlay": {"visible": true, "expanded": false}
+                }
+            }"#,
+        )
+        .unwrap();
+        p.register_flip_batch(r#"[["ui.panel", "ui.overlay"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "ui.panel.visible", "value_json": "true"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let overlay_changes: Vec<&Change> = parsed
+            .changes
+            .iter()
+            .filter(|c| c.path.starts_with("ui.overlay"))
+            .collect();
+        assert!(
+            overlay_changes.is_empty(),
+            "flip on object pair should NOT propagate when a child leaf changes — flip only works on exact match"
+        );
+    }
+
+    #[test]
+    fn flip_object_pair_multiple_child_changes_do_not_propagate() {
+        // Flip pair on objects, multiple boolean leaf changes in batch → still no flip
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "ui": {
+                    "panel": {"visible": false, "expanded": false},
+                    "overlay": {"visible": true, "expanded": true}
+                }
+            }"#,
+        )
+        .unwrap();
+        p.register_flip_batch(r#"[["ui.panel", "ui.overlay"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[
+                    {"path": "ui.panel.visible", "value_json": "true"},
+                    {"path": "ui.panel.expanded", "value_json": "true"}
+                ]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let overlay_changes: Vec<&Change> = parsed
+            .changes
+            .iter()
+            .filter(|c| c.path.starts_with("ui.overlay"))
+            .collect();
+        assert!(
+            overlay_changes.is_empty(),
+            "flip on object pair should NOT fire for child leaf changes, even in batch"
+        );
+    }
+
+    #[test]
+    fn flip_object_pair_non_boolean_child_ignored() {
+        // Flip pair on objects, change a non-boolean leaf → should NOT flip either
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "ui": {
+                    "panel": {"visible": false, "label": "old"},
+                    "overlay": {"visible": true, "label": "old"}
+                }
+            }"#,
+        )
+        .unwrap();
+        p.register_flip_batch(r#"[["ui.panel", "ui.overlay"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "ui.panel.label", "value_json": "\"new\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let overlay_label = parsed.changes.iter().find(|c| c.path == "ui.overlay.label");
+        assert!(
+            overlay_label.is_none(),
+            "non-boolean child of flip-paired object should not propagate"
+        );
+    }
+
+    #[test]
+    fn sync_object_pair_chained_three_objects() {
+        // Chained object sync: a → b → c (all objects)
+        // Change a.val → expect b.val AND c.val
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "a": {"val": "old"},
+                "b": {"val": "old"},
+                "c": {"val": "old"}
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(r#"[["a", "b"], ["b", "c"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "a.val", "value_json": "\"chain\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let b_val = parsed.changes.iter().find(|c| c.path == "b.val");
+        let c_val = parsed.changes.iter().find(|c| c.path == "c.val");
+        assert!(
+            b_val.is_some(),
+            "b.val should sync from a.val (object pair child propagation)"
+        );
+        assert!(
+            c_val.is_some(),
+            "c.val should sync from b.val (chained object pair child propagation)"
+        );
+        assert_eq!(b_val.unwrap().value_json, r#""chain""#);
+        assert_eq!(c_val.unwrap().value_json, r#""chain""#);
+    }
+
+    #[test]
+    fn sync_object_pair_mixed_with_leaf_pair() {
+        // One object-level pair + one leaf-level pair on the same subtree
+        // Object pair: ["data.input", "data.output"]
+        // Leaf pair: ["data.input.status", "ui.statusBadge"]
+        // Change data.input.status → both should fire
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "data": {
+                    "input": {"status": "draft", "title": "doc"},
+                    "output": {"status": "draft", "title": "doc"}
+                },
+                "ui": {"statusBadge": "draft"}
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["data.input", "data.output"], ["data.input.status", "ui.statusBadge"]]"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "data.input.status", "value_json": "\"published\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Leaf pair: exact match → ui.statusBadge
+        let badge = parsed.changes.iter().find(|c| c.path == "ui.statusBadge");
+        assert!(
+            badge.is_some(),
+            "ui.statusBadge should sync via exact leaf pair"
+        );
+        assert_eq!(badge.unwrap().value_json, r#""published""#);
+
+        // Object pair: child propagation → data.output.status
+        let output_status = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "data.output.status");
+        assert!(
+            output_status.is_some(),
+            "data.output.status should sync via object pair child propagation"
+        );
+        assert_eq!(output_status.unwrap().value_json, r#""published""#);
+    }
+
+    // --- anchorPath tests (WASM-EP10) ---
+    // anchorPath: when set, all resources in the registration are silently skipped
+    // if the anchor path is structurally absent from shadow state.
+    // These tests document the expected behavior before implementation.
+
+    #[test]
+    fn anchor_path_present_boollogic_evaluates() {
+        // anchorPath = "user.profile", profile exists → BoolLogic should evaluate
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"user": {"profile": {"name": "Alice", "role": "guest"}}}"#)
+            .unwrap();
+
+        // Note: register_side_effects doesn't support anchor_path yet, so this tests
+        // the expected future behavior. For now, register directly.
+        p.register_boollogic(
+            "_concerns.user.profile.name.disabledWhen",
+            r#"{"IS_EQUAL": ["user.profile.role", "admin"]}"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "user.profile.role", "value_json": "\"admin\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let concern = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "_concerns.user.profile.name.disabledWhen");
+        assert!(
+            concern.is_some(),
+            "BoolLogic should evaluate when anchor path is present in shadow"
+        );
+        assert_eq!(concern.unwrap().value_json, "true");
+    }
+
+    #[test]
+    fn anchor_path_absent_boollogic_skipped() {
+        // anchorPath = "user.profile", profile does NOT exist → BoolLogic should be skipped
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"user": {}, "otherField": "test"}"#)
+            .unwrap();
+
+        // Register BoolLogic that references user.profile.role
+        // With anchor_path="user.profile", this should be skipped since user.profile is absent
+        p.register_boollogic(
+            "_concerns.user.profile.name.disabledWhen",
+            r#"{"IS_EQUAL": ["user.profile.role", "admin"]}"#,
+        )
+        .unwrap();
+
+        // TODO: Once anchorPath is implemented, register with anchor_path="user.profile"
+        // and verify BoolLogic is NOT evaluated.
+        // For now, this documents the expected behavior.
+
+        // Change an unrelated field that happens to trigger reverse dependency check
+        let result = p
+            .process_changes(r#"[{"path": "otherField", "value_json": "\"changed\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Currently: BoolLogic won't fire because otherField isn't a dependency.
+        // With anchorPath: even if user.profile.role changed, BoolLogic would be skipped
+        // because user.profile is absent.
+        let concern = parsed
+            .changes
+            .iter()
+            .find(|c| c.path.starts_with("_concerns."));
+        assert!(
+            concern.is_none(),
+            "BoolLogic should not fire when anchor path is absent"
+        );
+    }
+
+    #[test]
+    fn anchor_path_removed_mid_session_skips_resources() {
+        // Start with anchor present, then remove it → resources should stop firing
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"user": {"profile": {"name": "Alice", "role": "guest"}}}"#)
+            .unwrap();
+
+        p.register_boollogic(
+            "_concerns.user.profile.name.disabledWhen",
+            r#"{"IS_EQUAL": ["user.profile.role", "admin"]}"#,
+        )
+        .unwrap();
+
+        // First: anchor present, change role → BoolLogic fires
+        let result1 = p
+            .process_changes(r#"[{"path": "user.profile.role", "value_json": "\"admin\""}]"#)
+            .unwrap();
+        let parsed1: ProcessResult = serde_json::from_str(&result1).unwrap();
+        let concern1 = parsed1
+            .changes
+            .iter()
+            .find(|c| c.path == "_concerns.user.profile.name.disabledWhen");
+        assert!(
+            concern1.is_some(),
+            "BoolLogic should evaluate when anchor present"
+        );
+
+        // Now remove the anchor by replacing user with empty object
+        let result2 = p
+            .process_changes(r#"[{"path": "user", "value_json": "{}"}]"#)
+            .unwrap();
+        let parsed2: ProcessResult = serde_json::from_str(&result2).unwrap();
+
+        // TODO: With anchorPath implemented, the BoolLogic for user.profile.name should
+        // NOT evaluate because user.profile no longer exists in shadow.
+        // This test documents expected behavior — currently BoolLogic would still try
+        // to evaluate (and get false because user.profile.role is absent).
+        let _concern2 = parsed2
+            .changes
+            .iter()
+            .find(|c| c.path == "_concerns.user.profile.name.disabledWhen");
+        // When anchorPath is implemented, assert concern2 is None
+    }
+
+    #[test]
+    fn anchor_path_restored_resumes_resources() {
+        // Start with anchor absent, add it → resources should resume
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"user": {}}"#).unwrap();
+
+        p.register_boollogic(
+            "_concerns.user.profile.name.disabledWhen",
+            r#"{"IS_EQUAL": ["user.profile.role", "admin"]}"#,
+        )
+        .unwrap();
+
+        // TODO: Register with anchor_path="user.profile"
+        // First call: anchor absent → BoolLogic skipped
+
+        // Restore anchor by adding profile
+        let result = p
+            .process_changes(
+                r#"[{"path": "user.profile", "value_json": "{\"name\": \"Bob\", \"role\": \"admin\"}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // When anchor is restored, BoolLogic should evaluate on this run
+        // (user.profile.role = "admin" → disabledWhen = true)
+        let concern = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "_concerns.user.profile.name.disabledWhen");
+        assert!(
+            concern.is_some(),
+            "BoolLogic should resume when anchor path is restored in shadow"
+        );
+    }
+
+    #[test]
+    fn anchor_path_affects_sync_pairs() {
+        // anchorPath on a registration with sync pairs
+        // When anchor absent → sync should not fire
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"form": {"billing": {"city": "Prague"}}, "form_copy": {"billing": {"city": "Prague"}}}"#,
+        )
+        .unwrap();
+
+        // Register sync pair with anchorPath="form.billing"
+        p.register_sync_batch(r#"[["form.billing.city", "form_copy.billing.city"]]"#)
+            .unwrap();
+
+        // While anchor is present, sync should work
+        let result1 = p
+            .process_changes(r#"[{"path": "form.billing.city", "value_json": "\"Brno\""}]"#)
+            .unwrap();
+        let parsed1: ProcessResult = serde_json::from_str(&result1).unwrap();
+        let sync1 = parsed1
+            .changes
+            .iter()
+            .find(|c| c.path == "form_copy.billing.city");
+        assert!(sync1.is_some(), "sync should work when anchor is present");
+
+        // Remove anchor: form.billing disappears
+        p.process_changes(r#"[{"path": "form", "value_json": "{}"}]"#)
+            .unwrap();
+
+        // TODO: With anchorPath, sync for form.billing.city should be skipped
+        // Currently handled by existing parent_exists guard, but anchorPath
+        // would skip the entire registration group, not just individual paths
+    }
+
+    #[test]
+    fn anchor_path_affects_listeners() {
+        // anchorPath on a registration with listeners
+        // When anchor absent → listener dispatch should be filtered out
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"section": {"field": "value"}}"#).unwrap();
+
+        // Register listener on section.field with anchorPath="section"
+        p.register_listeners_batch(
+            r#"[{"subscriber_id": 1, "topic_path": "section.field", "scope_path": "section"}]"#,
+        )
+        .unwrap();
+
+        // Anchor present → dispatch plan should include listener
+        let plan1 = p.create_dispatch_plan_vec(&[Change::new(
+            "section.field".to_string(),
+            r#""new""#.to_string(),
+        )]);
+        assert!(
+            !plan1.levels.is_empty(),
+            "listener should dispatch when anchor is present"
+        );
+
+        // Remove anchor
+        p.process_changes(r#"[{"path": "section", "value_json": "null"}]"#)
+            .unwrap();
+
+        // TODO: With anchorPath, listener should be filtered from dispatch plan
+        // even though topic still matches. Currently the listener would still fire
+        // because null is a value, not structural absence.
+        // For structural absence test:
+        // p.process_changes(r#"[{"path": "section", "value_json": ... remove key ...}]"#)
+    }
+
+    #[test]
+    fn anchor_path_null_value_is_not_absent() {
+        // Setting anchor path to null should NOT be treated as absent
+        // "Absent" is structural — the key must not exist, not just be null
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"section": null}"#).unwrap();
+
+        p.register_boollogic("_concerns.section.flag", r#"{"EXISTS": "section"}"#)
+            .unwrap();
+
+        // TODO: With anchorPath="section", resources should still fire
+        // because null is a value, not structural absence
+        let result = p
+            .process_changes(r#"[{"path": "section", "value_json": "null"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // EXISTS check against null path — section exists (it's null, but present)
+        // anchorPath should treat this as "present"
+        let _concern = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "_concerns.section.flag");
+        // When anchorPath is implemented: assert concern IS present (null = present)
+    }
+
+    #[test]
+    fn anchor_path_shared_across_registrations() {
+        // Multiple registrations with same anchorPath
+        // Removing anchor should skip ALL of them
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"panel": {"title": "Test", "active": false, "count": 0}}"#)
+            .unwrap();
+
+        // Registration 1: BoolLogic with anchorPath="panel"
+        p.register_boollogic(
+            "_concerns.panel.title.disabledWhen",
+            r#"{"IS_EQUAL": ["panel.active", true]}"#,
+        )
+        .unwrap();
+
+        // Registration 2: sync pair with anchorPath="panel"
+        p.register_sync_batch(r#"[["panel.title", "panel.backup_title"]]"#)
+            .unwrap();
+
+        // Both should work when anchor is present
+        let result = p
+            .process_changes(r#"[{"path": "panel.active", "value_json": "true"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+        let concern = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "_concerns.panel.title.disabledWhen");
+        assert!(
+            concern.is_some(),
+            "BoolLogic should evaluate when shared anchor is present"
+        );
+
+        // TODO: When anchorPath is implemented and panel is removed,
+        // BOTH the BoolLogic and the sync should be skipped
     }
 }

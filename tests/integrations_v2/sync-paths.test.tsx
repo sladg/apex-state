@@ -12,8 +12,18 @@
 import { describe, expect, it } from 'vitest'
 
 import { createGenericStore } from '../../src'
-import type { BasicTestState, SyncFlipState } from '../mocks'
-import { basicTestFixtures, syncFlipFixtures } from '../mocks'
+import type {
+  BasicTestState,
+  DeeplyNestedState,
+  ListenerTestState,
+  SyncFlipState,
+} from '../mocks'
+import {
+  basicTestFixtures,
+  deeplyNestedFixtures,
+  listenerTestFixtures,
+  syncFlipFixtures,
+} from '../mocks'
 import { flushEffects, MODES, mountStore } from '../utils/react'
 
 describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
@@ -564,6 +574,336 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.age).toBe(0)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Path hierarchy matching (migrated from tests/pipeline/normalize-changes.test.ts)
+  //
+  // The removed normalizeChangesForGroups JS function handled three match modes:
+  // - Exact match: change path = registered sync path
+  // - Child match: change path is deeper than registered (relative path appended)
+  // - Parent match: change path is ancestor, nested value extracted from object
+  //
+  // These scenarios now run through the WASM pipeline (process_sync_paths_into).
+  // ---------------------------------------------------------------------------
+
+  describe('Child path changes (change deeper than sync pair)', () => {
+    it('should sync child path change to peer at same relative depth', async () => {
+      // Sync pair: ['user', 'user'] is not meaningful here.
+      // Instead: sync pair on nested object paths.
+      // Change level1.level2.value (child of level1.level2)
+      // Sync pair: ['level1.level2.value', 'level1.level2.level3.value']
+      // Exact match on level1.level2.value → syncs to level1.level2.level3.value
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [['level1.level2.value', 'level1.level2.level3.value']],
+          },
+        },
+      )
+
+      setValue('level1.level2.value', 'synced-deep')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.level3.value).toBe('synced-deep')
+    })
+
+    it('should sync deeply nested leaf between two deep paths', async () => {
+      // Sync pair at depth 4→5: level1.level2.level3.value ↔ level1.level2.level3.level4.value
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              [
+                'level1.level2.level3.value',
+                'level1.level2.level3.level4.value',
+              ],
+            ],
+          },
+        },
+      )
+
+      setValue('level1.level2.level3.value', 'deep-sync')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.level3.level4.value).toBe(
+        'deep-sync',
+      )
+    })
+
+    it('should sync across different nesting depths', async () => {
+      // Sync from shallow (level1.value) to deep (level1.level2.level3.level4.level5.value)
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              ['level1.value', 'level1.level2.level3.level4.level5.value'],
+            ],
+          },
+        },
+      )
+
+      setValue('level1.value', 'shallow-to-deep')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.level3.level4.level5.value).toBe(
+        'shallow-to-deep',
+      )
+    })
+
+    it('should sync from deep to shallow path', async () => {
+      // Reverse: sync from depth 5 back to depth 1
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              ['level1.level2.level3.level4.level5.value', 'level1.value'],
+            ],
+          },
+        },
+      )
+
+      setValue('level1.level2.level3.level4.level5.value', 'deep-to-shallow')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.value).toBe('deep-to-shallow')
+    })
+  })
+
+  describe('Nested object sync (parent path changes)', () => {
+    it('should sync nested object fields between sibling paths', async () => {
+      // ListenerTestState has user.name, user.email, user.age
+      // Sync user.name → derived (flat field)
+      const store = createGenericStore<ListenerTestState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [['user.name', 'lastChange']],
+          },
+        },
+      )
+
+      setValue('user.name', 'Bob')
+      await flushEffects()
+
+      expect(storeInstance.state.lastChange).toBe('Bob')
+    })
+
+    it('should sync multiple nested fields from same parent', async () => {
+      // Two sync pairs from user.name and user.email to flat fields
+      const store = createGenericStore<ListenerTestState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              ['user.name', 'lastChange'],
+              ['user.email', 'derived'],
+            ],
+          },
+        },
+      )
+
+      setValue('user.name', 'Charlie')
+      await flushEffects()
+
+      expect(storeInstance.state.lastChange).toBe('Charlie')
+
+      setValue('user.email', 'charlie@example.com')
+      await flushEffects()
+
+      expect(storeInstance.state.derived).toBe('charlie@example.com')
+    })
+  })
+
+  describe('Overlapping and hierarchical sync paths', () => {
+    it('should handle sync pairs at different levels of same hierarchy', async () => {
+      // Two sync pairs on overlapping paths:
+      // level1.value → level1.level2.value
+      // level1.level2.value → level1.level2.level3.value
+      // Changing level1.value should cascade through both levels
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              ['level1.value', 'level1.level2.value'],
+              ['level1.level2.value', 'level1.level2.level3.value'],
+            ],
+          },
+        },
+      )
+
+      setValue('level1.value', 'cascade')
+      await flushEffects()
+
+      // Direct sync target
+      expect(storeInstance.state.level1.level2.value).toBe('cascade')
+      // Chained sync target (level2.value syncs to level3.value)
+      expect(storeInstance.state.level1.level2.level3.value).toBe('cascade')
+    })
+
+    it('should handle bidirectional sync on nested paths', async () => {
+      // Bidirectional: level1.level2.value ↔ level1.level2.level3.value
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              ['level1.level2.value', 'level1.level2.level3.value'],
+              ['level1.level2.level3.value', 'level1.level2.value'],
+            ],
+          },
+        },
+      )
+
+      // Forward direction
+      setValue('level1.level2.value', 'bidirectional-1')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.level3.value).toBe(
+        'bidirectional-1',
+      )
+
+      // Reverse direction
+      setValue('level1.level2.level3.value', 'bidirectional-2')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.value).toBe('bidirectional-2')
+    })
+
+    it('should not interfere across unrelated nested sync pairs', async () => {
+      // Two independent sync pairs on different branches of the tree
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              ['level1.value', 'level1.level2.value'],
+              [
+                'level1.level2.level3.level4.value',
+                'level1.level2.level3.level4.level5.value',
+              ],
+            ],
+          },
+        },
+      )
+
+      // Initial sync: level4.value='L4' syncs to level5.value on registration
+      await flushEffects()
+      const initialL5 =
+        storeInstance.state.level1.level2.level3.level4.level5.value
+
+      // Change shallow pair
+      setValue('level1.value', 'shallow-only')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.value).toBe('shallow-only')
+      // Deep pair should NOT be affected by shallow sync
+      expect(storeInstance.state.level1.level2.level3.level4.level5.value).toBe(
+        initialL5,
+      )
+
+      // Change deep pair
+      setValue('level1.level2.level3.level4.value', 'deep-only')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.level3.level4.level5.value).toBe(
+        'deep-only',
+      )
+      // Shallow pair should NOT be affected
+      expect(storeInstance.state.level1.value).toBe('shallow-only')
+    })
+  })
+
+  describe('Metadata and special values with nested sync', () => {
+    it('should sync empty string to nested path', async () => {
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [['level1.value', 'level1.level2.value']],
+          },
+        },
+      )
+
+      setValue('level1.value', '')
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.value).toBe('')
+    })
+
+    it('should handle boolean sync at nested paths', async () => {
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              [
+                'level1.level2.level3.level4.level5.flag',
+                'level1.level2.level3.level4.level5.flag',
+              ],
+            ],
+          },
+        },
+      )
+
+      // Self-sync should not crash
+      setValue('level1.level2.level3.level4.level5.flag', true)
+      await flushEffects()
+
+      expect(storeInstance.state.level1.level2.level3.level4.level5.flag).toBe(
+        true,
+      )
+    })
+
+    it('should sync numeric values at nested paths', async () => {
+      const store = createGenericStore<ListenerTestState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [['user.age', 'callCount']],
+          },
+        },
+      )
+
+      setValue('user.age', 42)
+      await flushEffects()
+
+      expect(storeInstance.state.callCount).toBe(42)
+
+      setValue('user.age', 0)
+      await flushEffects()
+
+      expect(storeInstance.state.callCount).toBe(0)
     })
   })
 })

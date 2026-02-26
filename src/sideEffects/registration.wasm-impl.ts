@@ -8,8 +8,9 @@
 import type { StoreInstance } from '../core/types'
 import { applyBatch } from '../pipeline/apply-batch'
 import type { GenericMeta } from '../types'
+import { changes } from '../types/changes'
+import { pairs } from '../types/pairs'
 import type { SideEffects } from '../types/side-effects'
-import type { WasmAggregationPair, WasmComputationPair } from '../wasm/bridge'
 
 /** Auto-incrementing subscriber ID counter for O(1) handler lookup. */
 let nextSubscriberId = 0
@@ -23,70 +24,43 @@ export const registerSideEffects = <
   DATA extends object,
   META extends GenericMeta = GenericMeta,
 >(
-  store: StoreInstance<DATA, META>,
+  store: StoreInstance<DATA>,
   id: string,
   effects: SideEffects<DATA, META>,
 ): (() => void) => {
   // Build consolidated side effects registration
-  const syncPairs: [string, string][] = effects.syncPaths ?? []
-  const flipPairs: [string, string][] = effects.flipPaths ?? []
-  const aggregationPairs = (effects.aggregations ?? []).map(
-    ([target, source, condition]) =>
-      condition
-        ? [target as string, source as string, JSON.stringify(condition)]
-        : [target as string, source as string],
-  ) as WasmAggregationPair[]
+  const syncPairs = effects.syncPaths ?? []
+  const flipPairs = effects.flipPaths ?? []
+  const aggregationPairs = pairs.aggregationToWasm(effects.aggregations ?? [])
 
   // Serialize computations: [op, target, source, condition?] → WASM format
-  const computationPairs = (effects.computations ?? []).map(
-    ([op, target, source, condition]) =>
-      condition
-        ? [
-            op as string,
-            target as string,
-            source as string,
-            JSON.stringify(condition),
-          ]
-        : [op as string, target as string, source as string],
-  ) as WasmComputationPair[]
+  const computationPairs = pairs.computationToWasm(effects.computations ?? [])
 
   // Transform clearPaths: public API format → WASM format
   // When expandMatch: true, rewrite [*] → [**] in target paths
   const clearPaths = effects.clearPaths?.map(([triggers, targets, opts]) => ({
-    triggers: triggers as string[],
-    targets: (opts?.expandMatch
-      ? (targets as string[]).map((t) => t.replace(/\[\*\]/g, '[**]'))
-      : targets) as string[],
+    triggers: triggers,
+    targets: opts?.expandMatch
+      ? targets.map((t) => t.replace(/\[\*\]/g, '[**]'))
+      : targets,
   }))
 
   // Build listeners array
   const listeners = effects.listeners?.map((listener) => {
-    const { listenerHandlers } = store._internal.graphs
+    const { listenerHandlers } = store._internal.registrations
 
     // Assign unique subscriber_id for O(1) handler lookup
     const subscriberId = nextSubscriberId++
 
-    // Wrap fn with timing measurement
     const originalFn = listener.fn
     // Default scope to path when omitted (undefined)
     const effectiveScope =
       listener.scope === undefined ? listener.path : listener.scope
 
-    const mapKey = listener.path ?? ''
-    const wrappedFn = (changes: any, state: any) =>
-      store._internal.timing.run(
-        'listeners',
-        () => originalFn(changes, state),
-        {
-          path: mapKey,
-          name: 'listener',
-        },
-      )
-
     // Store in handler map for execution
     listenerHandlers.set(subscriberId, {
       scope: effectiveScope,
-      fn: wrappedFn,
+      fn: originalFn,
       name: originalFn.name || '(anonymous)',
     })
 
@@ -102,23 +76,19 @@ export const registerSideEffects = <
   const registrationId = `sideEffects-${id}`
   const registration = {
     registration_id: registrationId,
-    ...(syncPairs.length > 0 && { sync_pairs: syncPairs }),
-    ...(flipPairs.length > 0 && { flip_pairs: flipPairs }),
-    ...(aggregationPairs.length > 0 && { aggregation_pairs: aggregationPairs }),
-    ...(computationPairs.length > 0 && {
-      computation_pairs: computationPairs,
-    }),
-    ...(clearPaths && clearPaths.length > 0 && { clear_paths: clearPaths }),
-    ...(listeners && listeners.length > 0 && { listeners }),
+    sync_pairs: syncPairs,
+    flip_pairs: flipPairs,
+    aggregation_pairs: aggregationPairs,
+    computation_pairs: computationPairs,
+    clear_paths: clearPaths ?? [],
+    listeners: listeners ?? [],
   }
   const result = pipeline.registerSideEffects(registration)
 
-  // Notify observer (DevTools + console logging)
-  store._internal.observer.event('registration:add', {
-    id,
-    registration,
-    result,
-  })
+  // Log registration with graph snapshot (no-op when log is disabled)
+  const snapshot = pipeline.getGraphSnapshot()
+  store._internal.logger.logRegistration('register', id, snapshot)
+  store._internal.devtools?.notifyRegistration('register', id, snapshot)
 
   // Apply sync changes directly to valtio state.
   // IMPORTANT: Do NOT route through processChanges() here. The Rust register_sync_batch()
@@ -127,37 +97,34 @@ export const registerSideEffects = <
   // has_work=false, and skip writing to valtio. Use applyBatch() directly, same as
   // aggregation_changes below, so valtio state matches shadow state.
   if (result.sync_changes.length > 0) {
-    applyBatch(
-      result.sync_changes.map((c) => [c.path, c.value, {}]) as any,
-      store.state,
-    )
+    applyBatch(changes.fromWasm<DATA>(result.sync_changes), store.state)
   }
 
   // Apply aggregation changes directly to state
   if (result.aggregation_changes.length > 0) {
-    applyBatch(
-      result.aggregation_changes.map((c) => [c.path, c.value, {}]) as any,
-      store.state,
-    )
+    applyBatch(changes.fromWasm<DATA>(result.aggregation_changes), store.state)
   }
 
   // Apply computation changes directly to state
   if (result.computation_changes.length > 0) {
-    applyBatch(
-      result.computation_changes.map((c) => [c.path, c.value, {}]) as any,
-      store.state,
-    )
+    applyBatch(changes.fromWasm<DATA>(result.computation_changes), store.state)
   }
 
   // Create cleanup function
   const cleanup = () => {
     pipeline.unregisterSideEffects(registrationId)
-    store._internal.observer.event('registration:remove', id)
+    const unregSnapshot = pipeline.getGraphSnapshot()
+    store._internal.logger.logRegistration('unregister', id, unregSnapshot)
+    store._internal.devtools?.notifyRegistration(
+      'unregister',
+      id,
+      unregSnapshot,
+    )
 
     // Clean up listener handlers
     effects.listeners?.forEach((_listener, index) => {
       if (listeners && listeners[index]) {
-        store._internal.graphs.listenerHandlers.delete(
+        store._internal.registrations.listenerHandlers.delete(
           listeners[index].subscriber_id,
         )
       }

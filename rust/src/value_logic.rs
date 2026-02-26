@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use ts_rs::TS;
+
 // ---------------------------------------------------------------------------
 // ValueLogicNode
 // ---------------------------------------------------------------------------
@@ -27,7 +29,8 @@ use std::collections::{HashMap, HashSet};
 /// - `Match`: lookup path value in CASES map, fallback to DEFAULT
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(untagged)]
-pub(crate) enum ValueLogicNode {
+#[derive(TS)]
+pub enum ValueLogicNode {
     IfThenElse {
         #[serde(rename = "IF")]
         condition: BoolLogicNode,
@@ -49,7 +52,8 @@ pub(crate) enum ValueLogicNode {
 /// The ELSE branch: either a nested ValueLogicNode (for elif chains) or a literal value.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(untagged)]
-pub(crate) enum ValueLogicElse {
+#[derive(TS)]
+pub enum ValueLogicElse {
     /// Nested ValueLogicNode — tried first during deserialization
     Nested(ValueLogicNode),
     /// Literal JSON value — fallback
@@ -221,6 +225,14 @@ impl ValueLogicRegistry {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.logics.len()
+    }
+
+    /// Dump all registered entries as (id, output_path) pairs (debug only).
+    pub(crate) fn dump_infos(&self) -> Vec<(u32, String)> {
+        self.logics
+            .iter()
+            .map(|(&id, meta)| (id, meta.output_path.clone()))
+            .collect()
     }
 }
 
