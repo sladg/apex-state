@@ -174,11 +174,11 @@ pub fn unregister_boollogic(pipeline_id: u32, logic_id: u32) -> Result<(), JsVal
 /// Updates shadow state during processing (needed for BoolLogic evaluation).
 /// Buffers BoolLogic concern results for later finalization.
 ///
-/// Returns execution context for JS: state_changes, validators_to_run, execution_plan.
+/// Returns execution context for JS: listener_changes, validators_to_run, execution_plan.
 /// After JS executes listeners/validators, call pipeline_finalize() with their results.
 ///
 /// Input: JS array of `{ path: "...", value_json: "..." }`
-/// Output: JS object `{ state_changes: [...], validators_to_run: [...], execution_plan: {...}, has_work: bool }`
+/// Output: JS object `{ listener_changes: [...], validators_to_run: [...], execution_plan: {...}, has_work: bool }`
 #[wasm_bindgen]
 pub fn process_changes(pipeline_id: u32, changes: JsValue) -> Result<JsValue, JsValue> {
     let input: Vec<Change> = from_js(changes)?;

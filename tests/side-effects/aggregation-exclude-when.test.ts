@@ -110,7 +110,7 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
     ])
 
     // allChecked should be recomputed: item2 now excluded → item1, item3 both true → true
-    const allCheckedChange = findChange(result.state_changes, 'allChecked')
+    const allCheckedChange = findChange(result.listener_changes, 'allChecked')
     expect(allCheckedChange).toBeDefined()
     expect(allCheckedChange?.value).toBe(true)
   })
@@ -156,7 +156,7 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
     ])
 
     // All excluded → target = undefined
-    const allCheckedChange = findChange(result.state_changes, 'allChecked')
+    const allCheckedChange = findChange(result.listener_changes, 'allChecked')
     expect(allCheckedChange).toBeDefined()
     expect(allCheckedChange?.value).toBeUndefined()
   })
@@ -196,7 +196,7 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
     ])
 
     // item2 now active, values differ (10 vs 20) → allValues = undefined
-    const change = findChange(result.state_changes, 'allValues')
+    const change = findChange(result.listener_changes, 'allValues')
     expect(change).toBeDefined()
     expect(change?.value).toBeUndefined()
   })
@@ -290,11 +290,11 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
       { path: 'allUsers', value: 'alice' },
     ])
 
-    const paths = getPaths(result.state_changes)
+    const paths = getPaths(result.listener_changes)
 
     // user2 should receive the distributed write
     expect(paths).toContain('user2')
-    const user2Change = findChange(result.state_changes, 'user2')
+    const user2Change = findChange(result.listener_changes, 'user2')
     expect(user2Change?.value).toBe('alice')
 
     // user1 should NOT receive the write (excluded)
@@ -323,7 +323,7 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
 
     const result = pipeline.processChanges([{ path: 'allUsers', value: 'bob' }])
 
-    const paths = getPaths(result.state_changes)
+    const paths = getPaths(result.listener_changes)
 
     // Both should receive writes (user1_disabled is false)
     expect(paths).toContain('user1')
@@ -354,7 +354,7 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
       { path: 'allUsers.name', value: 'alice' },
     ])
 
-    const paths = getPaths(result.state_changes)
+    const paths = getPaths(result.listener_changes)
 
     // user2.name should receive the write
     expect(paths).toContain('user2.name')
@@ -410,7 +410,7 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
 
     // Re-aggregation fires (condition changed), result is still 100
     // Shadow had null → 100 is a genuine change
-    const totalChange = findChange(result.state_changes, 'total')
+    const totalChange = findChange(result.listener_changes, 'total')
     expect(totalChange).toBeDefined()
     expect(totalChange?.value).toBe(100)
   })
@@ -445,7 +445,7 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
 
     // Re-aggregation fires (condition path changed), result is 42
     // Shadow had null → 42 is a genuine change (initial wasn't applied to shadow)
-    const resultChange = findChange(result.state_changes, 'result')
+    const resultChange = findChange(result.listener_changes, 'result')
     expect(resultChange).toBeDefined()
     expect(resultChange?.value).toBe(42)
   })
@@ -544,7 +544,7 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
     ])
 
     // 4 active: [25, 25, 25, 99] → disagree → allPrice = undefined
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeDefined()
     expect(change?.value).toBeUndefined()
   })
@@ -594,7 +594,7 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
     // 4 active: [25, 25, 25, 25] → agree → allPrice = 25
     // Shadow already has allPrice=25 from the first processChanges, so this is a no-op
     // (no redundant change emitted — correct optimization)
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeUndefined()
 
     // Verify the shadow state is correct
@@ -646,7 +646,7 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
     ])
 
     // product4 now excluded → [25, 25, 25] → agree → allPrice = 25
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeDefined()
     expect(change?.value).toBe(25)
   })
@@ -689,7 +689,7 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
     ])
 
     // product4 now active → [25, 25, 25, 99] → disagree → allPrice = undefined
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeDefined()
     expect(change?.value).toBeUndefined()
   })

@@ -26,10 +26,14 @@ export interface ListenerLogEntry {
 }
 
 export interface PipelineLogData {
-  input: Change[]
+  initialChanges: Change[]
   trace: Wasm.PipelineTrace | null
-  listeners: ListenerLogEntry[]
+  listenerLog: ListenerLogEntry[]
   durationMs: number
+  /** All state + concern changes passed to applyBatch (early + late). */
+  appliedChanges?: Change[]
+  /** Frozen valtio snapshot of state after all changes applied. */
+  stateSnapshot?: unknown
 }
 
 /** Maps SideEffectsResult field names to trace stage names. */
@@ -103,44 +107,6 @@ const buildPathLabel = (paths: string[]): string => {
   return `${paths[0]} +${String(paths.length - 1)} more`
 }
 
-/** Format a single stage trace with path details. @internal */
-export const formatStageDetail = (
-  s: Wasm.StageTrace,
-): Record<string, unknown> => {
-  const detail: Record<string, unknown> = {}
-
-  if (s.accepted.length > 0) {
-    detail['accepted'] =
-      s.accepted.length <= 5
-        ? s.accepted
-        : {
-            count: s.accepted.length,
-            paths: [
-              ...s.accepted.slice(0, 3),
-              `+${String(s.accepted.length - 3)} more`,
-            ],
-          }
-  }
-
-  if (s.produced.length > 0) {
-    const producedObj: Record<string, unknown> = {}
-    for (const [path, value] of s.produced) {
-      producedObj[path] = value
-    }
-    detail['produced'] = producedObj
-  }
-
-  if (s.skipped.length > 0) {
-    detail['skipped'] = s.skipped.map((sk) => `${sk.path} (${sk.reason})`)
-  }
-
-  if (s.duration_us > 0) {
-    detail['duration'] = `${(s.duration_us / 1000).toFixed(2)}ms`
-  }
-
-  return detail
-}
-
 /** Add trace entries to a summary/tree object. @internal */
 export const addTraceSummary = (
   obj: Record<string, unknown>,
@@ -150,7 +116,10 @@ export const addTraceSummary = (
   if (trace.stages.length === 0) return
   const stagesSummary: Record<string, unknown> = {}
   for (const s of trace.stages) {
-    const detail = formatStageDetail(s)
+    const detail = {
+      ...s,
+      duration_ms: `${(s.duration_us / 1000).toFixed(2)}ms`,
+    }
     // Show all stages (even empty ones) for full pipeline visibility
     stagesSummary[s.stage] = Object.keys(detail).length > 0 ? detail : '(idle)'
   }
@@ -167,11 +136,11 @@ export const buildConsoleSummary = (
   data: PipelineLogData,
 ): Record<string, unknown> => {
   const summary: Record<string, unknown> = {
-    input: formatChanges(data.input),
+    input: formatChanges(data.initialChanges ?? []),
     duration: `${data.durationMs.toFixed(2)}ms`,
   }
   if (data.trace) addTraceSummary(summary, data.trace)
-  for (const [i, entry] of data.listeners.entries()) {
+  for (const [i, entry] of data.listenerLog.entries()) {
     const name = entry.fnName || '(anonymous)'
     const dur = entry.durationMs > 0 ? ` ${entry.durationMs.toFixed(2)}ms` : ''
     const slow = entry.slow ? ' [SLOW]' : ''
@@ -182,7 +151,11 @@ export const buildConsoleSummary = (
       output: formatChanges(entry.output),
     }
   }
-  return summary
+  return {
+    ...summary,
+    applied: formatChanges(data.appliedChanges ?? []),
+    stateAfterChanges: data.stateSnapshot,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +174,7 @@ export const createLogger = (config: DebugConfig): ApexLogger => {
 
   return {
     logPipeline: (data) => {
-      const label = buildPathLabel(data.input.map((c) => c.path))
+      const label = buildPathLabel(data.initialChanges.map((c) => c.path))
       const summary = buildConsoleSummary(data)
       console.groupCollapsed(`${PREFIX}:pipeline | ${label}`)
       console.log(summary)

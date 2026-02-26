@@ -77,11 +77,11 @@ const buildPathLabel = (paths: string[]): string => {
 /** Build DevTools tree object for a pipeline run. */
 const buildDevToolsTree = (data: PipelineLogData): Record<string, unknown> => {
   const tree: Record<string, unknown> = {
-    input: data.input,
+    input: data.initialChanges,
     duration: `${data.durationMs.toFixed(2)}ms`,
   }
   if (data.trace) tree['trace'] = data.trace
-  for (const [i, entry] of data.listeners.entries()) {
+  for (const [i, entry] of data.listenerLog.entries()) {
     const n = entry.fnName || '(anonymous)'
     const key = `[${String(i).padStart(2, '0')}] listener:${String(entry.subscriberId)} ${n}`
     tree[key] = {
@@ -156,7 +156,7 @@ export const attachDevtools = (
 
   return {
     notifyPipeline: (data) => {
-      const paths = data.input.map((c) => c.path)
+      const paths = data.initialChanges.map((c) => c.path)
       const suffix = paths.length === 0 ? '' : ` ${buildPathLabel(paths)}`
       pipelineInstance.send(
         { type: `PIPELINE_RUN${suffix}` },

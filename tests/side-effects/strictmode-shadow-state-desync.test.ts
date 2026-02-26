@@ -28,9 +28,9 @@ import { createWasmPipeline, type WasmPipeline } from '~/wasm/bridge'
  * Helper: Get all state changes from result
  */
 const getStateChanges = (
-  result: { state_changes: { path: string; value: unknown }[] } | null,
+  result: { listener_changes: { path: string; value: unknown }[] } | null,
 ): { path: string; value: unknown }[] => {
-  return result?.state_changes || []
+  return result?.listener_changes || []
 }
 
 /**

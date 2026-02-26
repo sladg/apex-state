@@ -53,8 +53,8 @@ pub(crate) struct ProcessResult {
 /// Result from processChanges: orchestrates pipeline, buffers concern results for finalization.
 #[derive(Serialize, Debug, TS)]
 pub struct PrepareResult {
-    /// State changes (readonly context for JS listener execution, not for applying to valtio yet).
-    pub state_changes: Vec<Change>,
+    /// Changes indexed by the execution plan's `input_change_ids` for listener dispatch.
+    pub listener_changes: Vec<Change>,
     /// Validators to run on JS side with their dependency values.
     pub validators_to_run: Vec<ValidatorDispatch>,
     /// Pre-computed execution plan for listener dispatch.
@@ -2368,7 +2368,7 @@ impl ProcessingPipeline {
     /// Process changes through pipeline: aggregation → sync → flip → BoolLogic → validators.
     ///
     /// Buffers results in buf_pending_* for pipeline_finalize() to consume.
-    /// Returns: { state_changes, validators_to_run, execution_plan, has_work }
+    /// Returns: { listener_changes, validators_to_run, execution_plan, has_work }
     ///
     /// After JS executes listeners/validators, call pipeline_finalize() with their results.
     pub(crate) fn prepare_changes(
@@ -2381,7 +2381,7 @@ impl ProcessingPipeline {
 
         if !self.run_pipeline_core(input_changes)? {
             return Ok(PrepareResult {
-                state_changes: Vec::new(),
+                listener_changes: Vec::new(),
                 validators_to_run: Vec::new(),
                 execution_plan: None,
                 has_work: false,
@@ -2406,7 +2406,7 @@ impl ProcessingPipeline {
             || self.ctx.execution_plan.is_some();
 
         Ok(PrepareResult {
-            state_changes: self.buf_pending_state_changes.clone(),
+            listener_changes: self.buf_pending_state_changes.clone(),
             validators_to_run: std::mem::take(&mut self.ctx.validators_to_run),
             execution_plan: self.ctx.execution_plan.take(),
             has_work,
@@ -4421,8 +4421,8 @@ mod tests {
             let changes = vec![Change::new("user.role".to_owned(), r#""admin""#.to_owned())];
 
             let prepare = p.prepare_changes(changes).unwrap();
-            assert_eq!(prepare.state_changes.len(), 1);
-            assert_eq!(prepare.state_changes[0].path, "user.role");
+            assert_eq!(prepare.listener_changes.len(), 1);
+            assert_eq!(prepare.listener_changes[0].path, "user.role");
 
             let finalize = p.pipeline_finalize(vec![]).unwrap();
             assert_eq!(finalize.state_changes.len(), 1);
@@ -4439,7 +4439,7 @@ mod tests {
 
             let prepare = p.prepare_changes(changes).unwrap();
             assert!(!prepare.has_work);
-            assert!(prepare.state_changes.is_empty());
+            assert!(prepare.listener_changes.is_empty());
             assert!(prepare.validators_to_run.is_empty());
             assert!(prepare.execution_plan.is_none());
         }
@@ -4473,7 +4473,7 @@ mod tests {
             let prepare = p.prepare_changes(changes).unwrap();
 
             // prepare exposes state changes and signals pending concern work
-            assert!(!prepare.state_changes.is_empty());
+            assert!(!prepare.listener_changes.is_empty());
             assert!(prepare.has_work);
 
             // finalize merges buffered BoolLogic results into state_changes
@@ -5103,7 +5103,7 @@ mod tests {
         let prep = p.prepare_changes(vec![input_change("x", "10")]).unwrap();
         assert!(prep.has_work, "should have work");
 
-        let y_change = prep.state_changes.iter().find(|c| c.path == "y");
+        let y_change = prep.listener_changes.iter().find(|c| c.path == "y");
         assert!(y_change.is_some(), "prepare should include sync to y");
 
         let fin = p.pipeline_finalize(vec![]).unwrap();
@@ -5143,7 +5143,7 @@ mod tests {
             .prepare_changes(vec![input_change("user.role", r#""guest""#)])
             .unwrap();
         assert!(
-            !prep2.has_work || prep2.state_changes.is_empty(),
+            !prep2.has_work || prep2.listener_changes.is_empty(),
             "no-op change should result in no work"
         );
     }
@@ -5192,12 +5192,12 @@ mod tests {
         // Second prepare should start fresh (buffers cleared)
         let prep2 = p.prepare_changes(vec![input_change("y", "20")]).unwrap();
 
-        let has_x = prep2.state_changes.iter().any(|c| c.path == "x");
+        let has_x = prep2.listener_changes.iter().any(|c| c.path == "x");
         assert!(
             !has_x,
             "second prepare should not contain first prepare's data"
         );
-        let has_y = prep2.state_changes.iter().any(|c| c.path == "y");
+        let has_y = prep2.listener_changes.iter().any(|c| c.path == "y");
         assert!(has_y, "second prepare should contain y's change");
     }
 

@@ -105,7 +105,7 @@ const relativizePath = (changePath: string, topicPath: string): string => {
 /** Build the input array for a single listener dispatch. */
 const buildDispatchInput = (
   d: Wasm.FullExecutionPlan['groups'][number]['dispatches'][number],
-  stateChanges: Change[],
+  listenerChanges: Change[],
   extra: Map<number, Change[]>,
   userMetaByPath?: Map<string, GenericMeta>,
 ): [string, unknown, GenericMeta][] => {
@@ -113,7 +113,7 @@ const buildDispatchInput = (
   // Single pass: filter + map combined
   const input: [string, unknown, GenericMeta][] = []
   for (const id of d.input_change_ids) {
-    const change = stateChanges[id]
+    const change = listenerChanges[id]
     if (change !== undefined) {
       const meta = buildMeta(
         change.path,
@@ -175,7 +175,7 @@ const propagateChanges = (
  */
 const executeFullExecutionPlan = <DATA extends object>(
   plan: Wasm.FullExecutionPlan | null,
-  stateChanges: Change[],
+  listenerChanges: Change[],
   store: StoreInstance<DATA>,
   userMetaByPath?: Map<string, GenericMeta>,
 ): { produced: Change[]; listenerLog: ListenerLogEntry[] } => {
@@ -207,7 +207,7 @@ const executeFullExecutionPlan = <DATA extends object>(
       scope === '' ? currentState : dot.get__unsafe(currentState, scope)
 
     // buildDispatchInput reads from extra — which now includes cascaded changes
-    const input = buildDispatchInput(d, stateChanges, extra, userMetaByPath)
+    const input = buildDispatchInput(d, listenerChanges, extra, userMetaByPath)
 
     // Inline timing — only pay cost of performance.now() when timing is enabled
     const t0 = timingEnabled ? performance.now() : 0
@@ -422,9 +422,6 @@ export const processChangesWasm = <
   // Capture user-provided meta before sending to WASM (WASM strips meta)
   const userMetaByPath = buildUserMetaByPath(initialChanges)
 
-  // Convert to bridge format
-  const bridgeChanges = changes.toWasm(initialChanges)
-
   // Initialize debug entry if tracking is enabled
   const trackEntry: DebugTrackEntry | null = store._debug
     ? {
@@ -437,9 +434,8 @@ export const processChangesWasm = <
 
   const t0 = performance.now()
 
-  // 1. WASM Phase 1: aggregation → sync → flip → BoolLogic
-  const { state_changes, execution_plan, validators_to_run, has_work } =
-    pipeline.processChanges(bridgeChanges)
+  const { listener_changes, execution_plan, validators_to_run, has_work } =
+    pipeline.processChanges(changes.toWasm(initialChanges))
 
   // Early exit if WASM signals no work to do
   if (!has_work) {
@@ -447,35 +443,17 @@ export const processChangesWasm = <
     return
   }
 
-  // 2. Apply state changes FIRST (so listeners see updated state)
-  // Partition early: separate state changes from concern changes
-  const early = partitionChanges(state_changes)
-
-  // Apply state changes to valtio (so listeners see updated state)
-  if (early.stateChanges.length > 0) {
-    applyBatch(
-      bridgeChangesToTuples(early.stateChanges, userMetaByPath),
-      store.state,
-    )
-  }
-
-  // 3. Execute listeners (JS-only: user functions) - now with updated state
   const { produced, listenerLog } = executeFullExecutionPlan(
     execution_plan,
-    state_changes,
+    listener_changes,
     store,
     userMetaByPath,
   )
 
-  // Apply concern changes from phase 1 (BoolLogic results)
-  if (early.concernChanges.length > 0) {
-    applyConcernChanges(early.concernChanges, store._concerns)
-  }
-
-  // 4. Execute validators (JS-only: schema validation)
+  // Execute validators (JS-only: schema validation)
+  // @FIXME: These should run on-top of listener's provided changes. they need fresh state for validating.
   const validationResults = runValidators(validators_to_run, pipeline)
 
-  // 5. WASM Phase 2: merge, diff, update shadow
   // Single flat array: listener output + validator output (with _concerns. prefix)
   const jsChanges = produced.concat(validationResults)
   const { state_changes: finalChanges, trace } =
@@ -497,7 +475,7 @@ export const processChangesWasm = <
     }
   }
 
-  // 6. Apply NEW changes from listeners/validators to valtio
+  // Apply NEW changes from listeners/validators to valtio
   // Phase 1 changes were already applied above, so filter them out
   const late = partitionChanges(finalChanges)
 
@@ -515,20 +493,21 @@ export const processChangesWasm = <
   const durationMs = performance.now() - t0
 
   // Single log call with all pipeline data (no-op when log/devtools is disabled)
+  const allApplied = [...late.stateChanges, ...late.concernChanges]
   const logData = {
-    input: bridgeChanges,
+    initialChanges: changes.toWasm(initialChanges),
     trace,
-    listeners: listenerLog,
+    listenerLog,
     durationMs,
+    appliedChanges: allApplied,
+    stateSnapshot: snapshot(store.state),
   }
   logger.logPipeline(logData)
   store._internal.devtools?.notifyPipeline(logData)
 
   // Record applied changes for debug tracking
   if (trackEntry) {
-    pushDebugChanges(trackEntry.applied, early.stateChanges)
     pushDebugChanges(trackEntry.applied, late.stateChanges)
-    pushDebugChanges(trackEntry.appliedConcerns, early.concernChanges)
     pushDebugChanges(trackEntry.appliedConcerns, late.concernChanges)
     store._debug!.calls.push(trackEntry)
   }

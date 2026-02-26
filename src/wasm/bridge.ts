@@ -90,10 +90,9 @@ export const createWasmPipeline = (options?: { debug?: boolean }) => {
         changesToWasm(changes),
       ) as unknown as Wasm.PrepareResult
 
-      const stateChanges = wasmChangesToJs(result.state_changes)
+      const listenerChanges = wasmChangesToJs(result.listener_changes)
       return {
-        state_changes: stateChanges,
-        changes: stateChanges,
+        listener_changes: listenerChanges,
         validators_to_run: result.validators_to_run,
         execution_plan: result.execution_plan,
         has_work: result.has_work,

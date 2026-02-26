@@ -116,7 +116,7 @@ pub struct DispatchEntry {
     pub subscriber_id: u32,
     pub scope_path: String,
     pub topic_path: String,
-    /// Indexes into the ProcessResult.changes array.
+    /// Indexes into the PrepareResult.listener_changes array.
     pub input_change_ids: Vec<u32>,
 }
 
