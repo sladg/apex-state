@@ -160,6 +160,7 @@ fn value_repr_to_case_key(value: &crate::shadow::ValueRepr) -> Option<String> {
 pub(crate) struct ValueLogicMetadata {
     pub output_path: String,
     pub tree: ValueLogicNode,
+    pub anchor_path_id: Option<u32>,
 }
 
 /// Registry of ValueLogic expressions keyed by sequential u32 IDs.
@@ -186,6 +187,7 @@ impl ValueLogicRegistry {
         tree: ValueLogicNode,
         intern: &mut InternTable,
         rev_index: &mut ReverseDependencyIndex,
+        anchor_path_id: Option<u32>,
     ) -> u32 {
         let logic_id = self.next_id;
         self.next_id += 1;
@@ -202,8 +204,14 @@ impl ValueLogicRegistry {
         rev_index.add(logic_id, &interned_ids);
 
         // Store metadata
-        self.logics
-            .insert(logic_id, ValueLogicMetadata { output_path, tree });
+        self.logics.insert(
+            logic_id,
+            ValueLogicMetadata {
+                output_path,
+                tree,
+                anchor_path_id,
+            },
+        );
 
         logic_id
     }
@@ -232,6 +240,15 @@ impl ValueLogicRegistry {
         self.logics
             .iter()
             .map(|(&id, meta)| (id, meta.output_path.clone()))
+            .collect()
+    }
+
+    /// Return IDs of all entries with a matching anchor_path_id.
+    pub(crate) fn ids_for_anchor(&self, anchor_id: u32) -> Vec<u32> {
+        self.logics
+            .iter()
+            .filter(|(_, meta)| meta.anchor_path_id == Some(anchor_id))
+            .map(|(&id, _)| id)
             .collect()
     }
 }
@@ -678,7 +695,7 @@ mod tests {
             r#"{"IF":{"IS_EQUAL":["user.role","admin"]},"THEN":"yes","ELSE":"no"}"#,
         )
         .unwrap();
-        let id = registry.register("out.options".into(), tree, &mut intern, &mut rev);
+        let id = registry.register("out.options".into(), tree, &mut intern, &mut rev, None);
 
         assert_eq!(id, 0);
         assert_eq!(registry.len(), 1);
@@ -701,9 +718,9 @@ mod tests {
             .unwrap()
         };
 
-        let id0 = registry.register("out0".into(), tree("a.b"), &mut intern, &mut rev);
-        let id1 = registry.register("out1".into(), tree("c.d"), &mut intern, &mut rev);
-        let id2 = registry.register("out2".into(), tree("e.f"), &mut intern, &mut rev);
+        let id0 = registry.register("out0".into(), tree("a.b"), &mut intern, &mut rev, None);
+        let id1 = registry.register("out1".into(), tree("c.d"), &mut intern, &mut rev, None);
+        let id2 = registry.register("out2".into(), tree("e.f"), &mut intern, &mut rev, None);
 
         assert_eq!(id0, 0);
         assert_eq!(id1, 1);
@@ -721,7 +738,7 @@ mod tests {
             r#"{"IF":{"IS_EQUAL":["user.role","admin"]},"THEN":"yes","ELSE":"no"}"#,
         )
         .unwrap();
-        let id = registry.register("out".into(), tree, &mut intern, &mut rev);
+        let id = registry.register("out".into(), tree, &mut intern, &mut rev, None);
 
         let path_id = intern.intern("user.role");
         assert_eq!(rev.affected_by_path(path_id), vec![id]);
@@ -742,13 +759,13 @@ mod tests {
             r#"{"IF":{"IS_EQUAL":["user.role","admin"]},"THEN":"a","ELSE":"b"}"#,
         )
         .unwrap();
-        let id0 = registry.register("out0".into(), tree0, &mut intern, &mut rev);
+        let id0 = registry.register("out0".into(), tree0, &mut intern, &mut rev, None);
 
         // Logic 1 also depends on user.role (MATCH)
         let tree1: ValueLogicNode =
             serde_json::from_str(r#"{"MATCH":"user.role","CASES":{"admin":"x"},"DEFAULT":"y"}"#)
                 .unwrap();
-        let id1 = registry.register("out1".into(), tree1, &mut intern, &mut rev);
+        let id1 = registry.register("out1".into(), tree1, &mut intern, &mut rev, None);
 
         let path_id = intern.intern("user.role");
         let mut affected = rev.affected_by_path(path_id);

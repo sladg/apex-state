@@ -68,7 +68,7 @@ const createEcommercePipeline = () => {
   for (let i = 0; i < 15; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: `order_${i}_confirmed`,
+      topic_paths: [`order_${i}_confirmed`],
       scope_path: '',
     })
   }

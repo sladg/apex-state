@@ -62,7 +62,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
           listeners: [
             {
               subscriber_id: 0,
-              topic_path: 'email',
+              topic_paths: ['email'],
               scope_path: '',
             },
           ],
@@ -111,7 +111,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
           listeners: [
             {
               subscriber_id: 0,
-              topic_path: 'productPrice',
+              topic_paths: ['productPrice'],
               scope_path: '',
             },
           ],

@@ -147,13 +147,17 @@ export type OnStateListener<
  * }
  * ```
  */
-export interface ListenerRegistration<
+/**
+ * Single-path listener — watches one path (or all paths when null).
+ * `scope` may be omitted (defaults to `path`).
+ */
+export interface SinglePathListener<
   DATA extends object = object,
   META extends GenericMeta = GenericMeta,
   Depth extends number = DefaultDepth,
 > {
   /**
-   * Path to watch - only changes under this path will trigger the listener
+   * Path to watch - only changes under this path will trigger the listener.
    * null = watch all paths (receives every change)
    */
   path: DeepKey<DATA, Depth> | null
@@ -170,6 +174,38 @@ export interface ListenerRegistration<
 
   fn: OnStateListener<DATA, any, META>
 }
+
+/**
+ * Multi-path listener — watches multiple paths simultaneously.
+ * Handler fires once per pipeline run with all matched changes merged.
+ * `scope` is required (use null for full paths).
+ */
+export interface MultiPathListener<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+  Depth extends number = DefaultDepth,
+> {
+  /**
+   * Array of paths to watch. Handler fires once with changes from any matched path.
+   */
+  path: DeepKey<DATA, Depth>[]
+
+  /**
+   * Scope for state and changes presentation (required for multi-path listeners).
+   * - null: state is full DATA, changes use FULL paths
+   * - string: state is value at scope, changes use paths RELATIVE to scope
+   */
+  scope: DeepKey<DATA, Depth> | null
+
+  fn: OnStateListener<DATA, any, META>
+}
+
+/** Listener registration — single-path or multi-path. */
+export type ListenerRegistration<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+  Depth extends number = DefaultDepth,
+> = SinglePathListener<DATA, META, Depth> | MultiPathListener<DATA, META, Depth>
 
 export interface ListenerHandlerRef {
   scope: string | null

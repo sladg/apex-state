@@ -39,7 +39,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
       p.registerSideEffects({
         registration_id: 'bench',
         listeners: [
-          { subscriber_id: 0, topic_path: 'field_0', scope_path: '' },
+          { subscriber_id: 0, topic_paths: ['field_0'], scope_path: '' },
         ],
       })
       return p
@@ -56,7 +56,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
         sync_pairs: [['field_0', 'sync_target']],
         flip_pairs: [['bool_0', 'flip_target']],
         listeners: [
-          { subscriber_id: 0, topic_path: 'field_0', scope_path: '' },
+          { subscriber_id: 0, topic_paths: ['field_0'], scope_path: '' },
         ],
       })
       return p

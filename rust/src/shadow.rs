@@ -558,14 +558,14 @@ mod tests {
 
     #[test]
     fn set_through_undefined_sentinel_promotes_to_object() {
-        // notionalCcy was set to "__APEX_UNDEFINED__" (the JS undefined sentinel)
-        // A later change sets notionalCcy.value = "USD" — should promote, not error
-        let mut state = make_state(r#"{"notionalCcy": "__APEX_UNDEFINED__"}"#);
-        state.set("notionalCcy.value", "\"USD\"").unwrap();
-        let val = state.get("notionalCcy.value").unwrap();
-        assert_eq!(val.to_json_value(), serde_json::json!("USD"));
-        // notionalCcy is now an object
-        let keys = state.get_object_keys("notionalCcy").unwrap();
+        // shippingMethod was set to "__APEX_UNDEFINED__" (the JS undefined sentinel)
+        // A later change sets shippingMethod.value = "express" — should promote, not error
+        let mut state = make_state(r#"{"shippingMethod": "__APEX_UNDEFINED__"}"#);
+        state.set("shippingMethod.value", "\"express\"").unwrap();
+        let val = state.get("shippingMethod.value").unwrap();
+        assert_eq!(val.to_json_value(), serde_json::json!("express"));
+        // shippingMethod is now an object
+        let keys = state.get_object_keys("shippingMethod").unwrap();
         assert_eq!(keys, vec!["value"]);
     }
 

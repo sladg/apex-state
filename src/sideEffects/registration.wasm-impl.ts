@@ -5,7 +5,7 @@
  * WASM call for efficiency. No legacy fallback logic - assumes WASM is loaded.
  */
 
-import type { StoreInstance } from '../core/types'
+import type { MultiPathListener, StoreInstance } from '../core/types'
 import { applyBatch } from '../pipeline/apply-batch'
 import type { GenericMeta } from '../types'
 import { changes } from '../types/changes'
@@ -45,6 +45,12 @@ export const registerSideEffects = <
       : targets,
   }))
 
+  // Type guard to distinguish MultiPathListener from SinglePathListener
+  const isMultiPath = (
+    listener: unknown,
+  ): listener is MultiPathListener<DATA, META> =>
+    Array.isArray((listener as { path: unknown }).path)
+
   // Build listeners array
   const listeners = effects.listeners?.map((listener) => {
     const { listenerHandlers } = store._internal.registrations
@@ -53,9 +59,20 @@ export const registerSideEffects = <
     const subscriberId = nextSubscriberId++
 
     const originalFn = listener.fn
-    // Default scope to path when omitted (undefined)
-    const effectiveScope =
-      listener.scope === undefined ? listener.path : listener.scope
+
+    // Discriminated union: TypeScript narrows the type based on path structure
+    const topicPaths = isMultiPath(listener)
+      ? listener.path
+      : [listener.path ?? '']
+
+    // For single-path: scope defaults to path when NOT explicitly set (undefined).
+    // null is an explicit "no scope" value → full state is passed to the handler.
+    // For multi-path: scope must be explicitly set (required in type).
+    const effectiveScope = isMultiPath(listener)
+      ? listener.scope
+      : listener.scope === undefined
+        ? listener.path
+        : listener.scope
 
     // Store in handler map for execution
     listenerHandlers.set(subscriberId, {
@@ -66,7 +83,7 @@ export const registerSideEffects = <
 
     return {
       subscriber_id: subscriberId,
-      topic_path: listener.path ?? '',
+      topic_paths: topicPaths,
       scope_path: effectiveScope ?? '',
     }
   })
@@ -82,6 +99,7 @@ export const registerSideEffects = <
     computation_pairs: computationPairs,
     clear_paths: clearPaths ?? [],
     listeners: listeners ?? [],
+    anchor_path: effects.anchorPath as string,
   }
   const result = pipeline.registerSideEffects(registration)
 
@@ -91,11 +109,17 @@ export const registerSideEffects = <
   store._internal.devtools?.notifyRegistration('register', id, snapshot)
 
   // Apply sync changes directly to valtio state.
-  // IMPORTANT: Do NOT route through processChanges() here. The Rust register_sync_batch()
-  // already updated shadow state for initial sync changes. Routing through processChanges()
-  // would cause the diff pre-pass to see "no change" (shadow already updated), return
-  // has_work=false, and skip writing to valtio. Use applyBatch() directly, same as
-  // aggregation_changes below, so valtio state matches shadow state.
+  // IMPORTANT: Do NOT route through processChanges() here — it would diff against shadow,
+  // see "no change" (shadow was already updated by register_sync_batch), return
+  // has_work=false, and skip writing to valtio.
+  //
+  // Instead: register_sync_batch returns ALL initial sync changes (not just the
+  // shadow-diffed subset), and applyBatch's own `current !== value` guard handles
+  // valtio-level idempotency. This covers two divergence scenarios:
+  //   - Direct proxy mutations (bypassing processChanges) leave shadow ahead of valtio
+  //   - Navigation remount with preserved pipeline reuses stale shadow
+  // In both cases, applyBatch correctly writes the synced value to valtio even
+  // when shadow already has it.
   if (result.sync_changes.length > 0) {
     applyBatch(changes.fromWasm<DATA>(result.sync_changes), store.state)
   }

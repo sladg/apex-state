@@ -111,7 +111,7 @@ export const createListenerPipeline = (listenerCount: number) => {
   for (let i = 0; i < listenerCount; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: 'field_0',
+      topic_paths: ['field_0'],
       scope_path: '',
     })
   }
@@ -131,7 +131,7 @@ export const createMultiPathListenerPipeline = (listenerCount: number) => {
   for (let i = 0; i < listenerCount; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: `field_${i}`,
+      topic_paths: [`field_${i}`],
       scope_path: '',
     })
   }
@@ -171,7 +171,7 @@ export const createCombinedPipeline = (
   for (let i = 0; i < listenerCount; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: `field_0`,
+      topic_paths: ['field_0'],
       scope_path: '',
     })
   }

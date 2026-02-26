@@ -25,9 +25,9 @@ struct TopicMeta {
 /// Metadata for a single subscriber.
 #[allow(dead_code)] // Fields used via WASM export chain
 struct SubscriberMeta {
-    topic_id: u32,
+    primary_topic_id: u32,
     scope_path: String,
-    topic_path: String,
+    topic_paths: Vec<String>,
 }
 
 /// Pre-computed downstream route between topics.
@@ -293,39 +293,46 @@ impl TopicRouter {
         let mut topology_changed = false;
 
         for reg in registrations {
-            // Ensure topic exists
-            let topic_id = if let Some(&id) = self.path_to_topic.get(&reg.topic_path) {
-                id
-            } else {
-                // Create new topic
-                let id = self.next_topic_id;
-                self.next_topic_id += 1;
-                let depth = path_depth(&reg.topic_path);
-                self.topic_meta.insert(
-                    id,
-                    TopicMeta {
-                        prefix: reg.topic_path.clone(),
-                        depth,
-                    },
-                );
-                self.path_to_topic.insert(reg.topic_path.clone(), id);
-                self.topics.push(id);
-                topology_changed = true;
-                id
-            };
+            let mut first_topic_id: Option<u32> = None;
 
-            // Add subscriber
-            self.subscribers
-                .entry(topic_id)
-                .or_default()
-                .push(reg.subscriber_id);
+            // Register subscriber under each topic path
+            for topic_path in &reg.topic_paths {
+                let topic_id = if let Some(&id) = self.path_to_topic.get(topic_path) {
+                    id
+                } else {
+                    // Create new topic
+                    let id = self.next_topic_id;
+                    self.next_topic_id += 1;
+                    let depth = path_depth(topic_path);
+                    self.topic_meta.insert(
+                        id,
+                        TopicMeta {
+                            prefix: topic_path.clone(),
+                            depth,
+                        },
+                    );
+                    self.path_to_topic.insert(topic_path.clone(), id);
+                    self.topics.push(id);
+                    topology_changed = true;
+                    id
+                };
+
+                if first_topic_id.is_none() {
+                    first_topic_id = Some(topic_id);
+                }
+
+                self.subscribers
+                    .entry(topic_id)
+                    .or_default()
+                    .push(reg.subscriber_id);
+            }
 
             self.subscriber_meta.insert(
                 reg.subscriber_id,
                 SubscriberMeta {
-                    topic_id,
+                    primary_topic_id: first_topic_id.unwrap_or(0),
                     scope_path: reg.scope_path,
-                    topic_path: reg.topic_path,
+                    topic_paths: reg.topic_paths,
                 },
             );
         }
@@ -351,24 +358,28 @@ impl TopicRouter {
         let mut topology_changed = false;
 
         for sub_id in ids {
-            let topic_id = match self.subscriber_meta.remove(&sub_id) {
-                Some(meta) => meta.topic_id,
+            let meta = match self.subscriber_meta.remove(&sub_id) {
+                Some(m) => m,
                 None => continue,
             };
 
-            // Remove from topic's subscriber list
-            if let Some(subs) = self.subscribers.get_mut(&topic_id) {
-                subs.retain(|&id| id != sub_id);
+            // Remove subscriber from all its registered topics
+            for topic_path in &meta.topic_paths {
+                if let Some(&topic_id) = self.path_to_topic.get(topic_path) {
+                    if let Some(subs) = self.subscribers.get_mut(&topic_id) {
+                        subs.retain(|&id| id != sub_id);
 
-                // If topic has no more subscribers, remove it entirely
-                if subs.is_empty() {
-                    self.subscribers.remove(&topic_id);
-                    if let Some(meta) = self.topic_meta.remove(&topic_id) {
-                        self.path_to_topic.remove(&meta.prefix);
+                        // If topic has no more subscribers, remove it entirely
+                        if subs.is_empty() {
+                            self.subscribers.remove(&topic_id);
+                            if let Some(topic_meta) = self.topic_meta.remove(&topic_id) {
+                                self.path_to_topic.remove(&topic_meta.prefix);
+                            }
+                            self.topics.retain(|&id| id != topic_id);
+                            self.routes.remove(&topic_id);
+                            topology_changed = true;
+                        }
                     }
-                    self.topics.retain(|&id| id != topic_id);
-                    self.routes.remove(&topic_id);
-                    topology_changed = true;
                 }
             }
         }
@@ -513,10 +524,14 @@ impl TopicRouter {
         depths.sort_by(|a, b| b.cmp(a));
 
         let mut levels = Vec::with_capacity(depths.len());
+        // Track globally seen subscribers across depth levels (deepest first wins)
+        let mut globally_seen: HashSet<u32> = HashSet::new();
 
         for depth in depths {
             let topic_ids = &depth_groups[&depth];
-            let mut dispatches = Vec::new();
+            let mut dispatches: Vec<ListenerDispatch> = Vec::new();
+            // Track subscriber -> dispatch index within this depth level for merging
+            let mut seen_at_depth: HashMap<u32, usize> = HashMap::new();
 
             for &topic_id in topic_ids {
                 let prefix = match self.topic_meta.get(&topic_id) {
@@ -558,17 +573,42 @@ impl TopicRouter {
                 // Get subscribers for this topic
                 if let Some(subs) = self.subscribers.get(&topic_id) {
                     for &sub_id in subs {
+                        // Skip if this subscriber was already dispatched at a deeper depth
+                        if globally_seen.contains(&sub_id) {
+                            continue;
+                        }
+
                         if let Some(sub_meta) = self.subscriber_meta.get(&sub_id) {
-                            let ancestors = build_ancestor_chain(&sub_meta.scope_path);
-                            dispatches.push(ListenerDispatch {
-                                subscriber_id: sub_id,
-                                scope_path: sub_meta.scope_path.clone(),
-                                changes: relevant_changes.clone(),
-                                ancestors,
-                            });
+                            if let Some(&existing_idx) = seen_at_depth.get(&sub_id) {
+                                // Multi-path: subscriber already dispatched at this depth from
+                                // another topic — merge changes into existing dispatch
+                                let existing = &mut dispatches[existing_idx];
+                                for c in &relevant_changes {
+                                    // Avoid duplicate changes (same path)
+                                    if !existing.changes.iter().any(|e| e.path == c.path) {
+                                        existing.changes.push(c.clone());
+                                    }
+                                }
+                            } else {
+                                // New dispatch for this subscriber at this depth
+                                let idx = dispatches.len();
+                                seen_at_depth.insert(sub_id, idx);
+                                let ancestors = build_ancestor_chain(&sub_meta.scope_path);
+                                dispatches.push(ListenerDispatch {
+                                    subscriber_id: sub_id,
+                                    scope_path: sub_meta.scope_path.clone(),
+                                    changes: relevant_changes.clone(),
+                                    ancestors,
+                                });
+                            }
                         }
                     }
                 }
+            }
+
+            // After processing this depth level, mark all subscribers as globally seen
+            for &sub_id in seen_at_depth.keys() {
+                globally_seen.insert(sub_id);
             }
 
             if !dispatches.is_empty() {
@@ -639,25 +679,40 @@ impl TopicRouter {
                     let dispatch_id = next_dispatch_id;
                     next_dispatch_id += 1;
 
-                    // Look up topic_path from subscriber metadata
-                    let topic_path = self
-                        .subscriber_meta
-                        .get(&dispatch.subscriber_id)
-                        .map(|m| m.topic_path.as_str())
-                        .unwrap_or("");
+                    // Look up topic_paths and scope from subscriber metadata
+                    let empty_vec: Vec<String> = Vec::new();
+                    let sub_meta = self.subscriber_meta.get(&dispatch.subscriber_id);
+                    let topic_paths = sub_meta.map(|m| &m.topic_paths).unwrap_or(&empty_vec);
+                    let scope_path = sub_meta.map(|m| m.scope_path.as_str()).unwrap_or("");
 
-                    // Compute input_change_ids: filter by topic_path (what to watch).
-                    // - Root topic (empty): match ALL paths
-                    // - Non-root: match exact path OR children (path.starts_with(topic + '.'))
+                    // For DispatchEntry.topic_path:
+                    // - Multi-path listener: use scope_path so JS relativizes changes to scope
+                    // - Single-path listener: use primary topic_path (backward compat)
+                    let is_multi_path = topic_paths.len() > 1;
+                    let primary_topic_path = if is_multi_path {
+                        scope_path
+                    } else {
+                        topic_paths.first().map(|s| s.as_str()).unwrap_or("")
+                    };
+
+                    // Compute input_change_ids: union across all watched topic_paths.
+                    // - Empty topic_paths or empty first path: match ALL paths (root listener)
+                    // - Non-root: match exact path OR children for any of the topic_paths
                     let mut input_change_ids: Vec<u32> = Vec::new();
                     for (idx, change) in changes.iter().enumerate() {
-                        let matches = if topic_path.is_empty() {
+                        let matches = if topic_paths.is_empty()
+                            || topic_paths.first().map(|s| s.is_empty()).unwrap_or(true)
+                        {
                             // Root topic: match everything
                             true
                         } else {
-                            change.path == topic_path
-                                || (change.path.starts_with(topic_path)
-                                    && change.path.as_bytes().get(topic_path.len()) == Some(&b'.'))
+                            topic_paths.iter().any(|tp| {
+                                change.path == *tp
+                                    || (change.path.starts_with(tp.as_str())
+                                        && change.path.as_bytes().get(tp.len()) == Some(&b'.'))
+                                    || (tp.starts_with(change.path.as_str())
+                                        && tp.as_bytes().get(change.path.len()) == Some(&b'.'))
+                            })
                         };
                         if matches {
                             input_change_ids.push(idx as u32);
@@ -668,7 +723,7 @@ impl TopicRouter {
                         dispatch_id,
                         subscriber_id: dispatch.subscriber_id,
                         scope_path: dispatch.scope_path.clone(),
-                        topic_path: topic_path.to_owned(),
+                        topic_path: primary_topic_path.to_owned(),
                         input_change_ids,
                     });
 
@@ -904,11 +959,14 @@ impl TopicRouter {
         serde_json::to_string(&plan).map_err(|e| format!("Serialize error: {}", e))
     }
 
-    /// Dump all registered listeners as (subscriber_id, topic_path, scope_path) triples (debug only).
+    /// Dump all registered listeners as (subscriber_id, primary_topic_path, scope_path) triples (debug only).
     pub(crate) fn dump_listeners(&self) -> Vec<(u32, String, String)> {
         self.subscriber_meta
             .iter()
-            .map(|(&id, meta)| (id, meta.topic_path.clone(), meta.scope_path.clone()))
+            .map(|(&id, meta)| {
+                let primary = meta.topic_paths.first().cloned().unwrap_or_default();
+                (id, primary, meta.scope_path.clone())
+            })
             .collect()
     }
 }
@@ -930,7 +988,7 @@ mod tests {
 
     fn register(router: &mut TopicRouter, sub_id: u32, topic: &str, scope: &str) {
         let json = format!(
-            r#"[{{"subscriber_id": {}, "topic_path": "{}", "scope_path": "{}"}}]"#,
+            r#"[{{"subscriber_id": {}, "topic_paths": ["{}"], "scope_path": "{}"}}]"#,
             sub_id, topic, scope
         );
         router.register_listeners_batch(&json).unwrap();
@@ -1016,9 +1074,9 @@ mod tests {
     fn register_batch() {
         let mut router = TopicRouter::new();
         let json = r#"[
-            {"subscriber_id": 1, "topic_path": "user.profile", "scope_path": "user.profile"},
-            {"subscriber_id": 2, "topic_path": "user", "scope_path": "user"},
-            {"subscriber_id": 3, "topic_path": "", "scope_path": ""}
+            {"subscriber_id": 1, "topic_paths": ["user.profile"], "scope_path": "user.profile"},
+            {"subscriber_id": 2, "topic_paths": ["user"], "scope_path": "user"},
+            {"subscriber_id": 3, "topic_paths": [""], "scope_path": ""}
         ]"#;
         router.register_listeners_batch(json).unwrap();
 
@@ -1030,9 +1088,9 @@ mod tests {
     fn topics_sorted_deepest_first() {
         let mut router = TopicRouter::new();
         let json = r#"[
-            {"subscriber_id": 1, "topic_path": "", "scope_path": ""},
-            {"subscriber_id": 2, "topic_path": "user", "scope_path": "user"},
-            {"subscriber_id": 3, "topic_path": "user.profile.email", "scope_path": "user.profile.email"}
+            {"subscriber_id": 1, "topic_paths": [""], "scope_path": ""},
+            {"subscriber_id": 2, "topic_paths": ["user"], "scope_path": "user"},
+            {"subscriber_id": 3, "topic_paths": ["user.profile.email"], "scope_path": "user.profile.email"}
         ]"#;
         router.register_listeners_batch(json).unwrap();
 
