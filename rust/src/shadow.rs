@@ -256,7 +256,10 @@ impl ShadowState {
                 *node = ValueRepr::Object(map);
                 Ok(())
             }
-            _ => Err(format!("Cannot traverse through primitive at '{}'", key)),
+            _ => Err(format!(
+                "Cannot traverse through primitive at '{}' (value: {:?})",
+                key, node
+            )),
         }
     }
 

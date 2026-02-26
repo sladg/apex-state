@@ -79,26 +79,62 @@ const buildPathLabel = (paths: string[]): string => {
   return `${paths[0]} +${String(paths.length - 1)} more`
 }
 
-/** Add trace entries to a summary/tree object. */
-const addTraceSummary = (
+/** Format a single stage trace with path details. @internal */
+export const formatStageDetail = (
+  s: Wasm.StageTrace,
+): Record<string, unknown> => {
+  const detail: Record<string, unknown> = {}
+
+  if (s.accepted.length > 0) {
+    detail['accepted'] =
+      s.accepted.length <= 5
+        ? s.accepted
+        : {
+            count: s.accepted.length,
+            paths: [
+              ...s.accepted.slice(0, 3),
+              `+${String(s.accepted.length - 3)} more`,
+            ],
+          }
+  }
+
+  if (s.produced.length > 0) {
+    detail['produced'] =
+      s.produced.length <= 5
+        ? s.produced
+        : {
+            count: s.produced.length,
+            paths: [
+              ...s.produced.slice(0, 3),
+              `+${String(s.produced.length - 3)} more`,
+            ],
+          }
+  }
+
+  if (s.skipped.length > 0) {
+    detail['skipped'] = s.skipped.map((sk) => `${sk.path} (${sk.reason})`)
+  }
+
+  if (s.duration_us > 0) {
+    detail['duration'] = `${(s.duration_us / 1000).toFixed(2)}ms`
+  }
+
+  return detail
+}
+
+/** Add trace entries to a summary/tree object. @internal */
+export const addTraceSummary = (
   obj: Record<string, unknown>,
   trace: Wasm.PipelineTrace,
 ): void => {
   if (trace.stages.length === 0) return
   const stagesSummary: Record<string, unknown> = {}
   for (const s of trace.stages) {
-    if (s.accepted.length > 0 || s.produced.length > 0) {
-      stagesSummary[s.stage] = {
-        accepted: s.accepted.length,
-        produced: s.produced.length,
-        skipped: s.skipped.length,
-        ...(s.duration_us > 0
-          ? { duration: `${(s.duration_us / 1000).toFixed(2)}ms` }
-          : {}),
-      }
-    }
+    const detail = formatStageDetail(s)
+    // Show all stages (even empty ones) for full pipeline visibility
+    stagesSummary[s.stage] = Object.keys(detail).length > 0 ? detail : '(idle)'
   }
-  if (Object.keys(stagesSummary).length > 0) {
+  if (trace.stages.length > 0) {
     obj['stages'] = stagesSummary
   }
   if (trace.total_duration_us > 0) {
@@ -106,8 +142,8 @@ const addTraceSummary = (
   }
 }
 
-/** Build console summary object for a pipeline run. */
-const buildConsoleSummary = (
+/** Build console summary object for a pipeline run. @internal */
+export const buildConsoleSummary = (
   data: PipelineLogData,
 ): Record<string, unknown> => {
   const summary: Record<string, unknown> = {

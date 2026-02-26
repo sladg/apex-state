@@ -15,6 +15,7 @@ pub mod pipeline;
 mod rev_index;
 pub mod router;
 mod shadow;
+mod trace;
 pub mod value_logic;
 
 use change::Change;

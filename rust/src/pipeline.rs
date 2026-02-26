@@ -11,7 +11,8 @@ use crate::aggregation::{
 use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry};
 #[allow(unused_imports)]
 use crate::change::{
-    Change, ChangeContext, ChangeKind, Lineage, PipelineTrace, Stage, UNDEFINED_SENTINEL_JSON,
+    Change, ChangeContext, ChangeKind, Lineage, PipelineTrace, SkipReason, SkippedChange, Stage,
+    StageTrace, UNDEFINED_SENTINEL_JSON,
 };
 use crate::clear_paths::ClearPathsRegistry;
 use crate::computation::{
@@ -23,6 +24,7 @@ use crate::intern::InternTable;
 use crate::rev_index::ReverseDependencyIndex;
 use crate::router::{FullExecutionPlan, TopicRouter};
 use crate::shadow::ShadowState;
+use crate::trace::TraceRecorder;
 use crate::value_logic::{ValueLogicNode, ValueLogicRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -1881,6 +1883,10 @@ impl ProcessingPipeline {
         // Clear per-call scratch space
         self.ctx.clear();
 
+        // Extract trace for borrow-safe TraceRecorder (swap with Default, put back at end)
+        let mut trace = std::mem::take(&mut self.ctx.trace);
+        let mut rec = TraceRecorder::new(&mut trace, self.debug_enabled);
+
         // Working shadow: clone of self.shadow used for all reads/writes during the pipeline.
         // self.shadow stays untouched until the atomic commit at the end.
         let mut working = self.shadow.clone();
@@ -1892,19 +1898,50 @@ impl ProcessingPipeline {
         let mut concern_changes: Vec<Change> = Vec::new();
 
         // Step 0: Diff pre-pass — filter no-op changes early (against working, == self.shadow here)
+        let all_input_paths = rec.collect_paths(&input_changes);
         let input_changes = crate::diff::diff_changes(&working, &input_changes);
+        {
+            let accepted = rec.collect_paths(&input_changes);
+            let skipped = rec.diff_skipped(&all_input_paths, &accepted);
+            rec.stage(Stage::Input, accepted, Vec::new(), skipped);
+        }
         if input_changes.is_empty() {
+            self.ctx.trace = trace;
             return Ok(false);
         }
 
         // Steps 1-2: Process aggregation writes (distribute target → sources)
+        let input_paths_for_agg = rec.collect_paths(&input_changes);
         let changes = process_aggregation_writes(&self.aggregations, input_changes, &working);
+        {
+            let produced: Vec<String> = if rec.enabled() {
+                changes
+                    .iter()
+                    .filter(|c| !input_paths_for_agg.contains(&c.path))
+                    .map(|c| c.path.clone())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            rec.stage(
+                Stage::AggregationWrite,
+                input_paths_for_agg,
+                produced,
+                Vec::new(),
+            );
+        }
 
         // Step 1.5: Filter out writes to computation targets (silent no-op)
+        let pre_filter_paths = rec.collect_paths(&changes);
         let changes: Vec<Change> = changes
             .into_iter()
             .filter(|c| !self.computations.is_computation_target(&c.path))
             .collect();
+        {
+            let kept = rec.collect_paths(&changes);
+            let skipped = rec.diff_skipped(&pre_filter_paths, &kept);
+            rec.stage(Stage::Computation, Vec::new(), Vec::new(), skipped);
+        }
 
         // Step 3: Apply aggregated changes to working shadow and collect affected paths.
         // Only process genuine changes (diff against working shadow before applying).
@@ -1931,6 +1968,13 @@ impl ProcessingPipeline {
             }
         }
 
+        {
+            let genuine = rec.collect_paths(&self.ctx.changes);
+            let all_input = rec.collect_paths(&changes);
+            let skipped = rec.diff_skipped(&all_input, &genuine);
+            rec.stage(Stage::Diff, genuine, Vec::new(), skipped);
+        }
+
         // Step 3.5: Clear paths — "when X changes, set Y to null".
         // Only original genuine changes (Step 3) feed into clear processing (no self-cascading).
         let clear_changes =
@@ -1940,6 +1984,18 @@ impl ProcessingPipeline {
             self.mark_affected_logic(&working, &change.path);
         }
         self.ctx.changes.extend(clear_changes.clone());
+        {
+            let trigger_paths: Vec<String> = if rec.enabled() {
+                genuine_path_ids
+                    .iter()
+                    .filter_map(|&id| self.intern.resolve(id).map(|s| s.to_owned()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let produced = rec.collect_paths(&clear_changes);
+            rec.stage(Stage::ClearPath, trigger_paths, produced, Vec::new());
+        }
 
         // Step 3.6: Early anchor evaluation — evaluate anchors BEFORE sync/flip
         // so that sync/flip correctly skip paths whose anchors are now disabled.
@@ -1962,6 +2018,12 @@ impl ProcessingPipeline {
             self.mark_affected_logic(&working, &change.path);
         }
         self.ctx.changes.extend_from_slice(&sync_buf);
+        rec.stage(
+            Stage::Sync,
+            rec.collect_paths(&changes_for_sync),
+            rec.collect_paths(&sync_buf),
+            Vec::new(),
+        );
 
         // Steps 6-7: Process flip paths and update working shadow.
         // Must process ALL aggregated changes + clear changes + sync outputs.
@@ -1974,6 +2036,12 @@ impl ProcessingPipeline {
             self.mark_affected_logic(&working, &change.path);
         }
         self.ctx.changes.extend_from_slice(&flip_buf);
+        rec.stage(
+            Stage::Flip,
+            rec.collect_paths(&changes_for_flip),
+            rec.collect_paths(&flip_buf),
+            Vec::new(),
+        );
 
         // Step 7.5: Process aggregation reads (sources → target recomputation).
         // After sync/flip, check if any aggregation sources changed and recompute targets.
@@ -1981,18 +2049,33 @@ impl ProcessingPipeline {
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let aggregation_reads =
             process_aggregation_reads(&self.aggregations, &working, &all_changed_paths);
+        let mut agg_read_produced: Vec<String> = Vec::new();
+        let mut agg_read_skipped: Vec<SkippedChange> = Vec::new();
         for change in &aggregation_reads {
             // Skip if target path's anchor is disabled
             let target_id = self.intern.intern(&change.path);
             if let Some(&aid) = self.anchored_paths.get(&target_id) {
                 if !self.is_anchor_enabled(Some(aid)) {
+                    if rec.enabled() {
+                        agg_read_skipped
+                            .push(TraceRecorder::skipped_guard(&change.path, &change.kind));
+                    }
                     continue;
                 }
+            }
+            if rec.enabled() {
+                agg_read_produced.push(change.path.clone());
             }
             working.set(&change.path, &change.value_json)?;
             self.mark_affected_logic(&working, &change.path);
             self.ctx.changes.push(change.clone());
         }
+        rec.stage(
+            Stage::AggregationRead,
+            all_changed_paths,
+            agg_read_produced,
+            agg_read_skipped,
+        );
 
         // Step 7.6: Process computation reads (sources → target recomputation).
         // Sees aggregation-produced changes because we re-collect all_changed_paths.
@@ -2000,18 +2083,33 @@ impl ProcessingPipeline {
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let computation_reads =
             process_computation_reads(&self.computations, &working, &all_changed_paths);
+        let mut comp_read_produced: Vec<String> = Vec::new();
+        let mut comp_read_skipped: Vec<SkippedChange> = Vec::new();
         for change in &computation_reads {
             // Skip if target path's anchor is disabled
             let target_id = self.intern.intern(&change.path);
             if let Some(&aid) = self.anchored_paths.get(&target_id) {
                 if !self.is_anchor_enabled(Some(aid)) {
+                    if rec.enabled() {
+                        comp_read_skipped
+                            .push(TraceRecorder::skipped_guard(&change.path, &change.kind));
+                    }
                     continue;
                 }
+            }
+            if rec.enabled() {
+                comp_read_produced.push(change.path.clone());
             }
             working.set(&change.path, &change.value_json)?;
             self.mark_affected_logic(&working, &change.path);
             self.ctx.changes.push(change.clone());
         }
+        rec.stage(
+            Stage::Computation,
+            all_changed_paths,
+            comp_read_produced,
+            comp_read_skipped,
+        );
 
         // Step 7.7: Re-evaluate anchor states for transitions (sync/flip/agg/comp may
         // create or remove anchor paths). Compare against Step 3.6 snapshot to detect
@@ -2036,13 +2134,24 @@ impl ProcessingPipeline {
         }
 
         // Steps 8-9: Evaluate affected BoolLogic expressions (against working shadow)
+        let mut bl_produced: Vec<String> = Vec::new();
+        let mut bl_skipped: Vec<SkippedChange> = Vec::new();
         for logic_id in &self.ctx.affected_bool_logic {
             if let Some(meta) = self.registry.get(*logic_id) {
                 // Skip if anchor path is missing from shadow state
                 if !self.is_anchor_enabled(meta.anchor_path_id) {
+                    if rec.enabled() {
+                        bl_skipped.push(TraceRecorder::skipped_guard(
+                            &meta.output_path,
+                            &ChangeKind::Real,
+                        ));
+                    }
                     continue;
                 }
                 let result = meta.tree.evaluate(&working);
+                if rec.enabled() {
+                    bl_produced.push(meta.output_path.clone());
+                }
                 concern_changes.push(Change {
                     path: meta.output_path.clone(),
                     value_json: if result {
@@ -2056,15 +2165,38 @@ impl ProcessingPipeline {
                 });
             }
         }
+        {
+            let accepted: Vec<String> = if rec.enabled() {
+                self.ctx
+                    .affected_bool_logic
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            rec.stage(Stage::BoolLogic, accepted, bl_produced, bl_skipped);
+        }
 
         // Step 8b: Evaluate affected ValueLogic expressions (against working shadow)
+        let mut vl_produced: Vec<String> = Vec::new();
+        let mut vl_skipped: Vec<SkippedChange> = Vec::new();
         for vl_id in &self.ctx.affected_value_logics {
             if let Some(meta) = self.value_logic_registry.get(*vl_id) {
                 // Skip if anchor path is missing from shadow state
                 if !self.is_anchor_enabled(meta.anchor_path_id) {
+                    if rec.enabled() {
+                        vl_skipped.push(TraceRecorder::skipped_guard(
+                            &meta.output_path,
+                            &ChangeKind::Real,
+                        ));
+                    }
                     continue;
                 }
                 let result = meta.tree.evaluate(&working);
+                if rec.enabled() {
+                    vl_produced.push(meta.output_path.clone());
+                }
                 concern_changes.push(Change {
                     path: meta.output_path.clone(),
                     value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
@@ -2074,12 +2206,30 @@ impl ProcessingPipeline {
                 });
             }
         }
+        {
+            let accepted: Vec<String> = if rec.enabled() {
+                self.ctx
+                    .affected_value_logics
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            rec.stage(Stage::ValueLogic, accepted, vl_produced, vl_skipped);
+        }
 
         // Step 10: Collect affected validators with their dependency values
         let validators_to_run = self.collect_validator_dispatches(&working);
 
         // Step 11: Create full execution plan if listeners are registered
         let execution_plan = self.build_execution_plan();
+        rec.stage(
+            Stage::Listeners,
+            rec.collect_paths(&self.ctx.changes),
+            Vec::new(),
+            Vec::new(),
+        );
 
         // Store concern changes in ctx.changes (prefixed with _concerns.)
         for c in concern_changes {
@@ -2099,6 +2249,16 @@ impl ProcessingPipeline {
 
         self.ctx.validators_to_run = validators_to_run;
         self.ctx.execution_plan = execution_plan;
+
+        rec.stage(
+            Stage::Apply,
+            vec![format!("{} changes", self.ctx.changes.len())],
+            Vec::new(),
+            Vec::new(),
+        );
+
+        // Put trace back into ctx (rec's borrow ends here via NLL)
+        self.ctx.trace = trace;
 
         // Atomic commit: replace self.shadow with the fully-processed working copy.
         // self.shadow was untouched during the entire pipeline — one update, like valtio's batchApply.
@@ -2249,7 +2409,11 @@ impl ProcessingPipeline {
             validators_to_run: std::mem::take(&mut self.ctx.validators_to_run),
             execution_plan: self.ctx.execution_plan.take(),
             has_work,
-            trace: None, // Trace will be wired up when StageTrace is fully implemented
+            trace: if self.debug_enabled {
+                Some(std::mem::take(&mut self.ctx.trace))
+            } else {
+                None
+            },
         })
     }
 
