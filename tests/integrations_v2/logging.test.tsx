@@ -12,7 +12,6 @@ import {
   addTraceSummary,
   buildConsoleSummary,
   createLogger,
-  formatStageDetail,
 } from '../../src/utils/log'
 import {
   createWasmPipeline,
@@ -50,119 +49,11 @@ const makeTrace = (
 const makePipelineData = (
   overrides: Partial<PipelineLogData> = {},
 ): PipelineLogData => ({
-  input: [{ path: 'user.name', value: 'Alice' }],
+  initialChanges: [{ path: 'user.name', value: 'Alice' }],
   trace: null,
-  listeners: [],
+  listenerLog: [],
   durationMs: 1.5,
   ...overrides,
-})
-
-// ---------------------------------------------------------------------------
-// formatStageDetail
-// ---------------------------------------------------------------------------
-
-describe('formatStageDetail', () => {
-  it('should return empty object for idle stage', () => {
-    // Stage with no activity at all
-    const result = formatStageDetail(makeStage())
-    expect(result).toEqual({})
-  })
-
-  it('should show accepted paths inline when ≤5', () => {
-    // Small number of accepted paths shown as array
-    const result = formatStageDetail(
-      makeStage({ accepted: ['user.name', 'user.email', 'user.age'] }),
-    )
-    expect(result['accepted']).toEqual(['user.name', 'user.email', 'user.age'])
-  })
-
-  it('should truncate accepted paths when >5', () => {
-    // Large number of accepted paths collapsed to count + first 3
-    const paths = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
-    const result = formatStageDetail(makeStage({ accepted: paths }))
-    expect(result['accepted']).toEqual({
-      count: 7,
-      paths: ['a', 'b', 'c', '+4 more'],
-    })
-  })
-
-  it('should show produced paths inline when ≤5', () => {
-    // Small number of produced [path, value] pairs shown as object
-    const result = formatStageDetail(
-      makeStage({ produced: [['_concerns.user.name.disabled', 'true']] }),
-    )
-    expect(result['produced']).toEqual({
-      '_concerns.user.name.disabled': 'true',
-    })
-  })
-
-  it('should show all produced paths when >5', () => {
-    // Large number of produced [path, value] pairs all shown
-    const pairs: [string, string][] = [
-      ['p1', 'v1'],
-      ['p2', 'v2'],
-      ['p3', 'v3'],
-      ['p4', 'v4'],
-      ['p5', 'v5'],
-      ['p6', 'v6'],
-    ]
-    const result = formatStageDetail(makeStage({ produced: pairs }))
-    expect(result['produced']).toEqual({
-      p1: 'v1',
-      p2: 'v2',
-      p3: 'v3',
-      p4: 'v4',
-      p5: 'v5',
-      p6: 'v6',
-    })
-  })
-
-  it('should show skipped changes with path and reason', () => {
-    // Skipped entries formatted as "path (reason)"
-    const result = formatStageDetail(
-      makeStage({
-        skipped: [
-          { path: 'user.name', kind: 'redundant', reason: 'wrong_kind' },
-          { path: 'cart.total', kind: 'breakdown', reason: 'guard_failed' },
-        ],
-      }),
-    )
-    expect(result['skipped']).toEqual([
-      'user.name (wrong_kind)',
-      'cart.total (guard_failed)',
-    ])
-  })
-
-  it('should show duration when > 0', () => {
-    // duration_us converted to ms with 2 decimals
-    const result = formatStageDetail(makeStage({ duration_us: 1500 }))
-    expect(result['duration']).toBe('1.50ms')
-  })
-
-  it('should omit duration when 0', () => {
-    // Zero duration not shown
-    const result = formatStageDetail(
-      makeStage({ accepted: ['x'], duration_us: 0 }),
-    )
-    expect(result['duration']).toBeUndefined()
-  })
-
-  it('should show exactly 5 paths inline (boundary)', () => {
-    // Boundary: exactly 5 paths should be inline, not truncated
-    const paths = ['a', 'b', 'c', 'd', 'e']
-    const result = formatStageDetail(makeStage({ accepted: paths }))
-    expect(result['accepted']).toEqual(['a', 'b', 'c', 'd', 'e'])
-  })
-
-  it('should truncate at exactly 6 paths (boundary)', () => {
-    // Boundary: 6 paths triggers truncation
-    const paths = ['a', 'b', 'c', 'd', 'e', 'f']
-    const result = formatStageDetail(makeStage({ accepted: paths }))
-    expect(result['accepted']).toEqual({
-      count: 6,
-      paths: ['a', 'b', 'c', '+3 more'],
-    })
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -187,7 +78,9 @@ describe('buildConsoleSummary', () => {
 
     it('should show "(none)" for empty input', () => {
       // Empty input array formatted as "(none)"
-      const summary = buildConsoleSummary(makePipelineData({ input: [] }))
+      const summary = buildConsoleSummary(
+        makePipelineData({ initialChanges: [] }),
+      )
       expect(summary['input']).toBe('(none)')
     })
   })
@@ -198,7 +91,7 @@ describe('buildConsoleSummary', () => {
 
   describe('with trace', () => {
     it('should include stages from trace', () => {
-      // Trace with active stages shows stage details
+      // Trace with active stages shows stage details (raw spread)
       const trace = makeTrace([
         makeStage({
           stage: 'diff',
@@ -214,25 +107,35 @@ describe('buildConsoleSummary', () => {
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
       expect(stages).toBeDefined()
-      expect(stages['diff']).toEqual({
-        accepted: ['user.name'],
-        produced: { 'user.name': 'Alice' },
-      })
-      expect(stages['sync']).toEqual({
-        accepted: ['user.name'],
-        produced: { 'profile.name': 'Bob' },
-      })
+      expect(stages['diff']).toEqual(
+        expect.objectContaining({
+          accepted: ['user.name'],
+          produced: [['user.name', 'Alice']],
+        }),
+      )
+      expect(stages['sync']).toEqual(
+        expect.objectContaining({
+          accepted: ['user.name'],
+          produced: [['profile.name', 'Bob']],
+        }),
+      )
     })
 
-    it('should show idle stages as "(idle)"', () => {
-      // Stages with no activity shown as "(idle)" for pipeline visibility
+    it('should include empty stages with raw data', () => {
+      // Stages with no activity still appear with all fields (spread)
       const trace = makeTrace([
         makeStage({ stage: 'diff', accepted: ['x'] }),
         makeStage({ stage: 'flip' }),
       ])
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['flip']).toBe('(idle)')
+      expect(stages['flip']).toEqual(
+        expect.objectContaining({
+          stage: 'flip',
+          accepted: [],
+          produced: [],
+        }),
+      )
     })
 
     it('should include wasmDuration when total_duration_us > 0', () => {
@@ -263,7 +166,7 @@ describe('buildConsoleSummary', () => {
     })
 
     it('should include stages with only skipped entries', () => {
-      // Stage with only skipped changes should still appear (not filtered out)
+      // Stage with only skipped changes should still appear with raw skipped data
       const trace = makeTrace([
         makeStage({
           stage: 'sync',
@@ -274,9 +177,13 @@ describe('buildConsoleSummary', () => {
       ])
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['sync']).toEqual({
-        skipped: ['user.name (wrong_kind)'],
-      })
+      expect(stages['sync']).toEqual(
+        expect.objectContaining({
+          skipped: [
+            { path: 'user.name', kind: 'redundant', reason: 'wrong_kind' },
+          ],
+        }),
+      )
     })
   })
 
@@ -288,7 +195,7 @@ describe('buildConsoleSummary', () => {
     it('should format listener entries with scope/input/output', () => {
       // Listener entries keyed by index, subscriber ID, and function name
       const data = makePipelineData({
-        listeners: [
+        listenerLog: [
           {
             subscriberId: 42,
             fnName: 'onNameChange',
@@ -317,7 +224,7 @@ describe('buildConsoleSummary', () => {
     it('should mark slow listeners with [SLOW]', () => {
       // Slow listener flagged in the key
       const data = makePipelineData({
-        listeners: [
+        listenerLog: [
           {
             subscriberId: 1,
             fnName: 'heavyComputation',
@@ -339,7 +246,7 @@ describe('buildConsoleSummary', () => {
     it('should use "(anonymous)" for unnamed listeners', () => {
       // Missing fnName defaults to "(anonymous)"
       const data = makePipelineData({
-        listeners: [
+        listenerLog: [
           {
             subscriberId: 5,
             fnName: '',
@@ -361,7 +268,7 @@ describe('buildConsoleSummary', () => {
     it('should use "(root)" for empty scope', () => {
       // Empty scope string formatted as "(root)"
       const data = makePipelineData({
-        listeners: [
+        listenerLog: [
           {
             subscriberId: 3,
             fnName: 'handler',
@@ -384,7 +291,7 @@ describe('buildConsoleSummary', () => {
     it('should order listener entries by index', () => {
       // Multiple listeners keyed with zero-padded index
       const data = makePipelineData({
-        listeners: [
+        listenerLog: [
           {
             subscriberId: 1,
             fnName: 'first',
@@ -438,8 +345,8 @@ describe('buildConsoleSummary', () => {
     const makeFullTrace = (): Wasm.PipelineTrace =>
       makeTrace(ALL_STAGES.map((stage) => makeStage({ stage })))
 
-    it('should display all stages including idle ones', () => {
-      // WASM now emits all stages — idle stages should appear as "(idle)"
+    it('should display all stages', () => {
+      // WASM emits all stages — all unique stage names should be present
       const trace = makeFullTrace()
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
@@ -451,20 +358,27 @@ describe('buildConsoleSummary', () => {
       }
     })
 
-    it('should show idle stages as "(idle)" in full trace', () => {
-      // A full trace where all stages are empty should show all as "(idle)"
+    it('should include raw stage data for empty stages', () => {
+      // A full trace where all stages are empty should still include stage fields
       const trace = makeFullTrace()
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
 
-      // All stages are empty → all should be "(idle)"
+      // All stages are empty but still have raw fields
       for (const stageName of new Set(ALL_STAGES)) {
-        expect(stages[stageName]).toBe('(idle)')
+        const detail = stages[stageName] as Record<string, unknown>
+        expect(detail).toEqual(
+          expect.objectContaining({
+            stage: stageName,
+            accepted: [],
+            produced: [],
+          }),
+        )
       }
     })
 
-    it('should show a mix of active and idle stages', () => {
-      // Realistic trace: some stages have activity, others are idle
+    it('should show a mix of active and empty stages', () => {
+      // Realistic trace: some stages have activity, others are empty
       const trace = makeTrace([
         makeStage({
           stage: 'input',
@@ -503,21 +417,33 @@ describe('buildConsoleSummary', () => {
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
 
-      // Active stages have detail objects
-      expect(stages['input']).toEqual({ accepted: ['user.name'] })
-      expect(stages['sync']).toEqual({
-        accepted: ['user.name'],
-        produced: { 'profile.name': 'value1' },
-      })
-      expect(stages['bool_logic']).toEqual({
-        accepted: ['1'],
-        produced: { '_concerns.user.name.disabled': 'true' },
-      })
+      // Active stages have detail with data
+      expect(stages['input']).toEqual(
+        expect.objectContaining({ accepted: ['user.name'] }),
+      )
+      expect(stages['sync']).toEqual(
+        expect.objectContaining({
+          accepted: ['user.name'],
+          produced: [['profile.name', 'value1']],
+        }),
+      )
+      expect(stages['bool_logic']).toEqual(
+        expect.objectContaining({
+          accepted: ['1'],
+          produced: [['_concerns.user.name.disabled', 'true']],
+        }),
+      )
 
-      // Idle stages show "(idle)"
-      expect(stages['aggregation_write']).toBe('(idle)')
-      expect(stages['flip']).toBe('(idle)')
-      expect(stages['value_logic']).toBe('(idle)')
+      // Empty stages still present with raw data
+      expect(stages['aggregation_write']).toEqual(
+        expect.objectContaining({ accepted: [], produced: [] }),
+      )
+      expect(stages['flip']).toEqual(
+        expect.objectContaining({ accepted: [], produced: [] }),
+      )
+      expect(stages['value_logic']).toEqual(
+        expect.objectContaining({ accepted: [], produced: [] }),
+      )
     })
 
     it('should handle duplicate computation stage (filter + read)', () => {
@@ -544,13 +470,15 @@ describe('buildConsoleSummary', () => {
       const stages = summary['stages'] as Record<string, unknown>
 
       // Second computation entry wins (last-write-wins for same key)
-      expect(stages['computation']).toEqual({
-        accepted: ['price', 'quantity'],
-        produced: { total: '100' },
-      })
+      expect(stages['computation']).toEqual(
+        expect.objectContaining({
+          accepted: ['price', 'quantity'],
+          produced: [['total', '100']],
+        }),
+      )
     })
 
-    it('should show anchor-skipped entries in aggregation_read', () => {
+    it('should show skipped entries in aggregation_read as raw data', () => {
       // AggregationRead can skip paths due to disabled anchors
       const trace = makeTrace([
         makeStage({
@@ -568,11 +496,15 @@ describe('buildConsoleSummary', () => {
       ])
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['aggregation_read']).toEqual({
-        accepted: ['cart.item1.price', 'cart.item2.price'],
-        produced: { 'cart.total': '150' },
-        skipped: ['cart.summary (guard_failed)'],
-      })
+      expect(stages['aggregation_read']).toEqual(
+        expect.objectContaining({
+          accepted: ['cart.item1.price', 'cart.item2.price'],
+          produced: [['cart.total', '150']],
+          skipped: [
+            { path: 'cart.summary', kind: 'real', reason: 'guard_failed' },
+          ],
+        }),
+      )
     })
 
     it('should show apply stage with change count', () => {
@@ -585,9 +517,11 @@ describe('buildConsoleSummary', () => {
       ])
       const summary = buildConsoleSummary(makePipelineData({ trace }))
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['apply']).toEqual({
-        accepted: ['7 changes'],
-      })
+      expect(stages['apply']).toEqual(
+        expect.objectContaining({
+          accepted: ['7 changes'],
+        }),
+      )
     })
   })
 })
@@ -606,7 +540,9 @@ describe('addTraceSummary', () => {
     addTraceSummary(obj, trace)
     expect(obj['stages']).toBeDefined()
     const stages = obj['stages'] as Record<string, unknown>
-    expect(stages['diff']).toEqual({ accepted: ['user.name'] })
+    expect(stages['diff']).toEqual(
+      expect.objectContaining({ accepted: ['user.name'] }),
+    )
   })
 
   it('should not add stages key for empty trace', () => {
@@ -630,8 +566,8 @@ describe('addTraceSummary', () => {
     expect(obj['wasmDuration']).toBeUndefined()
   })
 
-  it('should show all stages including idle ones', () => {
-    // Even idle stages appear when included in the trace
+  it('should show all stages including empty ones', () => {
+    // Even empty stages appear when included in the trace
     const obj: Record<string, unknown> = {}
     const trace = makeTrace([
       makeStage({ stage: 'input', accepted: ['x'] }),
@@ -640,9 +576,15 @@ describe('addTraceSummary', () => {
     ])
     addTraceSummary(obj, trace)
     const stages = obj['stages'] as Record<string, unknown>
-    expect(stages['input']).toEqual({ accepted: ['x'] })
-    expect(stages['sync']).toBe('(idle)')
-    expect(stages['flip']).toBe('(idle)')
+    expect(stages['input']).toEqual(
+      expect.objectContaining({ accepted: ['x'] }),
+    )
+    expect(stages['sync']).toEqual(
+      expect.objectContaining({ stage: 'sync', accepted: [], produced: [] }),
+    )
+    expect(stages['flip']).toEqual(
+      expect.objectContaining({ stage: 'flip', accepted: [], produced: [] }),
+    )
   })
 
   it('should preserve existing keys on target object', () => {
@@ -712,7 +654,7 @@ describe('createLogger — console output', () => {
       const logger = createLogger({ log: true })
       logger.logPipeline(
         makePipelineData({
-          input: [
+          initialChanges: [
             { path: 'a', value: 1 },
             { path: 'b', value: 2 },
             { path: 'c', value: 3 },
@@ -765,17 +707,23 @@ describe('createLogger — console output', () => {
       expect(summary['stages']).toBeDefined()
 
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['diff']).toEqual({
-        accepted: ['user.name'],
-        produced: { 'user.name': 'Alice' },
-        duration: '0.12ms',
-      })
-      expect(stages['sync']).toEqual({
-        accepted: ['user.name'],
-        produced: { 'profile.name': 'Bob' },
-        duration: '0.08ms',
-      })
-      expect(stages['flip']).toBe('(idle)')
+      expect(stages['diff']).toEqual(
+        expect.objectContaining({
+          accepted: ['user.name'],
+          produced: [['user.name', 'Alice']],
+          duration_ms: '0.12ms',
+        }),
+      )
+      expect(stages['sync']).toEqual(
+        expect.objectContaining({
+          accepted: ['user.name'],
+          produced: [['profile.name', 'Bob']],
+          duration_ms: '0.08ms',
+        }),
+      )
+      expect(stages['flip']).toEqual(
+        expect.objectContaining({ stage: 'flip', accepted: [], produced: [] }),
+      )
     })
 
     it('should include listener entries in summary', () => {
@@ -783,7 +731,7 @@ describe('createLogger — console output', () => {
       const logger = createLogger({ log: true })
       logger.logPipeline(
         makePipelineData({
-          listeners: [
+          listenerLog: [
             {
               subscriberId: 7,
               fnName: 'onEmailChange',
@@ -851,9 +799,9 @@ describe('createLogger — console output', () => {
 
       logger.logPipeline(
         makePipelineData({
-          input: [{ path: 'user.name', value: 'Bob' }],
+          initialChanges: [{ path: 'user.name', value: 'Bob' }],
           trace,
-          listeners: [
+          listenerLog: [
             {
               subscriberId: 1,
               fnName: 'notifyNameChange',
@@ -887,21 +835,30 @@ describe('createLogger — console output', () => {
       expect(keys[0]).toBe('input')
       expect(keys[1]).toBe('duration')
 
-      // Active stages have detail, idle stages are "(idle)"
+      // Active stages have detail with data
       const stages = summary['stages'] as Record<string, unknown>
-      expect(stages['input']).toEqual({ accepted: ['user.name'] })
-      expect(stages['aggregation_write']).toBe('(idle)')
-      expect(stages['sync']).toEqual({
-        accepted: ['user.name'],
-        produced: { 'profile.displayName': 'Bob' },
-        duration: '0.03ms',
-      })
-      expect(stages['bool_logic']).toEqual({
-        accepted: ['1'],
-        produced: { '_concerns.user.name.disabled': 'true' },
-        duration: '0.02ms',
-      })
-      expect(stages['flip']).toBe('(idle)')
+      expect(stages['input']).toEqual(
+        expect.objectContaining({ accepted: ['user.name'] }),
+      )
+      expect(stages['sync']).toEqual(
+        expect.objectContaining({
+          accepted: ['user.name'],
+          produced: [['profile.displayName', 'Bob']],
+          duration_ms: '0.03ms',
+        }),
+      )
+      expect(stages['bool_logic']).toEqual(
+        expect.objectContaining({
+          accepted: ['1'],
+          produced: [['_concerns.user.name.disabled', 'true']],
+          duration_ms: '0.02ms',
+        }),
+      )
+
+      // Empty stages still present with raw data
+      expect(stages['flip']).toEqual(
+        expect.objectContaining({ accepted: [], produced: [] }),
+      )
     })
   })
 
@@ -1115,9 +1072,9 @@ describe('E2E: WASM pipeline trace → logger display', () => {
 
     // Build the console summary as the logger would
     const logData: PipelineLogData = {
-      input: [{ path: 'source', value: 'world' }],
+      initialChanges: [{ path: 'source', value: 'world' }],
       trace: result.trace,
-      listeners: [],
+      listenerLog: [],
       durationMs: 1.0,
     }
     const summary = buildConsoleSummary(logData)
@@ -1129,12 +1086,12 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     // Input stage should have accepted paths
     const inputDetail = stages['input'] as Record<string, unknown>
     expect(inputDetail).toBeDefined()
-    expect(inputDetail).not.toBe('(idle)')
+    expect(inputDetail['accepted']).toContain('source')
 
     // Sync stage should show produced target
     const syncDetail = stages['sync'] as Record<string, unknown>
     expect(syncDetail).toBeDefined()
-    expect(syncDetail).not.toBe('(idle)')
+    expect(syncDetail['produced']).toBeDefined()
   })
 
   it('should produce readable console output for createLogger', () => {
@@ -1150,9 +1107,9 @@ describe('E2E: WASM pipeline trace → logger display', () => {
 
     const logger = createLogger({ log: true })
     logger.logPipeline({
-      input: [{ path: 'x', value: 10 }],
+      initialChanges: [{ path: 'x', value: 10 }],
       trace: result.trace,
-      listeners: [],
+      listenerLog: [],
       durationMs: 0.5,
     })
 
@@ -1167,10 +1124,10 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     expect(summary['input']).toEqual({ x: 10 })
     expect(summary['duration']).toBe('0.50ms')
 
-    // Stages should contain real data, not all "(idle)"
+    // Stages should contain real data
     const stages = summary['stages'] as Record<string, unknown>
-    const inputStage = stages['input']
-    expect(inputStage).not.toBe('(idle)')
+    const inputStage = stages['input'] as Record<string, unknown>
+    expect(inputStage['accepted']).toContain('x')
 
     spyGC.mockRestore()
     spyL.mockRestore()

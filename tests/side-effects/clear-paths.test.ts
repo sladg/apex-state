@@ -56,7 +56,7 @@ describe('ClearPaths: Concrete triggers and targets', () => {
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new@test.com' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.email')
     expect(paths).toContain('form.errors')
@@ -86,7 +86,7 @@ describe('ClearPaths: Concrete triggers and targets', () => {
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'same@test.com' },
-    ]).state_changes
+    ]).listener_changes
     expect(changes).toHaveLength(0)
   })
 
@@ -107,7 +107,7 @@ describe('ClearPaths: Concrete triggers and targets', () => {
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new@b.com' },
-    ]).state_changes
+    ]).listener_changes
     expect(changes).toHaveLength(1)
     const firstChange = changes[0]
     expect(firstChange).toBeDefined()
@@ -136,7 +136,7 @@ describe('ClearPaths: Concrete triggers and targets', () => {
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.email')
     expect(paths).toContain('form.errors')
@@ -165,7 +165,7 @@ describe('ClearPaths: Concrete triggers and targets', () => {
     const changes = pipeline.processChanges([
       { path: 'a', value: 'x2' },
       { path: 'b', value: 'y2' },
-    ]).state_changes
+    ]).listener_changes
     const targetCount = changes.filter((c) => c.path === 'target').length
     expect(targetCount).toBe(1)
   })
@@ -187,7 +187,7 @@ describe('ClearPaths: Concrete triggers and targets', () => {
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const errorsChange = findChange(changes, 'form.errors')
     expect(errorsChange).toBeDefined()
     expect(errorsChange?.value).toBeNull()
@@ -234,7 +234,7 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
 
     const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new@test.com' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.value')
     expect(paths).toContain('form.fields.email.error')
@@ -273,7 +273,7 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
 
     const changes = pipeline.processChanges([
       { path: 'app.section1.fieldA.value', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('app.section1.fieldA.error')
     expect(paths).not.toContain('app.section1.fieldB.error')
@@ -311,7 +311,7 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
 
     const changes = pipeline.processChanges([
       { path: 'items.row1.input', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('items.row1.input')
     // warning doesn't exist → treated as null → no clear change produced
@@ -342,7 +342,7 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
 
     const changes = pipeline.processChanges([
       { path: 'items.row1.input', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('items.row1.input')
     expect(paths).not.toContain('items.row1.warning')
@@ -370,7 +370,7 @@ describe('Wildcard triggers with correlated targets ([*])', () => {
     const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new1' },
       { path: 'form.fields.name.value', value: 'new2' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
     expect(paths).toContain('form.fields.name.error')
@@ -418,7 +418,7 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
 
     const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
     expect(paths).toContain('form.fields.name.error')
@@ -456,7 +456,7 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
     expect(paths).toContain('form.fields.name.error')
@@ -489,7 +489,7 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
 
     const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.value')
     // email.error doesn't exist, name.error is null → neither produces a clear change
@@ -524,7 +524,7 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
 
     const changes = pipeline.processChanges([
       { path: 'form.submit', value: true },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.submit')
     // email.error and age.error have values → cleared
@@ -556,7 +556,7 @@ describe('Wildcard triggers with expanded targets ([**] via expandMatch)', () =>
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     expect(changes).toHaveLength(1)
     const firstChange = changes[0]
     expect(firstChange).toBeDefined()
@@ -604,7 +604,7 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     // Now trigger the clear — [**] should expand to email and name
     const changes = pipeline.processChanges([
       { path: 'form.submit', value: true },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.submit')
     expect(paths).toContain('form.fields.email.error')
@@ -640,7 +640,7 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     // Trigger clear — [**] should find "email" key
     const changes = pipeline.processChanges([
       { path: 'form.submit', value: true },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.error')
 
@@ -676,7 +676,7 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     // Trigger: change email.value → should clear email.error
     const changes = pipeline.processChanges([
       { path: 'form.fields.email.value', value: 'new@test.com' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.fields.email.value')
     expect(paths).toContain('form.fields.email.error')
@@ -713,7 +713,7 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     // First: trigger fires but target.path is undefined → no clears, no crash
     const changes1 = pipeline.processChanges([
       { path: 'source.items.row1.value', value: 'new1' },
-    ]).state_changes
+    ]).listener_changes
     const paths1 = getPaths(changes1)
     expect(paths1).toContain('source.items.row1.value')
     // No target paths cleared (target.path doesn't exist)
@@ -728,7 +728,7 @@ describe('Undefined/null parent paths with [**] expansion', () => {
     // Trigger again — [*] binds "row1", [**] expands nested keys ["a", "b"]
     const changes2 = pipeline.processChanges([
       { path: 'source.items.row1.value', value: 'new2' },
-    ]).state_changes
+    ]).listener_changes
     const paths2 = getPaths(changes2)
     expect(paths2).toContain('source.items.row1.value')
     expect(paths2).toContain('target.path.row1.nested.a.value')
@@ -773,7 +773,7 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.errors')
     expect(paths).toContain('mirror.errors')
@@ -808,7 +808,7 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
       { path: 'form.email', value: 'new' },
     ])
     expect(phase1.has_work).toBe(true)
-    expect(getPaths(phase1.state_changes)).toContain('form.errors')
+    expect(getPaths(phase1.listener_changes)).toContain('form.errors')
 
     // Phase 2: pipelineFinalize returns all changes including concern updates
     const phase2 = pipeline.pipelineFinalize([])
@@ -836,7 +836,7 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
 
     const changes = pipeline.processChanges([
       { path: 'a', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('a')
     expect(paths).toContain('b')
@@ -869,7 +869,7 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
 
     const changes = pipeline.processChanges([
       { path: 'items.a.price', value: 20 },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('items.b.price')
     expect(paths).toContain('totals.price')
@@ -897,7 +897,7 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
 
     const changes = pipeline.processChanges([
       { path: 'toggle', value: true },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('toggle')
     expect(paths).toContain('enabled')
@@ -929,7 +929,7 @@ describe('Registration and validation', () => {
 
     const changes = pipeline.processChanges([
       { path: 'form.email', value: 'new' },
-    ]).state_changes
+    ]).listener_changes
     const paths = getPaths(changes)
     expect(paths).toContain('form.errors')
   })
@@ -945,7 +945,7 @@ describe('Registration and validation', () => {
     // First: verify clear works
     const changes1 = pipeline.processChanges([
       { path: 'form.email', value: 'new1' },
-    ]).state_changes
+    ]).listener_changes
     expect(getPaths(changes1)).toContain('form.errors')
 
     // Unregister
@@ -958,7 +958,7 @@ describe('Registration and validation', () => {
     // Second: verify clear stopped
     const changes2 = pipeline.processChanges([
       { path: 'form.email', value: 'new2' },
-    ]).state_changes
+    ]).listener_changes
     expect(getPaths(changes2)).not.toContain('form.errors')
   })
 
