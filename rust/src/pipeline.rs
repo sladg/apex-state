@@ -68,6 +68,7 @@ pub struct PrepareResult {
 #[derive(Serialize, Debug, TS)]
 pub struct GraphSnapshot {
     pub sync_pairs: Vec<[String; 2]>,
+    pub directed_sync_pairs: Vec<[String; 2]>,
     pub flip_pairs: Vec<[String; 2]>,
     #[ts(inline)]
     pub listeners: Vec<ListenerInfo>,
@@ -158,6 +159,9 @@ pub struct SideEffectsRegistration {
     pub registration_id: String,
     #[serde(default)]
     pub sync_pairs: Vec<[String; 2]>,
+    /// One-way sync pairs: source → target only. Changes to target do NOT propagate back to source.
+    #[serde(default)]
+    pub directed_sync_pairs: Vec<[String; 2]>,
     #[serde(default)]
     pub flip_pairs: Vec<[String; 2]>,
     #[serde(default)]
@@ -429,6 +433,9 @@ pub(crate) struct ProcessingPipeline {
     computations: ComputationRegistry,
     clear_registry: ClearPathsRegistry,
     sync_graph: Graph,
+    /// One-way directed sync edges: source_id → set of target_ids.
+    /// Changes to source propagate to targets; changes to target do NOT propagate back.
+    directed_sync_edges: HashMap<u32, HashSet<u32>>,
     flip_graph: Graph,
     router: TopicRouter,
     value_logic_registry: ValueLogicRegistry,
@@ -471,6 +478,7 @@ impl ProcessingPipeline {
             computations: ComputationRegistry::new(),
             clear_registry: ClearPathsRegistry::new(),
             sync_graph: Graph::new(),
+            directed_sync_edges: HashMap::new(),
             flip_graph: Graph::new(),
             router: TopicRouter::new(),
             value_logic_registry: ValueLogicRegistry::new(),
@@ -600,8 +608,20 @@ impl ProcessingPipeline {
                 sources,
             })
             .collect();
+        let directed_sync_pairs: Vec<[String; 2]> = self
+            .directed_sync_edges
+            .iter()
+            .flat_map(|(&src_id, targets)| {
+                targets.iter().filter_map(move |&tgt_id| {
+                    let src = self.intern.resolve(src_id)?.to_owned();
+                    let tgt = self.intern.resolve(tgt_id)?.to_owned();
+                    Some([src, tgt])
+                })
+            })
+            .collect();
         GraphSnapshot {
             sync_pairs,
+            directed_sync_pairs,
             flip_pairs,
             listeners,
             bool_logics,
@@ -737,11 +757,18 @@ impl ProcessingPipeline {
         }
 
         // Compute initial values using reactive logic
-        Ok(process_aggregation_reads(
-            &self.aggregations,
-            &self.shadow,
-            &all_sources,
-        ))
+        let initial_changes =
+            process_aggregation_reads(&self.aggregations, &self.shadow, &all_sources);
+
+        // Diff against shadow — only return changes where value actually differs.
+        let diffed = self.diff_changes(&initial_changes);
+        for change in &diffed {
+            self.shadow
+                .set(&change.path, &change.value_json)
+                .map_err(|e| format!("Shadow update failed for aggregation: {}", e))?;
+        }
+
+        Ok(diffed)
     }
 
     /// Unregister a batch of aggregations.
@@ -857,14 +884,15 @@ impl ProcessingPipeline {
         let initial_changes =
             process_computation_reads(&self.computations, &self.shadow, &all_sources);
 
-        // Update shadow state with initial computation values
-        for change in &initial_changes {
+        // Diff against shadow — only update shadow and return genuine changes.
+        let diffed = self.diff_changes(&initial_changes);
+        for change in &diffed {
             self.shadow
                 .set(&change.path, &change.value_json)
                 .map_err(|e| format!("Shadow update failed for computation: {}", e))?;
         }
 
-        Ok(initial_changes)
+        Ok(diffed)
     }
 
     /// Register a batch of sync pairs.
@@ -903,6 +931,54 @@ impl ProcessingPipeline {
 
         serde_json::to_string(&diffed_changes)
             .map_err(|e| format!("Failed to serialize initial changes: {}", e))
+    }
+
+    /// Register a batch of directed (one-way) sync pairs.
+    ///
+    /// Source → target only: changes to source propagate to target; target changes do NOT go back.
+    /// Returns initial changes (source values copied to targets, diffed against shadow).
+    pub(crate) fn register_directed_sync_batch(
+        &mut self,
+        pairs: &[[String; 2]],
+    ) -> Result<Vec<Change>, String> {
+        let mut initial_changes = Vec::new();
+
+        for pair in pairs {
+            let src_id = self.intern.intern(&pair[0]);
+            let tgt_id = self.intern.intern(&pair[1]);
+
+            // Record directed edge: source → target
+            self.directed_sync_edges
+                .entry(src_id)
+                .or_default()
+                .insert(tgt_id);
+
+            // Initial sync: copy source value → target
+            if let Some(src_value) = self.shadow.get(&pair[0]) {
+                let value_json = serde_json::to_string(&src_value.to_json_value())
+                    .unwrap_or_else(|_| "null".to_owned());
+                // Skip null/undefined — only sync substantive values
+                if value_json != "null" && value_json != "\"__undefined__\"" {
+                    initial_changes.push(Change {
+                        path: pair[1].clone(),
+                        value_json,
+                        kind: ChangeKind::Real,
+                        lineage: Lineage::Input,
+                        audit: None,
+                    });
+                }
+            }
+        }
+
+        // Diff against shadow: only return changes where value actually differs
+        let diffed = self.diff_changes(&initial_changes);
+        for change in &diffed {
+            self.shadow
+                .set(&change.path, &change.value_json)
+                .map_err(|e| format!("Shadow update failed (directed sync): {}", e))?;
+        }
+
+        Ok(diffed)
     }
 
     /// Compute initial sync changes for newly registered pairs.
@@ -1245,7 +1321,7 @@ impl ProcessingPipeline {
         let mut computation_changes = Vec::new();
         let mut registered_listener_ids = Vec::new();
 
-        // 1. Register sync pairs
+        // 1. Register sync pairs (bidirectional)
         if !reg.sync_pairs.is_empty() {
             // Record anchored paths for sync pairs
             if let Some(aid) = anchor_path_id {
@@ -1262,6 +1338,22 @@ impl ProcessingPipeline {
             )?;
             sync_changes = serde_json::from_str(&changes)
                 .map_err(|e| format!("Sync changes parse error: {}", e))?;
+        }
+
+        // 1b. Register directed sync pairs (one-way: source → target only)
+        if !reg.directed_sync_pairs.is_empty() {
+            // Record anchored paths for directed sync targets (target gets anchor guard)
+            if let Some(aid) = anchor_path_id {
+                for pair in &reg.directed_sync_pairs {
+                    let src_id = self.intern.intern(&pair[0]);
+                    let tgt_id = self.intern.intern(&pair[1]);
+                    self.anchored_paths.insert(src_id, aid);
+                    self.anchored_paths.insert(tgt_id, aid);
+                }
+            }
+            let directed_changes = self.register_directed_sync_batch(&reg.directed_sync_pairs)?;
+            // Merge directed initial changes into sync_changes
+            sync_changes.extend(directed_changes);
         }
 
         // 2. Register flip pairs
@@ -1626,6 +1718,89 @@ impl ProcessingPipeline {
                                                 output,
                                             );
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Case 4: Directed sync — exact match: change path is a registered source
+            if let Some(targets) = self.directed_sync_edges.get(&path_id) {
+                let targets: Vec<u32> = targets.iter().copied().collect();
+                for tgt_id in targets {
+                    // Skip if target's anchor is disabled
+                    if let Some(&aid) = self.anchored_paths.get(&tgt_id) {
+                        if !self.is_anchor_enabled(Some(aid)) {
+                            continue;
+                        }
+                    }
+                    if let Some(tgt_path) = self.intern.resolve(tgt_id) {
+                        let tgt_path = tgt_path.to_owned();
+                        Self::emit_sync_change(shadow, &tgt_path, &change.value_json, output);
+                    }
+                }
+            }
+
+            // Case 5: Directed sync — child expansion: change is deeper than a registered source
+            // Walk ancestors of the change path; if an ancestor is a directed source, propagate
+            // to each target with the same suffix.
+            for (i, _) in change_path.rmatch_indices('.') {
+                let ancestor = &change_path[..i];
+                if let Some(ancestor_id) = self.intern.get_id(ancestor) {
+                    if let Some(targets) = self.directed_sync_edges.get(&ancestor_id) {
+                        let targets: Vec<u32> = targets.iter().copied().collect();
+                        let suffix = &change_path[i..]; // includes leading "."
+                        for tgt_id in targets {
+                            // Skip if target's anchor is disabled
+                            if let Some(&aid) = self.anchored_paths.get(&tgt_id) {
+                                if !self.is_anchor_enabled(Some(aid)) {
+                                    continue;
+                                }
+                            }
+                            if let Some(tgt_base) = self.intern.resolve(tgt_id) {
+                                let tgt_path = format!("{}{}", tgt_base, suffix);
+                                Self::emit_sync_change(
+                                    shadow,
+                                    &tgt_path,
+                                    &change.value_json,
+                                    output,
+                                );
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Case 6: Directed sync — parent expansion: change is shallower than registered sources
+            // Enumerate leaves under the change; for any leaf that is a registered directed source,
+            // emit a change to its target(s).
+            if !self.directed_sync_edges.is_empty() {
+                let leaves = shadow.affected_paths(&change.path);
+                for leaf in &leaves {
+                    if let Some(leaf_id) = self.intern.get_id(leaf) {
+                        if let Some(targets) = self.directed_sync_edges.get(&leaf_id) {
+                            if let Some(leaf_value) = shadow.get(leaf) {
+                                let value_json = serde_json::to_string(&leaf_value.to_json_value())
+                                    .unwrap_or_else(|_| "null".to_owned());
+                                let targets: Vec<u32> = targets.iter().copied().collect();
+                                for tgt_id in targets {
+                                    // Skip if target's anchor is disabled
+                                    if let Some(&aid) = self.anchored_paths.get(&tgt_id) {
+                                        if !self.is_anchor_enabled(Some(aid)) {
+                                            continue;
+                                        }
+                                    }
+                                    if let Some(tgt_path) = self.intern.resolve(tgt_id) {
+                                        let tgt_path = tgt_path.to_owned();
+                                        Self::emit_sync_change(
+                                            shadow,
+                                            &tgt_path,
+                                            &value_json,
+                                            output,
+                                        );
                                     }
                                 }
                             }
@@ -3417,6 +3592,285 @@ mod tests {
         assert!(
             !parsed.changes.iter().any(|c| c.path == "b"),
             "b should NOT sync after unregister"
+        );
+    }
+
+    // --- directed (one-way) sync tests ---
+
+    #[test]
+    fn directed_sync_source_propagates_to_target() {
+        // Changing source → target should receive the new value
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": "old", "target": "old"}"#)
+            .unwrap();
+        p.register_directed_sync_batch(&[["source".to_owned(), "target".to_owned()]])
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "source", "value_json": "\"new\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let target = parsed.changes.iter().find(|c| c.path == "target");
+        assert!(target.is_some(), "target should receive sync from source");
+        assert_eq!(target.unwrap().value_json, r#""new""#);
+    }
+
+    #[test]
+    fn directed_sync_target_does_not_propagate_to_source() {
+        // Changing target must NOT push back to source — that is the whole point of one-way sync
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": "original", "target": "old"}"#)
+            .unwrap();
+        p.register_directed_sync_batch(&[["source".to_owned(), "target".to_owned()]])
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "target", "value_json": "\"target-only\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // source must not appear in changes at all
+        assert!(
+            !parsed.changes.iter().any(|c| c.path == "source"),
+            "source must NOT be updated when target changes (one-way)"
+        );
+        // target change itself should be present
+        assert!(parsed.changes.iter().any(|c| c.path == "target"));
+    }
+
+    #[test]
+    fn directed_sync_initial_copies_source_to_target() {
+        // On registration, source value should be copied to target
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": "initial-value", "target": "stale"}"#)
+            .unwrap();
+
+        let changes = p
+            .register_directed_sync_batch(&[["source".to_owned(), "target".to_owned()]])
+            .unwrap();
+
+        let target_init = changes.iter().find(|c| c.path == "target");
+        assert!(
+            target_init.is_some(),
+            "target should be initialized from source on registration"
+        );
+        assert_eq!(target_init.unwrap().value_json, r#""initial-value""#);
+    }
+
+    #[test]
+    fn directed_sync_initial_skips_when_source_null() {
+        // Source is null → no initial change emitted for target
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": null, "target": "existing"}"#)
+            .unwrap();
+
+        let changes = p
+            .register_directed_sync_batch(&[["source".to_owned(), "target".to_owned()]])
+            .unwrap();
+
+        assert!(
+            !changes.iter().any(|c| c.path == "target"),
+            "target should not be overwritten when source is null"
+        );
+    }
+
+    #[test]
+    fn directed_sync_multiple_targets_from_one_source() {
+        // One source can push to multiple targets independently
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"src": "old", "t1": "old", "t2": "old"}"#)
+            .unwrap();
+        p.register_directed_sync_batch(&[
+            ["src".to_owned(), "t1".to_owned()],
+            ["src".to_owned(), "t2".to_owned()],
+        ])
+        .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "src", "value_json": "\"broadcast\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        assert!(
+            parsed.changes.iter().any(|c| c.path == "t1"),
+            "t1 should receive broadcast"
+        );
+        assert!(
+            parsed.changes.iter().any(|c| c.path == "t2"),
+            "t2 should receive broadcast"
+        );
+        // Neither t1 nor t2 should push back to src
+        let src_count = parsed.changes.iter().filter(|c| c.path == "src").count();
+        assert_eq!(src_count, 1, "src should appear only as the input change");
+    }
+
+    #[test]
+    fn directed_sync_independent_pairs_no_interference() {
+        // Two independent directed pairs: s1→t1, s2→t2
+        // Changing s1 must not touch t2; changing t1 must not touch s1
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"s1": "old", "t1": "old", "s2": "old", "t2": "old"}"#)
+            .unwrap();
+        p.register_directed_sync_batch(&[
+            ["s1".to_owned(), "t1".to_owned()],
+            ["s2".to_owned(), "t2".to_owned()],
+        ])
+        .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "s1", "value_json": "\"v1\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        assert!(parsed.changes.iter().any(|c| c.path == "t1"), "t1 synced");
+        assert!(
+            !parsed.changes.iter().any(|c| c.path == "t2"),
+            "t2 not touched"
+        );
+        assert!(
+            !parsed.changes.iter().any(|c| c.path == "s2"),
+            "s2 not touched"
+        );
+    }
+
+    #[test]
+    fn directed_sync_child_expansion() {
+        // Registered: source → target (parent paths). Change comes in at source.name.
+        // Expected: target.name receives the same value (child expansion, Case 5).
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"source": {"name": "old"}, "target": {"name": "old"}}"#,
+        )
+        .unwrap();
+        p.register_directed_sync_batch(&[["source".to_owned(), "target".to_owned()]])
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "source.name", "value_json": "\"Alice\""}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let target_name = parsed.changes.iter().find(|c| c.path == "target.name");
+        assert!(
+            target_name.is_some(),
+            "target.name should be synced from source.name (child expansion)"
+        );
+        assert_eq!(target_name.unwrap().value_json, r#""Alice""#);
+
+        // source.name should appear exactly once — the original input change, not a sync-back
+        let source_name_changes: Vec<_> =
+            parsed.changes.iter().filter(|c| c.path == "source.name").collect();
+        assert_eq!(
+            source_name_changes.len(),
+            1,
+            "source.name should appear only as the original input change, not synced back"
+        );
+        assert_eq!(source_name_changes[0].value_json, r#""Alice""#);
+    }
+
+    #[test]
+    fn directed_sync_parent_expansion() {
+        // Registered: source.a → target.a, source.b → target.b (leaf pairs).
+        // Change comes in at the parent "source" (whole object swap).
+        // Expected: target.a and target.b both receive updated leaf values (Case 6).
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{"source": {"a": "old-a", "b": "old-b"}, "target": {"a": "stale-a", "b": "stale-b"}}"#,
+        )
+        .unwrap();
+        p.register_directed_sync_batch(&[
+            ["source.a".to_owned(), "target.a".to_owned()],
+            ["source.b".to_owned(), "target.b".to_owned()],
+        ])
+        .unwrap();
+
+        // Push a whole new object to "source"
+        let result = p
+            .process_changes(
+                r#"[{"path": "source", "value_json": "{\"a\":\"new-a\",\"b\":\"new-b\"}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let ta = parsed.changes.iter().find(|c| c.path == "target.a");
+        let tb = parsed.changes.iter().find(|c| c.path == "target.b");
+        assert!(
+            ta.is_some(),
+            "target.a should be synced via parent expansion"
+        );
+        assert!(
+            tb.is_some(),
+            "target.b should be synced via parent expansion"
+        );
+        assert_eq!(ta.unwrap().value_json, r#""new-a""#);
+        assert_eq!(tb.unwrap().value_json, r#""new-b""#);
+    }
+
+    #[test]
+    fn directed_sync_coexists_with_bidirectional() {
+        // Mix: a↔b bidirectional, c→d one-way.
+        // Changing a syncs b and vice-versa; changing c syncs d but d does NOT sync c.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"a": "old", "b": "old", "c": "old", "d": "old"}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["a", "b"]]"#).unwrap();
+        p.register_directed_sync_batch(&[["c".to_owned(), "d".to_owned()]])
+            .unwrap();
+
+        // Bidirectional: a→b
+        let r1 = p
+            .process_changes(r#"[{"path": "a", "value_json": "\"va\""}]"#)
+            .unwrap();
+        let p1: ProcessResult = serde_json::from_str(&r1).unwrap();
+        assert!(p1.changes.iter().any(|c| c.path == "b"), "b synced from a");
+
+        // Bidirectional: b→a
+        let r2 = p
+            .process_changes(r#"[{"path": "b", "value_json": "\"vb\""}]"#)
+            .unwrap();
+        let p2: ProcessResult = serde_json::from_str(&r2).unwrap();
+        assert!(p2.changes.iter().any(|c| c.path == "a"), "a synced from b");
+
+        // Directed: c→d
+        let r3 = p
+            .process_changes(r#"[{"path": "c", "value_json": "\"vc\""}]"#)
+            .unwrap();
+        let p3: ProcessResult = serde_json::from_str(&r3).unwrap();
+        assert!(p3.changes.iter().any(|c| c.path == "d"), "d synced from c");
+
+        // Directed: d must NOT sync back to c
+        let r4 = p
+            .process_changes(r#"[{"path": "d", "value_json": "\"vd\""}]"#)
+            .unwrap();
+        let p4: ProcessResult = serde_json::from_str(&r4).unwrap();
+        assert!(
+            !p4.changes.iter().any(|c| c.path == "c"),
+            "c must NOT be updated when d changes (one-way)"
+        );
+    }
+
+    #[test]
+    fn directed_sync_skips_noop_when_values_match() {
+        // Source and target already have the same value — sync should be a no-op
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"source": "same", "target": "same"}"#)
+            .unwrap();
+        p.register_directed_sync_batch(&[["source".to_owned(), "target".to_owned()]])
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "source", "value_json": "\"same\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Diff pre-pass drops this — shadow already has "same" for source
+        assert!(
+            parsed.changes.is_empty()
+                || !parsed.changes.iter().any(|c| c.path == "target"),
+            "target should not get a redundant sync when values match"
         );
     }
 

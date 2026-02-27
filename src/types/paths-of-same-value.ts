@@ -47,15 +47,27 @@ export type PathsWithSameValueAs<
 
 /**
  * A tuple of two paths that must have the same value type.
- * Format: [path1, path2]
+ * Format: [path1, path2] or [path1, path2, { oneWay: '[0]->[1]' | '[1]->[0]' }]
+ *
+ * `oneWay` makes sync unidirectional. The value declares the direction explicitly:
+ * - `'[0]->[1]'` — first path pushes to second path (left → right)
+ * - `'[1]->[0]'` — second path pushes to first path (right → left)
+ *
+ * Without the option, sync is bidirectional.
  *
  * **Scaling note**: This type is O(N²) where N = number of paths. It hits TS2589
  * at ~1,500 paths. For large state types, use the `syncPairs()` helper function
  * or `store.syncPairs()` (pre-warmed from `createGenericStore`) instead —
  * they scale to ~50K–80K paths.
  *
- * @example
+ * @example Bidirectional
  * const pair: SyncPair<State> = ['user.email', 'profile.email']
+ *
+ * @example One-way: user.email → profile.email only
+ * const pair: SyncPair<State> = ['user.email', 'profile.email', { oneWay: '[0]->[1]' }]
+ *
+ * @example One-way: profile.email → user.email only (reversed direction)
+ * const pair: SyncPair<State> = ['user.email', 'profile.email', { oneWay: '[1]->[0]' }]
  *
  * @example Custom depth — propagates to DeepKey and PathsWithSameValueAs
  * ```typescript
@@ -67,14 +79,17 @@ export type SyncPair<
   DATA extends object,
   Depth extends number = DefaultDepth,
 > = {
-  [P1 in ResolvableDeepKey<DATA, Depth>]: [
-    P1,
-    PathsWithSameValueAs<DATA, P1, Depth>,
-  ]
+  [P1 in ResolvableDeepKey<DATA, Depth>]:
+    | [P1, PathsWithSameValueAs<DATA, P1, Depth>]
+    | [
+        P1,
+        PathsWithSameValueAs<DATA, P1, Depth>,
+        { oneWay: '[0]->[1]' | '[1]->[0]' },
+      ]
 }[ResolvableDeepKey<DATA, Depth>]
 
 /**
- * A tuple of two paths for flip (alias for SyncPair).
+ * A tuple of two paths for flip. Always bidirectional: path1 ↔ path2 (inverted values).
  * Format: [path1, path2]
  *
  * **Scaling note**: O(N²) — hits TS2589 at ~1,500 paths. Use `flipPairs()` helper
@@ -86,7 +101,12 @@ export type SyncPair<
 export type FlipPair<
   DATA extends object,
   Depth extends number = DefaultDepth,
-> = SyncPair<DATA, Depth>
+> = {
+  [P1 in ResolvableDeepKey<DATA, Depth>]: [
+    P1,
+    PathsWithSameValueAs<DATA, P1, Depth>,
+  ]
+}[ResolvableDeepKey<DATA, Depth>]
 
 /**
  * A tuple for aggregation: [target, source] or [target, source, excludeWhen]

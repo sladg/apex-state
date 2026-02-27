@@ -113,7 +113,16 @@ export interface GenericStoreApi<
   }
 
   // Pre-warmed pair helpers from createWarmPairHelpers
-  syncPairs: <T extends [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>][]>(
+  syncPairs: <
+    T extends (
+      | [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>]
+      | [
+          ResolvableDeepKey<DATA>,
+          ResolvableDeepKey<DATA>,
+          { oneWay: '[0]->[1]' | '[1]->[0]' },
+        ]
+    )[],
+  >(
     pairs: CheckSyncPairs<DATA, T>,
   ) => ValidatedSyncPairs<DATA>
 

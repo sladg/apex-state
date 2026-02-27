@@ -12,7 +12,6 @@ export const applyBatch = <DATA extends object, META extends GenericMeta>(
   state: DATA,
 ): void => {
   for (const [path, value] of changes) {
-    const pathStr = path as string
-    dot.set__unsafe(state, pathStr, value)
+    dot.set__unsafe(state, path, value)
   }
 }

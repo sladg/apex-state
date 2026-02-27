@@ -8,10 +8,15 @@
  * since WASM receives it as a string for serde deserialization.
  */
 
-import type { AggregationPair, ComputationPair } from './paths-of-same-value'
+import type {
+  AggregationPair,
+  ComputationPair,
+  SyncPair,
+} from './paths-of-same-value'
 import type {
   ValidatedAggregationPairs,
   ValidatedComputationPairs,
+  ValidatedSyncPairs,
 } from './validated-pairs'
 
 /**
@@ -43,5 +48,32 @@ const computationToWasm = <DATA extends object>(
       : [op, target, source],
   ) as ([string, string, string] | [string, string, string, string])[]
 
+/**
+ * Split sync pairs into bidirectional and directed (oneWay) groups for WASM registration.
+ * Pairs without `oneWay` go into bidirectional (existing sync graph).
+ * Pairs with `oneWay: '[0]->[1]'` → [pair[0], pair[1]] directed edge.
+ * Pairs with `oneWay: '[1]->[0]'` → [pair[1], pair[0]] directed edge (reversed).
+ */
+const syncToWasm = <DATA extends object>(
+  input: SyncPair<DATA>[] | ValidatedSyncPairs<DATA>,
+): { bidirectional: [string, string][]; directed: [string, string][] } => {
+  const bidirectional: [string, string][] = []
+  const directed: [string, string][] = []
+  for (const pair of input as (
+    | [string, string]
+    | [string, string, { oneWay: '[0]->[1]' | '[1]->[0]' }]
+  )[]) {
+    if (pair.length === 3) {
+      const dir = pair[2].oneWay
+      directed.push(
+        dir === '[0]->[1]' ? [pair[0], pair[1]] : [pair[1], pair[0]],
+      )
+    } else {
+      bidirectional.push([pair[0], pair[1]])
+    }
+  }
+  return { bidirectional, directed }
+}
+
 /** WASM boundary conversion utilities for pair arrays. */
-export const pairs = { aggregationToWasm, computationToWasm }
+export const pairs = { aggregationToWasm, computationToWasm, syncToWasm }

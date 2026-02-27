@@ -33,7 +33,8 @@ export const registerSideEffects = <
   const t0 = performance.now()
 
   // Build consolidated side effects registration
-  const syncPairs = effects.syncPaths ?? []
+  const { bidirectional: syncPairs, directed: directedSyncPairs } =
+    pairs.syncToWasm(effects.syncPaths ?? [])
   const flipPairs = effects.flipPaths ?? []
   const aggregationPairs = pairs.aggregationToWasm(effects.aggregations ?? [])
 
@@ -99,6 +100,7 @@ export const registerSideEffects = <
   const registration = {
     registration_id: registrationId,
     sync_pairs: syncPairs,
+    directed_sync_pairs: directedSyncPairs,
     flip_pairs: flipPairs,
     aggregation_pairs: aggregationPairs,
     computation_pairs: computationPairs,

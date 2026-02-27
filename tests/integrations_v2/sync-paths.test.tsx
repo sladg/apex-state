@@ -856,6 +856,193 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
     })
   })
 
+  describe('One-way sync (oneWay option)', () => {
+    describe('[0]->[1] direction', () => {
+      it('should sync source → target when source changes', async () => {
+        // Register ['source', 'target', { oneWay: '[0]->[1]' }]
+        // Change source → target should update
+        // Change target → source should NOT update
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          syncFlipFixtures.initial,
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        setValue('source', 'pushed-value')
+        await flushEffects()
+
+        expect(storeInstance.state.target).toBe('pushed-value')
+        expectShadowMatch(storeInstance)
+      })
+
+      it('should NOT sync target → source when target changes', async () => {
+        // The whole point of oneWay: target changes must not flow back
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          syncFlipFixtures.initial,
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        const originalSource = storeInstance.state.source
+
+        setValue('target', 'target-only-change')
+        await flushEffects()
+
+        expect(storeInstance.state.target).toBe('target-only-change')
+        // source must remain untouched
+        expect(storeInstance.state.source).toBe(originalSource)
+        expectShadowMatch(storeInstance)
+      })
+
+      it('should propagate multiple source changes one-way', async () => {
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          syncFlipFixtures.initial,
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        setValue('source', 'first')
+        await flushEffects()
+        expect(storeInstance.state.target).toBe('first')
+
+        setValue('source', 'second')
+        await flushEffects()
+        expect(storeInstance.state.target).toBe('second')
+        expectShadowMatch(storeInstance)
+      })
+    })
+
+    describe('[1]->[0] direction', () => {
+      it('should sync target → source when target changes', async () => {
+        // Register ['source', 'target', { oneWay: '[1]->[0]' }]
+        // target is index [1], source is index [0]
+        // Changing target should update source
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          syncFlipFixtures.initial,
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[1]->[0]' }]],
+            },
+          },
+        )
+
+        setValue('target', 'reverse-push')
+        await flushEffects()
+
+        expect(storeInstance.state.source).toBe('reverse-push')
+        expectShadowMatch(storeInstance)
+      })
+
+      it('should NOT sync source → target when source changes', async () => {
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          syncFlipFixtures.initial,
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[1]->[0]' }]],
+            },
+          },
+        )
+
+        const originalTarget = storeInstance.state.target
+
+        setValue('source', 'source-only-change')
+        await flushEffects()
+
+        expect(storeInstance.state.source).toBe('source-only-change')
+        // target must remain untouched
+        expect(storeInstance.state.target).toBe(originalTarget)
+        expectShadowMatch(storeInstance)
+      })
+    })
+
+    describe('mixed bidirectional and one-way in same registration', () => {
+      it('should handle bidirectional and one-way pairs independently', async () => {
+        // source ↔ target (bidirectional)
+        // source2 → target2 (one-way)
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          syncFlipFixtures.initial,
+          {
+            sideEffects: {
+              syncPaths: [
+                ['source', 'target'],
+                ['source2', 'target2', { oneWay: '[0]->[1]' }],
+              ],
+            },
+          },
+        )
+
+        // Bidirectional pair: both directions should work
+        setValue('source', 'bidir-source')
+        await flushEffects()
+        expect(storeInstance.state.target).toBe('bidir-source')
+
+        setValue('target', 'bidir-target')
+        await flushEffects()
+        expect(storeInstance.state.source).toBe('bidir-target')
+
+        // One-way pair: only source2 → target2
+        setValue('source2', 'oneway-push')
+        await flushEffects()
+        expect(storeInstance.state.target2).toBe('oneway-push')
+
+        // target2 → source2 must NOT happen
+        const source2Before = storeInstance.state.source2
+        setValue('target2', 'target2-only')
+        await flushEffects()
+        expect(storeInstance.state.target2).toBe('target2-only')
+        expect(storeInstance.state.source2).toBe(source2Before)
+
+        expectShadowMatch(storeInstance)
+      })
+    })
+
+    describe('boolean one-way sync', () => {
+      it('should sync boolean flag one-way', async () => {
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          syncFlipFixtures.allFalse,
+          {
+            sideEffects: {
+              syncPaths: [['flag1', 'flag2', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        setValue('flag1', true)
+        await flushEffects()
+        expect(storeInstance.state.flag2).toBe(true)
+
+        // Changing flag2 must not affect flag1
+        setValue('flag2', false)
+        await flushEffects()
+        expect(storeInstance.state.flag1).toBe(true)
+        expectShadowMatch(storeInstance)
+      })
+    })
+  })
+
   describe('Metadata and special values with nested sync', () => {
     it('should sync empty string to nested path', async () => {
       const store = createGenericStore<DeeplyNestedState>(config)
