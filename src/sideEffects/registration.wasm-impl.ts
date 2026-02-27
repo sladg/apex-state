@@ -126,18 +126,10 @@ export const registerSideEffects = <
     ...result.aggregation_changes,
     ...result.computation_changes,
   ]
-  if (result.sync_changes.length > 0) {
-    applyBatch(changes.fromWasm<DATA>(result.sync_changes), store.state)
-  }
 
-  // Apply aggregation changes directly to state
-  if (result.aggregation_changes.length > 0) {
-    applyBatch(changes.fromWasm<DATA>(result.aggregation_changes), store.state)
-  }
-
-  // Apply computation changes directly to state
-  if (result.computation_changes.length > 0) {
-    applyBatch(changes.fromWasm<DATA>(result.computation_changes), store.state)
+  // Apply changes to state
+  if (appliedChanges.length > 0) {
+    applyBatch(changes.fromWasm<DATA>(appliedChanges), store.state)
   }
 
   const durationMs = performance.now() - t0
