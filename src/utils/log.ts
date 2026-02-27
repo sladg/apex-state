@@ -354,9 +354,12 @@ export const createLogger = (config: DebugConfig): ApexLogger => {
 
       // Graph snapshot — split into labeled sections
       const gs = graphSnapshot
+      // Pairs are shown in internal storage order (not user-input order):
+      //   bidirectional: canonical ID order (smaller intern ID first)
+      //   directed: always [source, '→', target] — syncToWasm normalizes to src-first
       const allSyncPairs = [
-        ...gs.sync_pairs.map(([a, b]) => [a, '[0]<->[1]', b]),
-        ...gs.directed_sync_pairs.map(([src, tgt]) => [src, '[0]->[1]', tgt]),
+        ...gs.sync_pairs.map(([a, b]) => [a, '↔', b]),
+        ...gs.directed_sync_pairs.map(([src, tgt]) => [src, '→', tgt]),
       ]
       const graphEntries: [string, string, unknown][] = [
         ['syncPairs', COLORS.graph, allSyncPairs],

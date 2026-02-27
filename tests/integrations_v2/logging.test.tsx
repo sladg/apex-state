@@ -7,6 +7,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { pairs } from '../../src/types/pairs'
 import type {
   ListenerDispatchTrace,
   PipelineLogData,
@@ -1043,6 +1044,55 @@ describe('createLogger — console output', () => {
       expect(spyGroupEnd).toHaveBeenCalledTimes(1)
     })
 
+    it('should display directed pair with → arrow and bidirectional pair with ↔ arrow', () => {
+      // Directed pairs must show → (one-way), bidirectional pairs must show ↔
+      // This verifies the log display correctly distinguishes directed vs bidirectional
+      const logger = createLogger({ log: true })
+
+      const snapshot = {
+        sync_pairs: [['user.name', 'profile.name'] as [string, string]],
+        directed_sync_pairs: [['source', 'target'] as [string, string]],
+        flip_pairs: [],
+        listeners: [],
+        bool_logics: [],
+        value_logics: [],
+        aggregations: [],
+        computations: [],
+      }
+      logger.logRegistration('register', 'test-arrows', snapshot)
+
+      const syncCall = spyLog.mock.calls.find(
+        (c) =>
+          typeof c[0] === 'string' && (c[0] as string).includes('syncPairs'),
+      )
+      expect(syncCall).toBeDefined()
+
+      const syncPairsValue = syncCall![2] as unknown[]
+
+      // Find the directed entry — must contain → arrow
+      const directedEntry = syncPairsValue.find(
+        (e) =>
+          Array.isArray(e) &&
+          (e as unknown[])[0] === 'source' &&
+          (e as unknown[])[2] === 'target',
+      ) as unknown[] | undefined
+      expect(directedEntry).toBeDefined()
+      // Arrow must be → (one-way), not ↔ (bidirectional)
+      expect(directedEntry![1]).toBe('→')
+      expect(directedEntry![1]).not.toBe('↔')
+
+      // Find the bidirectional entry — must contain ↔ arrow
+      const biDirEntry = syncPairsValue.find(
+        (e) =>
+          Array.isArray(e) &&
+          (e as unknown[])[0] === 'user.name' &&
+          (e as unknown[])[2] === 'profile.name',
+      ) as unknown[] | undefined
+      expect(biDirEntry).toBeDefined()
+      expect(biDirEntry![1]).toBe('↔')
+      expect(biDirEntry![1]).not.toBe('→')
+    })
+
     it('should log unregistration with "remove" prefix', () => {
       // Unregister event uses "remove" action inside a groupCollapsed section
       const logger = createLogger({ log: true })
@@ -1275,6 +1325,53 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     const syncDetail = findStage(stages, 'sync') as Record<string, unknown>
     expect(syncDetail).toBeDefined()
     expect(syncDetail['produced']).toBeDefined()
+  })
+
+  it('should populate directed_sync_pairs in getGraphSnapshot when directed pair is registered', () => {
+    // Directed (oneWay) pair must appear in directed_sync_pairs — NOT in sync_pairs
+    // This is the field that logRegistration reads to display → arrows vs ↔ arrows
+    pipeline = createWasmPipeline()
+    pipeline.shadowInit({ source: 'A', target: '' })
+
+    pipeline.registerSideEffects({
+      registration_id: 'test-directed',
+      directed_sync_pairs: [['source', 'target']],
+    })
+
+    const snapshot = pipeline.getGraphSnapshot()
+
+    // Directed pair must appear in directed_sync_pairs only
+    expect(snapshot.directed_sync_pairs).toHaveLength(1)
+    expect(snapshot.directed_sync_pairs[0]).toEqual(['source', 'target'])
+    // Must NOT appear in sync_pairs (bidirectional)
+    expect(snapshot.sync_pairs).toHaveLength(0)
+  })
+
+  it('should correctly classify oneWay syncPaths via syncToWasm into directed_sync_pairs in snapshot', () => {
+    // Full path: syncPaths with {oneWay} → syncToWasm → directed_sync_pairs in snapshot
+    // This is the actual user-facing path through registration.wasm-impl.ts
+    pipeline = createWasmPipeline()
+    pipeline.shadowInit({ 'path.to.somewhere': 'A', 'g.123.p.abc.data': '' })
+
+    const { bidirectional, directed } = pairs.syncToWasm([
+      ['path.to.somewhere', 'g.123.p.abc.data', { oneWay: '[0]->[1]' }],
+    ])
+
+    pipeline.registerSideEffects({
+      registration_id: 'test-oneway',
+      sync_pairs: bidirectional,
+      directed_sync_pairs: directed,
+    })
+
+    const snapshot = pipeline.getGraphSnapshot()
+
+    // The pair must appear in directed_sync_pairs (→), NOT sync_pairs (↔)
+    expect(snapshot.directed_sync_pairs).toHaveLength(1)
+    expect(snapshot.directed_sync_pairs[0]).toEqual([
+      'path.to.somewhere',
+      'g.123.p.abc.data',
+    ])
+    expect(snapshot.sync_pairs).toHaveLength(0)
   })
 
   it('should produce readable console output for createLogger with renderTrace', () => {

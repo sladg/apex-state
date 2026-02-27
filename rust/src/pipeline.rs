@@ -153,6 +153,17 @@ pub enum ComputationPairInput {
     WithCondition(String, String, String, String),
 }
 
+/// Minimal cleanup data stored per registration_id, used by unregister_side_effects.
+#[derive(Debug, Clone)]
+pub(crate) struct RegistrationCleanupData {
+    pub sync_pairs: Vec<[String; 2]>,
+    pub directed_sync_pairs: Vec<[String; 2]>,
+    pub flip_pairs: Vec<[String; 2]>,
+    pub aggregation_targets: Vec<String>,
+    pub computation_targets: Vec<String>,
+    pub listener_ids: Vec<u32>,
+}
+
 /// Input for consolidated side effects registration.
 #[derive(Serialize, Deserialize, Debug, TS)]
 pub struct SideEffectsRegistration {
@@ -463,6 +474,8 @@ pub(crate) struct ProcessingPipeline {
     anchored_paths: HashMap<u32, u32>,
     /// Map from registration_id → anchor_path_id, for cleanup on unregister.
     registration_anchor_map: HashMap<String, u32>,
+    /// Map from registration_id → cleanup data, for full unregistration of side effects.
+    registration_map: HashMap<String, RegistrationCleanupData>,
 }
 
 impl ProcessingPipeline {
@@ -492,6 +505,7 @@ impl ProcessingPipeline {
             anchor_registrations: HashMap::new(),
             anchored_paths: HashMap::new(),
             registration_anchor_map: HashMap::new(),
+            registration_map: HashMap::new(),
         }
     }
 
@@ -756,19 +770,14 @@ impl ProcessingPipeline {
             self.aggregations.register(target, sources);
         }
 
-        // Compute initial values using reactive logic
+        // Compute initial values using reactive logic.
+        // Shadow diff is authoritative here. We do NOT write results back to shadow —
+        // the caller (JS store) applies these changes to valtio, which then flows back
+        // through processChanges and updates shadow correctly.
         let initial_changes =
             process_aggregation_reads(&self.aggregations, &self.shadow, &all_sources);
 
-        // Diff against shadow — only return changes where value actually differs.
-        let diffed = self.diff_changes(&initial_changes);
-        for change in &diffed {
-            self.shadow
-                .set(&change.path, &change.value_json)
-                .map_err(|e| format!("Shadow update failed for aggregation: {}", e))?;
-        }
-
-        Ok(diffed)
+        Ok(self.diff_changes(&initial_changes))
     }
 
     /// Unregister a batch of aggregations.
@@ -1433,6 +1442,35 @@ impl ProcessingPipeline {
             registered_listener_ids = reg.listeners.iter().map(|l| l.subscriber_id).collect();
         }
 
+        // Store cleanup data for unregistration
+        let aggregation_targets = reg
+            .aggregation_pairs
+            .iter()
+            .map(|p| match p {
+                AggregationPairInput::Plain(t, _) => t.clone(),
+                AggregationPairInput::WithCondition(t, _, _) => t.clone(),
+            })
+            .collect();
+        let computation_targets = reg
+            .computation_pairs
+            .iter()
+            .map(|p| match p {
+                ComputationPairInput::Plain(_, t, _) => t.clone(),
+                ComputationPairInput::WithCondition(_, t, _, _) => t.clone(),
+            })
+            .collect();
+        self.registration_map.insert(
+            reg.registration_id.clone(),
+            RegistrationCleanupData {
+                sync_pairs: reg.sync_pairs.clone(),
+                directed_sync_pairs: reg.directed_sync_pairs.clone(),
+                flip_pairs: reg.flip_pairs.clone(),
+                aggregation_targets,
+                computation_targets,
+                listener_ids: registered_listener_ids.clone(),
+            },
+        );
+
         Ok(SideEffectsResult {
             sync_changes,
             aggregation_changes,
@@ -1443,9 +1481,86 @@ impl ProcessingPipeline {
 
     /// Unregister side effects by registration ID.
     ///
-    /// Cleans up clear-path rules and anchor path tracking for this registration ID.
-    /// Other side-effect cleanup is managed by the caller.
+    /// Removes all registered side effects (sync pairs, directed sync pairs, flip pairs,
+    /// aggregations, computations, listeners, clear paths, and anchor paths) for this
+    /// registration ID.
     pub(crate) fn unregister_side_effects(&mut self, registration_id: &str) -> Result<(), String> {
+        // Retrieve and remove cleanup data for this registration
+        let cleanup = self.registration_map.remove(registration_id);
+
+        if let Some(data) = cleanup {
+            // Remove bidirectional sync pairs
+            for pair in &data.sync_pairs {
+                let id1 = self.intern.intern(&pair[0]);
+                let id2 = self.intern.intern(&pair[1]);
+                self.sync_graph.remove_edge_public(id1, id2);
+            }
+
+            // Remove directed sync pairs
+            for pair in &data.directed_sync_pairs {
+                let src_id = self.intern.intern(&pair[0]);
+                let tgt_id = self.intern.intern(&pair[1]);
+                if let Some(targets) = self.directed_sync_edges.get_mut(&src_id) {
+                    targets.remove(&tgt_id);
+                    if targets.is_empty() {
+                        self.directed_sync_edges.remove(&src_id);
+                    }
+                }
+            }
+
+            // Remove flip pairs
+            for pair in &data.flip_pairs {
+                let id1 = self.intern.intern(&pair[0]);
+                let id2 = self.intern.intern(&pair[1]);
+                self.flip_graph.remove_edge_public(id1, id2);
+            }
+
+            // Remove aggregations
+            for target in &data.aggregation_targets {
+                self.aggregations.unregister(target);
+            }
+
+            // Remove computations
+            for target in &data.computation_targets {
+                self.computations.unregister(target);
+            }
+
+            // Remove listeners
+            if !data.listener_ids.is_empty() {
+                let ids_json = serde_json::to_string(&data.listener_ids)
+                    .map_err(|e| format!("Listener IDs serialization error: {}", e))?;
+                self.router.unregister_listeners_batch(&ids_json)?;
+            }
+
+            // Clean up anchored_paths entries for all paths in this registration.
+            // This handles the case where the anchor is shared across multiple registrations:
+            // paths from THIS registration should no longer be anchored, even if the anchor
+            // path itself (and other registrations using it) remains alive.
+            let mut path_ids_to_remove: HashSet<u32> = HashSet::new();
+            for pair in &data.sync_pairs {
+                path_ids_to_remove.insert(self.intern.intern(&pair[0]));
+                path_ids_to_remove.insert(self.intern.intern(&pair[1]));
+            }
+            for pair in &data.directed_sync_pairs {
+                path_ids_to_remove.insert(self.intern.intern(&pair[0]));
+                path_ids_to_remove.insert(self.intern.intern(&pair[1]));
+            }
+            for pair in &data.flip_pairs {
+                path_ids_to_remove.insert(self.intern.intern(&pair[0]));
+                path_ids_to_remove.insert(self.intern.intern(&pair[1]));
+            }
+            for target in &data.aggregation_targets {
+                path_ids_to_remove.insert(self.intern.intern(target));
+            }
+            for target in &data.computation_targets {
+                path_ids_to_remove.insert(self.intern.intern(target));
+            }
+            for path_id in path_ids_to_remove {
+                self.anchored_paths.remove(&path_id);
+            }
+        }
+
+        // Remove clear path rules for this registration
         self.unregister_clear_paths(registration_id);
 
         // Clean up anchor tracking for this registration
@@ -3739,17 +3854,13 @@ mod tests {
         // Registered: source → target (parent paths). Change comes in at source.name.
         // Expected: target.name receives the same value (child expansion, Case 5).
         let mut p = ProcessingPipeline::new();
-        p.shadow_init(
-            r#"{"source": {"name": "old"}, "target": {"name": "old"}}"#,
-        )
-        .unwrap();
+        p.shadow_init(r#"{"source": {"name": "old"}, "target": {"name": "old"}}"#)
+            .unwrap();
         p.register_directed_sync_batch(&[["source".to_owned(), "target".to_owned()]])
             .unwrap();
 
         let result = p
-            .process_changes(
-                r#"[{"path": "source.name", "value_json": "\"Alice\""}]"#,
-            )
+            .process_changes(r#"[{"path": "source.name", "value_json": "\"Alice\""}]"#)
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
@@ -3761,8 +3872,11 @@ mod tests {
         assert_eq!(target_name.unwrap().value_json, r#""Alice""#);
 
         // source.name should appear exactly once — the original input change, not a sync-back
-        let source_name_changes: Vec<_> =
-            parsed.changes.iter().filter(|c| c.path == "source.name").collect();
+        let source_name_changes: Vec<_> = parsed
+            .changes
+            .iter()
+            .filter(|c| c.path == "source.name")
+            .collect();
         assert_eq!(
             source_name_changes.len(),
             1,
@@ -3868,8 +3982,7 @@ mod tests {
 
         // Diff pre-pass drops this — shadow already has "same" for source
         assert!(
-            parsed.changes.is_empty()
-                || !parsed.changes.iter().any(|c| c.path == "target"),
+            parsed.changes.is_empty() || !parsed.changes.iter().any(|c| c.path == "target"),
             "target should not get a redundant sync when values match"
         );
     }

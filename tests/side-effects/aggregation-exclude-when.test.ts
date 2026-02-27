@@ -405,11 +405,10 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
     expect(initChange?.value).toBe(100)
 
     // Now set archived=true → AND is true → price2 excluded
-    // total is still 100 because only price1 remains (also 100) — same value
+    // total is still 100 because only price1 remains (also 100)
+    // Condition path changed → re-aggregation always emits even with same value
     const result = pipeline.processChanges([{ path: 'archived', value: true }])
 
-    // Re-aggregation fires (condition changed), result is still 100
-    // Shadow had null → 100 is a genuine change
     const totalChange = findChange(result.listener_changes, 'total')
     expect(totalChange).toBeDefined()
     expect(totalChange?.value).toBe(100)
@@ -439,12 +438,11 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
 
     // Remove val2_active (set to null) → NOT EXISTS = true → val2 excluded
     // Only val1 (42) active → result = 42
+    // Condition path changed → re-aggregation always emits even with same value
     const result = pipeline.processChanges([
       { path: 'val2_active', value: null },
     ])
 
-    // Re-aggregation fires (condition path changed), result is 42
-    // Shadow had null → 42 is a genuine change (initial wasn't applied to shadow)
     const resultChange = findChange(result.listener_changes, 'result')
     expect(resultChange).toBeDefined()
     expect(resultChange?.value).toBe(42)

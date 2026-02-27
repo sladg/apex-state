@@ -318,8 +318,8 @@ pub fn pipeline_reset_all() {
 
 /// Return a snapshot of all registered graphs and registries for a pipeline.
 ///
-/// Returns a JS object with sync_pairs, flip_pairs, listeners, bool_logics,
-/// value_logics, aggregations, and computations fields.
+/// Returns a JS object with sync_pairs, directed_sync_pairs, flip_pairs, listeners,
+/// bool_logics, value_logics, aggregations, and computations fields.
 #[wasm_bindgen]
 pub fn get_graph_snapshot(pipeline_id: u32) -> Result<JsValue, JsValue> {
     with_pipeline(pipeline_id, |p| {

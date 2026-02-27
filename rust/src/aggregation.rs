@@ -361,7 +361,6 @@ pub(crate) fn process_aggregation_reads(
                 }
             };
 
-            // Filter no-op: only create change if target value actually differs
             let current_target = shadow.get(&agg.target).map(|v| {
                 serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_string())
             });

@@ -1153,6 +1153,35 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       })
     })
 
+    describe('graph snapshot shows directed pair in directed_sync_pairs not sync_pairs', () => {
+      it('should have directed pair in directed_sync_pairs and NOT in sync_pairs', async () => {
+        // Verify that a oneWay pair appears in directed_sync_pairs (→) in the snapshot,
+        // NOT in sync_pairs (↔). This is what logRegistration uses to render arrows.
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance } = mountStore(store, syncFlipFixtures.initial, {
+          sideEffects: {
+            syncPaths: [['source', 'target', { oneWay: '[0]->[1]' }]],
+          },
+        })
+
+        const snapshot = storeInstance._internal.pipeline!.getGraphSnapshot()
+
+        // Directed pair must be in directed_sync_pairs
+        const directedEntry = snapshot.directed_sync_pairs.find(
+          ([src, tgt]) => src === 'source' && tgt === 'target',
+        )
+        expect(directedEntry).toBeDefined()
+
+        // Must NOT appear in sync_pairs (bidirectional)
+        const biDirEntry = snapshot.sync_pairs.find(
+          ([a, b]) =>
+            (a === 'source' && b === 'target') ||
+            (a === 'target' && b === 'source'),
+        )
+        expect(biDirEntry).toBeUndefined()
+      })
+    })
+
     describe('boolean one-way sync', () => {
       it('should sync boolean flag one-way', async () => {
         const store = createGenericStore<SyncFlipState>(config)
