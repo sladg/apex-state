@@ -1018,6 +1018,7 @@ describe('createLogger — console output', () => {
       const logger = createLogger({ log: true })
       const snapshot = {
         sync_pairs: [['user.name', 'profile.name'] as [string, string]],
+        directed_sync_pairs: [],
         flip_pairs: [],
         listeners: [],
         bool_logics: [],
@@ -1047,6 +1048,7 @@ describe('createLogger — console output', () => {
       const logger = createLogger({ log: true })
       logger.logRegistration('unregister', 'concern-456', {
         sync_pairs: [],
+        directed_sync_pairs: [],
         flip_pairs: [],
         listeners: [],
         bool_logics: [],
@@ -1071,6 +1073,7 @@ describe('createLogger — console output', () => {
       logger.logPipeline(makePipelineData())
       logger.logRegistration('register', 'test', {
         sync_pairs: [],
+        directed_sync_pairs: [],
         flip_pairs: [],
         listeners: [],
         bool_logics: [],

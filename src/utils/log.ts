@@ -354,8 +354,12 @@ export const createLogger = (config: DebugConfig): ApexLogger => {
 
       // Graph snapshot — split into labeled sections
       const gs = graphSnapshot
+      const allSyncPairs = [
+        ...gs.sync_pairs.map(([a, b]) => [a, '[0]<->[1]', b]),
+        ...gs.directed_sync_pairs.map(([src, tgt]) => [src, '[0]->[1]', tgt]),
+      ]
       const graphEntries: [string, string, unknown][] = [
-        ['syncPairs', COLORS.graph, gs.sync_pairs],
+        ['syncPairs', COLORS.graph, allSyncPairs],
         ['flipPairs', COLORS.graph, gs.flip_pairs],
         ['listeners', COLORS.listener, gs.listeners],
         ['boolLogics', COLORS.logic, gs.bool_logics],

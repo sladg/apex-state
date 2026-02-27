@@ -857,6 +857,142 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
   })
 
   describe('One-way sync (oneWay option)', () => {
+    describe('initial sync on registration', () => {
+      it('[0]->[1]: should copy source value to target on registration when they differ', async () => {
+        // source='A', target='' — on registration, target should become 'A'
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance } = mountStore(
+          store,
+          { ...syncFlipFixtures.initial, source: 'A', target: 'different' },
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        // No setValue needed — initial sync fires on registration
+        expect(storeInstance.state.target).toBe('A')
+        expectShadowMatch(storeInstance)
+      })
+
+      it('[0]->[1]: should copy empty-string source to target on registration (strict directed)', async () => {
+        // source='', target='A' — unlike bidirectional (which votes on most common),
+        // directed sync strictly copies source → target even when source is empty string.
+        // This is intentional: "target mirrors source" means target='' when source=''.
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance } = mountStore(
+          store,
+          { ...syncFlipFixtures.initial, source: '', target: 'A' },
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        expect(storeInstance.state.target).toBe('')
+        expectShadowMatch(storeInstance)
+      })
+
+      it('[1]->[0]: should copy target value to source on registration when they differ', async () => {
+        // target='B', source='A' — on registration, source should become 'B'
+        const store = createGenericStore<SyncFlipState>(config)
+        const { storeInstance } = mountStore(
+          store,
+          { ...syncFlipFixtures.initial, source: 'A', target: 'B' },
+          {
+            sideEffects: {
+              syncPaths: [['source', 'target', { oneWay: '[1]->[0]' }]],
+            },
+          },
+        )
+
+        expect(storeInstance.state.source).toBe('B')
+        expectShadowMatch(storeInstance)
+      })
+
+      it('[0]->[1]: should copy nested object (parent pair) on registration', async () => {
+        // Parent pair registered: 'src' → 'dst' where both are objects.
+        // On registration, entire src object should be copied into dst.
+        interface NestedState {
+          src: { name: string; age: number }
+          dst: { name: string; age: number }
+        }
+        const store = createGenericStore<NestedState>(config)
+        const { storeInstance } = mountStore(
+          store,
+          { src: { name: 'Alice', age: 30 }, dst: { name: '', age: 0 } },
+          {
+            sideEffects: {
+              syncPaths: [['src', 'dst', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        // No setValue needed — initial sync copies src → dst on registration
+        expect(storeInstance.state.dst.name).toBe('Alice')
+        expect(storeInstance.state.dst.age).toBe(30)
+        expectShadowMatch(storeInstance)
+      })
+
+      it('[0]->[1]: should propagate nested object child path changes after registration', async () => {
+        // Child-expansion case: pair is 'src'→'dst', change comes in at 'src.name'.
+        // Expected: 'dst.name' receives the updated value (Case 5 — child expansion).
+        interface NestedState {
+          src: { name: string; age: number }
+          dst: { name: string; age: number }
+        }
+        const store = createGenericStore<NestedState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          { src: { name: 'Alice', age: 30 }, dst: { name: 'Alice', age: 30 } },
+          {
+            sideEffects: {
+              syncPaths: [['src', 'dst', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        setValue('src.name', 'Bob')
+        await flushEffects()
+
+        expect(storeInstance.state.dst.name).toBe('Bob')
+        // age should be unchanged
+        expect(storeInstance.state.dst.age).toBe(30)
+        // src.age must not be touched by directed sync
+        expect(storeInstance.state.src.age).toBe(30)
+        expectShadowMatch(storeInstance)
+      })
+
+      it('[0]->[1]: should NOT propagate dst child changes back to src', async () => {
+        // Directed sync: changes to dst should not flow back into src.
+        interface NestedState {
+          src: { name: string; age: number }
+          dst: { name: string; age: number }
+        }
+        const store = createGenericStore<NestedState>(config)
+        const { storeInstance, setValue } = mountStore(
+          store,
+          { src: { name: 'Alice', age: 30 }, dst: { name: 'Alice', age: 30 } },
+          {
+            sideEffects: {
+              syncPaths: [['src', 'dst', { oneWay: '[0]->[1]' }]],
+            },
+          },
+        )
+
+        setValue('dst.name', 'Modified')
+        await flushEffects()
+
+        // dst gets the user-set value
+        expect(storeInstance.state.dst.name).toBe('Modified')
+        // src must remain untouched — no reverse sync
+        expect(storeInstance.state.src.name).toBe('Alice')
+        expectShadowMatch(storeInstance)
+      })
+    })
+
     describe('[0]->[1] direction', () => {
       it('should sync source → target when source changes', async () => {
         // Register ['source', 'target', { oneWay: '[0]->[1]' }]
