@@ -120,7 +120,11 @@ const buildDispatchInput = (
         userMetaByPath,
         change.meta as GenericMeta | undefined,
       )
-      input.push([relativizePath(change.path, topicPath), change.value, meta])
+      input.push([
+        relativizePath(change.path, topicPath),
+        structuredClone(change.value),
+        meta,
+      ])
     }
   }
 
@@ -132,7 +136,11 @@ const buildDispatchInput = (
         userMetaByPath,
         c.meta as GenericMeta | undefined,
       )
-      input.push([relativizePath(c.path, topicPath), c.value, meta])
+      input.push([
+        relativizePath(c.path, topicPath),
+        structuredClone(c.value),
+        meta,
+      ])
     }
   }
 

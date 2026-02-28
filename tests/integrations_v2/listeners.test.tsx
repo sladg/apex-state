@@ -1679,4 +1679,141 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       expect(capturedStates).toContain('step-2')
     })
   })
+
+  describe('Listener input immutability: in-place mutation must not corrupt pipeline', () => {
+    it('should not corrupt initialChanges when listener mutates a primitive value in input', async () => {
+      // Listener receives [path, value, meta] tuples.
+      // For primitive values (strings, numbers), mutation is impossible by nature —
+      // but verifies the structural tuple itself is isolated.
+      const store = createGenericStore<ListenerTestState>(config)
+      const capturedInputs: unknown[][] = []
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user.name',
+                scope: null,
+                fn: (changes) => {
+                  // Capture a snapshot before mutation attempt
+                  capturedInputs.push(changes.map(([p, v, m]) => [p, v, m]))
+                  // Attempt in-place mutation of the tuple
+                  ;(changes[0] as unknown[])[1] = 'MUTATED'
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('user.name', 'Bob')
+      await flushSync()
+
+      // The value the listener saw must have been 'Bob', not 'MUTATED' already
+      expect(capturedInputs[0]?.[0]?.[1]).toBe('Bob')
+      // State itself must be unaffected by the mutation attempt
+      expect(_si.state.user.name).toBe('Bob')
+    })
+
+    it('should not corrupt initialChanges when listener mutates an object value in input', async () => {
+      // Object values are the real risk: listener receives `change.value` by reference.
+      // Without structuredClone in buildDispatchInput, mutating `input[0][1].someField`
+      // would corrupt the original Change object shared with initialChanges.
+      // This test exploits that exact path.
+      const store = createGenericStore<ListenerTestState>(config)
+      const loggedInputBeforeMutation: unknown[] = []
+      const loggedInputAfterMutation: unknown[] = []
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user',
+                scope: null,
+                fn: (changes) => {
+                  // Record the value as received
+                  const received = changes[0]?.[1] as Record<string, unknown>
+                  loggedInputBeforeMutation.push(received?.name)
+
+                  // Mutate the object in-place — this must NOT affect the pipeline's
+                  // internal Change objects or initialChanges
+                  if (received && typeof received === 'object') {
+                    received.name = 'CORRUPTED_BY_LISTENER'
+                  }
+
+                  loggedInputAfterMutation.push(received?.name)
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('user', { name: 'Charlie', email: 'charlie@example.com', age: 25 })
+      await flushSync()
+
+      // Listener received the correct value before it mutated it
+      expect(loggedInputBeforeMutation[0]).toBe('Charlie')
+      // Mutation succeeded on the clone (listener can do what it wants with its copy)
+      expect(loggedInputAfterMutation[0]).toBe('CORRUPTED_BY_LISTENER')
+      // But actual valtio state must hold the real value, not the corrupted one
+      expect(_si.state.user.name).toBe('Charlie')
+    })
+
+    it('should not corrupt subsequent cascaded listeners when first listener mutates its input', async () => {
+      // Two listeners on overlapping paths. First listener mutates its input object.
+      // Second listener (cascaded) must still receive the correct, uncorrupted value —
+      // not the value the first listener wrote into its (supposedly shared) input.
+      const store = createGenericStore<ListenerTestState>(config)
+      const firstListenerSaw: unknown[] = []
+      const secondListenerSaw: unknown[] = []
+
+      const { storeInstance: _si, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user',
+                scope: null,
+                fn: (changes) => {
+                  const v = changes[0]?.[1] as Record<string, unknown>
+                  firstListenerSaw.push(v?.name)
+                  // Mutate in-place — must not bleed into second listener's input
+                  if (v && typeof v === 'object') v.name = 'FIRST_CORRUPTED'
+                  return undefined
+                },
+              },
+              {
+                path: 'user',
+                scope: null,
+                fn: (changes) => {
+                  const v = changes[0]?.[1] as Record<string, unknown>
+                  secondListenerSaw.push(v?.name)
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('user', { name: 'Diana', email: 'diana@example.com', age: 28 })
+      await flushSync()
+
+      expect(firstListenerSaw[0]).toBe('Diana')
+      // Second listener must see original 'Diana', not 'FIRST_CORRUPTED'
+      expect(secondListenerSaw[0]).toBe('Diana')
+      expect(_si.state.user.name).toBe('Diana')
+    })
+  })
 })
