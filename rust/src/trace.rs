@@ -6,6 +6,43 @@ use crate::change::{
     Change, ChangeKind, PipelineTrace, ProducedChange, SkipReason, SkippedChange, Stage, StageTrace,
 };
 
+// ---------------------------------------------------------------------------
+// Timing helpers
+// ---------------------------------------------------------------------------
+
+// `performance.now()` binding — sub-millisecond precision in browsers/workers.
+// Compiled only for WASM targets; native test builds return 0.0.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = performance, js_name = now)]
+    fn perf_now() -> f64;
+}
+
+/// Current time in milliseconds (sub-millisecond precision via `performance.now()`).
+/// Returns 0.0 when compiled for native targets (tests don't measure timing).
+#[allow(dead_code)]
+pub(crate) fn now_ms() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        perf_now()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0.0
+    }
+}
+
+/// Elapsed microseconds since `t0` (from `now_ms()`).
+/// Returns 0 immediately if `t0 == 0.0` (disabled path — no second JS call).
+#[allow(dead_code)]
+pub(crate) fn elapsed_us(t0: f64) -> u64 {
+    if t0 == 0.0 {
+        return 0;
+    }
+    ((now_ms() - t0) * 1000.0) as u64
+}
+
 /// Scoped trace recorder. All methods are no-ops when disabled (zero cost in production).
 pub(crate) struct TraceRecorder<'a> {
     trace: &'a mut PipelineTrace,
@@ -22,6 +59,26 @@ impl<'a> TraceRecorder<'a> {
     #[inline]
     pub fn enabled(&self) -> bool {
         self.enabled
+    }
+
+    /// Return current time (ms) for timing a stage. Returns 0.0 when disabled (no JS call).
+    #[inline]
+    pub fn stage_timer(&self) -> f64 {
+        if self.enabled {
+            now_ms()
+        } else {
+            0.0
+        }
+    }
+
+    /// Patch the `duration_us` of the last pushed stage entry. No-op when disabled.
+    pub fn set_duration(&mut self, duration_us: u64) {
+        if !self.enabled {
+            return;
+        }
+        if let Some(last) = self.trace.stages.last_mut() {
+            last.duration_us = duration_us;
+        }
     }
 
     /// Push a stage trace entry. No-op when disabled.

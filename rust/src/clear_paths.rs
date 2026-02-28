@@ -287,6 +287,18 @@ impl ClearPathsRegistry {
         self.direct_triggers.is_empty() && self.wildcard_triggers.is_empty()
     }
 
+    /// Returns true if the given interned path ID has any registered clear-path triggers.
+    /// Used by the trace recorder to filter MATCHED entries to only relevant paths.
+    pub(crate) fn has_trigger_for_path_id(&self, path_id: u32, path: &str) -> bool {
+        if self.direct_triggers.contains_key(&path_id) {
+            return true;
+        }
+        // Check wildcard triggers
+        self.wildcard_triggers
+            .iter()
+            .any(|wt| match_trigger(path, &wt.segments).is_some())
+    }
+
     /// Process changed paths and produce clear changes.
     ///
     /// For each changed path_id: check direct_triggers (O(1)), then scan wildcard_triggers.

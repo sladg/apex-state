@@ -37,6 +37,8 @@ export interface UnifiedPipelineTrace {
   totalDurationMs: number
   wasmDurationMs: number
   listenerDurationMs: number
+  /** True when listener timing was actually measured (debug.timing: true). False → show N/A. */
+  listenerTimingEnabled: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +141,10 @@ const buildPathLabel = (paths: string[]): string => {
 /** Format ms value with 2 decimals. */
 const fmtMs = (ms: number): string => `${ms.toFixed(2)}ms`
 
+/** Format listener timing: "N/A" when not measured, actual ms otherwise. */
+const fmtListenerMs = (ms: number, enabled: boolean): string =>
+  enabled ? fmtMs(ms) : 'N/A'
+
 // ---------------------------------------------------------------------------
 // Console rendering — single log line per pipeline run
 // ---------------------------------------------------------------------------
@@ -167,7 +173,7 @@ const buildDetail = (data: PipelineLogData): Record<string, unknown> => {
           trace.listeners.map((e) => [
             `${e.fnName || '(anonymous)'}  scope:${e.scope}${e.registrationId ? '  [reg: ' + e.registrationId + ']' : ''}`,
             {
-              ms: fmtMs(e.durationMs),
+              ms: fmtListenerMs(e.durationMs, trace.listenerTimingEnabled),
               input: [e.input, unwrap(e.currentState)],
               ...(e.output.length > 0
                 ? {
@@ -206,7 +212,7 @@ const buildDetail = (data: PipelineLogData): Record<string, unknown> => {
       ? { finalState: unwrap(data.stateSnapshot) }
       : {}),
     ...(anchors ? { anchors } : {}),
-    timing: `wasm: ${fmtMs(trace.wasmDurationMs)} | listeners: ${fmtMs(trace.listenerDurationMs)} | total: ${fmtMs(trace.totalDurationMs)}`,
+    timing: `wasm: ${fmtMs(trace.wasmDurationMs)} | listeners: ${fmtListenerMs(trace.listenerDurationMs, trace.listenerTimingEnabled)} | total: ${fmtMs(trace.totalDurationMs)}`,
   }
 }
 

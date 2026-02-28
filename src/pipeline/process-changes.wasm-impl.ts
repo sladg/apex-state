@@ -403,6 +403,7 @@ export const processChangesWasm = <
 ): void => {
   const pipeline = store._internal.pipeline
   const { logger } = store._internal
+  const timingEnabled = store._internal.config.debug.timing ?? false
 
   // Guard: pipeline is null during React StrictMode's simulated unmount/remount gap
   // (dev-only). The first mount executed correctly; the second invocation is idempotent
@@ -505,6 +506,7 @@ export const processChangesWasm = <
           (sum, e) => sum + e.durationMs,
           0,
         ),
+        listenerTimingEnabled: timingEnabled,
       }
     : null
 

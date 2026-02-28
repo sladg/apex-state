@@ -116,7 +116,7 @@ impl AggregationRegistry {
     }
 
     /// Check if a path is an aggregation target (exact match or child).
-    fn find_target(&self, path: &str) -> Option<&Aggregation> {
+    pub(crate) fn find_target(&self, path: &str) -> Option<&Aggregation> {
         // Exact match
         if let Some(agg) = self.aggregations.get(path) {
             return Some(agg);

@@ -97,12 +97,14 @@ const makeUnifiedTrace = (
   wasmTrace: Wasm.PipelineTrace,
   listeners: ListenerDispatchTrace[] = [],
   totalDurationMs = 1.5,
+  listenerTimingEnabled = true,
 ): UnifiedPipelineTrace => ({
   wasm: wasmTrace,
   listeners,
   totalDurationMs,
   wasmDurationMs: wasmTrace.total_duration_us / 1000,
   listenerDurationMs: listeners.reduce((sum, e) => sum + e.durationMs, 0),
+  listenerTimingEnabled,
 })
 
 /** Find a stage entry in the prefixed stages object by stage name. */
@@ -1306,6 +1308,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
       totalDurationMs: 1.0,
       wasmDurationMs: result.trace!.total_duration_us / 1000,
       listenerDurationMs: 0,
+      listenerTimingEnabled: true,
     }
 
     const logData: PipelineLogData = {
@@ -1392,6 +1395,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
       totalDurationMs: 0.5,
       wasmDurationMs: result.trace!.total_duration_us / 1000,
       listenerDurationMs: 0,
+      listenerTimingEnabled: true,
     }
 
     const logger = createLogger({ log: true })

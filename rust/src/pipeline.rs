@@ -2186,6 +2186,12 @@ impl ProcessingPipeline {
         // Extract trace for borrow-safe TraceRecorder (swap with Default, put back at end)
         let mut trace = std::mem::take(&mut self.ctx.trace);
         let mut rec = TraceRecorder::new(&mut trace, self.debug_enabled);
+        // Wall-clock total for the pipeline run (0.0 when debug disabled — no JS call)
+        let t0_total = if self.debug_enabled {
+            crate::trace::now_ms()
+        } else {
+            0.0
+        };
 
         // Working shadow: clone of self.shadow used for all reads/writes during the pipeline.
         // self.shadow stays untouched until the atomic commit at the end.
@@ -2198,12 +2204,14 @@ impl ProcessingPipeline {
         let mut concern_changes: Vec<Change> = Vec::new();
 
         // Step 0: Diff pre-pass — filter no-op changes early (against working, == self.shadow here)
+        let t0 = rec.stage_timer();
         let all_input_matched = rec.collect_matched(&input_changes);
         let input_changes = crate::diff::diff_changes(&working, &input_changes);
         {
             let matched = rec.collect_matched(&input_changes);
             let skipped = rec.diff_skipped(&all_input_matched, &matched);
             rec.stage(Stage::Input, matched, Vec::new(), skipped);
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
         if input_changes.is_empty() {
             self.ctx.trace = trace;
@@ -2211,7 +2219,17 @@ impl ProcessingPipeline {
         }
 
         // Steps 1-2: Process aggregation writes (distribute target → sources)
-        let input_matched_for_agg = rec.collect_matched(&input_changes);
+        // Only report changes that hit a registered aggregation target as MATCHED.
+        let t0 = rec.stage_timer();
+        let input_matched_for_agg: Vec<[String; 2]> = if rec.enabled() {
+            input_changes
+                .iter()
+                .filter(|c| self.aggregations.find_target(&c.path).is_some())
+                .map(|c| [c.path.clone(), c.value_json.clone()])
+                .collect()
+        } else {
+            Vec::new()
+        };
         let changes = process_aggregation_writes(&self.aggregations, input_changes, &working);
         {
             let input_paths: Vec<&str> = input_matched_for_agg
@@ -2238,9 +2256,11 @@ impl ProcessingPipeline {
                 produced,
                 Vec::new(),
             );
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
 
         // Step 1.5: Filter out writes to computation targets (silent no-op)
+        let t0 = rec.stage_timer();
         let pre_filter_matched = rec.collect_matched(&changes);
         let changes: Vec<Change> = changes
             .into_iter()
@@ -2250,10 +2270,12 @@ impl ProcessingPipeline {
             let kept = rec.collect_matched(&changes);
             let skipped = rec.diff_skipped(&pre_filter_matched, &kept);
             rec.stage(Stage::Computation, Vec::new(), Vec::new(), skipped);
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
 
         // Step 3: Apply aggregated changes to working shadow and collect affected paths.
         // Only process genuine changes (diff against working shadow before applying).
+        let t0 = rec.stage_timer();
         let mut genuine_path_ids: Vec<u32> = Vec::new();
         for change in &changes {
             let current = working.get(&change.path);
@@ -2282,10 +2304,12 @@ impl ProcessingPipeline {
             let all_input_matched = rec.collect_matched(&changes);
             let skipped = rec.diff_skipped(&all_input_matched, &genuine_matched);
             rec.stage(Stage::Diff, genuine_matched, Vec::new(), skipped);
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
 
         // Step 3.5: Clear paths — "when X changes, set Y to null".
         // Only original genuine changes (Step 3) feed into clear processing (no self-cascading).
+        let t0 = rec.stage_timer();
         let clear_changes =
             self.clear_registry
                 .process(&genuine_path_ids, &mut self.intern, &mut working);
@@ -2294,9 +2318,15 @@ impl ProcessingPipeline {
         }
         self.ctx.changes.extend(clear_changes.clone());
         {
+            // Only report paths that have a registered clear-path trigger as MATCHED.
             let trigger_matched: Vec<[String; 2]> = if rec.enabled() {
                 genuine_path_ids
                     .iter()
+                    .filter(|&&id| {
+                        self.intern.resolve(id).is_some_and(|path| {
+                            self.clear_registry.has_trigger_for_path_id(id, path)
+                        })
+                    })
                     .filter_map(|&id| {
                         self.intern
                             .resolve(id)
@@ -2308,6 +2338,7 @@ impl ProcessingPipeline {
             };
             let produced = rec.collect_produced(&clear_changes);
             rec.stage(Stage::ClearPath, trigger_matched, produced, Vec::new());
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
 
         // Step 3.6: Early anchor evaluation — evaluate anchors BEFORE sync/flip
@@ -2323,6 +2354,7 @@ impl ProcessingPipeline {
         // Must process ALL aggregated changes (not just genuine ones) because even if
         // a change is a no-op for path A, it might need to sync to path B that differs.
         // Include clear changes so sync sees cleared paths.
+        let t0 = rec.stage_timer();
         let mut changes_for_sync = changes.clone();
         changes_for_sync.extend(clear_changes.clone());
         self.process_sync_paths_into(&working, &changes_for_sync, &mut sync_buf);
@@ -2337,9 +2369,11 @@ impl ProcessingPipeline {
             rec.collect_produced(&sync_buf),
             Vec::new(),
         );
+        rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Steps 6-7: Process flip paths and update working shadow.
         // Must process ALL aggregated changes + clear changes + sync outputs.
+        let t0 = rec.stage_timer();
         let mut changes_for_flip = changes.clone();
         changes_for_flip.extend(clear_changes);
         changes_for_flip.extend_from_slice(&sync_buf);
@@ -2355,12 +2389,29 @@ impl ProcessingPipeline {
             rec.collect_produced(&flip_buf),
             Vec::new(),
         );
+        rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Step 7.5: Process aggregation reads (sources → target recomputation).
         // After sync/flip, check if any aggregation sources changed and recompute targets.
+        let t0 = rec.stage_timer();
         let all_changed_paths: Vec<String> =
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
-        let all_changed_matched = rec.collect_matched(&self.ctx.changes);
+        // Only report paths that are aggregation sources (or condition deps) as MATCHED.
+        let all_changed_matched: Vec<[String; 2]> = if rec.enabled() {
+            self.ctx
+                .changes
+                .iter()
+                .filter(|c| {
+                    !self
+                        .aggregations
+                        .get_affected_targets(std::slice::from_ref(&c.path))
+                        .is_empty()
+                })
+                .map(|c| [c.path.clone(), c.value_json.clone()])
+                .collect()
+        } else {
+            Vec::new()
+        };
         let aggregation_reads =
             process_aggregation_reads(&self.aggregations, &working, &all_changed_paths);
         let mut agg_read_produced: Vec<ProducedChange> = Vec::new();
@@ -2400,9 +2451,11 @@ impl ProcessingPipeline {
             agg_read_produced,
             agg_read_skipped,
         );
+        rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Step 7.6: Process computation reads (sources → target recomputation).
         // Sees aggregation-produced changes because we re-collect all_changed_paths.
+        let t0 = rec.stage_timer();
         let all_changed_paths: Vec<String> =
             self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let all_changed_matched_comp = rec.collect_matched(&self.ctx.changes);
@@ -2445,6 +2498,7 @@ impl ProcessingPipeline {
             comp_read_produced,
             comp_read_skipped,
         );
+        rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Step 7.7: Re-evaluate anchor states for transitions (sync/flip/agg/comp may
         // create or remove anchor paths). Compare against Step 3.6 snapshot to detect
@@ -2469,6 +2523,7 @@ impl ProcessingPipeline {
         }
 
         // Steps 8-9: Evaluate affected BoolLogic expressions (against working shadow)
+        let t0 = rec.stage_timer();
         let mut bl_produced: Vec<ProducedChange> = Vec::new();
         let mut bl_skipped: Vec<SkippedChange> = Vec::new();
         for logic_id in &self.ctx.affected_bool_logic {
@@ -2523,9 +2578,11 @@ impl ProcessingPipeline {
                 Vec::new()
             };
             rec.stage(Stage::BoolLogic, matched, bl_produced, bl_skipped);
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
 
         // Step 8b: Evaluate affected ValueLogic expressions (against working shadow)
+        let t0 = rec.stage_timer();
         let mut vl_produced: Vec<ProducedChange> = Vec::new();
         let mut vl_skipped: Vec<SkippedChange> = Vec::new();
         for vl_id in &self.ctx.affected_value_logics {
@@ -2576,9 +2633,11 @@ impl ProcessingPipeline {
                 Vec::new()
             };
             rec.stage(Stage::ValueLogic, matched, vl_produced, vl_skipped);
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
 
         // Step 10: Collect affected validators with their dependency values
+        let t0 = rec.stage_timer();
         let validators_to_run = self.collect_validator_dispatches(&working);
 
         // Step 11: Create full execution plan if listeners are registered
@@ -2586,6 +2645,7 @@ impl ProcessingPipeline {
         {
             let listeners_matched = rec.collect_matched(&self.ctx.changes);
             rec.stage(Stage::Listeners, listeners_matched, Vec::new(), Vec::new());
+            rec.set_duration(crate::trace::elapsed_us(t0));
         }
 
         // Store concern changes in ctx.changes (prefixed with _concerns.)
@@ -2607,15 +2667,20 @@ impl ProcessingPipeline {
         self.ctx.validators_to_run = validators_to_run;
         self.ctx.execution_plan = execution_plan;
 
+        let t0 = rec.stage_timer();
         rec.stage(
             Stage::Apply,
-            vec![[format!("{} changes", self.ctx.changes.len()), String::new()]],
+            rec.collect_matched(&self.ctx.changes),
             Vec::new(),
             Vec::new(),
         );
+        rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Set anchor states on trace for display layer
         rec.set_anchor_states(&self.anchor_states, &self.intern);
+
+        // Set total wall-clock duration for the entire pipeline run
+        trace.total_duration_us = crate::trace::elapsed_us(t0_total);
 
         // Put trace back into ctx (rec's borrow ends here via NLL)
         self.ctx.trace = trace;
@@ -7167,6 +7232,170 @@ mod tests {
         assert!(
             concern.is_some(),
             "Anchor with null value should be treated as present (not absent)"
+        );
+    }
+
+    // --- Trace MATCHED accuracy: aggregation_write / clear_paths / aggregation_read ---
+    //
+    // Regression tests for the bug where these three stages reported ALL input changes as
+    // MATCHED even when no rules were registered (or the changes didn't hit any rule).
+
+    fn run_pipeline_with_trace(
+        p: &mut ProcessingPipeline,
+        changes: Vec<Change>,
+    ) -> Vec<StageTrace> {
+        p.set_debug(true);
+        p.prepare_changes(changes).unwrap();
+        let fin = p.pipeline_finalize(vec![]).unwrap();
+        fin.trace.unwrap().stages
+    }
+
+    fn find_stage<'a>(stages: &'a [StageTrace], target: Stage) -> Option<&'a StageTrace> {
+        stages.iter().find(|s| s.stage == target)
+    }
+
+    #[test]
+    fn trace_aggregation_write_matched_empty_when_no_aggregations_registered() {
+        // Without any registered aggregations, AggregationWrite.matched must be empty
+        // even though input changes are present.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"price": 10, "total": 0}"#).unwrap();
+
+        let stages = run_pipeline_with_trace(&mut p, vec![input_change("price", "99")]);
+        let stage = find_stage(&stages, Stage::AggregationWrite).unwrap();
+
+        assert!(
+            stage.matched.is_empty(),
+            "AggregationWrite.matched should be empty when no aggregations are registered, got: {:?}",
+            stage.matched
+        );
+    }
+
+    #[test]
+    fn trace_aggregation_write_matched_only_includes_target_paths() {
+        // When aggregations are registered, only paths that hit a target appear in matched.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"allFlags": false, "flag1": false, "flag2": false, "unrelated": 0}"#)
+            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allFlags", "flag1"], ["allFlags", "flag2"]]"#,
+        ))
+        .unwrap();
+
+        // Change both a target and a non-target path together.
+        let stages = run_pipeline_with_trace(
+            &mut p,
+            vec![
+                input_change("allFlags", "true"),
+                input_change("unrelated", "99"),
+            ],
+        );
+        let stage = find_stage(&stages, Stage::AggregationWrite).unwrap();
+
+        let matched_paths: Vec<&str> = stage.matched.iter().map(|m| m[0].as_str()).collect();
+        assert!(
+            matched_paths.contains(&"allFlags"),
+            "allFlags is a target — should be in matched"
+        );
+        assert!(
+            !matched_paths.contains(&"unrelated"),
+            "unrelated is not a target — must not appear in matched"
+        );
+    }
+
+    #[test]
+    fn trace_clear_paths_matched_empty_when_no_clear_paths_registered() {
+        // Without any registered clear-path rules, ClearPath.matched must be empty.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"email": "a@b.com", "errors": "some error"}"#)
+            .unwrap();
+
+        let stages = run_pipeline_with_trace(&mut p, vec![input_change("email", r#""new@b.com""#)]);
+        let stage = find_stage(&stages, Stage::ClearPath).unwrap();
+
+        assert!(
+            stage.matched.is_empty(),
+            "ClearPath.matched should be empty when no clear-path rules are registered, got: {:?}",
+            stage.matched
+        );
+    }
+
+    #[test]
+    fn trace_clear_paths_matched_only_includes_trigger_paths() {
+        // When a clear-path rule is registered, only the trigger path appears in matched.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"email": "a@b.com", "errors": "some error", "unrelated": 0}"#)
+            .unwrap();
+        p.register_clear_paths("reg1", &["email".to_owned()], &["errors".to_owned()])
+            .unwrap();
+
+        // Change both the trigger and a non-trigger path.
+        let stages = run_pipeline_with_trace(
+            &mut p,
+            vec![
+                input_change("email", r#""new@b.com""#),
+                input_change("unrelated", "99"),
+            ],
+        );
+        let stage = find_stage(&stages, Stage::ClearPath).unwrap();
+
+        let matched_paths: Vec<&str> = stage.matched.iter().map(|m| m[0].as_str()).collect();
+        assert!(
+            matched_paths.contains(&"email"),
+            "email is a registered trigger — should be in matched"
+        );
+        assert!(
+            !matched_paths.contains(&"unrelated"),
+            "unrelated has no clear-path rule — must not appear in matched"
+        );
+    }
+
+    #[test]
+    fn trace_aggregation_read_matched_empty_when_no_aggregations_registered() {
+        // Without any registered aggregations, AggregationRead.matched must be empty.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"flag1": false, "flag2": false}"#)
+            .unwrap();
+
+        let stages = run_pipeline_with_trace(&mut p, vec![input_change("flag1", "true")]);
+        let stage = find_stage(&stages, Stage::AggregationRead).unwrap();
+
+        assert!(
+            stage.matched.is_empty(),
+            "AggregationRead.matched should be empty when no aggregations are registered, got: {:?}",
+            stage.matched
+        );
+    }
+
+    #[test]
+    fn trace_aggregation_read_matched_only_includes_source_paths() {
+        // When aggregations are registered, only paths that are sources appear in matched.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"allFlags": false, "flag1": false, "flag2": false, "unrelated": 0}"#)
+            .unwrap();
+        p.register_aggregation_batch(&agg_pairs(
+            r#"[["allFlags", "flag1"], ["allFlags", "flag2"]]"#,
+        ))
+        .unwrap();
+
+        // Change a source path and an unrelated path.
+        let stages = run_pipeline_with_trace(
+            &mut p,
+            vec![
+                input_change("flag1", "true"),
+                input_change("unrelated", "99"),
+            ],
+        );
+        let stage = find_stage(&stages, Stage::AggregationRead).unwrap();
+
+        let matched_paths: Vec<&str> = stage.matched.iter().map(|m| m[0].as_str()).collect();
+        assert!(
+            matched_paths.contains(&"flag1"),
+            "flag1 is a source — should be in matched"
+        );
+        assert!(
+            !matched_paths.contains(&"unrelated"),
+            "unrelated is not a source — must not appear in matched"
         );
     }
 }
