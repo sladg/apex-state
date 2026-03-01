@@ -135,7 +135,7 @@ describe('Read direction: source value change with excludeWhen', () => {
       `processChanges: ${sources} sources, ${excluded} conditions`,
       () => {
         const changes: Change[] = [
-          { path: `source_${sources - 1}`, value: 999 },
+          { path: `source_${sources - 1}`, value: 999, meta: {} },
         ]
         pipeline.processChanges(changes)
       },
@@ -171,7 +171,9 @@ describe('Condition path change: re-aggregation trigger', () => {
     bench(
       `condition change: ${sources} sources, ${excluded} conditions`,
       () => {
-        const changes: Change[] = [{ path: 'disabled_0', value: false }]
+        const changes: Change[] = [
+          { path: 'disabled_0', value: false, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -209,7 +211,7 @@ describe('Write direction: target → sources with excludeWhen filtering', () =>
     bench(
       `write distribution: ${sources} sources, ${excluded} conditions`,
       () => {
-        const changes: Change[] = [{ path: 'target', value: 42 }]
+        const changes: Change[] = [{ path: 'target', value: 42, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

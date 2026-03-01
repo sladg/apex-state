@@ -106,7 +106,7 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
     // Note: shadow still has allChecked=null (initial registration changes
     // are returned, not applied to shadow — JS store applies them to valtio)
     const result = pipeline.processChanges([
-      { path: 'item2_disabled', value: true },
+      { path: 'item2_disabled', value: true, meta: {} },
     ])
 
     // allChecked should be recomputed: item2 now excluded → item1, item3 both true → true
@@ -151,8 +151,8 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
 
     // Disable both sources
     const result = pipeline.processChanges([
-      { path: 'item1_disabled', value: true },
-      { path: 'item2_disabled', value: true },
+      { path: 'item1_disabled', value: true, meta: {} },
+      { path: 'item2_disabled', value: true, meta: {} },
     ])
 
     // All excluded → target = undefined
@@ -192,7 +192,7 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
 
     // Re-enable item2
     const result = pipeline.processChanges([
-      { path: 'item2_disabled', value: false },
+      { path: 'item2_disabled', value: false, meta: {} },
     ])
 
     // item2 now active, values differ (10 vs 20) → allValues = undefined
@@ -287,7 +287,7 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
     })
 
     const result = pipeline.processChanges([
-      { path: 'allUsers', value: 'alice' },
+      { path: 'allUsers', value: 'alice', meta: {} },
     ])
 
     const paths = getPaths(result.listener_changes)
@@ -321,7 +321,9 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
       ],
     })
 
-    const result = pipeline.processChanges([{ path: 'allUsers', value: 'bob' }])
+    const result = pipeline.processChanges([
+      { path: 'allUsers', value: 'bob', meta: {} },
+    ])
 
     const paths = getPaths(result.listener_changes)
 
@@ -351,7 +353,7 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
     })
 
     const result = pipeline.processChanges([
-      { path: 'allUsers.name', value: 'alice' },
+      { path: 'allUsers.name', value: 'alice', meta: {} },
     ])
 
     const paths = getPaths(result.listener_changes)
@@ -407,7 +409,9 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
     // Now set archived=true → AND is true → price2 excluded
     // total is still 100 because only price1 remains (also 100)
     // Condition path changed → re-aggregation always emits even with same value
-    const result = pipeline.processChanges([{ path: 'archived', value: true }])
+    const result = pipeline.processChanges([
+      { path: 'archived', value: true, meta: {} },
+    ])
 
     const totalChange = findChange(result.listener_changes, 'total')
     expect(totalChange).toBeDefined()
@@ -440,7 +444,7 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
     // Only val1 (42) active → result = 42
     // Condition path changed → re-aggregation always emits even with same value
     const result = pipeline.processChanges([
-      { path: 'val2_active', value: null },
+      { path: 'val2_active', value: null, meta: {} },
     ])
 
     const resultChange = findChange(result.listener_changes, 'result')
@@ -538,7 +542,7 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
 
     // Re-enable product4 (price=99, now active)
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: false },
+      { path: 'product4.disabled', value: false, meta: {} },
     ])
 
     // 4 active: [25, 25, 25, 99] → disagree → allPrice = undefined
@@ -584,9 +588,9 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
     // Update product4's price to match while still excluded, then re-enable
     // Note: changing product4.price triggers re-aggregation for the 3 active sources,
     // which sets allPrice=25 in shadow (product4 is still excluded at this point)
-    pipeline.processChanges([{ path: 'product4.price', value: 25 }])
+    pipeline.processChanges([{ path: 'product4.price', value: 25, meta: {} }])
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: false },
+      { path: 'product4.disabled', value: false, meta: {} },
     ])
 
     // 4 active: [25, 25, 25, 25] → agree → allPrice = 25
@@ -640,7 +644,7 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
 
     // Exclude the deviating product
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: true },
+      { path: 'product4.disabled', value: true, meta: {} },
     ])
 
     // product4 now excluded → [25, 25, 25] → agree → allPrice = 25
@@ -683,7 +687,7 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
 
     // Re-include the deviating product
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: false },
+      { path: 'product4.disabled', value: false, meta: {} },
     ])
 
     // product4 now active → [25, 25, 25, 99] → disagree → allPrice = undefined

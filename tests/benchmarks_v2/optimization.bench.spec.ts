@@ -76,7 +76,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Measure: Single minimal change, no effects registered
         // Includes: JSON serialization of changes, WASM boundary crossing
         // Baseline for: boundary crossing cost only
-        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'updated', meta: {} },
+        ]
         minimalPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -96,7 +98,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Measure: Change that produces listener output
         // Includes: Serialization of execution plan, listener dispatch
         // Cost of: returning results from WASM + JS execution plan
-        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listened', meta: {} },
+        ]
         listenerPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -116,7 +120,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Measure: Complete round-trip with multiple effect types
         // Includes: Sync graph evaluation, flip graph evaluation, listener dispatch
         // Cost of: full pipeline orchestration including multiple boundary crossings
-        const changes: Change[] = [{ path: 'field_0', value: 'round-trip' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'round-trip', meta: {} },
+        ]
         effectsPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -142,7 +148,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Validates: String intern lookups are O(1) cached (not O(n) searches)
         // Setup: 1000-field state means 1000 potential paths
         // Cost of: accessing path IDs is constant, not linear in field count
-        const changes: Change[] = [{ path: 'field_500', value: 'accessed' }]
+        const changes: Change[] = [
+          { path: 'field_500', value: 'accessed', meta: {} },
+        ]
         manyFieldsPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -166,7 +174,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Validates: Pre-computed graphs enable O(1) connected component lookup
         // Setup: 50 sync pairs means 50 possible sync relations
         // Cost of: graph lookup is fast (pre-built), not re-evaluated at runtime
-        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced', meta: {} },
+        ]
         syncPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -190,7 +200,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Validates: Pre-computed router enables O(1) listener matching
         // Setup: 50 listeners on different paths
         // Cost of: router lookup is fast (pre-built), not dynamic matching
-        const changes: Change[] = [{ path: 'field_25', value: 'routed' }]
+        const changes: Change[] = [
+          { path: 'field_25', value: 'routed', meta: {} },
+        ]
         routerPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

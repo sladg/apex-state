@@ -81,7 +81,7 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // Change role
     const result = pipeline.processChanges([
-      { path: 'user.profile.role', value: 'admin' },
+      { path: 'user.profile.role', value: 'admin', meta: {} },
     ])
 
     // Listener should be in execution plan (anchor is present)
@@ -117,7 +117,7 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // Change unrelated field
     const result = pipeline.processChanges([
-      { path: 'user.email', value: 'newemail@example.com' },
+      { path: 'user.email', value: 'newemail@example.com', meta: {} },
     ])
 
     // Listener should NOT be in execution plan (anchor absent)
@@ -157,17 +157,17 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // Action 1: Change role (anchor present → listener should be in plan)
     const result1 = pipeline.processChanges([
-      { path: 'user.profile.role', value: 'admin' },
+      { path: 'user.profile.role', value: 'admin', meta: {} },
     ])
     const listenerIds1 = getListenerIdsFromPlan(result1.execution_plan)
     expect(listenerIds1).toContain(3)
 
     // Action 2: Remove profile by setting user to empty object
-    pipeline.processChanges([{ path: 'user', value: {} }])
+    pipeline.processChanges([{ path: 'user', value: {}, meta: {} }])
 
     // Action 3: Change email (anchor now absent → listener should NOT be in plan)
     const result3 = pipeline.processChanges([
-      { path: 'user.email', value: 'newemail@example.com' },
+      { path: 'user.email', value: 'newemail@example.com', meta: {} },
     ])
     const listenerIds3 = getListenerIdsFromPlan(result3.execution_plan)
     expect(listenerIds3).not.toContain(3)
@@ -201,7 +201,7 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // Action 1: Change unrelated field (anchor absent)
     const result1 = pipeline.processChanges([
-      { path: 'user.email', value: 'newemail@example.com' },
+      { path: 'user.email', value: 'newemail@example.com', meta: {} },
     ])
     const listenerIds1 = getListenerIdsFromPlan(result1.execution_plan)
     expect(listenerIds1).not.toContain(4)
@@ -211,6 +211,7 @@ describe('AnchorPath: Resource Guarding', () => {
       {
         path: 'user.profile',
         value: { name: 'Bob', role: 'admin' },
+        meta: {},
       },
     ])
     const listenerIds2 = getListenerIdsFromPlan(result2.execution_plan)
@@ -218,7 +219,7 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // Action 3: Change role (anchor present, should continue to be in plan)
     const result3 = pipeline.processChanges([
-      { path: 'user.profile.role', value: 'guest' },
+      { path: 'user.profile.role', value: 'guest', meta: {} },
     ])
     const listenerIds3 = getListenerIdsFromPlan(result3.execution_plan)
     expect(listenerIds3).toContain(4)
@@ -255,19 +256,19 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // Action 1: Change notification setting (anchor present → in plan)
     const result1 = pipeline.processChanges([
-      { path: 'user.settings.notifications.email', value: false },
+      { path: 'user.settings.notifications.email', value: false, meta: {} },
     ])
     const listenerIds1 = getListenerIdsFromPlan(result1.execution_plan)
     expect(listenerIds1).toContain(5)
 
     // Action 2: Remove nested anchor by setting notifications to null
     pipeline.processChanges([
-      { path: 'user.settings.notifications', value: null },
+      { path: 'user.settings.notifications', value: null, meta: {} },
     ])
 
     // Action 3: Change another setting (anchor absent → not in plan)
     const result3 = pipeline.processChanges([
-      { path: 'user.settings.theme', value: 'light' },
+      { path: 'user.settings.theme', value: 'light', meta: {} },
     ])
     const listenerIds3 = getListenerIdsFromPlan(result3.execution_plan)
     expect(listenerIds3).not.toContain(5)
@@ -305,24 +306,24 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // When anchor is present and name changes, listener 10 fires
     let result = pipeline.processChanges([
-      { path: 'user.profile.name', value: 'Bob' },
+      { path: 'user.profile.name', value: 'Bob', meta: {} },
     ])
     let listenerIds = getListenerIdsFromPlan(result.execution_plan)
     expect(listenerIds).toContain(10)
 
     // When email changes, listener 11 fires
     result = pipeline.processChanges([
-      { path: 'user.profile.email', value: 'bob@example.com' },
+      { path: 'user.profile.email', value: 'bob@example.com', meta: {} },
     ])
     listenerIds = getListenerIdsFromPlan(result.execution_plan)
     expect(listenerIds).toContain(11)
 
     // Remove anchor
-    pipeline.processChanges([{ path: 'user.profile', value: null }])
+    pipeline.processChanges([{ path: 'user.profile', value: null, meta: {} }])
 
     // When anchor absent, no listeners in plan (even if fields change)
     result = pipeline.processChanges([
-      { path: 'user.email', value: 'other@example.com' },
+      { path: 'user.email', value: 'other@example.com', meta: {} },
     ])
     listenerIds = getListenerIdsFromPlan(result.execution_plan)
     expect(listenerIds).not.toContain(10)
@@ -351,7 +352,7 @@ describe('AnchorPath: Resource Guarding', () => {
 
     // Listener should execute regardless of missing data structure
     const result = pipeline.processChanges([
-      { path: 'email', value: 'newemail@example.com' },
+      { path: 'email', value: 'newemail@example.com', meta: {} },
     ])
     const listenerIds = getListenerIdsFromPlan(result.execution_plan)
     expect(listenerIds).toContain(20)

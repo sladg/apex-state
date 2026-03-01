@@ -974,6 +974,7 @@ impl ProcessingPipeline {
                         kind: ChangeKind::Real,
                         lineage: Lineage::Input,
                         audit: None,
+                        ..Default::default()
                     });
                 }
             }
@@ -1132,6 +1133,7 @@ impl ProcessingPipeline {
                         kind: ChangeKind::Real,
                         lineage: Lineage::Input,
                         audit: None,
+                        ..Default::default()
                     });
                 }
             }
@@ -1626,6 +1628,7 @@ impl ProcessingPipeline {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
             }
         }
@@ -1676,6 +1679,7 @@ impl ProcessingPipeline {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
             }
         }
@@ -1722,6 +1726,7 @@ impl ProcessingPipeline {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
                 return;
             }
@@ -1733,6 +1738,7 @@ impl ProcessingPipeline {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             });
         }
     }
@@ -1946,6 +1952,7 @@ impl ProcessingPipeline {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             });
         }
     }
@@ -2564,6 +2571,7 @@ impl ProcessingPipeline {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
             }
         }
@@ -2619,6 +2627,7 @@ impl ProcessingPipeline {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
             }
         }
@@ -2661,6 +2670,7 @@ impl ProcessingPipeline {
                 kind: c.kind,
                 lineage: c.lineage,
                 audit: c.audit,
+                ..Default::default()
             });
         }
 
@@ -2860,6 +2870,7 @@ impl ProcessingPipeline {
                     kind: change.kind,
                     lineage: change.lineage,
                     audit: change.audit,
+                    ..Default::default()
                 });
             } else {
                 js_state_changes.push(change);
@@ -2893,6 +2904,7 @@ impl ProcessingPipeline {
                         kind: c.kind,
                         lineage: c.lineage,
                         audit: c.audit,
+                        ..Default::default()
                     }
                 }
             })
@@ -2912,6 +2924,7 @@ impl ProcessingPipeline {
                 kind: c.kind,
                 lineage: c.lineage,
                 audit: c.audit,
+                ..Default::default()
             })
             .collect();
         let diffed_js_concerns = self.diff_changes(&js_concerns_prefixed);

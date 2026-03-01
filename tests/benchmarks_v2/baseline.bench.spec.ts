@@ -51,7 +51,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
       'single change through pipeline (no side effects)',
       () => {
         // Measure: processChanges round-trip for a single field change
-        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'updated', meta: {} },
+        ]
         barePipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -69,7 +71,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
       'single change with sync path',
       () => {
         // Measure: processChanges with sync graph evaluation
-        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced', meta: {} },
+        ]
         syncPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -87,7 +91,7 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
       'single change with flip path',
       () => {
         // Measure: processChanges with flip graph evaluation
-        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        const changes: Change[] = [{ path: 'bool_0', value: true, meta: {} }]
         flipPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -105,7 +109,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
       'single change with listener',
       () => {
         // Measure: processChanges with listener routing + execution plan
-        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listened', meta: {} },
+        ]
         listenerPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -206,7 +212,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
     const mediumPipeline = createBarePipeline(1_000)
     const largePipeline = createBarePipeline(100_000)
 
-    const singleChange: Change[] = [{ path: 'field_0', value: 'updated' }]
+    const singleChange: Change[] = [
+      { path: 'field_0', value: 'updated', meta: {} },
+    ]
 
     /**
      * @perf-history
@@ -279,7 +287,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
       'processChanges with 10 side effects matching',
       () => {
         // Change field_0 which triggers sync to sync_target_0
-        const changes: Change[] = [{ path: 'field_0', value: 'sync-10' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'sync-10', meta: {} },
+        ]
         sync10Pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -296,7 +306,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
     bench(
       'processChanges with 100 side effects matching',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'sync-100' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'sync-100', meta: {} },
+        ]
         sync100Pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -313,7 +325,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
     bench(
       'processChanges with 10 listeners triggered',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'listen-10' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listen-10', meta: {} },
+        ]
         listener10Pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -330,7 +344,9 @@ describe('WASM Pipeline: Baseline & Scaling', () => {
     bench(
       'processChanges with 100 listeners triggered',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'listen-100' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listen-100', meta: {} },
+        ]
         listener100Pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

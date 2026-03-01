@@ -76,7 +76,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change unrelated field (listener anchor absent)
       const result = pipeline.processChanges([
-        { path: 'user.email', value: 'new@example.com' },
+        { path: 'user.email', value: 'new@example.com', meta: {} },
       ])
 
       const listenerIds = getListenerIdsFromPlan(result.execution_plan)
@@ -109,7 +109,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change the watched path (anchor present)
       const result = pipeline.processChanges([
-        { path: 'user.profile.name', value: 'Bob' },
+        { path: 'user.profile.name', value: 'Bob', meta: {} },
       ])
 
       const listenerIds = getListenerIdsFromPlan(result.execution_plan)
@@ -150,7 +150,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change profile.name (listener 201 should fire, 202 shouldn't)
       const result1 = pipeline.processChanges([
-        { path: 'user.profile.name', value: 'Bob' },
+        { path: 'user.profile.name', value: 'Bob', meta: {} },
       ])
       let listenerIds = getListenerIdsFromPlan(result1.execution_plan)
       expect(listenerIds).toContain(201)
@@ -158,18 +158,18 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change settings.theme (listener 202 should fire, 201 shouldn't)
       const result2 = pipeline.processChanges([
-        { path: 'user.settings.theme', value: 'light' },
+        { path: 'user.settings.theme', value: 'light', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result2.execution_plan)
       expect(listenerIds).not.toContain(201)
       expect(listenerIds).toContain(202)
 
       // Remove profile
-      pipeline.processChanges([{ path: 'user.profile', value: null }])
+      pipeline.processChanges([{ path: 'user.profile', value: null, meta: {} }])
 
       // Change settings.theme again (201 still shouldn't fire, 202 should)
       const result3 = pipeline.processChanges([
-        { path: 'user.settings.theme', value: 'auto' },
+        { path: 'user.settings.theme', value: 'auto', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result3.execution_plan)
       expect(listenerIds).not.toContain(201)
@@ -213,7 +213,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change unrelated field
       const result = pipeline.processChanges([
-        { path: 'user.email', value: 'new@example.com' },
+        { path: 'user.email', value: 'new@example.com', meta: {} },
       ])
 
       // Both listeners should be skipped (registration anchor absent)
@@ -253,7 +253,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change a watched path (only 303 matches)
       const result = pipeline.processChanges([
-        { path: 'user.profile.name', value: 'Bob' },
+        { path: 'user.profile.name', value: 'Bob', meta: {} },
       ])
 
       // Only matching listener fires (registration anchor present)
@@ -306,18 +306,20 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change profile.name (registration anchor present, settings also present)
       let result = pipeline.processChanges([
-        { path: 'user.profile.name', value: 'Bob' },
+        { path: 'user.profile.name', value: 'Bob', meta: {} },
       ])
       let listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).toContain(401) // Both anchors satisfied
       expect(listenerIds).toContain(402) // Registration anchor satisfied
 
       // Remove settings
-      pipeline.processChanges([{ path: 'user.settings', value: null }])
+      pipeline.processChanges([
+        { path: 'user.settings', value: null, meta: {} },
+      ])
 
       // Change profile.name again (registration present, settings absent)
       result = pipeline.processChanges([
-        { path: 'user.profile.name', value: 'Charlie' },
+        { path: 'user.profile.name', value: 'Charlie', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).not.toContain(401) // Listener anchor (settings) now absent
@@ -356,17 +358,17 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change profile.name
       let result = pipeline.processChanges([
-        { path: 'user.profile.name', value: 'Bob' },
+        { path: 'user.profile.name', value: 'Bob', meta: {} },
       ])
       let listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).toContain(501) // Both gates pass
 
       // Remove profile (registration anchor fails)
-      pipeline.processChanges([{ path: 'user.profile', value: null }])
+      pipeline.processChanges([{ path: 'user.profile', value: null, meta: {} }])
 
       // Change something (settings still exists, but registration anchor fails)
       result = pipeline.processChanges([
-        { path: 'user.settings.theme', value: 'light' },
+        { path: 'user.settings.theme', value: 'light', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).not.toContain(501) // Registration gate fails (profile gone)
@@ -418,7 +420,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change email
       let result = pipeline.processChanges([
-        { path: 'user.email', value: 'new@example.com' },
+        { path: 'user.email', value: 'new@example.com', meta: {} },
       ])
       let listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).toContain(601) // No anchor, fires
@@ -427,7 +429,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change profile.name
       result = pipeline.processChanges([
-        { path: 'user.profile.name', value: 'Bob' },
+        { path: 'user.profile.name', value: 'Bob', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).not.toContain(601) // No trigger match
@@ -481,7 +483,11 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change engineering.head
       let result = pipeline.processChanges([
-        { path: 'company.departments.engineering.head', value: 'Bob' },
+        {
+          path: 'company.departments.engineering.head',
+          value: 'Bob',
+          meta: {},
+        },
       ])
       let listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).toContain(701) // Registration guard OK
@@ -490,12 +496,16 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Remove engineering (but departments still exists)
       pipeline.processChanges([
-        { path: 'company.departments.engineering', value: null },
+        { path: 'company.departments.engineering', value: null, meta: {} },
       ])
 
       // Try to change engineering.head again
       result = pipeline.processChanges([
-        { path: 'company.departments.engineering.head', value: 'Charlie' },
+        {
+          path: 'company.departments.engineering.head',
+          value: 'Charlie',
+          meta: {},
+        },
       ])
       listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).toContain(701) // Registration guard (departments) still OK
@@ -503,11 +513,13 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
       expect(listenerIds).not.toContain(703) // No trigger match
 
       // Remove departments (registration guard fails)
-      pipeline.processChanges([{ path: 'company.departments', value: null }])
+      pipeline.processChanges([
+        { path: 'company.departments', value: null, meta: {} },
+      ])
 
       // Try to change office.location
       result = pipeline.processChanges([
-        { path: 'company.office.location', value: 'SF' },
+        { path: 'company.office.location', value: 'SF', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).not.toContain(701) // Registration guard (departments) fails
@@ -557,7 +569,7 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Change alice's role
       let result = pipeline.processChanges([
-        { path: 'currentTenant.users.alice.role', value: 'user' },
+        { path: 'currentTenant.users.alice.role', value: 'user', meta: {} },
       ])
       let listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).toContain(801) // Both tenant and alice exist
@@ -565,22 +577,24 @@ describe('AnchorPath Combinations: Multi-Level Hierarchy', () => {
 
       // Alice left the company (remove her)
       pipeline.processChanges([
-        { path: 'currentTenant.users.alice', value: null },
+        { path: 'currentTenant.users.alice', value: null, meta: {} },
       ])
 
       // Try to change alice's role again
       result = pipeline.processChanges([
-        { path: 'currentTenant.users.alice.role', value: 'viewer' },
+        { path: 'currentTenant.users.alice.role', value: 'viewer', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).not.toContain(801) // Alice doesn't exist anymore
 
       // Tenant goes offline
-      pipeline.processChanges([{ path: 'currentTenant', value: null }])
+      pipeline.processChanges([
+        { path: 'currentTenant', value: null, meta: {} },
+      ])
 
       // Try any change
       result = pipeline.processChanges([
-        { path: 'currentTenant.users.bob.role', value: 'admin' },
+        { path: 'currentTenant.users.bob.role', value: 'admin', meta: {} },
       ])
       listenerIds = getListenerIdsFromPlan(result.execution_plan)
       expect(listenerIds).not.toContain(801) // Registration guard fails

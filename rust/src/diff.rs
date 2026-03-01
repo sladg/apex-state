@@ -100,6 +100,7 @@ mod tests {
             kind: ChangeKind::Real,
             lineage: Lineage::Input,
             audit: None,
+            ..Default::default()
         }
     }
 

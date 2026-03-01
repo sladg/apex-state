@@ -277,6 +277,7 @@ pub(crate) fn process_computation_reads(
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
             }
         }

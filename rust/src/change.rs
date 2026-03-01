@@ -56,9 +56,7 @@ pub enum Lineage {
     /// Produced by a stage from a parent change.
     Derived {
         parent_id: u32,
-        #[ts(inline)]
         via: Stage,
-        #[ts(inline)]
         context: ChangeContext,
     },
 }
@@ -83,21 +81,23 @@ pub struct ChangeAudit {
 }
 
 /// A single change in the input/output format.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, TS)]
 pub struct Change {
     pub path: String,
     pub value_json: String,
+    /// Opaque JS meta object — carried through the pipeline unchanged.
+    /// WASM never inspects the contents. Returned on listener_changes so JS
+    /// meta survives the boundary without any stringify/parse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
     /// Coarse classification: Real | Redundant | Breakdown | Consumed.
     #[serde(default)]
-    #[ts(inline)]
     pub kind: ChangeKind,
     /// Causal chain. Always set. Carries ChangeContext for stage routing.
     #[serde(default)]
-    #[ts(inline)]
     pub lineage: Lineage,
     /// Debug-mode only. None in production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(inline)]
     pub audit: Option<ChangeAudit>,
 }
 
@@ -110,6 +110,7 @@ impl Change {
             kind: ChangeKind::Real,
             lineage: Lineage::Input,
             audit: None,
+            meta: None,
         }
     }
 }
@@ -133,9 +134,7 @@ pub enum SkipReason {
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
 pub struct SkippedChange {
     pub path: String,
-    #[ts(inline)]
     pub kind: ChangeKind,
-    #[ts(inline)]
     pub reason: SkipReason,
     /// Human-readable explanation of why this change was skipped.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -165,15 +164,12 @@ pub struct ProducedChange {
 /// Execution record for one StagePolicy within a pipeline call.
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
 pub struct StageTrace {
-    #[ts(inline)]
     pub stage: Stage,
     pub duration_us: u64,
     /// Paths (with JSON-encoded values) that this stage processed.
     pub matched: Vec<[String; 2]>,
-    #[ts(inline)]
     pub skipped: Vec<SkippedChange>,
     /// Changes produced by this stage.
-    #[ts(inline)]
     pub produced: Vec<ProducedChange>,
     pub followup: Vec<StageTrace>,
 }

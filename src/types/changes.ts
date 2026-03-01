@@ -18,9 +18,12 @@
  * ```
  */
 
+import type { Stage } from '../wasm/generated/types'
 import type { DeepKey } from './deep-key'
 import type { DeepValue } from './deep-value'
 import type { GenericMeta } from './meta'
+
+export type { Stage }
 
 /**
  * Represents an array of change tuples.
@@ -33,11 +36,12 @@ export type ArrayOfChanges<DATA, META extends GenericMeta = GenericMeta> = {
   [K in DeepKey<DATA>]: [K, DeepValue<DATA, K>, META] | [K, DeepValue<DATA, K>]
 }[DeepKey<DATA>][]
 
-/** A single state change in internal pipeline form. Meta is JS-only — never crosses the WASM boundary. */
+/** A single state change in internal pipeline form. */
 export interface Change {
   path: string
   value: unknown
-  meta?: unknown
+  /** Meta object threaded through the pipeline. Lineage is merged in by the bridge on WASM→JS conversion. */
+  meta: GenericMeta
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,7 @@ const toWasm = <DATA extends object, META extends GenericMeta>(
   tuples.map(([path, value]) => ({
     path: path as string,
     value: value as unknown,
+    meta: {},
   }))
 
 /** WASM boundary conversion utilities. */

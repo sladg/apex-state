@@ -14,6 +14,7 @@
 
 import type { Change } from '../types/changes'
 import type { ValidationSchema } from '../types/concerns'
+import type { GenericMeta } from '../types/meta'
 import { createFastJson } from '../utils/json'
 import type * as Wasm from './generated/types'
 import { getWasmInstance } from './lifecycle'
@@ -51,16 +52,41 @@ const { stringify: fastStringify, parse: fastParse } = createFastJson([
 ])
 
 /** Convert JS Change[] to WASM wire format for serde-wasm-bindgen. */
-const changesToWasm = (
-  changes: Change[],
-): Pick<Wasm.Change, 'path' | 'value_json'>[] =>
-  changes.map(({ path, value }) => ({ path, value_json: fastStringify(value) }))
+const changesToWasm = (changes: Change[]) =>
+  changes.map(({ path, value, meta }) => ({
+    path,
+    value_json: fastStringify(value),
+    meta,
+  }))
 
-/** Convert WASM wire format back to JS Change[]. */
+/** Map a WASM lineage stage to the appropriate GenericMeta boolean flag. */
+const lineageToMeta = (lineage: Wasm.Lineage): Partial<GenericMeta> => {
+  if (lineage === 'Input') return {}
+  switch (lineage.Derived.via) {
+    case 'sync':
+      return { isSyncPathChange: true }
+    case 'flip':
+      return { isFlipPathChange: true }
+    case 'aggregation_write':
+    case 'aggregation_read':
+      return { isAggregationChange: true }
+    case 'listeners':
+      return { isListenerChange: true }
+    case 'clear_path':
+      return { isClearPathChange: true }
+    case 'computation':
+      return { isComputationChange: true }
+    default:
+      return { isProgramaticChange: true }
+  }
+}
+
+/** Convert WASM wire format back to JS Change[], transforming lineage into GenericMeta flags. */
 const wasmChangesToJs = (wasmChanges: Wasm.Change[]): Change[] =>
-  wasmChanges.map(({ path, value_json }) => ({
+  wasmChanges.map(({ path, value_json, meta, lineage }) => ({
     path,
     value: fastParse(value_json),
+    meta: { ...(meta as GenericMeta), ...lineageToMeta(lineage) },
   }))
 
 /**

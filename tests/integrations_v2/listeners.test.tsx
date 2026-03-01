@@ -1699,9 +1699,11 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
                 scope: null,
                 fn: (changes) => {
                   // Capture a snapshot before mutation attempt
-                  capturedInputs.push(changes.map(([p, v, m]) => [p, v, m]))
+                  capturedInputs.push(
+                    changes.map((c) => [c[0] as unknown, c[1], c[2]]),
+                  )
                   // Attempt in-place mutation of the tuple
-                  ;(changes[0] as unknown[])[1] = 'MUTATED'
+                  ;(changes[0] as unknown as unknown[])[1] = 'MUTATED'
                   return undefined
                 },
               },
@@ -1714,7 +1716,7 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       await flushSync()
 
       // The value the listener saw must have been 'Bob', not 'MUTATED' already
-      expect(capturedInputs[0]?.[0]?.[1]).toBe('Bob')
+      expect((capturedInputs[0] as unknown[][])[0]?.[1]).toBe('Bob')
       // State itself must be unaffected by the mutation attempt
       expect(_si.state.user.name).toBe('Bob')
     })
@@ -1739,16 +1741,18 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
                 scope: null,
                 fn: (changes) => {
                   // Record the value as received
-                  const received = changes[0]?.[1] as Record<string, unknown>
-                  loggedInputBeforeMutation.push(received?.name)
+                  const received = changes[0]?.[1] as
+                    | Record<string, unknown>
+                    | undefined
+                  loggedInputBeforeMutation.push(received?.['name'])
 
                   // Mutate the object in-place — this must NOT affect the pipeline's
                   // internal Change objects or initialChanges
                   if (received && typeof received === 'object') {
-                    received.name = 'CORRUPTED_BY_LISTENER'
+                    received['name'] = 'CORRUPTED_BY_LISTENER'
                   }
 
-                  loggedInputAfterMutation.push(received?.name)
+                  loggedInputAfterMutation.push(received?.['name'])
                   return undefined
                 },
               },
@@ -1757,7 +1761,11 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
         },
       )
 
-      setValue('user', { name: 'Charlie', email: 'charlie@example.com', age: 25 })
+      setValue('user', {
+        name: 'Charlie',
+        email: 'charlie@example.com',
+        age: 25,
+      })
       await flushSync()
 
       // Listener received the correct value before it mutated it
@@ -1786,10 +1794,12 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
                 path: 'user',
                 scope: null,
                 fn: (changes) => {
-                  const v = changes[0]?.[1] as Record<string, unknown>
-                  firstListenerSaw.push(v?.name)
+                  const v = changes[0]?.[1] as
+                    | Record<string, unknown>
+                    | undefined
+                  firstListenerSaw.push(v?.['name'])
                   // Mutate in-place — must not bleed into second listener's input
-                  if (v && typeof v === 'object') v.name = 'FIRST_CORRUPTED'
+                  if (v && typeof v === 'object') v['name'] = 'FIRST_CORRUPTED'
                   return undefined
                 },
               },
@@ -1797,8 +1807,10 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
                 path: 'user',
                 scope: null,
                 fn: (changes) => {
-                  const v = changes[0]?.[1] as Record<string, unknown>
-                  secondListenerSaw.push(v?.name)
+                  const v = changes[0]?.[1] as
+                    | Record<string, unknown>
+                    | undefined
+                  secondListenerSaw.push(v?.['name'])
                   return undefined
                 },
               },

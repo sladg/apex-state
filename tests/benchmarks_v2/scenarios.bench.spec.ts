@@ -70,7 +70,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
 
         // Measure: processChanges for typical user input
         const changes: Change[] = [
-          { path: 'email', value: 'newemail@example.com' },
+          { path: 'email', value: 'newemail@example.com', meta: {} },
         ]
         pipeline.processChanges(changes)
       },
@@ -118,7 +118,9 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
         })
 
         // Measure: Total pipeline time for field change that triggers sync, flip, listener
-        const changes: Change[] = [{ path: 'productPrice', value: 149.99 }]
+        const changes: Change[] = [
+          { path: 'productPrice', value: 149.99, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -157,7 +159,9 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
         })
 
         // Measure: Time for pipeline to update aggregated metrics
-        const changes: Change[] = [{ path: 'metric_views', value: 2000 }]
+        const changes: Change[] = [
+          { path: 'metric_views', value: 2000, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

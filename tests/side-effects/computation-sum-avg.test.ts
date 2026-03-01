@@ -84,7 +84,9 @@ describe('Computation SUM', () => {
     })
 
     // Change price2 from 20 to 50
-    const result = pipeline.processChanges([{ path: 'price2', value: 50 }])
+    const result = pipeline.processChanges([
+      { path: 'price2', value: 50, meta: {} },
+    ])
 
     // Should see both price2 change and total recomputation
     const totalChange = findChange(result.listener_changes, 'total')
@@ -146,7 +148,9 @@ describe('Computation AVG', () => {
     })
 
     // Change score2 from 20 to 50
-    const result = pipeline.processChanges([{ path: 'score2', value: 50 }])
+    const result = pipeline.processChanges([
+      { path: 'score2', value: 50, meta: {} },
+    ])
 
     const avgChange = findChange(result.listener_changes, 'average')
     expect(avgChange).toBeDefined()
@@ -179,7 +183,9 @@ describe('Computation: write to target is no-op', () => {
     })
 
     // Try to write directly to the computation target
-    const result = pipeline.processChanges([{ path: 'total', value: 999 }])
+    const result = pipeline.processChanges([
+      { path: 'total', value: 999, meta: {} },
+    ])
 
     // The write to 'total' should be filtered out (no-op)
     const totalChange = findChange(result.listener_changes, 'total')
@@ -248,7 +254,7 @@ describe('Computation: excludeWhen conditions', () => {
 
     // Enable price2 by changing condition
     const result = pipeline.processChanges([
-      { path: 'price2_disabled', value: false },
+      { path: 'price2_disabled', value: false, meta: {} },
     ])
 
     const totalChange = findChange(result.listener_changes, 'total')

@@ -3,6 +3,10 @@
  *
  * Routes changes through WASM for aggregation, sync, flip, and BoolLogic.
  * Listener dispatch uses WASM-created dispatch plans with JS handler execution.
+ *
+ * Data model: `Change` is normalized once at entry and carried through every stage.
+ * Meta stays attached to each record. State vs concern partitioning uses the
+ * `_concerns.` path prefix directly at apply time.
  */
 
 import { snapshot } from 'valtio'
@@ -12,77 +16,40 @@ import type {
   DebugTrackEntry,
   StoreInstance,
 } from '../core/types'
-import type { ArrayOfChanges, GenericMeta } from '../types'
-import { changes } from '../types/changes'
+import { type ArrayOfChanges, type GenericMeta } from '../types'
 import { dot } from '../utils/dot'
-import type { ListenerLogEntry, UnifiedPipelineTrace } from '../utils/log'
+import type { ListenerDispatchTrace, UnifiedPipelineTrace } from '../utils/log'
 import type { Change, Wasm, WasmPipeline } from '../wasm/bridge'
 import { applyBatch } from './apply-batch'
 
 // ---------------------------------------------------------------------------
-// Meta flag mapping (meta is JS-only, not from WASM)
+// Constants
 // ---------------------------------------------------------------------------
 
-const META_FLAG_LISTENER: Partial<GenericMeta> = { isListenerChange: true }
-
-/** Build a map of user-provided meta by path from the original input changes. */
-const buildUserMetaByPath = <DATA extends object, META extends GenericMeta>(
-  changes: ArrayOfChanges<DATA, META>,
-): Map<string, GenericMeta> => {
-  const map = new Map<string, GenericMeta>()
-  for (const change of changes) {
-    const meta = change[2]
-    if (meta && Object.keys(meta as object).length > 0) {
-      map.set(change[0] as string, meta as GenericMeta)
-    }
-  }
-  return map
-}
-
-/** Convert bridge object format to pipeline tuple format, mapping meta flags. */
-const bridgeChangesToTuples = <DATA extends object, META extends GenericMeta>(
-  changes: Change[],
-  userMetaByPath?: Map<string, GenericMeta>,
-): ArrayOfChanges<DATA, META> =>
-  changes.map((c) => {
-    const meta = buildMeta(
-      c.path,
-      userMetaByPath,
-      c.meta as GenericMeta | undefined,
-    )
-    return [c.path, c.value, meta] as ArrayOfChanges<DATA, META>[number]
-  }) as unknown as ArrayOfChanges<DATA, META>
+const CONCERNS_PREFIX = '_concerns.'
+const CONCERNS_PREFIX_LEN = CONCERNS_PREFIX.length
 
 // ---------------------------------------------------------------------------
-// Shared micro-helpers
+// Normalization — single entry point, one shape for the entire pipeline
 // ---------------------------------------------------------------------------
 
-/** Build meta object from user-provided meta and an optional base meta. */
-const buildMeta = (
-  path: string,
-  userMetaByPath?: Map<string, GenericMeta>,
-  baseMeta?: GenericMeta,
-): GenericMeta => {
-  const userMeta = userMetaByPath?.get(path)
-  if (!userMeta && !baseMeta) return {}
-  return { ...baseMeta, ...userMeta }
-}
+/** Normalize input tuples into Change[] once at entry. */
+const normalizeInputChanges = <DATA extends object, META extends GenericMeta>(
+  input: ArrayOfChanges<DATA, META>,
+): Change[] =>
+  input.map(([path, value, meta]) => ({
+    path: path as string,
+    value,
+    meta: meta ?? {},
+  }))
 
-/** Append changes to the extra map for a given dispatch ID (get-or-create). */
-const pushExtra = (
-  extra: Map<number, Change[]>,
-  dispatchId: number,
-  changes: Change[],
-): void => {
-  let existing = extra.get(dispatchId)
-  if (!existing) {
-    existing = []
-    extra.set(dispatchId, existing)
-  }
-  for (const c of changes) {
-    existing.push(c)
-  }
-}
+/** Normalize a WASM Change[] back to Change[], resolving meta. */
+const normalizeWasmChanges = (wasmChanges: Change[]): Change[] =>
+  wasmChanges.map(({ path, value, meta }) => ({ path, value, meta }))
+
+/** Normalize raw listener output tuples `[path, value][]` to Change[]. */
+const normalizeListenerOutput = (raw: [string, unknown][]): Change[] =>
+  raw.map(([path, value]) => ({ path, value, meta: {} }))
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -102,28 +69,35 @@ const relativizePath = (changePath: string, topicPath: string): string => {
   return changePath
 }
 
-/** Build the input array for a single listener dispatch. */
+/**
+ * Remap a path with prefix for propagation to parent dispatches.
+ */
+const remapPath = (path: string, remapPrefix: string | null): string => {
+  if (!remapPrefix) return path
+  return path === '' ? remapPrefix : `${remapPrefix}.${path}`
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch helpers
+// ---------------------------------------------------------------------------
+
+/** Append Changes to the extra map for a given dispatch ID (get-or-create). */
+/** Build the input tuple array for a single listener invocation. */
 const buildDispatchInput = (
   d: Wasm.FullExecutionPlan['groups'][number]['dispatches'][number],
   listenerChanges: Change[],
   extra: Map<number, Change[]>,
-  userMetaByPath?: Map<string, GenericMeta>,
 ): [string, unknown, GenericMeta][] => {
   const topicPath = d.topic_path
-  // Single pass: filter + map combined
   const input: [string, unknown, GenericMeta][] = []
+
   for (const id of d.input_change_ids) {
     const change = listenerChanges[id]
     if (change !== undefined) {
-      const meta = buildMeta(
-        change.path,
-        userMetaByPath,
-        change.meta as GenericMeta | undefined,
-      )
       input.push([
         relativizePath(change.path, topicPath),
         structuredClone(change.value),
-        meta,
+        change.meta,
       ])
     }
   }
@@ -131,28 +105,15 @@ const buildDispatchInput = (
   const extraChanges = extra.get(d.dispatch_id)
   if (extraChanges) {
     for (const c of extraChanges) {
-      const meta = buildMeta(
-        c.path,
-        userMetaByPath,
-        c.meta as GenericMeta | undefined,
-      )
       input.push([
         relativizePath(c.path, topicPath),
         structuredClone(c.value),
-        meta,
+        c.meta,
       ])
     }
   }
 
   return input
-}
-
-/**
- * Remap a path with prefix for propagation to parent dispatches.
- */
-const remapPath = (path: string, remapPrefix: string | null): string => {
-  if (!remapPrefix) return path
-  return path === '' ? remapPrefix : `${remapPrefix}.${path}`
 }
 
 /**
@@ -169,10 +130,12 @@ const propagateChanges = (
 
   for (const t of targets) {
     const remapped = producedChanges.map((c) => ({
+      ...c,
       path: remapPath(c.path, t.remap_prefix),
-      value: c.value,
     }))
-    pushExtra(extra, t.target_dispatch_id, remapped)
+    const existing = extra.get(t.target_dispatch_id) ?? []
+    extra.set(t.target_dispatch_id, existing)
+    existing.push(...remapped)
   }
 }
 
@@ -185,15 +148,14 @@ const executeFullExecutionPlan = <DATA extends object>(
   plan: Wasm.FullExecutionPlan | null,
   listenerChanges: Change[],
   store: StoreInstance<DATA>,
-  userMetaByPath?: Map<string, GenericMeta>,
-): { produced: Change[]; listenerLog: ListenerLogEntry[] } => {
+): { produced: Change[]; listenerLog: ListenerDispatchTrace[] } => {
   if (!plan || plan.groups.length === 0) {
     return { produced: [], listenerLog: [] }
   }
 
   const { listenerHandlers } = store._internal.registrations
   const allProducedChanges: Change[] = []
-  const listenerLog: ListenerLogEntry[] = []
+  const listenerLog: ListenerDispatchTrace[] = []
   const extra = new Map<number, Change[]>()
   const timingEnabled = store._internal.config.debug.timing ?? false
   const timingThreshold = store._internal.config.debug.timingThreshold ?? 5
@@ -215,7 +177,7 @@ const executeFullExecutionPlan = <DATA extends object>(
       scope === '' ? currentState : dot.get__unsafe(currentState, scope)
 
     // buildDispatchInput reads from extra — which now includes cascaded changes
-    const input = buildDispatchInput(d, listenerChanges, extra, userMetaByPath)
+    const input = buildDispatchInput(d, listenerChanges, extra)
 
     // Inline timing — only pay cost of performance.now() when timing is enabled
     const t0 = timingEnabled ? performance.now() : 0
@@ -231,17 +193,16 @@ const executeFullExecutionPlan = <DATA extends object>(
 
     const producedChanges =
       result && (result as unknown[]).length > 0
-        ? (result as [string, unknown][]).map(([path, value]) => ({
-            path,
-            value,
-            meta: META_FLAG_LISTENER,
-          }))
+        ? normalizeListenerOutput(result as [string, unknown][])
         : []
 
     listenerLog.push({
+      dispatchId: d.dispatch_id,
       subscriberId: d.subscriber_id,
       fnName: registration.name,
       scope: scope || '(root)',
+      topic: d.topic_path,
+      registrationId: registration.registrationId,
       input: input as [string, unknown, unknown][],
       output: producedChanges,
       currentState: scopedState,
@@ -264,7 +225,9 @@ const executeFullExecutionPlan = <DATA extends object>(
     // Same-depth cascading: inject produced changes into extra for ALL subsequent dispatches
     // buildDispatchInput will pick them up naturally via extra map
     for (const subsequent of allDispatches.slice(i + 1)) {
-      pushExtra(extra, subsequent.dispatch_id, producedChanges)
+      const existing = extra.get(subsequent.dispatch_id) ?? []
+      extra.set(subsequent.dispatch_id, existing)
+      existing.push(...producedChanges)
     }
   }
 
@@ -286,11 +249,11 @@ const executeFullExecutionPlan = <DATA extends object>(
  * - This allows getting all concerns for a path: `_concerns["user.email"]`
  * - React hooks can efficiently subscribe to specific path+concern combinations
  *
- * INPUT FORMAT: Paths come from WASM as "basePath.concernName"
+ * INPUT FORMAT: Paths come from WASM as "basePath.concernName" (no _concerns. prefix after partition)
  * - Example: "user.email.validationState" → _concerns["user.email"]["validationState"]
  * - We split on the LAST dot to separate basePath from concernName
  *
- * @param changes - Changes with paths in "basePath.concernName" format (no _concerns. prefix)
+ * @param changes - Change[] with paths stripped of _concerns. prefix
  * @param concerns - The store._concerns proxy to apply changes to
  */
 const applyConcernChanges = (
@@ -310,14 +273,14 @@ const applyConcernChanges = (
 }
 
 /**
- * Execute schema validators and return concern changes.
+ * Execute schema validators and return Change[].
  * Takes validators_to_run from WASM, returns concern changes with _concerns. prefix.
  */
 const runValidators = (
   validatorsToRun: Wasm.ValidatorDispatch[],
   pipeline: WasmPipeline,
 ): Change[] => {
-  const validationResults: Change[] = []
+  const results: Change[] = []
 
   for (const validator of validatorsToRun) {
     const schema = pipeline.validatorSchemas.get(validator.validator_id)
@@ -349,41 +312,25 @@ const runValidators = (
           })),
     }
 
-    // Return as Change with _concerns. prefix (WASM will strip it in finalize)
-    validationResults.push({
+    results.push({
       path: validator.output_path, // Already has _concerns. prefix
       value: validationValue,
+      meta: {},
     })
   }
 
-  return validationResults
+  return results
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Apply helpers
 // ---------------------------------------------------------------------------
 
-const CONCERNS_PREFIX = '_concerns.'
-const CONCERNS_PREFIX_LEN = CONCERNS_PREFIX.length
-
-/** Partition changes into state vs concern changes, stripping _concerns. prefix. */
-const partitionChanges = (
-  changes: Change[],
-): { stateChanges: Change[]; concernChanges: Change[] } => {
-  const stateChanges: Change[] = []
-  const concernChanges: Change[] = []
-  for (const change of changes) {
-    if (change.path.startsWith(CONCERNS_PREFIX)) {
-      concernChanges.push({
-        path: change.path.slice(CONCERNS_PREFIX_LEN),
-        value: change.value,
-      })
-    } else {
-      stateChanges.push(change)
-    }
-  }
-  return { stateChanges, concernChanges }
-}
+/** Strip _concerns. prefix from a concern path for applyConcernChanges. */
+const stripConcernPrefix = (c: Change): Change => ({
+  ...c,
+  path: c.path.slice(CONCERNS_PREFIX_LEN),
+})
 
 // ---------------------------------------------------------------------------
 // Record applied changes for debug tracking
@@ -429,8 +376,8 @@ export const processChangesWasm = <
     return
   }
 
-  // Capture user-provided meta before sending to WASM (WASM strips meta)
-  const userMetaByPath = buildUserMetaByPath(initialChanges)
+  // Normalize once at entry — Change[] is the single shape for the entire pipeline
+  const pipelineChanges = normalizeInputChanges(initialChanges)
 
   // Initialize debug entry if tracking is enabled
   const trackEntry: DebugTrackEntry | null = store._debug
@@ -445,7 +392,7 @@ export const processChangesWasm = <
   const t0 = performance.now()
 
   const { listener_changes, execution_plan, validators_to_run, has_work } =
-    pipeline.processChanges(changes.toWasm(initialChanges))
+    pipeline.processChanges(pipelineChanges)
 
   // Early exit if WASM signals no work to do
   if (!has_work) {
@@ -453,35 +400,48 @@ export const processChangesWasm = <
     return
   }
 
+  // meta_json was serialized onto each change before crossing the WASM boundary —
+  // normalizeWasmChanges parses it back so meta flows through unchanged.
+  const listenerChanges = normalizeWasmChanges(listener_changes)
+
   const { produced, listenerLog } = executeFullExecutionPlan(
     execution_plan,
-    listener_changes,
+    listenerChanges,
     store,
-    userMetaByPath,
   )
 
   // Execute validators (JS-only: schema validation)
   // @FIXME: These should run on-top of listener's provided changes. they need fresh state for validating.
   const validationResults = runValidators(validators_to_run, pipeline)
 
-  // Single flat array: listener output + validator output (with _concerns. prefix)
+  // Single flat array: listener output + validator output
   const jsChanges = produced.concat(validationResults)
-  const { state_changes: finalChanges, trace: wasmTrace } =
+  const { state_changes: stateChangesFinal, trace: wasmTrace } =
     pipeline.pipelineFinalize(jsChanges)
 
-  // Apply NEW changes from listeners/validators to valtio
-  // Phase 1 changes were already applied above, so filter them out
-  const late = partitionChanges(finalChanges)
+  // Re-normalize finalized changes back to Change[] (WASM may have merged/reordered)
+  const finalChanges = normalizeWasmChanges(stateChangesFinal)
 
-  // Apply only NEW changes (listener/validator output)
-  if (late.stateChanges.length > 0) {
+  // Partition by path prefix and apply
+  const stateChanges = finalChanges.filter(
+    (c) => !c.path.startsWith(CONCERNS_PREFIX),
+  )
+  const concernChanges = finalChanges
+    .filter((c) => c.path.startsWith(CONCERNS_PREFIX))
+    .map(stripConcernPrefix)
+
+  if (stateChanges.length > 0) {
     applyBatch(
-      bridgeChangesToTuples(late.stateChanges, userMetaByPath),
+      stateChanges.map(({ path, value, meta }) => [
+        path,
+        value,
+        meta,
+      ]) as ArrayOfChanges<DATA, META>,
       store.state,
     )
   }
-  if (late.concernChanges.length > 0) {
-    applyConcernChanges(late.concernChanges, store._concerns)
+  if (concernChanges.length > 0) {
+    applyConcernChanges(concernChanges, store._concerns)
   }
 
   const durationMs = performance.now() - t0
@@ -519,9 +479,9 @@ export const processChangesWasm = <
     : null
 
   // Single log call with all pipeline data (no-op when log/devtools is disabled)
-  const allApplied = [...late.stateChanges, ...late.concernChanges]
+  const allApplied = [...stateChanges, ...concernChanges]
   const logData = {
-    initialChanges: changes.toWasm(initialChanges),
+    initialChanges: pipelineChanges,
     trace: unifiedTrace,
     appliedChanges: allApplied,
     stateSnapshot: snapshot(store.state),
@@ -531,8 +491,8 @@ export const processChangesWasm = <
 
   // Record applied changes for debug tracking
   if (trackEntry) {
-    pushDebugChanges(trackEntry.applied, late.stateChanges)
-    pushDebugChanges(trackEntry.appliedConcerns, late.concernChanges)
+    pushDebugChanges(trackEntry.applied, stateChanges)
+    pushDebugChanges(trackEntry.appliedConcerns, concernChanges)
     store._debug!.calls.push(trackEntry)
   }
 }

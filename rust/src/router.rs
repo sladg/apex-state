@@ -563,6 +563,7 @@ impl TopicRouter {
                         kind: c.kind.clone(),
                         lineage: c.lineage.clone(),
                         audit: c.audit.clone(),
+                        ..Default::default()
                     })
                     .collect();
 
@@ -916,6 +917,7 @@ impl TopicRouter {
                         kind: c.kind.clone(),
                         lineage: c.lineage.clone(),
                         audit: c.audit.clone(),
+                        ..Default::default()
                     })
                     .collect();
 
@@ -1001,6 +1003,7 @@ mod tests {
             kind: ChangeKind::Real,
             lineage: Lineage::Input,
             audit: None,
+            ..Default::default()
         }
     }
 

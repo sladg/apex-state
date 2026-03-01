@@ -49,7 +49,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(10)
 
         // Measure: Process single flat field change
-        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -75,6 +77,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
           {
             path: 'l1.l2.l3.l4.l5.l6.l7.l8.l9.l10.l11.l12.l13.l14.l15.value',
             value: 'deep_update',
+            meta: {},
           },
         ]
         pipeline.processChanges(changes)
@@ -97,7 +100,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
 
         // Measure: Update field with large object (100 key-value pairs)
         const largeObj = buildFields(100, 'key')
-        const changes: Change[] = [{ path: 'field_0', value: largeObj }]
+        const changes: Change[] = [
+          { path: 'field_0', value: largeObj, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -130,7 +135,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         })
 
         // Measure: Process change to trigger field
-        const changes: Change[] = [{ path: 'trigger', value: true }]
+        const changes: Change[] = [{ path: 'trigger', value: true, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -175,7 +180,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         })
 
         // Measure: Process change to 'a'
-        const changes: Change[] = [{ path: 'a', value: true }]
+        const changes: Change[] = [{ path: 'a', value: true, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -195,7 +200,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBoolLogicPipeline(100)
 
         // Measure: Process change to trigger
-        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'trigger', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -218,7 +225,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         pipeline.shadowInit({ field: 'value' })
 
         // Measure: Full cycle (create + process + GC)
-        const changes: Change[] = [{ path: 'field', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -238,7 +247,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(1000)
 
         // Measure: Process single change to field_500
-        const changes: Change[] = [{ path: 'field_500', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_500', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -280,7 +291,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(10)
 
         // Measure: Single baseline change
-        const changes: Change[] = [{ path: 'field_0', value: 'baseline' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'baseline', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -303,7 +316,11 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         // Measure: Batch of 10 changes at once
         const changes: Change[] = []
         for (let i = 0; i < 10; i++) {
-          changes.push({ path: i % 2 === 0 ? 'a' : 'b', value: i % 2 === 0 })
+          changes.push({
+            path: i % 2 === 0 ? 'a' : 'b',
+            value: i % 2 === 0,
+            meta: {},
+          })
         }
         pipeline.processChanges(changes)
       },
@@ -324,7 +341,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(10_000)
 
         // Measure: Single change (should still be O(1))
-        const changes: Change[] = [{ path: 'field_5000', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_5000', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -345,7 +364,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         // Isolate: Normalization + shadow update (no effects)
         const pipeline = createBarePipeline(10)
 
-        const changes: Change[] = [{ path: 'field_0', value: 'normalized' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'normalized', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -365,7 +386,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(100)
 
         // Update middle field to approximate shadow update cost
-        const changes: Change[] = [{ path: 'field_50', value: 'shadow_update' }]
+        const changes: Change[] = [
+          { path: 'field_50', value: 'shadow_update', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -387,7 +410,11 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         // Process changes to 10 different paths (measures interning)
         const changes: Change[] = []
         for (let i = 0; i < 10; i++) {
-          changes.push({ path: `field_${i * 100}`, value: `interned_${i}` })
+          changes.push({
+            path: `field_${i * 100}`,
+            value: `interned_${i}`,
+            meta: {},
+          })
         }
         pipeline.processChanges(changes)
       },
@@ -433,7 +460,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         })
 
         // Change source field (triggers graph evaluation)
-        const changes: Change[] = [{ path: 'a', value: false }]
+        const changes: Change[] = [{ path: 'a', value: false, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -453,7 +480,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createMultiPathListenerPipeline(50)
 
         // Process change (routes through topic router)
-        const changes: Change[] = [{ path: 'field_0', value: 'routed' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'routed', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -473,7 +502,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createMultiPathListenerPipeline(100)
 
         // Process change (emphasizes dispatch plan complexity)
-        const changes: Change[] = [{ path: 'field_0', value: 'executed' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'executed', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

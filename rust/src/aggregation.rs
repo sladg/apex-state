@@ -227,6 +227,7 @@ pub(crate) fn process_aggregation_writes(
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
             }
 
@@ -284,6 +285,7 @@ pub(crate) fn process_aggregation_reads(
                         kind: ChangeKind::Real,
                         lineage: Lineage::Input,
                         audit: None,
+                        ..Default::default()
                     });
                 }
                 continue;
@@ -314,6 +316,7 @@ pub(crate) fn process_aggregation_reads(
                         kind: ChangeKind::Real,
                         lineage: Lineage::Input,
                         audit: None,
+                        ..Default::default()
                     });
                 }
                 continue;
@@ -372,6 +375,7 @@ pub(crate) fn process_aggregation_reads(
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 });
             }
         }
@@ -414,6 +418,7 @@ mod tests {
             kind: ChangeKind::Real,
             lineage: Lineage::Input,
             audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);
@@ -439,6 +444,7 @@ mod tests {
             kind: ChangeKind::Real,
             lineage: Lineage::Input,
             audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);
@@ -463,6 +469,7 @@ mod tests {
             kind: ChangeKind::Real,
             lineage: Lineage::Input,
             audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);
@@ -487,6 +494,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             },
             Change {
                 path: "allUsers".to_string(),
@@ -494,6 +502,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             },
             Change {
                 path: "anotherField".to_string(),
@@ -501,6 +510,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             },
         ];
 
@@ -529,6 +539,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             },
             Change {
                 path: "user.email".to_string(),
@@ -536,6 +547,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             },
         ];
 
@@ -836,6 +848,7 @@ mod tests {
             kind: ChangeKind::Real,
             lineage: Lineage::Input,
             audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);

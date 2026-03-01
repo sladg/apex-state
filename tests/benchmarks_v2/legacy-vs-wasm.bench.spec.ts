@@ -100,7 +100,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       'single field change (baseline reference)',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -125,7 +127,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change triggers 10 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced', meta: {} },
+        ]
         syncPipeline10.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -141,7 +145,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change triggers 50 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced', meta: {} },
+        ]
         syncPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -166,7 +172,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change triggers 10 flip pairs',
       () => {
-        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        const changes: Change[] = [{ path: 'bool_0', value: true, meta: {} }]
         flipPipeline10.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -182,7 +188,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change triggers 50 flip pairs',
       () => {
-        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        const changes: Change[] = [{ path: 'bool_0', value: true, meta: {} }]
         flipPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -207,7 +213,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change dispatched to 15 listeners',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listened', meta: {} },
+        ]
         listenerPipeline15.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -223,7 +231,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change dispatched to 50 listeners',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listened', meta: {} },
+        ]
         listenerPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -248,7 +258,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change triggers 20 BoolLogic evaluations',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'trigger', meta: {} },
+        ]
         boolLogicPipeline20.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -264,7 +276,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change triggers 50 BoolLogic evaluations',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'trigger', meta: {} },
+        ]
         boolLogicPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -290,8 +304,8 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
       '2 changes through 10 sync + 10 flip + 10 listeners',
       () => {
         const changes: Change[] = [
-          { path: 'field_0', value: 'synced' },
-          { path: 'bool_0', value: true },
+          { path: 'field_0', value: 'synced', meta: {} },
+          { path: 'bool_0', value: true, meta: {} },
         ]
         combinedPipeline2x10.processChanges(changes)
       },
@@ -309,10 +323,10 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
       '4 changes through sync + flip + listeners + BoolLogic',
       () => {
         const changes: Change[] = [
-          { path: 'field_0', value: 'change1' },
-          { path: 'field_1', value: 'change2' },
-          { path: 'bool_0', value: true },
-          { path: 'bool_1', value: false },
+          { path: 'field_0', value: 'change1', meta: {} },
+          { path: 'field_1', value: 'change2', meta: {} },
+          { path: 'bool_0', value: true, meta: {} },
+          { path: 'bool_1', value: false, meta: {} },
         ]
         combinedPipeline4x.processChanges(changes)
       },
@@ -341,7 +355,11 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
       () => {
         const changes: Change[] = []
         for (let i = 0; i < 10; i++) {
-          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+          changes.push({
+            path: `field_${i % 20}`,
+            value: `batch${i}`,
+            meta: {},
+          })
         }
         pipeline10.processChanges(changes)
       },
@@ -360,7 +378,11 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
       () => {
         const changes: Change[] = []
         for (let i = 0; i < 50; i++) {
-          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+          changes.push({
+            path: `field_${i % 20}`,
+            value: `batch${i}`,
+            meta: {},
+          })
         }
         pipeline50.processChanges(changes)
       },
@@ -379,7 +401,11 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
       () => {
         const changes: Change[] = []
         for (let i = 0; i < 100; i++) {
-          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+          changes.push({
+            path: `field_${i % 20}`,
+            value: `batch${i}`,
+            meta: {},
+          })
         }
         pipeline100.processChanges(changes)
       },
@@ -407,7 +433,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change with 5 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline5.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -423,7 +451,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change with 25 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline25.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -439,7 +469,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change with 50 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -455,7 +487,9 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
     bench(
       '1 change with 100 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline100.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -481,8 +515,8 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
       () => {
         // Trigger: change order_0 currency + confirm order_0
         const changes: Change[] = [
-          { path: 'order_0_currency', value: 'EUR' },
-          { path: 'order_0_confirmed', value: true },
+          { path: 'order_0_currency', value: 'EUR', meta: {} },
+          { path: 'order_0_confirmed', value: true, meta: {} },
         ]
         ecommercePipeline.processChanges(changes)
       },

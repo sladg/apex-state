@@ -42,6 +42,7 @@ export const buildBatch = (count: number): Change[] =>
   Array.from({ length: count }, (_, i) => ({
     path: `field_${i}`,
     value: `batch_${i}`,
+    meta: {},
   }))
 
 /** Build a deeply nested state object (N levels deep). */

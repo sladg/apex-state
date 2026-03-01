@@ -377,6 +377,7 @@ fn resolve_and_clear(
                                 kind: ChangeKind::Real,
                                 lineage: Lineage::Input,
                                 audit: None,
+                                ..Default::default()
                             });
                         }
                     }
@@ -394,6 +395,7 @@ fn resolve_and_clear(
                             kind: ChangeKind::Real,
                             lineage: Lineage::Input,
                             audit: None,
+                            ..Default::default()
                         });
                     }
                 }
@@ -853,6 +855,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -885,6 +888,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         assert!(result.changes.is_empty());
@@ -908,6 +912,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         assert_eq!(result.changes.len(), 1);
@@ -950,6 +955,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -996,6 +1002,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1039,6 +1046,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         // BoolLogic concern should be in output
@@ -1087,6 +1095,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1119,6 +1128,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1157,6 +1167,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1200,6 +1211,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1230,6 +1242,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         assert_eq!(result.changes.len(), 1);
@@ -1257,6 +1270,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1272,6 +1286,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths2: Vec<&str> = result2.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1301,6 +1316,7 @@ mod tests {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 },
                 Change {
                     path: "b".to_owned(),
@@ -1308,6 +1324,7 @@ mod tests {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 },
             ])
             .unwrap();
@@ -1343,6 +1360,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let errors_change = result.changes.iter().find(|c| c.path == "form.errors");
@@ -1384,6 +1402,7 @@ mod tests {
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1419,6 +1438,7 @@ mod tests {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 },
                 Change {
                     path: "form.fields.name.value".to_owned(),
@@ -1426,6 +1446,7 @@ mod tests {
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
                     audit: None,
+                    ..Default::default()
                 },
             ])
             .unwrap();

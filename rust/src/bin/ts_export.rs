@@ -3,11 +3,15 @@
 //! Run via: `npm run wasm:generate-types`
 //! Only compiles with `--features ts-export` (never included in WASM binary).
 
+#[allow(unused_imports)]
 use ts_rs::TS;
 
 use apex_state_wasm::aggregation::Aggregation;
 use apex_state_wasm::bool_logic::BoolLogicNode;
-use apex_state_wasm::change::{Change, PipelineTrace, StageTrace};
+use apex_state_wasm::change::{
+    Change, ChangeAudit, ChangeContext, ChangeKind, Lineage, PipelineTrace, ProducedChange,
+    SkipReason, SkippedChange, Stage, StageTrace,
+};
 use apex_state_wasm::computation::{Computation, ComputationOp};
 use apex_state_wasm::pipeline::{
     BoolLogicRegistration, ConcernsRegistration, ConcernsResult, FinalizeResult, GraphSnapshot,
@@ -51,7 +55,17 @@ macro_rules! append_type {
 }
 
 fn collect_all(out: &mut String) {
-    // change.rs — public types (internal helpers inlined via #[ts(inline)])
+    // change.rs — primitive enums (referenced by Change, StageTrace, etc.)
+    append_type!(out, Stage);
+    append_type!(out, ChangeKind);
+    append_type!(out, ChangeContext);
+    append_type!(out, Lineage);
+    append_type!(out, SkipReason);
+    append_type!(out, SkippedChange);
+    append_type!(out, ProducedChange);
+    append_type!(out, ChangeAudit);
+
+    // change.rs — composite types
     append_type!(out, Change);
     append_type!(out, StageTrace); // kept: self-recursive via followup
     append_type!(out, PipelineTrace);

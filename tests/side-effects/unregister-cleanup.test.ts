@@ -43,7 +43,9 @@ describe('unregisterSideEffects: bidirectional sync pairs removed', () => {
     })
 
     // Verify sync is active: changing a should propagate to b
-    const before = pipeline.processChanges([{ path: 'a', value: 'world' }])
+    const before = pipeline.processChanges([
+      { path: 'a', value: 'world', meta: {} },
+    ])
     const bChange = findChange(before.listener_changes, 'b')
     expect(bChange).toBeDefined()
     expect(bChange?.value).toBe('world')
@@ -53,7 +55,7 @@ describe('unregisterSideEffects: bidirectional sync pairs removed', () => {
 
     // Verify sync is gone: changing a should NOT propagate to b
     const after = pipeline.processChanges([
-      { path: 'a', value: 'changed-again' },
+      { path: 'a', value: 'changed-again', meta: {} },
     ])
     expect(findChange(after.listener_changes, 'b')).toBeUndefined()
     expect(getPaths(after.listener_changes)).not.toContain('b')
@@ -72,10 +74,14 @@ describe('unregisterSideEffects: bidirectional sync pairs removed', () => {
     pipeline.unregisterSideEffects('bidir-reg')
 
     // Neither direction should sync anymore
-    const result1 = pipeline.processChanges([{ path: 'a', value: 'new-a' }])
+    const result1 = pipeline.processChanges([
+      { path: 'a', value: 'new-a', meta: {} },
+    ])
     expect(findChange(result1.listener_changes, 'b')).toBeUndefined()
 
-    const result2 = pipeline.processChanges([{ path: 'b', value: 'new-b' }])
+    const result2 = pipeline.processChanges([
+      { path: 'b', value: 'new-b', meta: {} },
+    ])
     expect(findChange(result2.listener_changes, 'a')).toBeUndefined()
   })
 })
@@ -99,14 +105,18 @@ describe('unregisterSideEffects: directed sync pairs removed', () => {
     })
 
     // Verify directed sync is active: changing src should propagate to tgt
-    const before = pipeline.processChanges([{ path: 'src', value: 'world' }])
+    const before = pipeline.processChanges([
+      { path: 'src', value: 'world', meta: {} },
+    ])
     expect(findChange(before.listener_changes, 'tgt')?.value).toBe('world')
 
     // Unregister the directed sync registration
     pipeline.unregisterSideEffects('directed-reg')
 
     // Verify directed sync is gone
-    const after = pipeline.processChanges([{ path: 'src', value: 'changed' }])
+    const after = pipeline.processChanges([
+      { path: 'src', value: 'changed', meta: {} },
+    ])
     expect(findChange(after.listener_changes, 'tgt')).toBeUndefined()
   })
 
@@ -149,14 +159,18 @@ describe('unregisterSideEffects: flip pairs removed', () => {
     })
 
     // Verify flip is active: setting on=false should produce off=true
-    const before = pipeline.processChanges([{ path: 'on', value: false }])
+    const before = pipeline.processChanges([
+      { path: 'on', value: false, meta: {} },
+    ])
     expect(findChange(before.listener_changes, 'off')?.value).toBe(true)
 
     // Unregister the flip registration
     pipeline.unregisterSideEffects('flip-reg')
 
     // Verify flip is gone: setting on=true should NOT produce off=false
-    const after = pipeline.processChanges([{ path: 'on', value: true }])
+    const after = pipeline.processChanges([
+      { path: 'on', value: true, meta: {} },
+    ])
     expect(findChange(after.listener_changes, 'off')).toBeUndefined()
   })
 })
@@ -184,7 +198,9 @@ describe('unregisterSideEffects: aggregations removed', () => {
     })
 
     // Verify aggregation is active: changing price1 triggers re-aggregation
-    const before = pipeline.processChanges([{ path: 'price1', value: 200 }])
+    const before = pipeline.processChanges([
+      { path: 'price1', value: 200, meta: {} },
+    ])
     // price1=200, price2=100 → not all equal → total=undefined (or some sentinel)
     // The key check: total IS recalculated (appears in changes)
     expect(getPaths(before.listener_changes)).toContain('total')
@@ -193,10 +209,14 @@ describe('unregisterSideEffects: aggregations removed', () => {
     pipeline.unregisterSideEffects('agg-reg')
 
     // Verify aggregation is gone: changing prices no longer affects total
-    const after = pipeline.processChanges([{ path: 'price1', value: 150 }])
+    const after = pipeline.processChanges([
+      { path: 'price1', value: 150, meta: {} },
+    ])
     expect(findChange(after.listener_changes, 'total')).toBeUndefined()
 
-    const after2 = pipeline.processChanges([{ path: 'price2', value: 150 }])
+    const after2 = pipeline.processChanges([
+      { path: 'price2', value: 150, meta: {} },
+    ])
     expect(findChange(after2.listener_changes, 'total')).toBeUndefined()
   })
 })
@@ -229,21 +249,29 @@ describe('unregisterSideEffects: partial unregistration — other rules still ac
     })
 
     // Verify both rules work before unregistration
-    const syncBefore = pipeline.processChanges([{ path: 'a', value: 99 }])
+    const syncBefore = pipeline.processChanges([
+      { path: 'a', value: 99, meta: {} },
+    ])
     expect(findChange(syncBefore.listener_changes, 'b')?.value).toBe(99)
 
-    const flipBefore = pipeline.processChanges([{ path: 'x', value: false }])
+    const flipBefore = pipeline.processChanges([
+      { path: 'x', value: false, meta: {} },
+    ])
     expect(findChange(flipBefore.listener_changes, 'y')?.value).toBe(true)
 
     // Unregister only reg-A (sync)
     pipeline.unregisterSideEffects('reg-A')
 
     // Sync should be gone
-    const syncAfter = pipeline.processChanges([{ path: 'a', value: 42 }])
+    const syncAfter = pipeline.processChanges([
+      { path: 'a', value: 42, meta: {} },
+    ])
     expect(findChange(syncAfter.listener_changes, 'b')).toBeUndefined()
 
     // Flip should still work
-    const flipAfter = pipeline.processChanges([{ path: 'x', value: true }])
+    const flipAfter = pipeline.processChanges([
+      { path: 'x', value: true, meta: {} },
+    ])
     expect(findChange(flipAfter.listener_changes, 'y')?.value).toBe(false)
   })
 
@@ -270,14 +298,14 @@ describe('unregisterSideEffects: partial unregistration — other rules still ac
     pipeline.unregisterSideEffects('reg-multi')
 
     // a↔b and c↔d should be gone
-    const r1 = pipeline.processChanges([{ path: 'a', value: 1 }])
+    const r1 = pipeline.processChanges([{ path: 'a', value: 1, meta: {} }])
     expect(findChange(r1.listener_changes, 'b')).toBeUndefined()
 
-    const r2 = pipeline.processChanges([{ path: 'c', value: 1 }])
+    const r2 = pipeline.processChanges([{ path: 'c', value: 1, meta: {} }])
     expect(findChange(r2.listener_changes, 'd')).toBeUndefined()
 
     // e↔f should still work
-    const r3 = pipeline.processChanges([{ path: 'e', value: 1 }])
+    const r3 = pipeline.processChanges([{ path: 'e', value: 1, meta: {} }])
     expect(findChange(r3.listener_changes, 'f')?.value).toBe(1)
   })
 })

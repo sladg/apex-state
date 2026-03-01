@@ -45,18 +45,6 @@ export interface UnifiedPipelineTrace {
 // Logger types
 // ---------------------------------------------------------------------------
 
-/** @deprecated Use ListenerDispatchTrace instead. Kept for backward compatibility. */
-export interface ListenerLogEntry {
-  subscriberId: number
-  fnName: string
-  scope: string
-  input: [string, unknown, unknown][]
-  output: Change[]
-  currentState: unknown
-  durationMs: number
-  slow: boolean
-}
-
 export interface PipelineLogData {
   initialChanges: Change[]
   trace: UnifiedPipelineTrace | null

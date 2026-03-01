@@ -100,7 +100,9 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // Process first change: triggers sync
     // Shadow state updates internally, but let's verify valtio gets it
-    let result = pipeline.processChanges([{ path: 'dummy', value: 'trigger' }])
+    let result = pipeline.processChanges([
+      { path: 'dummy', value: 'trigger', meta: {} },
+    ])
     let changes = getStateChanges(result)
 
     // After first registration + processing, dealLevel should be synced
@@ -122,6 +124,7 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
       {
         path: 'g.123.p.abc.data.optionsCommon.base.ccyPair',
         value: undefined, // Explicitly undefined
+        meta: {},
       },
     ])
     changes = getStateChanges(result)
@@ -141,7 +144,11 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // Process a change to trigger the sync
     result = pipeline.processChanges([
-      { path: 'g.123.p.abc.data.optionsCommon.base.ccyPair', value: 'EUR' },
+      {
+        path: 'g.123.p.abc.data.optionsCommon.base.ccyPair',
+        value: 'EUR',
+        meta: {},
+      },
     ])
     changes = getStateChanges(result)
 
@@ -188,7 +195,7 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // First change (this updates shadow state)
     let result = pipeline.processChanges([
-      { path: 'settings.theme', value: 'light' },
+      { path: 'settings.theme', value: 'light', meta: {} },
     ])
     let changes = getStateChanges(result)
 
@@ -203,7 +210,7 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // Second change
     result = pipeline.processChanges([
-      { path: 'settings.theme', value: 'auto' },
+      { path: 'settings.theme', value: 'auto', meta: {} },
     ])
     changes = getStateChanges(result)
 
@@ -239,7 +246,9 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
     })
 
     // Trigger sync
-    let result = pipeline.processChanges([{ path: 'source.value', value: 'B' }])
+    let result = pipeline.processChanges([
+      { path: 'source.value', value: 'B', meta: {} },
+    ])
     let changes = getStateChanges(result)
     let targetChange = findChange(changes, 'target.value')
     expect(targetChange?.value).toBe('B')
@@ -252,7 +261,7 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // Manually change target (break the sync)
     result = pipeline.processChanges([
-      { path: 'target.value', value: 'BROKEN' },
+      { path: 'target.value', value: 'BROKEN', meta: {} },
     ])
 
     // Re-register the sync
@@ -262,7 +271,9 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
     })
 
     // Change source again
-    result = pipeline.processChanges([{ path: 'source.value', value: 'C' }])
+    result = pipeline.processChanges([
+      { path: 'source.value', value: 'C', meta: {} },
+    ])
     changes = getStateChanges(result)
 
     // After re-registration, sync should work again
@@ -318,7 +329,7 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // Trigger sync by changing shared values
     const result = pipeline.processChanges([
-      { path: '$shared.selectedCcy', value: 'GBP' },
+      { path: '$shared.selectedCcy', value: 'GBP', meta: {} },
     ])
     const changes = getStateChanges(result)
 
@@ -372,7 +383,7 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // Dummy change to trigger evaluation
     let result = pipeline.processChanges([
-      { path: 'shared.currency', value: 'USD' },
+      { path: 'shared.currency', value: 'USD', meta: {} },
     ])
     // At this point, shadow state has product.syncedCurrency = 'USD'
     // but valtio state_changes may not include it yet
@@ -392,7 +403,7 @@ describe('ReactStrictMode Shadow State Desync Bug', () => {
 
     // Process the same change again
     result = pipeline.processChanges([
-      { path: 'shared.currency', value: 'USD' },
+      { path: 'shared.currency', value: 'USD', meta: {} },
     ])
     const changes = getStateChanges(result)
 

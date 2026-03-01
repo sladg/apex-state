@@ -7,6 +7,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { Change } from '../../src/types/changes'
 import { pairs } from '../../src/types/pairs'
 import type {
   ListenerDispatchTrace,
@@ -119,7 +120,7 @@ const findStage = (
 const makePipelineData = (
   overrides: Partial<PipelineLogData> = {},
 ): PipelineLogData => ({
-  initialChanges: [{ path: 'user.name', value: 'Alice' }],
+  initialChanges: [{ path: 'user.name', value: 'Alice', meta: {} }],
   trace: null,
   ...overrides,
 })
@@ -301,7 +302,7 @@ describe('buildConsoleSummary', () => {
           fnName: 'onNameChange',
           scope: 'user',
           input: [['user.name', 'Alice', 'Bob']],
-          output: [{ path: 'user.greeting', value: 'Hello Bob' }],
+          output: [{ path: 'user.greeting', value: 'Hello Bob', meta: {} }],
           durationMs: 0.8,
         }),
       ])
@@ -759,11 +760,11 @@ describe('createLogger — console output', () => {
       logger.logPipeline(
         makePipelineData({
           initialChanges: [
-            { path: 'a', value: 1 },
-            { path: 'b', value: 2 },
-            { path: 'c', value: 3 },
-            { path: 'd', value: 4 },
-            { path: 'e', value: 5 },
+            { path: 'a', value: 1, meta: {} },
+            { path: 'b', value: 2, meta: {} },
+            { path: 'c', value: 3, meta: {} },
+            { path: 'd', value: 4, meta: {} },
+            { path: 'e', value: 5, meta: {} },
           ],
         }),
       )
@@ -934,7 +935,7 @@ describe('createLogger — console output', () => {
           subscriberId: 1,
           fnName: 'handler',
           input: [['name', 'Bob', {}]],
-          output: [{ path: 'greeting', value: 'Hello' }],
+          output: [{ path: 'greeting', value: 'Hello', meta: {} }],
         }),
       ])
 
@@ -1153,10 +1154,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
   })
 
   /** Helper: processChanges + pipelineFinalize, returning trace from finalize. */
-  const processAndFinalize = (
-    p: WasmPipeline,
-    changes: { path: string; value: unknown }[],
-  ) => {
+  const processAndFinalize = (p: WasmPipeline, changes: Change[]) => {
     p.processChanges(changes)
     return p.pipelineFinalize([])
   }
@@ -1167,7 +1165,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline.shadowInit({ user: { name: 'Alice', age: 25 } })
 
     const result = processAndFinalize(pipeline, [
-      { path: 'user.name', value: 'Bob' },
+      { path: 'user.name', value: 'Bob', meta: {} },
     ])
 
     expect(result.trace).not.toBeNull()
@@ -1180,7 +1178,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
     const result = processAndFinalize(pipeline, [
-      { path: 'user.name', value: 'Bob' },
+      { path: 'user.name', value: 'Bob', meta: {} },
     ])
 
     expect(result.trace).toBeFalsy()
@@ -1192,7 +1190,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
     const result = processAndFinalize(pipeline, [
-      { path: 'user.name', value: 'Bob' },
+      { path: 'user.name', value: 'Bob', meta: {} },
     ])
     const stageNames = result.trace!.stages.map((s: Wasm.StageTrace) => s.stage)
 
@@ -1208,7 +1206,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline.shadowInit({ user: { name: 'Alice' } })
 
     const result = processAndFinalize(pipeline, [
-      { path: 'user.name', value: 'Bob' },
+      { path: 'user.name', value: 'Bob', meta: {} },
     ])
     const inputStage = result.trace!.stages.find(
       (s: Wasm.StageTrace) => s.stage === 'input',
@@ -1226,8 +1224,8 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     // When all changes are redundant, processChanges returns early with no trace
     // So we test with a mix: one real change + one redundant
     const result = processAndFinalize(pipeline, [
-      { path: 'user.name', value: 'Alice' }, // redundant
-      { path: 'user.age', value: 30 }, // real change
+      { path: 'user.name', value: 'Alice', meta: {} }, // redundant
+      { path: 'user.age', value: 30, meta: {} }, // real change
     ])
 
     expect(result.trace).not.toBeNull()
@@ -1251,7 +1249,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     })
 
     const result = processAndFinalize(pipeline, [
-      { path: 'source', value: 'world' },
+      { path: 'source', value: 'world', meta: {} },
     ])
 
     expect(result.trace).not.toBeNull()
@@ -1271,8 +1269,8 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline.shadowInit({ user: { name: 'Alice', age: 25 } })
 
     const result = processAndFinalize(pipeline, [
-      { path: 'user.name', value: 'Alice' }, // redundant
-      { path: 'user.age', value: 30 }, // real change
+      { path: 'user.name', value: 'Alice', meta: {} }, // redundant
+      { path: 'user.age', value: 30, meta: {} }, // real change
     ])
 
     expect(result.trace).not.toBeNull()
@@ -1298,7 +1296,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     })
 
     const result = processAndFinalize(pipeline, [
-      { path: 'source', value: 'world' },
+      { path: 'source', value: 'world', meta: {} },
     ])
 
     // Wrap WASM trace in UnifiedPipelineTrace
@@ -1312,7 +1310,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     }
 
     const logData: PipelineLogData = {
-      initialChanges: [{ path: 'source', value: 'world' }],
+      initialChanges: [{ path: 'source', value: 'world', meta: {} }],
       trace,
     }
     const summary = buildConsoleSummary(logData)
@@ -1382,7 +1380,9 @@ describe('E2E: WASM pipeline trace → logger display', () => {
     pipeline = createWasmPipeline({ debug: true })
     pipeline.shadowInit({ x: 1, y: 2 })
 
-    const result = processAndFinalize(pipeline, [{ path: 'x', value: 10 }])
+    const result = processAndFinalize(pipeline, [
+      { path: 'x', value: 10, meta: {} },
+    ])
 
     const spyGC = vi.spyOn(console, 'groupCollapsed').mockImplementation(noop)
     const spyL = vi.spyOn(console, 'log').mockImplementation(noop)
@@ -1400,7 +1400,7 @@ describe('E2E: WASM pipeline trace → logger display', () => {
 
     const logger = createLogger({ log: true })
     logger.logPipeline({
-      initialChanges: [{ path: 'x', value: 10 }],
+      initialChanges: [{ path: 'x', value: 10, meta: {} }],
       trace,
     })
 

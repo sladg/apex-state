@@ -77,7 +77,7 @@ describe('named operator format (baseline)', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -94,12 +94,16 @@ describe('named operator format (baseline)', () => {
       ],
     })
 
-    pipeline.processChanges([{ path: 'user.role', value: 'editor' }])
+    pipeline.processChanges([{ path: 'user.role', value: 'editor', meta: {} }])
     const { state_changes } = pipeline.pipelineFinalize([])
 
     expect(state_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '_concerns.result', value: false }),
+        expect.objectContaining({
+          path: '_concerns.result',
+          value: false,
+          meta: {},
+        }),
       ]),
     )
   })
@@ -124,7 +128,7 @@ describe('shorthand [path, value] format', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -143,7 +147,7 @@ describe('shorthand [path, value] format', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: false }),
+        expect.objectContaining({ path: 'result', value: false, meta: {} }),
       ]),
     )
   })
@@ -160,12 +164,16 @@ describe('shorthand [path, value] format', () => {
       ],
     })
 
-    pipeline.processChanges([{ path: 'user.role', value: 'editor' }])
+    pipeline.processChanges([{ path: 'user.role', value: 'editor', meta: {} }])
     const { state_changes } = pipeline.pipelineFinalize([])
 
     expect(state_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '_concerns.result', value: false }),
+        expect.objectContaining({
+          path: '_concerns.result',
+          value: false,
+          meta: {},
+        }),
       ]),
     )
   })
@@ -184,7 +192,7 @@ describe('shorthand [path, value] format', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -203,7 +211,7 @@ describe('shorthand [path, value] format', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -222,7 +230,7 @@ describe('shorthand [path, value] format', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -265,7 +273,7 @@ describe('shorthand parity with named IS_EQUAL', () => {
     pipeline = makePipeline()
 
     const expected = expect.arrayContaining([
-      expect.objectContaining({ path: 'result', value: true }),
+      expect.objectContaining({ path: 'result', value: true, meta: {} }),
     ])
     expect(namedChanges).toEqual(expected)
     expect(shorthandChanges).toEqual(expected)
@@ -278,14 +286,18 @@ describe('shorthand parity with named IS_EQUAL', () => {
         registration_id: 'test',
         bool_logics: [{ output_path: 'result', tree_json: treeJson }],
       })
-      p.processChanges([{ path: 'user.role', value: 'editor' }])
+      p.processChanges([{ path: 'user.role', value: 'editor', meta: {} }])
       const { state_changes } = p.pipelineFinalize([])
       p.destroy()
       return state_changes
     }
 
     const expected = expect.arrayContaining([
-      expect.objectContaining({ path: '_concerns.result', value: false }),
+      expect.objectContaining({
+        path: '_concerns.result',
+        value: false,
+        meta: {},
+      }),
     ])
 
     expect(
@@ -324,7 +336,7 @@ describe('shorthand as children of compound operators', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -348,7 +360,7 @@ describe('shorthand as children of compound operators', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: false }),
+        expect.objectContaining({ path: 'result', value: false, meta: {} }),
       ]),
     )
   })
@@ -372,7 +384,7 @@ describe('shorthand as children of compound operators', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -393,7 +405,7 @@ describe('shorthand as children of compound operators', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -421,7 +433,7 @@ describe('CONTAINS_ANY', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -442,7 +454,7 @@ describe('CONTAINS_ANY', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: false }),
+        expect.objectContaining({ path: 'result', value: false, meta: {} }),
       ]),
     )
   })
@@ -462,12 +474,18 @@ describe('CONTAINS_ANY', () => {
     })
 
     // Add 'vip' to tags — now matches
-    pipeline.processChanges([{ path: 'user.tags', value: ['premium', 'vip'] }])
+    pipeline.processChanges([
+      { path: 'user.tags', value: ['premium', 'vip'], meta: {} },
+    ])
     const { state_changes } = pipeline.pipelineFinalize([])
 
     expect(state_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '_concerns.result', value: true }),
+        expect.objectContaining({
+          path: '_concerns.result',
+          value: true,
+          meta: {},
+        }),
       ]),
     )
   })
@@ -495,7 +513,7 @@ describe('CONTAINS_ALL', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: false }),
+        expect.objectContaining({ path: 'result', value: false, meta: {} }),
       ]),
     )
   })
@@ -517,7 +535,7 @@ describe('CONTAINS_ALL', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -537,12 +555,18 @@ describe('CONTAINS_ALL', () => {
     })
 
     // Add 'vip' — now all candidates are present
-    pipeline.processChanges([{ path: 'user.tags', value: ['premium', 'vip'] }])
+    pipeline.processChanges([
+      { path: 'user.tags', value: ['premium', 'vip'], meta: {} },
+    ])
     const { state_changes } = pipeline.pipelineFinalize([])
 
     expect(state_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '_concerns.result', value: true }),
+        expect.objectContaining({
+          path: '_concerns.result',
+          value: true,
+          meta: {},
+        }),
       ]),
     )
   })
@@ -582,7 +606,7 @@ describe('complex expression parity', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -616,7 +640,7 @@ describe('complex expression parity', () => {
 
     expect(bool_logic_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'result', value: true }),
+        expect.objectContaining({ path: 'result', value: true, meta: {} }),
       ]),
     )
   })
@@ -645,12 +669,16 @@ describe('complex expression parity', () => {
     })
 
     // Flip role to something outside the OR — expression should become false
-    pipeline.processChanges([{ path: 'user.role', value: 'viewer' }])
+    pipeline.processChanges([{ path: 'user.role', value: 'viewer', meta: {} }])
     const { state_changes } = pipeline.pipelineFinalize([])
 
     expect(state_changes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '_concerns.result', value: false }),
+        expect.objectContaining({
+          path: '_concerns.result',
+          value: false,
+          meta: {},
+        }),
       ]),
     )
   })
