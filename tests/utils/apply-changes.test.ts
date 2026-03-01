@@ -131,6 +131,39 @@ describe('applyChangesToObject', () => {
     expect(result.items).toEqual([1, 2, 3])
   })
 
+  // ── Parent-path replacement (replaces entire subtree, no merge) ─────────
+
+  it('should replace entire subtree when change targets a parent path', () => {
+    // Setting g.123 = { p: { xyz: { data: 'new' } } } should replace the whole
+    // g.123 node — g.123.p.abc must NOT survive in the result.
+    const obj = {
+      g: {
+        '123': {
+          p: {
+            abc: { data: 'old-abc' },
+            keep: 'should-be-gone',
+            xyz: undefined as unknown as { data: string },
+          },
+        },
+      },
+    }
+    const changes: ArrayOfChanges<typeof obj> = [
+      ['g.123', { p: { xyz: { data: 'new-xyz' } } as never }, {}],
+    ]
+
+    const result = applyChangesToObject(obj, changes)
+
+    // New key is present
+    expect(result.g['123'].p['xyz']).toEqual({
+      data: 'new-xyz',
+    })
+    // Old sibling key is gone — full replacement, not a merge
+    expect(result.g['123'].p['abc']).toBeUndefined()
+    expect(result.g['123'].p['keep']).toBeUndefined()
+    // Original is unchanged
+    expect(obj.g['123'].p.abc.data).toBe('old-abc')
+  })
+
   it('should work when a nested object is a Proxy', () => {
     const obj = {
       user: new Proxy({ name: 'Alice', age: 30 }, {}),

@@ -1,4 +1,4 @@
-use crate::pipeline::UNDEFINED_SENTINEL;
+use crate::change::UNDEFINED_SENTINEL;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -69,6 +69,7 @@ impl ValueRepr {
 ///
 /// Supports deep path traversal, partial updates, subtree replacement,
 /// and affected path calculation.
+#[derive(Clone)]
 pub(crate) struct ShadowState {
     root: ValueRepr,
 }
@@ -81,17 +82,10 @@ impl ShadowState {
     }
 
     /// Initialize shadow state from a JSON string.
-    #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn init(&mut self, state_json: &str) -> Result<(), String> {
         let json: serde_json::Value =
             serde_json::from_str(state_json).map_err(|e| format!("JSON parse error: {}", e))?;
         self.root = ValueRepr::from(json);
-        Ok(())
-    }
-
-    /// Initialize shadow state from a pre-parsed serde_json::Value (no string intermediary).
-    pub(crate) fn init_value(&mut self, value: serde_json::Value) -> Result<(), String> {
-        self.root = ValueRepr::from(value);
         Ok(())
     }
 
@@ -262,7 +256,10 @@ impl ShadowState {
                 *node = ValueRepr::Object(map);
                 Ok(())
             }
-            _ => Err(format!("Cannot traverse through primitive at '{}'", key)),
+            _ => Err(format!(
+                "Cannot traverse through primitive at '{}' (value: {:?})",
+                key, node
+            )),
         }
     }
 
@@ -558,14 +555,14 @@ mod tests {
 
     #[test]
     fn set_through_undefined_sentinel_promotes_to_object() {
-        // notionalCcy was set to "__APEX_UNDEFINED__" (the JS undefined sentinel)
-        // A later change sets notionalCcy.value = "USD" — should promote, not error
-        let mut state = make_state(r#"{"notionalCcy": "__APEX_UNDEFINED__"}"#);
-        state.set("notionalCcy.value", "\"USD\"").unwrap();
-        let val = state.get("notionalCcy.value").unwrap();
-        assert_eq!(val.to_json_value(), serde_json::json!("USD"));
-        // notionalCcy is now an object
-        let keys = state.get_object_keys("notionalCcy").unwrap();
+        // shippingMethod was set to "__APEX_UNDEFINED__" (the JS undefined sentinel)
+        // A later change sets shippingMethod.value = "express" — should promote, not error
+        let mut state = make_state(r#"{"shippingMethod": "__APEX_UNDEFINED__"}"#);
+        state.set("shippingMethod.value", "\"express\"").unwrap();
+        let val = state.get("shippingMethod.value").unwrap();
+        assert_eq!(val.to_json_value(), serde_json::json!("express"));
+        // shippingMethod is now an object
+        let keys = state.get_object_keys("shippingMethod").unwrap();
         assert_eq!(keys, vec!["value"]);
     }
 

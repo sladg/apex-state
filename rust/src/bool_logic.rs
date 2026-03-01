@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use ts_rs::TS;
+
 // ---------------------------------------------------------------------------
 // BoolLogicNode
 // ---------------------------------------------------------------------------
@@ -26,7 +28,8 @@ use std::collections::{HashMap, HashSet};
 /// Accepts two JSON formats (see module-level docs for details).
 #[derive(Serialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub(crate) enum BoolLogicNode {
+#[derive(TS)]
+pub enum BoolLogicNode {
     IsEqual(String, Value),
     Exists(String),
     IsEmpty(String),
@@ -308,6 +311,8 @@ fn value_repr_to_json(value: &ValueRepr) -> Value {
 pub(crate) struct BoolLogicMetadata {
     pub output_path: String,
     pub tree: BoolLogicNode,
+    pub anchor_path_id: Option<u32>,
+    pub registration_id: Option<String>,
 }
 
 /// Registry of BoolLogic expressions keyed by sequential u32 IDs.
@@ -334,6 +339,8 @@ impl BoolLogicRegistry {
         tree: BoolLogicNode,
         intern: &mut InternTable,
         rev_index: &mut ReverseDependencyIndex,
+        anchor_path_id: Option<u32>,
+        registration_id: Option<String>,
     ) -> u32 {
         let logic_id = self.next_id;
         self.next_id += 1;
@@ -350,8 +357,15 @@ impl BoolLogicRegistry {
         rev_index.add(logic_id, &interned_ids);
 
         // Store metadata
-        self.logics
-            .insert(logic_id, BoolLogicMetadata { output_path, tree });
+        self.logics.insert(
+            logic_id,
+            BoolLogicMetadata {
+                output_path,
+                tree,
+                anchor_path_id,
+                registration_id,
+            },
+        );
 
         logic_id
     }
@@ -372,6 +386,23 @@ impl BoolLogicRegistry {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.logics.len()
+    }
+
+    /// Dump all registered entries as (id, output_path, tree) triples (debug only).
+    pub(crate) fn dump_infos(&self) -> Vec<(u32, String, BoolLogicNode)> {
+        self.logics
+            .iter()
+            .map(|(&id, meta)| (id, meta.output_path.clone(), meta.tree.clone()))
+            .collect()
+    }
+
+    /// Return IDs of all entries with a matching anchor_path_id.
+    pub(crate) fn ids_for_anchor(&self, anchor_id: u32) -> Vec<u32> {
+        self.logics
+            .iter()
+            .filter(|(_, meta)| meta.anchor_path_id == Some(anchor_id))
+            .map(|(&id, _)| id)
+            .collect()
     }
 }
 
@@ -1198,6 +1229,8 @@ mod tests {
             tree,
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
 
         assert_eq!(id, 0);
@@ -1218,18 +1251,24 @@ mod tests {
             BoolLogicNode::Exists("a".into()),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
         let id1 = registry.register(
             "out1".into(),
             BoolLogicNode::Exists("b".into()),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
         let id2 = registry.register(
             "out2".into(),
             BoolLogicNode::Exists("c".into()),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
 
         assert_eq!(id0, 0);
@@ -1249,6 +1288,8 @@ mod tests {
             BoolLogicNode::Exists("a.b".into()),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
         assert_eq!(registry.len(), 1);
 
@@ -1264,7 +1305,7 @@ mod tests {
         let mut rev = ReverseDependencyIndex::new();
 
         let tree = BoolLogicNode::IsEqual("user.role".into(), json!("admin"));
-        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None, None);
 
         let path_id = intern.intern("user.role");
         let affected = rev.affected_by_path(path_id);
@@ -1282,7 +1323,7 @@ mod tests {
             BoolLogicNode::Exists("user.email".into()),
             BoolLogicNode::Gt("user.age".into(), 18.0),
         ]);
-        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None, None);
 
         // All three paths should map to the same logic_id
         for path in &["user.role", "user.email", "user.age"] {
@@ -1303,12 +1344,16 @@ mod tests {
             BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
         let id1 = registry.register(
             "out1".into(),
             BoolLogicNode::In("user.role".into(), vec![json!("editor")]),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
 
         let path_id = intern.intern("user.role");
@@ -1328,12 +1373,16 @@ mod tests {
             BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
         let id1 = registry.register(
             "out1".into(),
             BoolLogicNode::Exists("user.role".into()),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
 
         let path_id = intern.intern("user.role");
@@ -1363,6 +1412,8 @@ mod tests {
             BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
             &mut intern,
             &mut rev,
+            None,
+            None,
         );
 
         let unrelated_pid = intern.intern("document.title");
@@ -1382,7 +1433,7 @@ mod tests {
             ]),
             BoolLogicNode::Not(Box::new(BoolLogicNode::IsEmpty("user.bio".into()))),
         ]);
-        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev);
+        let logic_id = registry.register("out".into(), tree, &mut intern, &mut rev, None, None);
 
         // Three distinct paths
         for path in &["stats.views", "user.premium", "user.bio"] {

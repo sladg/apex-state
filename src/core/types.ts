@@ -8,6 +8,7 @@
 import type { ReactNode } from 'react'
 
 import type { ConcernType } from '../concerns/types'
+import type { DevToolsNotifier } from '../store/devtools'
 import type {
   ArrayOfChanges,
   DeepKey,
@@ -15,27 +16,21 @@ import type {
   DefaultDepth,
   GenericMeta,
 } from '../types'
-import type { DevToolsRef, PipelineObserver } from '../utils/debug-log'
-import type { Timing } from '../utils/timing'
+import type { ApexLogger } from '../utils/log'
 import type { WasmPipeline } from '../wasm/bridge'
-import type { FlipGraph, SyncGraph } from './graph-types'
 
 /**
  * Debug configuration for development tooling
  */
 export interface DebugConfig {
-  /** Enable timing measurement for concerns and listeners */
+  /** Enable console logging for pipeline runs and registrations */
+  log?: boolean
+  /** Enable timing warnings for slow listeners */
   timing?: boolean
-  /** Threshold in milliseconds for slow operation warnings (default: 5ms) */
+  /** Threshold in milliseconds for slow listener warnings (default: 5ms) */
   timingThreshold?: number
   /** Enable tracking of processChanges calls and applied changes for testing/debugging */
   track?: boolean
-  /** Log pipeline phases, state changes, sync/flip expansions */
-  logPipeline?: boolean
-  /** Log listener dispatch inputs and outputs */
-  logListeners?: boolean
-  /** Log concern evaluations and validator runs */
-  logConcerns?: boolean
   /** Connect to Redux DevTools Extension for state inspection */
   devtools?: boolean
 }
@@ -74,8 +69,6 @@ export interface StoreConfig {
   maxIterations?: number
   /** Debug configuration for development tooling */
   debug?: DebugConfig
-  /** Use legacy TypeScript implementation instead of WASM (default: false) */
-  useLegacyImplementation?: boolean
 }
 
 export interface ProviderProps<DATA extends object> {
@@ -154,13 +147,17 @@ export type OnStateListener<
  * }
  * ```
  */
-export interface ListenerRegistration<
+/**
+ * Single-path listener — watches one path (or all paths when null).
+ * `scope` may be omitted (defaults to `path`).
+ */
+export interface SinglePathListener<
   DATA extends object = object,
   META extends GenericMeta = GenericMeta,
   Depth extends number = DefaultDepth,
 > {
   /**
-   * Path to watch - only changes under this path will trigger the listener
+   * Path to watch - only changes under this path will trigger the listener.
    * null = watch all paths (receives every change)
    */
   path: DeepKey<DATA, Depth> | null
@@ -178,66 +175,71 @@ export interface ListenerRegistration<
   fn: OnStateListener<DATA, any, META>
 }
 
-export interface ListenerHandlerRef {
-  scope: string | null
-  fn: (...args: unknown[]) => unknown
-}
-
-export interface SideEffectGraphs<
+/**
+ * Multi-path listener — watches multiple paths simultaneously.
+ * Handler fires once per pipeline run with all matched changes merged.
+ * `scope` is required (use null for full paths).
+ */
+export interface MultiPathListener<
   DATA extends object = object,
   META extends GenericMeta = GenericMeta,
+  Depth extends number = DefaultDepth,
 > {
-  sync: SyncGraph
-  flip: FlipGraph
-  listeners: Map<string, ListenerRegistration<DATA, META>[]>
-  sortedListenerPaths: string[]
-  /** O(1) lookup: subscriber_id -> handler ref. Populated by registerListener. */
-  listenerHandlers: Map<number, ListenerHandlerRef>
+  /**
+   * Array of paths to watch. Handler fires once with changes from any matched path.
+   */
+  path: DeepKey<DATA, Depth>[]
+
+  /**
+   * Scope for state and changes presentation (required for multi-path listeners).
+   * - null: state is full DATA, changes use FULL paths
+   * - string: state is value at scope, changes use paths RELATIVE to scope
+   */
+  scope: DeepKey<DATA, Depth> | null
+
+  fn: OnStateListener<DATA, any, META>
+}
+
+/** Listener registration — single-path or multi-path. */
+export type ListenerRegistration<
+  DATA extends object = object,
+  META extends GenericMeta = GenericMeta,
+  Depth extends number = DefaultDepth,
+> = SinglePathListener<DATA, META, Depth> | MultiPathListener<DATA, META, Depth>
+
+export interface ListenerHandlerRef {
+  scope: string | null
+  fn: (...args: any[]) => unknown
+  name: string
+  registrationId: string
 }
 
 export interface Registrations {
   concerns: Map<string, ConcernType[]>
   effectCleanups: Set<() => void>
   sideEffectCleanups: Map<string, () => void>
-  aggregations: Map<string, Aggregation[]>
-}
-
-export interface ProcessingState<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
-> {
-  queue: ArrayOfChanges<DATA, META>
+  /** O(1) lookup: subscriber_id -> handler ref. Populated by registerListener. */
+  listenerHandlers: Map<number, ListenerHandlerRef>
 }
 
 /** Internal store state (NOT tracked - wrapped in ref()) */
-export interface InternalState<
-  DATA extends object = object,
-  META extends GenericMeta = GenericMeta,
-> {
-  graphs: SideEffectGraphs<DATA, META>
+export interface InternalState {
   registrations: Registrations
-  processing: ProcessingState<DATA, META>
-  timing: Timing
-  observer: PipelineObserver
   config: DeepRequired<StoreConfig>
-  /** Redux DevTools state — prefix for naming + shared connection instance. */
-  _devtools: DevToolsRef
-  /** Per-store WASM pipeline instance (null when using legacy implementation). */
+  logger: ApexLogger
+  /** DevTools — pipeline notifier + proxy inspection. Null when devtools disabled. */
+  devtools: DevToolsNotifier | null
+  /** Per-store WASM pipeline instance (null after destroy). */
   pipeline: WasmPipeline | null
-  /** Pending deferred destroy timer — cancelled on StrictMode re-mount. */
-  _destroyTimer?: ReturnType<typeof setTimeout> | undefined
 }
 
 export type ConcernValues = Record<string, Record<string, unknown>>
 
 /** Two-proxy pattern: state and _concerns are independent to prevent infinite loops */
-export interface StoreInstance<
-  DATA extends object,
-  META extends GenericMeta = GenericMeta,
-> {
+export interface StoreInstance<DATA extends object> {
   state: DATA
   _concerns: ConcernValues
-  _internal: InternalState<DATA, META>
+  _internal: InternalState
   /** Debug tracking data, only populated when debug.track is enabled */
   _debug: DebugTrack | null
 }

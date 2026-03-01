@@ -68,7 +68,7 @@ const createEcommercePipeline = () => {
   for (let i = 0; i < 15; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: `order_${i}_confirmed`,
+      topic_paths: [`order_${i}_confirmed`],
       scope_path: '',
     })
   }
@@ -95,11 +95,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 751,968      | aa7e7da | baseline — initial measurement |
      */
     bench(
       'single field change (baseline reference)',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -119,11 +122,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 745,101      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 10 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced', meta: {} },
+        ]
         syncPipeline10.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -134,11 +140,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 800,338      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 50 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced', meta: {} },
+        ]
         syncPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -158,11 +167,12 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 1,155,425    | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 10 flip pairs',
       () => {
-        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        const changes: Change[] = [{ path: 'bool_0', value: true, meta: {} }]
         flipPipeline10.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -173,11 +183,12 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 1,085,100    | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 50 flip pairs',
       () => {
-        const changes: Change[] = [{ path: 'bool_0', value: true }]
+        const changes: Change[] = [{ path: 'bool_0', value: true, meta: {} }]
         flipPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -197,11 +208,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 797,707      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change dispatched to 15 listeners',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listened', meta: {} },
+        ]
         listenerPipeline15.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -212,11 +226,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 760,759      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change dispatched to 50 listeners',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listened', meta: {} },
+        ]
         listenerPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -236,11 +253,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 797,986      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 20 BoolLogic evaluations',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'trigger', meta: {} },
+        ]
         boolLogicPipeline20.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -251,11 +271,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 805,900      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change triggers 50 BoolLogic evaluations',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'trigger', meta: {} },
+        ]
         boolLogicPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -275,13 +298,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 549,194      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '2 changes through 10 sync + 10 flip + 10 listeners',
       () => {
         const changes: Change[] = [
-          { path: 'field_0', value: 'synced' },
-          { path: 'bool_0', value: true },
+          { path: 'field_0', value: 'synced', meta: {} },
+          { path: 'bool_0', value: true, meta: {} },
         ]
         combinedPipeline2x10.processChanges(changes)
       },
@@ -293,15 +317,16 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 303,386      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '4 changes through sync + flip + listeners + BoolLogic',
       () => {
         const changes: Change[] = [
-          { path: 'field_0', value: 'change1' },
-          { path: 'field_1', value: 'change2' },
-          { path: 'bool_0', value: true },
-          { path: 'bool_1', value: false },
+          { path: 'field_0', value: 'change1', meta: {} },
+          { path: 'field_1', value: 'change2', meta: {} },
+          { path: 'bool_0', value: true, meta: {} },
+          { path: 'bool_1', value: false, meta: {} },
         ]
         combinedPipeline4x.processChanges(changes)
       },
@@ -323,13 +348,18 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 104,685      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '10 changes with 20 sync pairs',
       () => {
         const changes: Change[] = []
         for (let i = 0; i < 10; i++) {
-          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+          changes.push({
+            path: `field_${i % 20}`,
+            value: `batch${i}`,
+            meta: {},
+          })
         }
         pipeline10.processChanges(changes)
       },
@@ -341,13 +371,18 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 6,385        | aa7e7da | baseline — initial measurement |
      */
     bench(
       '50 changes with 20 sync pairs',
       () => {
         const changes: Change[] = []
         for (let i = 0; i < 50; i++) {
-          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+          changes.push({
+            path: `field_${i % 20}`,
+            value: `batch${i}`,
+            meta: {},
+          })
         }
         pipeline50.processChanges(changes)
       },
@@ -359,13 +394,18 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 2,788        | aa7e7da | baseline — initial measurement |
      */
     bench(
       '100 changes with 20 sync pairs',
       () => {
         const changes: Change[] = []
         for (let i = 0; i < 100; i++) {
-          changes.push({ path: `field_${i % 20}`, value: `batch${i}` })
+          changes.push({
+            path: `field_${i % 20}`,
+            value: `batch${i}`,
+            meta: {},
+          })
         }
         pipeline100.processChanges(changes)
       },
@@ -388,11 +428,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 771,120      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 5 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline5.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -403,11 +446,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 766,924      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 25 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline25.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -418,11 +464,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 770,215      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 50 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline50.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -433,11 +482,14 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 767,525      | aa7e7da | baseline — initial measurement |
      */
     bench(
       '1 change with 100 sync pairs',
       () => {
-        const changes: Change[] = [{ path: 'field_0', value: 'scaled' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'scaled', meta: {} },
+        ]
         syncPipeline100.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -456,14 +508,15 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * Hardware: Apple M4 Pro
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
+     * | 2026-02-25 | 537,918      | aa7e7da | baseline — initial measurement |
      */
     bench(
       'currency change cascades through 15 orders',
       () => {
         // Trigger: change order_0 currency + confirm order_0
         const changes: Change[] = [
-          { path: 'order_0_currency', value: 'EUR' },
-          { path: 'order_0_confirmed', value: true },
+          { path: 'order_0_currency', value: 'EUR', meta: {} },
+          { path: 'order_0_confirmed', value: true, meta: {} },
         ]
         ecommercePipeline.processChanges(changes)
       },

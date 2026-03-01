@@ -12,198 +12,32 @@
  * @module wasm/bridge
  */
 
+import type { Change } from '../types/changes'
 import type { ValidationSchema } from '../types/concerns'
+import type { GenericMeta } from '../types/meta'
 import { createFastJson } from '../utils/json'
+import type * as Wasm from './generated/types'
 import { getWasmInstance } from './lifecycle'
 
-// ---------------------------------------------------------------------------
-// Types — exported for downstream use
-// ---------------------------------------------------------------------------
+export type { Change }
 
-/** A single state change (input or output). */
-export interface Change {
-  path: string
-  value: unknown
-  origin?: string
-}
-
-/** A single dispatch entry with sequential ID and input change references. */
-export interface DispatchEntry {
-  dispatch_id: number
-  subscriber_id: number
-  scope_path: string
-  topic_path: string
-  /** Indexes into ProcessResult.changes array. */
-  input_change_ids: number[]
-}
-
-/** A group of dispatches to execute sequentially. */
-export interface DispatchGroup {
-  dispatches: DispatchEntry[]
-}
-
-/** A target for propagating produced changes from child to parent dispatch. */
-export interface PropagationTarget {
-  target_dispatch_id: number
-  /** Prefix to prepend to child's relative paths for the target's scope. */
-  remap_prefix: string
-}
-
-/** Pre-computed execution plan with propagation map. */
-export interface FullExecutionPlan {
-  groups: DispatchGroup[]
-  /** propagation_map[dispatch_id] = targets to forward produced changes to. */
-  propagation_map: PropagationTarget[][]
+/** Map a Wasm wire result type to JS-facing type: Wasm.Change[] → Change[], rest untouched. */
+type WireToJs<T> = {
+  [K in keyof T]: T[K] extends Wasm.Change[] ? Change[] : T[K]
 }
 
 // ---------------------------------------------------------------------------
-// Registration types
+// Result types — Wasm wire types with parsed Change values
 // ---------------------------------------------------------------------------
 
-/** An aggregation registration entry: target path + source paths. */
-export interface AggregationEntry {
-  target: string
-  sources: string[]
-}
+/** JS-facing side effects result — same shape as Wasm wire type but with parsed Change values. */
+export type SideEffectsResult = WireToJs<Wasm.SideEffectsResult>
 
-/** A listener registration entry for topic-based dispatch. */
-export interface ListenerEntry {
-  subscriber_id: number
-  topic_path: string
-  scope_path: string
-}
-
-/** A validator registration entry for validation orchestration. */
-export interface ValidatorEntry {
-  validator_id: number
-  output_path: string
-  dependency_paths: string[]
-}
-
-/** A generic function registration entry (concerns, validators, listeners). */
-export interface FunctionEntry {
-  function_id: number
-  dependency_paths: string[]
-  scope: string
-  output_path?: string
-}
-
-/** Validator dispatch info for JS-side execution. */
-export interface ValidatorDispatch {
-  validator_id: number
-  output_path: string
-  dependency_values: Record<string, string>
-}
+/** JS-facing concerns result — same shape as Wasm wire type but with parsed Change values. */
+export type ConcernsResult = WireToJs<Wasm.ConcernsResult>
 
 // ---------------------------------------------------------------------------
-// Consolidated registration types
-// ---------------------------------------------------------------------------
-
-/**
- * Extends a base tuple with an optional trailing BoolLogic condition (JSON-serialized).
- * Used by aggregation and computation pairs to share the "optional excludeWhen" pattern.
- */
-type WasmPairWithCondition<Base extends [...string[]]> =
-  | [...Base]
-  | [...Base, condition: string]
-
-/** WASM-side aggregation pair: [target, source] with optional excludeWhen condition. */
-export type WasmAggregationPair = WasmPairWithCondition<
-  [target: string, source: string]
->
-
-/** WASM-side computation pair: [operation, target, source] with optional excludeWhen condition. */
-export type WasmComputationPair = WasmPairWithCondition<
-  [op: string, target: string, source: string]
->
-
-/** WASM-side sync pair: [source, target] — bidirectional sync. */
-export type WasmSyncPair = [source: string, target: string]
-
-/** WASM-side flip pair: [source, target] — inverted boolean sync. */
-export type WasmFlipPair = [source: string, target: string]
-
-/** WASM-side clear path rule: trigger paths → target paths to null. */
-export interface WasmClearPathRule {
-  triggers: string[]
-  targets: string[]
-}
-
-/** WASM-side listener entry for topic-based dispatch. */
-export interface WasmListenerEntry {
-  subscriber_id: number
-  topic_path: string
-  scope_path: string
-}
-
-/** Consolidated registration input for side effects (sync, flip, aggregation, computation, clear, listeners). */
-export interface SideEffectsRegistration {
-  registration_id: string
-  sync_pairs?: WasmSyncPair[]
-  flip_pairs?: WasmFlipPair[]
-  aggregation_pairs?: WasmAggregationPair[]
-  computation_pairs?: WasmComputationPair[]
-  clear_paths?: WasmClearPathRule[]
-  listeners?: WasmListenerEntry[]
-}
-
-/** Consolidated registration output from side effects registration. */
-export interface SideEffectsResult {
-  sync_changes: Change[]
-  aggregation_changes: Change[]
-  computation_changes: Change[]
-  registered_listener_ids: number[]
-}
-
-/** WASM-side BoolLogic entry for declarative boolean evaluation. */
-export interface WasmBoolLogicEntry {
-  output_path: string
-  tree_json: string
-}
-
-/** WASM-side validator entry for validation orchestration. */
-export interface WasmValidatorEntry {
-  validator_id: number
-  output_path: string
-  dependency_paths: string[]
-  scope: string
-}
-
-/** WASM-side ValueLogic entry for declarative value computation. */
-export interface WasmValueLogicEntry {
-  output_path: string
-  tree_json: string
-}
-
-/** Consolidated registration input for concerns (BoolLogic, validators, and ValueLogic). */
-export interface ConcernsRegistration {
-  registration_id: string
-  bool_logics?: WasmBoolLogicEntry[]
-  validators?: WasmValidatorEntry[]
-  value_logics?: WasmValueLogicEntry[]
-}
-
-/** Consolidated registration output from concerns registration. */
-export interface ConcernsResult {
-  bool_logic_changes: Change[]
-  registered_logic_ids: number[]
-  registered_validator_ids: number[]
-  value_logic_changes: Change[]
-  registered_value_logic_ids: number[]
-}
-
-// ---------------------------------------------------------------------------
-// Internal WASM change format (path + value_json string)
-// ---------------------------------------------------------------------------
-
-interface WasmChange {
-  path: string
-  value_json: string
-  origin?: string
-}
-
-// ---------------------------------------------------------------------------
-// Helpers — conversion between JS Change[] and WASM WasmChange[]
+// Helpers — conversion between JS Change[] and WASM WasmChangeWire[]
 // ---------------------------------------------------------------------------
 
 /**
@@ -217,161 +51,136 @@ const { stringify: fastStringify, parse: fastParse } = createFastJson([
   { value: undefined, encoded: UNDEFINED_SENTINEL_JSON },
 ])
 
-/** Convert JS Change[] to WASM's { path, value_json }[] for serde-wasm-bindgen. */
-const changesToWasm = (changes: Change[]): WasmChange[] =>
-  changes.map(({ path, value }) => ({ path, value_json: fastStringify(value) }))
-
-/** Convert WASM's { path, value_json }[] back to JS Change[]. */
-const wasmChangesToJs = (wasmChanges: WasmChange[]): Change[] =>
-  wasmChanges.map(({ path, value_json, origin }) => ({
+/** Convert JS Change[] to WASM wire format for serde-wasm-bindgen. */
+const changesToWasm = (changes: Change[]) =>
+  changes.map(({ path, value, meta }) => ({
     path,
-    value: fastParse(value_json),
-    ...(origin ? { origin } : {}),
+    value_json: fastStringify(value),
+    meta,
   }))
 
-// ---------------------------------------------------------------------------
-// ProcessChanges result type
-// ---------------------------------------------------------------------------
-
-/** Result of processChanges (Phase 1). */
-export interface ProcessChangesResult {
-  state_changes: Change[]
-  changes: Change[] // Backwards compat alias
-  validators_to_run: ValidatorDispatch[]
-  execution_plan: FullExecutionPlan | null
-  has_work: boolean
+/** Map a WASM lineage stage to the appropriate GenericMeta boolean flag. */
+const lineageToMeta = (lineage: Wasm.Lineage): Partial<GenericMeta> => {
+  if (lineage === 'Input') return {}
+  switch (lineage.Derived.via) {
+    case 'sync':
+      return { isSyncPathChange: true }
+    case 'flip':
+      return { isFlipPathChange: true }
+    case 'aggregation_write':
+    case 'aggregation_read':
+      return { isAggregationChange: true }
+    case 'listeners':
+      return { isListenerChange: true }
+    case 'clear_path':
+      return { isClearPathChange: true }
+    case 'computation':
+      return { isComputationChange: true }
+    default:
+      return { isProgramaticChange: true }
+  }
 }
 
-// ---------------------------------------------------------------------------
-// WasmPipeline — per-store isolated pipeline instance
-// ---------------------------------------------------------------------------
-
-/**
- * An isolated WASM pipeline instance.
- * Each store gets its own pipeline so multiple Providers don't interfere.
- * All methods are pre-bound to the pipeline's ID — consumers never pass IDs.
- */
-export interface WasmPipeline {
-  readonly id: number
-  shadowInit: (state: object) => void
-  shadowDump: () => unknown
-  processChanges: (changes: Change[]) => ProcessChangesResult
-  pipelineFinalize: (jsChanges: Change[]) => { state_changes: Change[] }
-  registerSideEffects: (reg: SideEffectsRegistration) => SideEffectsResult
-  unregisterSideEffects: (registrationId: string) => void
-  registerConcerns: (reg: ConcernsRegistration) => ConcernsResult
-  unregisterConcerns: (registrationId: string) => void
-  registerBoolLogic: (outputPath: string, tree: unknown) => number
-  unregisterBoolLogic: (logicId: number) => void
-  pipelineReset: () => void
-  destroy: () => void
-  /** Per-instance storage for validation schemas (can't cross WASM boundary). */
-  validatorSchemas: Map<number, ValidationSchema>
-}
+/** Convert WASM wire format back to JS Change[], transforming lineage into GenericMeta flags. */
+const wasmChangesToJs = (wasmChanges: Wasm.Change[]): Change[] =>
+  wasmChanges.map(({ path, value_json, meta, lineage }) => ({
+    path,
+    value: fastParse(value_json),
+    meta: { ...(meta as GenericMeta), ...lineageToMeta(lineage) },
+  }))
 
 /**
  * Create a new isolated WASM pipeline instance.
  * Each store should call this once and store the result.
  * Call pipeline.destroy() on cleanup.
  */
-export const createWasmPipeline = (): WasmPipeline => {
+export const createWasmPipeline = (options?: { debug?: boolean }) => {
   const wasm = getWasmInstance()
-  const id = wasm.pipeline_create()
+  const id = wasm.pipeline_create(options)
   const schemas = new Map<number, ValidationSchema>()
+  let destroyed = false
 
   return {
     id,
-
-    shadowInit: (state) => {
-      wasm.shadow_init(id, state)
+    get destroyed() {
+      return destroyed
     },
 
-    shadowDump: () => JSON.parse(wasm.shadow_dump(id)) as unknown,
-
-    processChanges: (changes) => {
+    shadowInit: (state: object) => {
+      wasm.shadow_init(id, fastStringify(state))
+    },
+    shadowDump: () => fastParse(wasm.shadow_dump(id)),
+    processChanges: (changes: Change[]) => {
       const result = wasm.process_changes(
         id,
-        changesToWasm(changes) as never,
-      ) as unknown as {
-        state_changes: WasmChange[]
-        validators_to_run: ValidatorDispatch[]
-        execution_plan: FullExecutionPlan | null
-        has_work: boolean
-      }
+        changesToWasm(changes),
+      ) as unknown as Wasm.PrepareResult
 
-      const stateChanges = wasmChangesToJs(result.state_changes)
+      const listenerChanges = wasmChangesToJs(result.listener_changes)
       return {
-        state_changes: stateChanges,
-        changes: stateChanges,
+        listener_changes: listenerChanges,
         validators_to_run: result.validators_to_run,
         execution_plan: result.execution_plan,
         has_work: result.has_work,
       }
     },
 
-    pipelineFinalize: (jsChanges) => {
+    pipelineFinalize: (changes: Change[]) => {
       const result = wasm.pipeline_finalize(
         id,
-        changesToWasm(jsChanges) as never,
-      ) as unknown as {
-        state_changes: WasmChange[]
-      }
+        changesToWasm(changes),
+      ) as unknown as Wasm.FinalizeResult
 
       return {
         state_changes: wasmChangesToJs(result.state_changes),
+        trace: result.trace ?? null,
       }
     },
 
-    registerSideEffects: (reg) => {
-      const resultJson = wasm.register_side_effects(
+    registerSideEffects: (reg: Partial<Wasm.SideEffectsRegistration>) => {
+      const result = wasm.register_side_effects(
         id,
         JSON.stringify(reg),
-      ) as unknown as {
-        sync_changes: WasmChange[]
-        aggregation_changes: WasmChange[]
-        computation_changes: WasmChange[]
-        registered_listener_ids: number[]
-      }
+      ) as unknown as Wasm.SideEffectsResult
+
       return {
-        sync_changes: wasmChangesToJs(resultJson.sync_changes),
-        aggregation_changes: wasmChangesToJs(resultJson.aggregation_changes),
-        computation_changes: wasmChangesToJs(resultJson.computation_changes),
-        registered_listener_ids: resultJson.registered_listener_ids,
+        sync_changes: wasmChangesToJs(result.sync_changes),
+        aggregation_changes: wasmChangesToJs(result.aggregation_changes),
+        computation_changes: wasmChangesToJs(result.computation_changes),
+        registered_listener_ids: result.registered_listener_ids,
       }
     },
 
-    unregisterSideEffects: (registrationId) => {
+    unregisterSideEffects: (registrationId: string) => {
+      if (destroyed) return
       wasm.unregister_side_effects(id, registrationId)
     },
 
-    registerConcerns: (reg) => {
-      const resultJson = wasm.register_concerns(
+    registerConcerns: (reg: Partial<Wasm.ConcernsRegistration>) => {
+      const result = wasm.register_concerns(
         id,
         JSON.stringify(reg),
-      ) as unknown as {
-        bool_logic_changes: WasmChange[]
-        registered_logic_ids: number[]
-        registered_validator_ids: number[]
-        value_logic_changes: WasmChange[]
-        registered_value_logic_ids: number[]
-      }
+      ) as unknown as Wasm.ConcernsResult
+
       return {
-        bool_logic_changes: wasmChangesToJs(resultJson.bool_logic_changes),
-        registered_logic_ids: resultJson.registered_logic_ids,
-        registered_validator_ids: resultJson.registered_validator_ids,
-        value_logic_changes: wasmChangesToJs(resultJson.value_logic_changes),
-        registered_value_logic_ids: resultJson.registered_value_logic_ids,
+        bool_logic_changes: wasmChangesToJs(result.bool_logic_changes),
+        registered_logic_ids: result.registered_logic_ids,
+        registered_validator_ids: result.registered_validator_ids,
+        value_logic_changes: wasmChangesToJs(result.value_logic_changes),
+        registered_value_logic_ids: result.registered_value_logic_ids,
       }
     },
 
-    unregisterConcerns: (registrationId) => {
+    unregisterConcerns: (registrationId: string) => {
+      if (destroyed) return
       wasm.unregister_concerns(id, registrationId)
     },
 
-    registerBoolLogic: (outputPath, tree) =>
+    registerBoolLogic: (outputPath: string, tree: unknown) =>
       wasm.register_boollogic(id, outputPath, JSON.stringify(tree)),
 
-    unregisterBoolLogic: (logicId) => {
+    unregisterBoolLogic: (logicId: number) => {
+      if (destroyed) return
       wasm.unregister_boollogic(id, logicId)
     },
 
@@ -380,10 +189,20 @@ export const createWasmPipeline = (): WasmPipeline => {
     },
 
     destroy: () => {
+      if (destroyed) return
+      destroyed = true
       wasm.pipeline_destroy(id)
       schemas.clear()
+    },
+
+    getGraphSnapshot: () => {
+      if (destroyed) return { pipelines: {} } as unknown as Wasm.GraphSnapshot
+      return wasm.get_graph_snapshot(id) as unknown as Wasm.GraphSnapshot
     },
 
     validatorSchemas: schemas,
   }
 }
+
+export type WasmPipeline = ReturnType<typeof createWasmPipeline>
+export type { Wasm }

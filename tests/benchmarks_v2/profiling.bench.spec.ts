@@ -40,6 +40,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 41,497       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'shadow state update (simple field)',
@@ -48,7 +49,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(10)
 
         // Measure: Process single flat field change
-        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -59,6 +62,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 16,419       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'shadow state update (deep nested field)',
@@ -73,6 +77,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
           {
             path: 'l1.l2.l3.l4.l5.l6.l7.l8.l9.l10.l11.l12.l13.l14.l15.value',
             value: 'deep_update',
+            meta: {},
           },
         ]
         pipeline.processChanges(changes)
@@ -85,6 +90,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 2,251        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'shadow state update (large object)',
@@ -94,7 +100,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
 
         // Measure: Update field with large object (100 key-value pairs)
         const largeObj = buildFields(100, 'key')
-        const changes: Change[] = [{ path: 'field_0', value: largeObj }]
+        const changes: Change[] = [
+          { path: 'field_0', value: largeObj, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -107,6 +115,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 22,063       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'BoolLogic evaluation (simple: IS_EQUAL)',
@@ -126,7 +135,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         })
 
         // Measure: Process change to trigger field
-        const changes: Change[] = [{ path: 'trigger', value: true }]
+        const changes: Change[] = [{ path: 'trigger', value: true, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -137,6 +146,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 26,163       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'BoolLogic evaluation (complex: nested AND/OR)',
@@ -170,7 +180,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         })
 
         // Measure: Process change to 'a'
-        const changes: Change[] = [{ path: 'a', value: true }]
+        const changes: Change[] = [{ path: 'a', value: true, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -181,6 +191,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 1,469        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'BoolLogic evaluation (many conditions)',
@@ -189,7 +200,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBoolLogicPipeline(100)
 
         // Measure: Process change to trigger
-        const changes: Change[] = [{ path: 'field_0', value: 'trigger' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'trigger', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -202,6 +215,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 18,996       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'WASM memory allocation per change',
@@ -211,7 +225,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         pipeline.shadowInit({ field: 'value' })
 
         // Measure: Full cycle (create + process + GC)
-        const changes: Change[] = [{ path: 'field', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -222,6 +238,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 486          | aa7e7da | baseline — initial measurement |
      */
     bench(
       'WASM memory with 1000 state items',
@@ -230,7 +247,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(1000)
 
         // Measure: Process single change to field_500
-        const changes: Change[] = [{ path: 'field_500', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_500', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -241,6 +260,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 1,297        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'WASM memory cleanup after processing',
@@ -262,6 +282,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 11,964       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'regression: processChanges latency baseline',
@@ -270,7 +291,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(10)
 
         // Measure: Single baseline change
-        const changes: Change[] = [{ path: 'field_0', value: 'baseline' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'baseline', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -281,6 +304,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 9,758        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'regression: batching efficiency ratio',
@@ -292,7 +316,11 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         // Measure: Batch of 10 changes at once
         const changes: Change[] = []
         for (let i = 0; i < 10; i++) {
-          changes.push({ path: i % 2 === 0 ? 'a' : 'b', value: i % 2 === 0 })
+          changes.push({
+            path: i % 2 === 0 ? 'a' : 'b',
+            value: i % 2 === 0,
+            meta: {},
+          })
         }
         pipeline.processChanges(changes)
       },
@@ -304,6 +332,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 74           | aa7e7da | baseline — initial measurement |
      */
     bench(
       'regression: scaling factor (10x items → latency)',
@@ -312,7 +341,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(10_000)
 
         // Measure: Single change (should still be O(1))
-        const changes: Change[] = [{ path: 'field_5000', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_5000', value: 'updated', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -325,6 +356,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 10,187       | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: changeNormalization time',
@@ -332,7 +364,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         // Isolate: Normalization + shadow update (no effects)
         const pipeline = createBarePipeline(10)
 
-        const changes: Change[] = [{ path: 'field_0', value: 'normalized' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'normalized', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -343,6 +377,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 3,232        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: shadowStateUpdate time',
@@ -351,7 +386,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createBarePipeline(100)
 
         // Update middle field to approximate shadow update cost
-        const changes: Change[] = [{ path: 'field_50', value: 'shadow_update' }]
+        const changes: Change[] = [
+          { path: 'field_50', value: 'shadow_update', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -362,6 +399,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 446          | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: pathInterner.intern time',
@@ -372,7 +410,11 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         // Process changes to 10 different paths (measures interning)
         const changes: Change[] = []
         for (let i = 0; i < 10; i++) {
-          changes.push({ path: `field_${i * 100}`, value: `interned_${i}` })
+          changes.push({
+            path: `field_${i * 100}`,
+            value: `interned_${i}`,
+            meta: {},
+          })
         }
         pipeline.processChanges(changes)
       },
@@ -384,6 +426,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 4,960        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: graphEvaluation time',
@@ -417,7 +460,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         })
 
         // Change source field (triggers graph evaluation)
-        const changes: Change[] = [{ path: 'a', value: false }]
+        const changes: Change[] = [{ path: 'a', value: false, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -428,6 +471,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 4,097        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: topicRouter.dispatch time',
@@ -436,7 +480,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createMultiPathListenerPipeline(50)
 
         // Process change (routes through topic router)
-        const changes: Change[] = [{ path: 'field_0', value: 'routed' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'routed', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -447,6 +493,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
+     * | 2026-02-25 | 3,832        | aa7e7da | baseline — initial measurement |
      */
     bench(
       'profile: listenerExecution time',
@@ -455,7 +502,9 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
         const pipeline = createMultiPathListenerPipeline(100)
 
         // Process change (emphasizes dispatch plan complexity)
-        const changes: Change[] = [{ path: 'field_0', value: 'executed' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'executed', meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

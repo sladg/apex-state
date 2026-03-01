@@ -31,6 +31,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 37,236       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 32,218       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'typical form field change (validation + listener)',
@@ -61,7 +62,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
           listeners: [
             {
               subscriber_id: 0,
-              topic_path: 'email',
+              topic_paths: ['email'],
               scope_path: '',
             },
           ],
@@ -69,7 +70,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
 
         // Measure: processChanges for typical user input
         const changes: Change[] = [
-          { path: 'email', value: 'newemail@example.com' },
+          { path: 'email', value: 'newemail@example.com', meta: {} },
         ]
         pipeline.processChanges(changes)
       },
@@ -82,6 +83,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 26,366       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 27,495       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'checkout workflow (syncs + flips + listeners)',
@@ -109,14 +111,16 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
           listeners: [
             {
               subscriber_id: 0,
-              topic_path: 'productPrice',
+              topic_paths: ['productPrice'],
               scope_path: '',
             },
           ],
         })
 
         // Measure: Total pipeline time for field change that triggers sync, flip, listener
-        const changes: Change[] = [{ path: 'productPrice', value: 149.99 }]
+        const changes: Change[] = [
+          { path: 'productPrice', value: 149.99, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -128,6 +132,7 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 18,841       | 4de0ee8 | baseline — initial measurement |
+     * | 2026-02-25 | 18,808       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'dashboard metric update (aggregates + cascades)',
@@ -154,7 +159,9 @@ describe('WASM Pipeline: Real-World Scenarios', () => {
         })
 
         // Measure: Time for pipeline to update aggregated metrics
-        const changes: Change[] = [{ path: 'metric_views', value: 2000 }]
+        const changes: Change[] = [
+          { path: 'metric_views', value: 2000, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

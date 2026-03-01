@@ -7,17 +7,13 @@
 
 import { createContext, useContext } from 'react'
 
-import type { GenericMeta } from '../types'
 import type { StoreInstance } from './types'
 
 /**
  * React Context for the store instance
  * Null by default - will be populated by Provider
  */
-export const StoreContext = createContext<StoreInstance<
-  any,
-  GenericMeta
-> | null>(null)
+export const StoreContext = createContext<StoreInstance<any> | null>(null)
 
 StoreContext.displayName = 'StoreContext'
 
@@ -27,11 +23,8 @@ StoreContext.displayName = 'StoreContext'
  * @internal Package-internal. Do not use directly.
  * @throws Error if used outside Provider
  */
-export const useStoreContext = <
-  DATA extends object,
-  META extends GenericMeta = GenericMeta,
->(): StoreInstance<DATA, META> => {
-  const store = useContext(StoreContext) as StoreInstance<DATA, META> | null
+export const useStoreContext = <DATA extends object>(): StoreInstance<DATA> => {
+  const store = useContext(StoreContext) as StoreInstance<DATA> | null
 
   if (!store) {
     throw new Error(

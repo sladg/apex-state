@@ -106,11 +106,11 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
     // Note: shadow still has allChecked=null (initial registration changes
     // are returned, not applied to shadow — JS store applies them to valtio)
     const result = pipeline.processChanges([
-      { path: 'item2_disabled', value: true },
+      { path: 'item2_disabled', value: true, meta: {} },
     ])
 
     // allChecked should be recomputed: item2 now excluded → item1, item3 both true → true
-    const allCheckedChange = findChange(result.state_changes, 'allChecked')
+    const allCheckedChange = findChange(result.listener_changes, 'allChecked')
     expect(allCheckedChange).toBeDefined()
     expect(allCheckedChange?.value).toBe(true)
   })
@@ -151,12 +151,12 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
 
     // Disable both sources
     const result = pipeline.processChanges([
-      { path: 'item1_disabled', value: true },
-      { path: 'item2_disabled', value: true },
+      { path: 'item1_disabled', value: true, meta: {} },
+      { path: 'item2_disabled', value: true, meta: {} },
     ])
 
     // All excluded → target = undefined
-    const allCheckedChange = findChange(result.state_changes, 'allChecked')
+    const allCheckedChange = findChange(result.listener_changes, 'allChecked')
     expect(allCheckedChange).toBeDefined()
     expect(allCheckedChange?.value).toBeUndefined()
   })
@@ -192,11 +192,11 @@ describe('Aggregation excludeWhen: Read direction (source → target)', () => {
 
     // Re-enable item2
     const result = pipeline.processChanges([
-      { path: 'item2_disabled', value: false },
+      { path: 'item2_disabled', value: false, meta: {} },
     ])
 
     // item2 now active, values differ (10 vs 20) → allValues = undefined
-    const change = findChange(result.state_changes, 'allValues')
+    const change = findChange(result.listener_changes, 'allValues')
     expect(change).toBeDefined()
     expect(change?.value).toBeUndefined()
   })
@@ -287,14 +287,14 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
     })
 
     const result = pipeline.processChanges([
-      { path: 'allUsers', value: 'alice' },
+      { path: 'allUsers', value: 'alice', meta: {} },
     ])
 
-    const paths = getPaths(result.state_changes)
+    const paths = getPaths(result.listener_changes)
 
     // user2 should receive the distributed write
     expect(paths).toContain('user2')
-    const user2Change = findChange(result.state_changes, 'user2')
+    const user2Change = findChange(result.listener_changes, 'user2')
     expect(user2Change?.value).toBe('alice')
 
     // user1 should NOT receive the write (excluded)
@@ -321,9 +321,11 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
       ],
     })
 
-    const result = pipeline.processChanges([{ path: 'allUsers', value: 'bob' }])
+    const result = pipeline.processChanges([
+      { path: 'allUsers', value: 'bob', meta: {} },
+    ])
 
-    const paths = getPaths(result.state_changes)
+    const paths = getPaths(result.listener_changes)
 
     // Both should receive writes (user1_disabled is false)
     expect(paths).toContain('user1')
@@ -351,10 +353,10 @@ describe('Aggregation excludeWhen: Write direction (target → sources)', () => 
     })
 
     const result = pipeline.processChanges([
-      { path: 'allUsers.name', value: 'alice' },
+      { path: 'allUsers.name', value: 'alice', meta: {} },
     ])
 
-    const paths = getPaths(result.state_changes)
+    const paths = getPaths(result.listener_changes)
 
     // user2.name should receive the write
     expect(paths).toContain('user2.name')
@@ -405,12 +407,13 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
     expect(initChange?.value).toBe(100)
 
     // Now set archived=true → AND is true → price2 excluded
-    // total is still 100 because only price1 remains (also 100) — same value
-    const result = pipeline.processChanges([{ path: 'archived', value: true }])
+    // total is still 100 because only price1 remains (also 100)
+    // Condition path changed → re-aggregation always emits even with same value
+    const result = pipeline.processChanges([
+      { path: 'archived', value: true, meta: {} },
+    ])
 
-    // Re-aggregation fires (condition changed), result is still 100
-    // Shadow had null → 100 is a genuine change
-    const totalChange = findChange(result.state_changes, 'total')
+    const totalChange = findChange(result.listener_changes, 'total')
     expect(totalChange).toBeDefined()
     expect(totalChange?.value).toBe(100)
   })
@@ -439,13 +442,12 @@ describe('Aggregation excludeWhen: Complex conditions', () => {
 
     // Remove val2_active (set to null) → NOT EXISTS = true → val2 excluded
     // Only val1 (42) active → result = 42
+    // Condition path changed → re-aggregation always emits even with same value
     const result = pipeline.processChanges([
-      { path: 'val2_active', value: null },
+      { path: 'val2_active', value: null, meta: {} },
     ])
 
-    // Re-aggregation fires (condition path changed), result is 42
-    // Shadow had null → 42 is a genuine change (initial wasn't applied to shadow)
-    const resultChange = findChange(result.state_changes, 'result')
+    const resultChange = findChange(result.listener_changes, 'result')
     expect(resultChange).toBeDefined()
     expect(resultChange?.value).toBe(42)
   })
@@ -540,11 +542,11 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
 
     // Re-enable product4 (price=99, now active)
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: false },
+      { path: 'product4.disabled', value: false, meta: {} },
     ])
 
     // 4 active: [25, 25, 25, 99] → disagree → allPrice = undefined
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeDefined()
     expect(change?.value).toBeUndefined()
   })
@@ -586,15 +588,15 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
     // Update product4's price to match while still excluded, then re-enable
     // Note: changing product4.price triggers re-aggregation for the 3 active sources,
     // which sets allPrice=25 in shadow (product4 is still excluded at this point)
-    pipeline.processChanges([{ path: 'product4.price', value: 25 }])
+    pipeline.processChanges([{ path: 'product4.price', value: 25, meta: {} }])
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: false },
+      { path: 'product4.disabled', value: false, meta: {} },
     ])
 
     // 4 active: [25, 25, 25, 25] → agree → allPrice = 25
     // Shadow already has allPrice=25 from the first processChanges, so this is a no-op
     // (no redundant change emitted — correct optimization)
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeUndefined()
 
     // Verify the shadow state is correct
@@ -642,11 +644,11 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
 
     // Exclude the deviating product
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: true },
+      { path: 'product4.disabled', value: true, meta: {} },
     ])
 
     // product4 now excluded → [25, 25, 25] → agree → allPrice = 25
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeDefined()
     expect(change?.value).toBe(25)
   })
@@ -685,11 +687,11 @@ describe('Aggregation excludeWhen: Realistic product scenarios', () => {
 
     // Re-include the deviating product
     const result = pipeline.processChanges([
-      { path: 'product4.disabled', value: false },
+      { path: 'product4.disabled', value: false, meta: {} },
     ])
 
     // product4 now active → [25, 25, 25, 99] → disagree → allPrice = undefined
-    const change = findChange(result.state_changes, 'allPrice')
+    const change = findChange(result.listener_changes, 'allPrice')
     expect(change).toBeDefined()
     expect(change?.value).toBeUndefined()
   })

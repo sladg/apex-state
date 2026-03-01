@@ -39,7 +39,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
       p.registerSideEffects({
         registration_id: 'bench',
         listeners: [
-          { subscriber_id: 0, topic_path: 'field_0', scope_path: '' },
+          { subscriber_id: 0, topic_paths: ['field_0'], scope_path: '' },
         ],
       })
       return p
@@ -56,7 +56,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
         sync_pairs: [['field_0', 'sync_target']],
         flip_pairs: [['bool_0', 'flip_target']],
         listeners: [
-          { subscriber_id: 0, topic_path: 'field_0', scope_path: '' },
+          { subscriber_id: 0, topic_paths: ['field_0'], scope_path: '' },
         ],
       })
       return p
@@ -68,6 +68,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 806,850      | 4de0ee8 | baseline — measure JS→WASM serialization overhead |
+     * | 2026-02-25 | 803,011      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'processChanges call overhead (JS → WASM serialization)',
@@ -75,7 +76,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Measure: Single minimal change, no effects registered
         // Includes: JSON serialization of changes, WASM boundary crossing
         // Baseline for: boundary crossing cost only
-        const changes: Change[] = [{ path: 'field_0', value: 'updated' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'updated', meta: {} },
+        ]
         minimalPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -87,6 +90,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,618      | 4de0ee8 | baseline — WASM→JS result serialization + listener dispatch |
+     * | 2026-02-25 | 797,834      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'returning results (WASM → JS + listener dispatch)',
@@ -94,7 +98,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Measure: Change that produces listener output
         // Includes: Serialization of execution plan, listener dispatch
         // Cost of: returning results from WASM + JS execution plan
-        const changes: Change[] = [{ path: 'field_0', value: 'listened' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'listened', meta: {} },
+        ]
         listenerPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -106,6 +112,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,159      | 4de0ee8 | baseline — full round-trip with sync + flip + listeners |
+     * | 2026-02-25 | 789,653      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'round-trip latency (full JS ↔ WASM ↔ JS)',
@@ -113,7 +120,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Measure: Complete round-trip with multiple effect types
         // Includes: Sync graph evaluation, flip graph evaluation, listener dispatch
         // Cost of: full pipeline orchestration including multiple boundary crossings
-        const changes: Change[] = [{ path: 'field_0', value: 'round-trip' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'round-trip', meta: {} },
+        ]
         effectsPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -130,6 +139,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 794,448      | 4de0ee8 | baseline — path interning table lookups remain O(1) |
+     * | 2026-02-25 | 797,138      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'path interning efficiency (string → ID lookup)',
@@ -138,7 +148,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Validates: String intern lookups are O(1) cached (not O(n) searches)
         // Setup: 1000-field state means 1000 potential paths
         // Cost of: accessing path IDs is constant, not linear in field count
-        const changes: Change[] = [{ path: 'field_500', value: 'accessed' }]
+        const changes: Change[] = [
+          { path: 'field_500', value: 'accessed', meta: {} },
+        ]
         manyFieldsPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -153,6 +165,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,710      | 4de0ee8 | baseline — pre-computed graph lookup vs runtime evaluation |
+     * | 2026-02-25 | 794,641      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'pre-computed sync/flip graphs (lookup vs evaluation)',
@@ -161,7 +174,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Validates: Pre-computed graphs enable O(1) connected component lookup
         // Setup: 50 sync pairs means 50 possible sync relations
         // Cost of: graph lookup is fast (pre-built), not re-evaluated at runtime
-        const changes: Change[] = [{ path: 'field_0', value: 'synced' }]
+        const changes: Change[] = [
+          { path: 'field_0', value: 'synced', meta: {} },
+        ]
         syncPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -176,6 +191,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,120      | 4de0ee8 | baseline — pre-computed topic router avoids O(n) listener scanning |
+     * | 2026-02-25 | 794,897      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
      */
     bench(
       'topic router pre-computation (listener routing)',
@@ -184,7 +200,9 @@ describe('WASM Pipeline: Optimization Validation', () => {
         // Validates: Pre-computed router enables O(1) listener matching
         // Setup: 50 listeners on different paths
         // Cost of: router lookup is fast (pre-built), not dynamic matching
-        const changes: Change[] = [{ path: 'field_25', value: 'routed' }]
+        const changes: Change[] = [
+          { path: 'field_25', value: 'routed', meta: {} },
+        ]
         routerPipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

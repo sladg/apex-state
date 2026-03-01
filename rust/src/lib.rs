@@ -2,21 +2,24 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
-mod aggregation;
-mod bool_logic;
+pub mod aggregation;
+pub mod bool_logic;
+pub mod change;
 mod clear_paths;
-mod computation;
+pub mod computation;
 mod diff;
 mod functions;
 mod graphs;
 mod intern;
-mod pipeline;
+pub mod pipeline;
 mod rev_index;
-mod router;
+pub mod router;
 mod shadow;
-mod value_logic;
+mod trace;
+pub mod value_logic;
 
-use pipeline::{Change, ProcessingPipeline};
+use change::Change;
+use pipeline::ProcessingPipeline;
 
 /// Join two path segments with a dot separator, pre-allocating the exact capacity.
 /// Zero-allocation alternative to `format!("{}.{}", a, b)` for path building.
@@ -98,15 +101,26 @@ fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsValue> {
 // =====================================================================
 
 /// Create a new isolated pipeline instance. Returns the pipeline ID.
+///
+/// Accepts an optional options object with:
+/// - `debug` (bool): Enable WASM-side trace collection from creation.
 #[wasm_bindgen]
-pub fn pipeline_create() -> u32 {
+pub fn pipeline_create(options: Option<JsValue>) -> u32 {
+    let debug = options
+        .and_then(|o| js_sys::Reflect::get(&o, &JsValue::from_str("debug")).ok())
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let id = NEXT_ID.with(|n| {
         let current = n.get();
         n.set(current + 1);
         current
     });
     PIPELINES.with(|p| {
-        p.borrow_mut().insert(id, ProcessingPipeline::new());
+        let mut pipeline = ProcessingPipeline::new();
+        if debug {
+            pipeline.set_debug(true);
+        }
+        p.borrow_mut().insert(id, pipeline);
     });
     id
 }
@@ -119,11 +133,14 @@ pub fn pipeline_destroy(pipeline_id: u32) {
     });
 }
 
-/// Initialize shadow state directly from a JS object (no JSON serialization).
+/// Initialize shadow state from a JSON string (produced by fastStringify on the JS side).
+///
+/// Uses the JSON string path so that `undefined` values encoded as the
+/// `__APEX_UNDEFINED__` sentinel survive the boundary crossing consistently
+/// (serde-wasm-bindgen would convert JS `undefined` to `null` instead).
 #[wasm_bindgen]
-pub fn shadow_init(pipeline_id: u32, state: JsValue) -> Result<(), JsValue> {
-    let value: serde_json::Value = from_js(state)?;
-    with_pipeline(pipeline_id, |p| p.shadow_init_value(value))
+pub fn shadow_init(pipeline_id: u32, state_json: &str) -> Result<(), JsValue> {
+    with_pipeline(pipeline_id, |p| p.shadow_init(state_json))
 }
 
 /// Register a BoolLogic expression. Returns logic_id for cleanup.
@@ -157,11 +174,11 @@ pub fn unregister_boollogic(pipeline_id: u32, logic_id: u32) -> Result<(), JsVal
 /// Updates shadow state during processing (needed for BoolLogic evaluation).
 /// Buffers BoolLogic concern results for later finalization.
 ///
-/// Returns execution context for JS: state_changes, validators_to_run, execution_plan.
+/// Returns execution context for JS: listener_changes, validators_to_run, execution_plan.
 /// After JS executes listeners/validators, call pipeline_finalize() with their results.
 ///
 /// Input: JS array of `{ path: "...", value_json: "..." }`
-/// Output: JS object `{ state_changes: [...], validators_to_run: [...], execution_plan: {...}, has_work: bool }`
+/// Output: JS object `{ listener_changes: [...], validators_to_run: [...], execution_plan: {...}, has_work: bool }`
 #[wasm_bindgen]
 pub fn process_changes(pipeline_id: u32, changes: JsValue) -> Result<JsValue, JsValue> {
     let input: Vec<Change> = from_js(changes)?;
@@ -297,6 +314,17 @@ pub fn pipeline_reset(pipeline_id: u32) {
 pub fn pipeline_reset_all() {
     PIPELINES.with(|p| p.borrow_mut().clear());
     NEXT_ID.with(|n| n.set(1));
+}
+
+/// Return a snapshot of all registered graphs and registries for a pipeline.
+///
+/// Returns a JS object with sync_pairs, directed_sync_pairs, flip_pairs, listeners,
+/// bool_logics, value_logics, aggregations, and computations fields.
+#[wasm_bindgen]
+pub fn get_graph_snapshot(pipeline_id: u32) -> Result<JsValue, JsValue> {
+    with_pipeline(pipeline_id, |p| {
+        to_js(&p.get_graph_snapshot()).map_err(|e| e.as_string().unwrap_or_default())
+    })
 }
 
 /// Dump shadow state as JSON (debug/testing).

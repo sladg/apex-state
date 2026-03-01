@@ -17,12 +17,10 @@ const createRegistrationFormStore = () => createGenericStore<RegistrationForm>()
 
 describe('React Test Utilities', () => {
   describe('MODES', () => {
-    it('exports Legacy and WASM configurations', () => {
-      expect(MODES).toHaveLength(2)
-      expect(MODES[0]!.name).toBe('Legacy')
-      expect(MODES[0]!.config.useLegacyImplementation).toBe(true)
-      expect(MODES[1]!.name).toBe('WASM')
-      expect(MODES[1]!.config.useLegacyImplementation).toBe(false)
+    it('exports WASM configuration only', () => {
+      expect(MODES).toHaveLength(1)
+      expect(MODES[0]!.name).toBe('WASM')
+      expect(MODES[0]!.config).toEqual({})
     })
   })
 

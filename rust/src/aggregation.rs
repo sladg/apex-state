@@ -13,22 +13,25 @@
 //! 4. Remove original target change from output
 
 use crate::bool_logic::BoolLogicNode;
-use crate::pipeline::{Change, UNDEFINED_SENTINEL_JSON};
+use crate::change::{Change, ChangeKind, Lineage, UNDEFINED_SENTINEL_JSON};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use ts_rs::TS;
+
 /// A single aggregation source with an optional exclude condition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct AggregationSource {
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AggregationSource {
     pub path: String,
     pub exclude_when: Option<BoolLogicNode>,
 }
 
 /// A single aggregation: target path maps to multiple sources (with optional conditions).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Aggregation {
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct Aggregation {
     pub target: String,
+    #[ts(inline)]
     pub sources: Vec<AggregationSource>,
 }
 
@@ -113,7 +116,7 @@ impl AggregationRegistry {
     }
 
     /// Check if a path is an aggregation target (exact match or child).
-    fn find_target(&self, path: &str) -> Option<&Aggregation> {
+    pub(crate) fn find_target(&self, path: &str) -> Option<&Aggregation> {
         // Exact match
         if let Some(agg) = self.aggregations.get(path) {
             return Some(agg);
@@ -163,6 +166,17 @@ impl AggregationRegistry {
 
         targets.into_iter().collect()
     }
+
+    /// Dump all registered aggregations as (target, sources) pairs (debug only).
+    pub(crate) fn dump_infos(&self) -> Vec<(String, Vec<String>)> {
+        self.aggregations
+            .iter()
+            .map(|(target, agg)| {
+                let sources = agg.sources.iter().map(|s| s.path.clone()).collect();
+                (target.clone(), sources)
+            })
+            .collect()
+    }
 }
 
 /// Process aggregation writes: distribute target writes to source paths.
@@ -210,7 +224,10 @@ pub(crate) fn process_aggregation_writes(
                 new_changes.push(Change {
                     path: final_path,
                     value_json: change.value_json.clone(),
-                    origin: Some("aggregation".to_owned()),
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 });
             }
 
@@ -265,7 +282,10 @@ pub(crate) fn process_aggregation_reads(
                     changes.push(Change {
                         path: agg.target.clone(),
                         value_json: desired_value,
-                        origin: Some("aggregation".to_owned()),
+                        kind: ChangeKind::Real,
+                        lineage: Lineage::Input,
+                        audit: None,
+                        ..Default::default()
                     });
                 }
                 continue;
@@ -293,7 +313,10 @@ pub(crate) fn process_aggregation_reads(
                     changes.push(Change {
                         path: agg.target.clone(),
                         value_json: desired_value,
-                        origin: Some("aggregation".to_owned()),
+                        kind: ChangeKind::Real,
+                        lineage: Lineage::Input,
+                        audit: None,
+                        ..Default::default()
                     });
                 }
                 continue;
@@ -341,7 +364,6 @@ pub(crate) fn process_aggregation_reads(
                 }
             };
 
-            // Filter no-op: only create change if target value actually differs
             let current_target = shadow.get(&agg.target).map(|v| {
                 serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_string())
             });
@@ -350,7 +372,10 @@ pub(crate) fn process_aggregation_reads(
                 changes.push(Change {
                     path: agg.target.clone(),
                     value_json: desired_value,
-                    origin: Some("aggregation".to_owned()),
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 });
             }
         }
@@ -390,7 +415,10 @@ mod tests {
         let changes = vec![Change {
             path: "allUsers".to_string(),
             value_json: "\"alice\"".to_string(),
-            origin: None,
+            kind: ChangeKind::Real,
+            lineage: Lineage::Input,
+            audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);
@@ -413,7 +441,10 @@ mod tests {
         let changes = vec![Change {
             path: "form.allChecked".to_string(),
             value_json: "true".to_string(),
-            origin: None,
+            kind: ChangeKind::Real,
+            lineage: Lineage::Input,
+            audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);
@@ -435,7 +466,10 @@ mod tests {
         let changes = vec![Change {
             path: "allUsers.email".to_string(),
             value_json: "\"alice@example.com\"".to_string(),
-            origin: None,
+            kind: ChangeKind::Real,
+            lineage: Lineage::Input,
+            audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);
@@ -457,17 +491,26 @@ mod tests {
             Change {
                 path: "otherField".to_string(),
                 value_json: "42".to_string(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             },
             Change {
                 path: "allUsers".to_string(),
                 value_json: "\"alice\"".to_string(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             },
             Change {
                 path: "anotherField".to_string(),
                 value_json: "\"test\"".to_string(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             },
         ];
 
@@ -493,12 +536,18 @@ mod tests {
             Change {
                 path: "user.name".to_string(),
                 value_json: "\"alice\"".to_string(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             },
             Change {
                 path: "user.email".to_string(),
                 value_json: "\"alice@example.com\"".to_string(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             },
         ];
 
@@ -796,7 +845,10 @@ mod tests {
         let changes = vec![Change {
             path: "allUsers".to_string(),
             value_json: "\"alice\"".to_string(),
-            origin: None,
+            kind: ChangeKind::Real,
+            lineage: Lineage::Input,
+            audit: None,
+            ..Default::default()
         }];
 
         let result = process_aggregation_writes(&registry, changes, &shadow);

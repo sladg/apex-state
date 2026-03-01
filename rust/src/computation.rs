@@ -13,30 +13,33 @@
 //! 6. No-op filter against current target in shadow
 
 use crate::bool_logic::BoolLogicNode;
-use crate::pipeline::{Change, UNDEFINED_SENTINEL_JSON};
+use crate::change::{Change, ChangeKind, Lineage, UNDEFINED_SENTINEL_JSON};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use ts_rs::TS;
+
 /// Supported computation operations.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) enum ComputationOp {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+pub enum ComputationOp {
     Sum,
     Avg,
 }
 
 /// A single computation source with an optional exclude condition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ComputationSource {
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ComputationSource {
     pub path: String,
     pub exclude_when: Option<BoolLogicNode>,
 }
 
 /// A single computation: operation + target path + multiple sources.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Computation {
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct Computation {
     pub op: ComputationOp,
     pub target: String,
+    #[ts(inline)]
     pub sources: Vec<ComputationSource>,
 }
 
@@ -165,6 +168,21 @@ impl ComputationRegistry {
 
         targets.into_iter().collect()
     }
+
+    /// Dump all registered computations as (target, op_str, sources) triples (debug only).
+    pub(crate) fn dump_infos(&self) -> Vec<(String, String, Vec<String>)> {
+        self.computations
+            .iter()
+            .map(|(target, comp)| {
+                let op = match comp.op {
+                    ComputationOp::Sum => "SUM".to_owned(),
+                    ComputationOp::Avg => "AVG".to_owned(),
+                };
+                let sources = comp.sources.iter().map(|s| s.path.clone()).collect();
+                (target.clone(), op, sources)
+            })
+            .collect()
+    }
 }
 
 /// Try to extract an f64 from a shadow value.
@@ -256,7 +274,10 @@ pub(crate) fn process_computation_reads(
                 changes.push(Change {
                     path: comp.target.clone(),
                     value_json: desired_value,
-                    origin: Some("computation".to_owned()),
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 });
             }
         }

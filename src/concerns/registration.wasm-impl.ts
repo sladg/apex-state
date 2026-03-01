@@ -8,9 +8,9 @@
 import { effect } from 'valtio-reactive'
 
 import type { StoreInstance } from '../core/types'
-import type { ConcernRegistrationMap, GenericMeta } from '../types'
+import type { ConcernRegistrationMap } from '../types'
 import { dot } from '../utils/dot'
-import type { WasmPipeline } from '../wasm/bridge'
+import type { Wasm, WasmPipeline } from '../wasm/bridge'
 import type { BaseConcernProps, ConcernType } from './types'
 
 /** Check if a concern config has a `boolLogic` field (BoolLogic concern). */
@@ -43,14 +43,9 @@ let nextRegistrationId = 0
 /** Batch-register BoolLogics, validators, and ValueLogics with WASM, apply initial results. */
 const registerWasmBatch = (
   pipeline: WasmPipeline,
-  boolLogics: { output_path: string; tree_json: string }[],
-  validators: {
-    validator_id: number
-    output_path: string
-    dependency_paths: string[]
-    scope: string
-  }[],
-  valueLogics: { output_path: string; tree_json: string }[],
+  boolLogics: Wasm.BoolLogicRegistration[],
+  validators: Wasm.ValidatorRegistration[],
+  valueLogics: Wasm.ValueLogicRegistration[],
   validatorConfigs: Map<
     number,
     {
@@ -66,9 +61,9 @@ const registerWasmBatch = (
   const registrationId = `concerns-${nextRegistrationId++}`
   const result = pipeline.registerConcerns({
     registration_id: registrationId,
-    ...(boolLogics.length > 0 && { bool_logics: boolLogics }),
-    ...(validators.length > 0 && { validators }),
-    ...(valueLogics.length > 0 && { value_logics: valueLogics }),
+    bool_logics: boolLogics,
+    validators,
+    value_logics: valueLogics,
   })
 
   // Apply initial BoolLogic evaluations to _concerns
@@ -119,8 +114,8 @@ const registerWasmBatch = (
 }
 
 /** Create a single concern effect with cached evaluate function. */
-const createConcernEffect = <DATA extends object, META extends GenericMeta>(
-  store: StoreInstance<DATA, META>,
+const createConcernEffect = <DATA extends object>(
+  store: StoreInstance<DATA>,
   item: {
     path: string
     concernName: string
@@ -153,14 +148,7 @@ const createConcernEffect = <DATA extends object, META extends GenericMeta>(
       Object.assign({ state: store.state, path, value }, config)
 
     // EVALUATE concern (all state accesses inside are tracked!)
-    // Wrapped with timing measurement when debug.timing is enabled
-    const result = store._internal.timing.run(
-      'concerns',
-      () => evaluateFn(evalProps),
-      { path, name: concernName },
-    )
-
-    store._internal.observer.concernEval(path, concernName, value, result)
+    const result = evaluateFn(evalProps)
 
     // Check cache (non-reactive!) to see if value changed
     const prev = resultCache.get(cacheKey)
@@ -182,14 +170,9 @@ const isAdHocConcern = (
 
 /** Collected registration data from single-pass classification. */
 interface CollectedRegistrations {
-  boolLogics: { output_path: string; tree_json: string }[]
-  validators: {
-    validator_id: number
-    output_path: string
-    dependency_paths: string[]
-    scope: string
-  }[]
-  valueLogics: { output_path: string; tree_json: string }[]
+  boolLogics: Wasm.BoolLogicRegistration[]
+  validators: Wasm.ValidatorRegistration[]
+  valueLogics: Wasm.ValueLogicRegistration[]
   validatorConfigs: Map<
     number,
     {
@@ -211,7 +194,7 @@ interface CollectedRegistrations {
 /** Single-pass: classify each concern config as BoolLogic, validator, or JS effect. */
 /** Collect a schema validator registration. */
 const collectValidator = <DATA extends object>(
-  store: StoreInstance<DATA, any>,
+  store: StoreInstance<DATA>,
   path: string,
   concernName: string,
   config: Record<string, any>,
@@ -228,7 +211,6 @@ const collectValidator = <DATA extends object>(
     validator_id: validatorId,
     output_path: `_concerns.${path}.${concernName}`,
     dependency_paths: depPaths,
-    scope: '',
   })
 
   // Store schema and initial value info for post-registration processing
@@ -243,7 +225,7 @@ const collectValidator = <DATA extends object>(
 
 /** Classify a single concern config and push to the appropriate bucket. */
 const classifyConcern = <DATA extends object>(
-  store: StoreInstance<DATA, any>,
+  store: StoreInstance<DATA>,
   path: string,
   concernName: string,
   config: Record<string, any>,
@@ -304,8 +286,8 @@ const classifyConcern = <DATA extends object>(
 }
 
 /** Single-pass: classify each concern config as BoolLogic, ValueLogic, validator, or JS effect. */
-const collectRegistrations = <DATA extends object, META extends GenericMeta>(
-  store: StoreInstance<DATA, META>,
+const collectRegistrations = <DATA extends object>(
+  store: StoreInstance<DATA>,
   registrationEntries: [string, Record<string, any> | undefined][],
   concernRefs: Map<string, Record<string, unknown>>,
   concernMap: Map<string, ConcernType>,
@@ -340,8 +322,8 @@ const collectRegistrations = <DATA extends object, META extends GenericMeta>(
 }
 
 /** Clean up concern values from the concerns proxy on unmount. */
-const cleanupConcerns = <DATA extends object, META extends GenericMeta>(
-  store: StoreInstance<DATA, META>,
+const cleanupConcerns = <DATA extends object>(
+  store: StoreInstance<DATA>,
   registrationEntries: [string, Record<string, any> | undefined][],
 ) => {
   for (const [path, concernConfigs] of registrationEntries) {
@@ -362,11 +344,8 @@ const cleanupConcerns = <DATA extends object, META extends GenericMeta>(
   }
 }
 
-const registerConcernEffectsImpl = <
-  DATA extends object,
-  META extends GenericMeta,
->(
-  store: StoreInstance<DATA, META>,
+export const registerConcernEffects = <DATA extends object>(
+  store: StoreInstance<DATA>,
   registration: ConcernRegistrationMap<DATA>,
   concerns: readonly ConcernType[],
 ): (() => void) => {
@@ -426,11 +405,3 @@ const registerConcernEffectsImpl = <
     cleanupConcerns(store, registrationEntries)
   }
 }
-
-export const registerConcernEffects: typeof import('./registration').registerConcernEffects =
-  (store, registration, concerns) =>
-    store._internal.timing.run(
-      'registration',
-      () => registerConcernEffectsImpl(store, registration, concerns),
-      { path: Object.keys(registration).join(','), name: 'concerns' },
-    )

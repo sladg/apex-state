@@ -34,8 +34,7 @@ interface FormState {
   active: boolean
 }
 
-// Legacy mode — keeps tests independent of WASM async loading timing
-const store = createGenericStore<FormState>({ useLegacyImplementation: true })
+const store = createGenericStore<FormState>({})
 
 const initialState: FormState = {
   user: { name: 'Alice', email: 'alice@example.com' },

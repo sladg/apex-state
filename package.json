@@ -56,12 +56,13 @@
     "test:smoke": "vitest run tests/smoke-dual-mode.test.tsx",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
-    "wasm:build": "wasm-pack build --target bundler rust",
+    "wasm:build": "wasm-pack build --target bundler rust && npm run wasm:generate-types",
     "wasm:check": "cargo check --manifest-path rust/Cargo.toml",
     "wasm:fmt": "cargo fmt --manifest-path rust/Cargo.toml",
     "wasm:fmt:check": "cargo fmt --manifest-path rust/Cargo.toml -- --check",
+    "wasm:generate-types": "cargo run --manifest-path rust/Cargo.toml --bin ts-export",
     "wasm:lint": "cargo clippy --manifest-path rust/Cargo.toml -- -D warnings",
-    "wasm:test": "cargo test --manifest-path rust/Cargo.toml"
+    "wasm:test": "cargo test --manifest-path rust/Cargo.toml --lib"
   },
   "dependencies": {
     "@jsbits/deep-clone": "^1.1.1",

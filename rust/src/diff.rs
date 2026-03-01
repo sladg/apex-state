@@ -3,7 +3,7 @@
 //! Filters out no-op changes by comparing incoming values against the nested
 //! shadow state. Used by streaming data gateway to minimize pipeline work.
 
-use crate::pipeline::Change;
+use crate::change::Change;
 use crate::shadow::{ShadowState, ValueRepr};
 
 /// Compare two f64 values for bitwise equality (handles NaN, -0/+0).
@@ -85,6 +85,7 @@ pub(crate) fn diff_changes(shadow: &ShadowState, changes: &[Change]) -> Vec<Chan
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::change::{ChangeKind, Lineage};
 
     fn make_shadow(json: &str) -> ShadowState {
         let mut s = ShadowState::new();
@@ -96,7 +97,10 @@ mod tests {
         Change {
             path: path.to_owned(),
             value_json: value_json.to_owned(),
-            origin: None,
+            kind: ChangeKind::Real,
+            lineage: Lineage::Input,
+            audit: None,
+            ..Default::default()
         }
     }
 

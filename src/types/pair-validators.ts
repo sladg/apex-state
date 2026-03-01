@@ -41,19 +41,29 @@ export type CheckPairValueMatch<
   : never
 
 /**
- * Validates an array of [P1, P2] sync/flip pairs lazily — O(K) where K = pairs written.
+ * Validates an array of sync/flip pairs lazily — O(K) where K = pairs written.
+ * Accepts [P1, P2] or [P1, P2, { oneWay: '[0]->[1]' | '[1]->[0]' }].
+ * The optional third element declares direction — does not affect value type validation.
  */
 export type CheckSyncPairs<
   DATA extends object,
-  T extends readonly [string, string][],
+  T extends readonly (
+    | [string, string]
+    | [string, string, { oneWay: '[0]->[1]' | '[1]->[0]' }]
+  )[],
   Depth extends number = DefaultDepth,
 > = {
   [I in keyof T]: T[I] extends [
     infer P1 extends string,
     infer P2 extends string,
+    { oneWay: '[0]->[1]' | '[1]->[0]' },
   ]
-    ? CheckPairValueMatch<DATA, P1, P2, Depth>
-    : T[I]
+    ? CheckPairValueMatch<DATA, P1, P2, Depth> extends [P1, P2]
+      ? [P1, P2, { oneWay: '[0]->[1]' | '[1]->[0]' }]
+      : [P1, never, { oneWay: '[0]->[1]' | '[1]->[0]' }]
+    : T[I] extends [infer P1 extends string, infer P2 extends string]
+      ? CheckPairValueMatch<DATA, P1, P2, Depth>
+      : T[I]
 }
 
 /**

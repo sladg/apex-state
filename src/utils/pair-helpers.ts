@@ -74,10 +74,14 @@ import type { GenericMeta } from '../types/meta'
 export const syncPairs =
   <DATA extends object, Depth extends number = DefaultDepth>() =>
   <
-    T extends [
-      ResolvableDeepKey<DATA, Depth>,
-      ResolvableDeepKey<DATA, Depth>,
-    ][],
+    T extends (
+      | [ResolvableDeepKey<DATA, Depth>, ResolvableDeepKey<DATA, Depth>]
+      | [
+          ResolvableDeepKey<DATA, Depth>,
+          ResolvableDeepKey<DATA, Depth>,
+          { oneWay: '[0]->[1]' | '[1]->[0]' },
+        ]
+    )[],
   >(
     pairs: CheckSyncPairs<DATA, T, Depth>,
   ): ValidatedSyncPairs<DATA> =>

@@ -11,7 +11,12 @@ import { z } from 'zod'
 import { createGenericStore } from '../../src'
 import type { DeeplyNestedState } from '../mocks'
 import { deeplyNestedFixtures } from '../mocks'
-import { flushEffects, MODES, mountStore } from '../utils/react'
+import {
+  expectShadowMatch,
+  flushEffects,
+  MODES,
+  mountStore,
+} from '../utils/react'
 
 describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
   describe('State access at depth', () => {
@@ -67,6 +72,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       expect(storeInstance.state.level1.level2.level3.level4.level5.value).toBe(
         'updated-L5',
       )
+      expectShadowMatch(storeInstance)
     })
 
     it('should track mutations at maximum depth via valtio', async () => {
@@ -88,6 +94,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       )
       // Verify that mutations propagate through the nested structure
       expect(storeInstance.state.level1.level2.level3.level4).toBeDefined()
+      expectShadowMatch(storeInstance)
     })
   })
 
@@ -116,6 +123,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.level1.level2.value).toBe('synced-value')
+      expectShadowMatch(storeInstance)
     })
 
     it('should sync between different depth levels', async () => {
@@ -144,6 +152,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       expect(storeInstance.state.level1.level2.level3.level4.level5.value).toBe(
         'cross-depth-sync',
       )
+      expectShadowMatch(storeInstance)
     })
 
     it('should verify sync paths scattered at multiple levels', async () => {
@@ -177,6 +186,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       expect(storeInstance.state.level1.level2.level3.level4.value).toBe(
         'sync-from-L2',
       )
+      expectShadowMatch(storeInstance)
     })
   })
 
@@ -859,6 +869,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
           'disabledWhen'
         ],
       ).toBeDefined()
+      expectShadowMatch(storeInstance)
     })
 
     it('should re-evaluate all concerns when deep state changes propagate', async () => {
@@ -949,6 +960,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
       expect(storeInstance.state.level1.level2.level3.level4.level5.value).toBe(
         'batch-L2',
       )
+      expectShadowMatch(storeInstance)
     })
   })
 
@@ -984,6 +996,7 @@ describe.each(MODES)('[$name] Deeply Nested State Operations', ({ config }) => {
 
       // Both sync and listener should have executed
       expect(_si.state.level1.level2.level3.value).toBe('pipeline-test')
+      expectShadowMatch(_si)
     })
 
     it('should order listener dispatch correctly by depth', async () => {

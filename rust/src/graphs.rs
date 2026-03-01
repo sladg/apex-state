@@ -3,6 +3,7 @@
 //! Uses connected components for O(1) group lookup.
 //! When a path in a group changes, all peers receive the same (or inverted) value.
 
+use crate::intern::InternTable;
 use std::collections::{HashMap, HashSet};
 
 /// A graph using connected components for O(1) group lookups.
@@ -276,6 +277,18 @@ impl Graph {
     #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn clear(&mut self) {
         *self = Self::new();
+    }
+
+    /// Dump all edges as resolved string pairs (debug only — not called in hot path).
+    pub(crate) fn dump_pairs(&self, intern: &InternTable) -> Vec<[String; 2]> {
+        self.edges
+            .iter()
+            .filter_map(|(id1, id2)| {
+                let p1 = intern.resolve(*id1)?.to_owned();
+                let p2 = intern.resolve(*id2)?.to_owned();
+                Some([p1, p2])
+            })
+            .collect()
     }
 }
 

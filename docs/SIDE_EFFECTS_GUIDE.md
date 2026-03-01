@@ -10,12 +10,12 @@ Side effects are synchronous reactions to state changes that run during the chan
 
 ## Overview
 
-| Side Effect      | What it does                                                     | Config format                            |
-| ---------------- | ---------------------------------------------------------------- | ---------------------------------------- |
-| **Sync paths**   | Keeps two paths in sync — changing one updates the other         | `[path1, path2]`                         |
-| **Flip paths**   | Keeps two boolean paths as inverses                              | `[path1, path2]`                         |
-| **Aggregations** | Derives a target value from multiple sources                     | `[target, source]` (target always first) |
-| **Listeners**    | Reacts to changes under a path, optionally returning new changes | `{ path, scope, fn }`                    |
+| Side Effect      | What it does                                                     | Config format                                          |
+| ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------ |
+| **Sync paths**   | Keeps two paths in sync — bidirectional or one-way               | `[path1, path2]` or `[path1, path2, { oneWay: ... }]` |
+| **Flip paths**   | Keeps two boolean paths as inverses                              | `[path1, path2]`                                       |
+| **Aggregations** | Derives a target value from multiple sources                     | `[target, source]` (target always first)               |
+| **Listeners**    | Reacts to changes under a path, optionally returning new changes | `{ path, scope, fn }`                                  |
 
 ## Registration
 
@@ -96,7 +96,11 @@ Practical limit: **~50K–80K paths** — a ~30–50x improvement over the direc
 
 ## Sync Paths
 
-Keep multiple paths synchronized. When one path changes, all paths in the same sync group receive the new value.
+Keep multiple paths synchronized. When one path changes, the other receives the same value.
+
+### Bidirectional (default)
+
+When either path changes, the other is updated:
 
 ```typescript
 store.useSideEffects("sync", {
@@ -107,9 +111,30 @@ store.useSideEffects("sync", {
 })
 ```
 
-**Behavior on registration**: If the paths already have values, the most common non-null value wins and is applied to all paths in the group.
+Multiple bidirectional pairs can form a connected group — if A syncs with B and B syncs with C, all three stay in sync.
 
-**Implementation**: Uses `PathGroups` data structure for O(1) connected component lookups. Multiple sync pairs can form a group — if A syncs with B and B syncs with C, all three stay in sync.
+### One-Way (directed)
+
+Use the `oneWay` option to make sync flow in one direction only:
+
+```typescript
+store.useSideEffects("sync", {
+  syncPaths: [
+    // Changes to settings.theme flow into user.theme, but NOT the reverse
+    ["settings.theme", "user.theme", { oneWay: "[0]->[1]" }],
+
+    // Changes to user.locale flow back into settings.locale, but NOT the reverse
+    ["settings.locale", "user.locale", { oneWay: "[1]->[0]" }],
+  ],
+})
+```
+
+`oneWay: "[0]->[1]"` — first path is the source, second is the target.
+`oneWay: "[1]->[0]"` — second path is the source, first is the target.
+
+Directed pairs form isolated edges (not connected components). They are processed separately from bidirectional pairs in WASM — they use the directed sync graph, not the sync graph.
+
+**Behavior on registration**: For bidirectional pairs, the most common non-null value in the group wins and is written to all paths. For directed pairs, the source value is written to the target.
 
 **Source**: `src/sideEffects/prebuilts/sync.ts`
 
