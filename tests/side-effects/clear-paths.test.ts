@@ -911,6 +911,103 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
   })
 })
 
+describe('Concrete trigger prefix matching (non-leaf triggers)', () => {
+  let pipeline: WasmPipeline
+  beforeEach(() => {
+    pipeline = createWasmPipeline()
+  })
+  afterEach(() => {
+    pipeline.destroy()
+  })
+
+  // Setup: form.fields = { email: { value: "old" } }, form.errors = "err"
+  // Clear rule: triggers=["form.fields"], targets=["form.errors"]
+  //
+  // Action: setValue("form.fields.email.value", "new")  — descendant of trigger
+  //
+  // Expected: form.errors = null (prefix match fires)
+  it('should fire when a descendant of the trigger path changes', () => {
+    pipeline.shadowInit({
+      form: { fields: { email: { value: 'old' } }, errors: 'err' },
+    })
+    pipeline.registerSideEffects({
+      registration_id: 'test',
+      clear_paths: [{ triggers: ['form.fields'], targets: ['form.errors'] }],
+    })
+
+    const changes = pipeline.processChanges([
+      { path: 'form.fields.email.value', value: 'new', meta: {} },
+    ]).listener_changes
+    const paths = getPaths(changes)
+    expect(paths).toContain('form.errors')
+
+    const errorsChange = findChange(changes, 'form.errors')
+    expect(errorsChange?.value).toBeNull()
+  })
+
+  // Trigger "form.fields" should NOT fire when "form.fieldset" changes —
+  // prefix check uses segment boundary ("form.fields." not "form.fields")
+  it('should NOT fire for a sibling path that shares the trigger as a string prefix', () => {
+    pipeline.shadowInit({
+      form: { fields: { email: 'old' }, fieldset: 'x', errors: 'err' },
+    })
+    pipeline.registerSideEffects({
+      registration_id: 'test',
+      clear_paths: [{ triggers: ['form.fields'], targets: ['form.errors'] }],
+    })
+
+    const changes = pipeline.processChanges([
+      { path: 'form.fieldset', value: 'y', meta: {} },
+    ]).listener_changes
+    const paths = getPaths(changes)
+    expect(paths).not.toContain('form.errors')
+  })
+
+  // Trigger "form.email" fires even for a path 4 levels deep under it.
+  // Prefix matching is purely string-based — it does not know whether
+  // form.email is a leaf in your schema.
+  it('should fire for a deeply nested descendant regardless of depth', () => {
+    // form.email must be null/object in shadow — writing through a primitive would
+    // error at the shadow traversal level before the clear rule even runs.
+    pipeline.shadowInit({
+      form: { email: null as unknown, errors: 'err' },
+    })
+    pipeline.registerSideEffects({
+      registration_id: 'test',
+      clear_paths: [{ triggers: ['form.email'], targets: ['form.errors'] }],
+    })
+
+    const changes = pipeline.processChanges([
+      { path: 'form.email.value.user.nested', value: 'deep', meta: {} },
+    ]).listener_changes
+    const paths = getPaths(changes)
+    expect(paths).toContain('form.errors')
+
+    const errorsChange = findChange(changes, 'form.errors')
+    expect(errorsChange?.value).toBeNull()
+  })
+
+  // Exact match still works when the trigger path itself changes
+  it('should still fire for an exact match on the trigger path', () => {
+    pipeline.shadowInit({
+      form: { fields: null as unknown, errors: 'err' },
+    })
+    pipeline.registerSideEffects({
+      registration_id: 'test',
+      clear_paths: [{ triggers: ['form.fields'], targets: ['form.errors'] }],
+    })
+
+    const changes = pipeline.processChanges([
+      { path: 'form.fields', value: { email: 'new' }, meta: {} },
+    ]).listener_changes
+    const paths = getPaths(changes)
+    expect(paths).toContain('form.errors')
+
+    const errorsChange = findChange(changes, 'form.errors')
+    expect(errorsChange?.value).toBeNull()
+  })
+})
+
 describe('Registration and validation', () => {
   let pipeline: WasmPipeline
   beforeEach(() => {

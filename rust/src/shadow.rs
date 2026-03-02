@@ -1,6 +1,6 @@
 use crate::change::UNDEFINED_SENTINEL;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Represents a value in the shadow state tree.
 ///
@@ -72,12 +72,17 @@ impl ValueRepr {
 #[derive(Clone)]
 pub(crate) struct ShadowState {
     root: ValueRepr,
+    /// Paths that were explicitly removed from shadow due to a parent replacement.
+    /// Used by `parent_exists` to distinguish "never initialized" (allow sync to create)
+    /// from "explicitly deleted" (block stale sync writes).
+    removed_paths: HashSet<String>,
 }
 
 impl ShadowState {
     pub(crate) fn new() -> Self {
         Self {
             root: ValueRepr::Object(HashMap::new()),
+            removed_paths: HashSet::new(),
         }
     }
 
@@ -99,21 +104,52 @@ impl ShadowState {
 
     /// Check if the parent structure of a dot-separated path exists.
     /// Returns true for root-level paths (no dots) since the root always exists.
-    /// For nested paths, checks that the parent resolves to an Object.
+    /// For nested paths, checks that the parent resolves to an Object in shadow,
+    /// OR that the parent was never explicitly removed (allowing sync to create
+    /// intermediate containers for never-initialized paths).
+    ///
+    /// This distinction prevents stale sync writes to explicitly-deleted subtrees
+    /// while still allowing sync to initialize paths that were never written.
     pub(crate) fn parent_exists(&self, path: &str) -> bool {
         match path.rsplit_once('.') {
             None => true, // root-level key, parent is root which always exists
-            Some((parent, _)) => matches!(self.get(parent), Some(ValueRepr::Object(_))),
+            Some((parent, _)) => {
+                if matches!(self.get(parent), Some(ValueRepr::Object(_))) {
+                    return true;
+                }
+                // Parent not in shadow — allow if it was never explicitly removed.
+                // This permits sync to create intermediate containers for paths that
+                // were registered but never initialized, while blocking stale writes
+                // to paths whose parent was deliberately cleared/replaced.
+                !self.removed_paths.contains(parent)
+            }
         }
     }
 
     /// Set a value at the given dot-separated path from a JSON string.
     /// Creates intermediate objects if they don't exist.
     /// Preserves sibling values (partial update).
+    ///
+    /// Tracks removed paths: when an Object is replaced, all descendant paths that
+    /// existed under the old value are recorded in `removed_paths`. This enables
+    /// `parent_exists` to distinguish "explicitly removed" (stale, block sync) from
+    /// "never initialized" (allow sync to create intermediate containers).
     pub(crate) fn set(&mut self, path: &str, value_json: &str) -> Result<(), String> {
         let json: serde_json::Value =
             serde_json::from_str(value_json).map_err(|e| format!("JSON parse error: {}", e))?;
         let value = ValueRepr::from(json);
+
+        // Before overwriting, collect ALL paths (intermediate + leaves) under the old
+        // Object value and mark them as explicitly removed. Leaf-typed old values have
+        // no children to remove, so only bother when old value is an Object.
+        if !path.is_empty() {
+            if let Some(ValueRepr::Object(_)) = self.get(path) {
+                let old_value = self.get(path).unwrap().clone();
+                let mut removed = Vec::new();
+                Self::collect_all_paths(&old_value, path, &mut removed);
+                self.removed_paths.extend(removed);
+            }
+        }
 
         if path.is_empty() {
             self.root = value;
@@ -260,6 +296,37 @@ impl ShadowState {
                 "Cannot traverse through primitive at '{}' (value: {:?})",
                 key, node
             )),
+        }
+    }
+
+    /// Collect ALL paths reachable under `value` (both intermediate objects and leaves).
+    /// Used to populate `removed_paths` when an Object is replaced via `set()`.
+    fn collect_all_paths(value: &ValueRepr, prefix: &str, result: &mut Vec<String>) {
+        match value {
+            ValueRepr::Object(map) => {
+                for (key, child) in map {
+                    let child_path = if prefix.is_empty() {
+                        key.clone()
+                    } else {
+                        crate::join_path(prefix, key)
+                    };
+                    result.push(child_path.clone());
+                    Self::collect_all_paths(child, &child_path, result);
+                }
+            }
+            ValueRepr::Array(arr) => {
+                for (i, child) in arr.iter().enumerate() {
+                    let idx_str = i.to_string();
+                    let child_path = if prefix.is_empty() {
+                        idx_str
+                    } else {
+                        crate::join_path(prefix, &idx_str)
+                    };
+                    result.push(child_path.clone());
+                    Self::collect_all_paths(child, &child_path, result);
+                }
+            }
+            _ => {} // leaf — no children to collect
         }
     }
 

@@ -47,8 +47,18 @@ struct DirectEntry {
 pub(crate) struct ClearPathsRegistry {
     /// Fast path: concrete trigger path_id → targets.
     direct_triggers: HashMap<u32, Vec<DirectEntry>>,
+    /// Prefix path: concrete triggers that also fire for descendant path changes.
+    /// Stored as strings so we can do `starts_with(trigger + ".")` checks.
+    prefix_triggers: Vec<PrefixEntry>,
     /// Slow path: wildcard trigger patterns, matched against each changed path.
     wildcard_triggers: Vec<WildcardTrigger>,
+}
+
+#[derive(Debug, Clone)]
+struct PrefixEntry {
+    trigger_path: String, // e.g. "form.fields"
+    targets: Vec<ClearTarget>,
+    registration_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +193,7 @@ impl ClearPathsRegistry {
     pub(crate) fn new() -> Self {
         Self {
             direct_triggers: HashMap::new(),
+            prefix_triggers: Vec::new(),
             wildcard_triggers: Vec::new(),
         }
     }
@@ -262,6 +273,13 @@ impl ClearPathsRegistry {
                         targets: clear_targets.clone(),
                         registration_id: registration_id.to_owned(),
                     });
+                // Also register for descendant (prefix) matching:
+                // fires when any path starting with "trigger." changes.
+                self.prefix_triggers.push(PrefixEntry {
+                    trigger_path: trigger.clone(),
+                    targets: clear_targets.clone(),
+                    registration_id: registration_id.to_owned(),
+                });
             }
         }
 
@@ -277,6 +295,10 @@ impl ClearPathsRegistry {
         // Remove empty entries
         self.direct_triggers.retain(|_, v| !v.is_empty());
 
+        // Remove from prefix_triggers
+        self.prefix_triggers
+            .retain(|pt| pt.registration_id != registration_id);
+
         // Remove from wildcard_triggers
         self.wildcard_triggers
             .retain(|wt| wt.registration_id != registration_id);
@@ -284,13 +306,22 @@ impl ClearPathsRegistry {
 
     /// Check if registry is empty (no rules registered).
     pub(crate) fn is_empty(&self) -> bool {
-        self.direct_triggers.is_empty() && self.wildcard_triggers.is_empty()
+        self.direct_triggers.is_empty()
+            && self.prefix_triggers.is_empty()
+            && self.wildcard_triggers.is_empty()
     }
 
     /// Returns true if the given interned path ID has any registered clear-path triggers.
     /// Used by the trace recorder to filter MATCHED entries to only relevant paths.
     pub(crate) fn has_trigger_for_path_id(&self, path_id: u32, path: &str) -> bool {
         if self.direct_triggers.contains_key(&path_id) {
+            return true;
+        }
+        // Check prefix triggers — fires for descendants of registered concrete paths
+        if self.prefix_triggers.iter().any(|pt| {
+            let prefix_dot = format!("{}.", pt.trigger_path);
+            path.starts_with(&prefix_dot)
+        }) {
             return true;
         }
         // Check wildcard triggers
@@ -301,8 +332,13 @@ impl ClearPathsRegistry {
 
     /// Process changed paths and produce clear changes.
     ///
-    /// For each changed path_id: check direct_triggers (O(1)), then scan wildcard_triggers.
-    /// Deduplicates targets via HashSet<u32>. Returns clear changes.
+    /// For each changed path_id:
+    ///
+    /// 1. Exact match via direct_triggers (O(1))
+    /// 2. Prefix match via prefix_triggers (fires for descendants of registered paths)
+    /// 3. Wildcard pattern match via wildcard_triggers
+    ///
+    /// Deduplicates targets via `HashSet<u32>`. Returns clear changes.
     pub(crate) fn process(
         &self,
         changed_path_ids: &[u32],
@@ -317,10 +353,30 @@ impl ClearPathsRegistry {
         let mut seen: HashSet<u32> = HashSet::new();
 
         for &path_id in changed_path_ids {
-            // --- Fast path: direct triggers ---
+            // --- Fast path: direct triggers (exact match) ---
             if let Some(entries) = self.direct_triggers.get(&path_id) {
                 for entry in entries {
                     resolve_and_clear(&entry.targets, &[], intern, shadow, &mut clears, &mut seen);
+                }
+            }
+
+            // --- Prefix path: concrete triggers that fire for descendants ---
+            if !self.prefix_triggers.is_empty() {
+                if let Some(path) = intern.resolve(path_id) {
+                    let path = path.to_owned(); // avoid borrow conflict
+                    for pt in &self.prefix_triggers {
+                        let prefix_dot = format!("{}.", pt.trigger_path);
+                        if path.starts_with(&prefix_dot) {
+                            resolve_and_clear(
+                                &pt.targets,
+                                &[],
+                                intern,
+                                shadow,
+                                &mut clears,
+                                &mut seen,
+                            );
+                        }
+                    }
                 }
             }
 
@@ -1570,6 +1626,129 @@ mod tests {
             &mut intern,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn registration_concrete_rule_also_adds_prefix_entry() {
+        // Register: triggers=["form.fields"], targets=["form.errors"]
+        // Verify: direct_triggers has "form.fields" entry AND prefix_triggers has one entry
+        let mut registry = ClearPathsRegistry::new();
+        let mut intern = InternTable::new();
+        registry
+            .register(
+                "test",
+                &["form.fields".to_owned()],
+                &["form.errors".to_owned()],
+                &mut intern,
+            )
+            .unwrap();
+        let id = intern.get_id("form.fields").unwrap();
+        assert!(registry.direct_triggers.contains_key(&id));
+        assert_eq!(registry.prefix_triggers.len(), 1);
+        assert_eq!(registry.prefix_triggers[0].trigger_path, "form.fields");
+    }
+
+    #[test]
+    fn pipeline_concrete_trigger_fires_for_descendant_path() {
+        // Setup: form.fields = { email: { value: "old" } }, form.errors = "err"
+        // Clear rule: triggers=["form.fields"], targets=["form.errors"]
+        //
+        // Action: change form.fields.email.value (a descendant of form.fields)
+        //
+        // Expected: form.errors = null (prefix match fired)
+        let mut pipeline = setup_pipeline(
+            r#"{"form": {"fields": {"email": {"value": "old"}}, "errors": "err"}}"#,
+            vec![(vec!["form.fields"], vec!["form.errors"])],
+        );
+        let result = pipeline
+            .process_changes_vec(vec![Change {
+                path: "form.fields.email.value".to_owned(),
+                value_json: "\"new\"".to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
+            }])
+            .unwrap();
+        let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(
+            paths.contains(&"form.errors"),
+            "expected form.errors to be cleared, got: {paths:?}"
+        );
+        let errors_change = result
+            .changes
+            .iter()
+            .find(|c| c.path == "form.errors")
+            .unwrap();
+        assert_eq!(errors_change.value_json, "null");
+    }
+
+    #[test]
+    fn pipeline_concrete_trigger_does_not_fire_for_sibling_prefix() {
+        // Setup: form.fields.email = "old", form.fieldset = "x", form.errors = "err"
+        // Clear rule: triggers=["form.fields"], targets=["form.errors"]
+        //
+        // Action: change form.fieldset — shares "form.fields" prefix but is NOT a descendant
+        //
+        // Expected: form.errors NOT cleared (segment boundary respected)
+        let mut pipeline = setup_pipeline(
+            r#"{"form": {"fields": {"email": "old"}, "fieldset": "x", "errors": "err"}}"#,
+            vec![(vec!["form.fields"], vec!["form.errors"])],
+        );
+        let result = pipeline
+            .process_changes_vec(vec![Change {
+                path: "form.fieldset".to_owned(),
+                value_json: "\"y\"".to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
+            }])
+            .unwrap();
+        let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(
+            !paths.contains(&"form.errors"),
+            "form.errors should NOT be cleared for sibling path, got: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn pipeline_concrete_trigger_fires_for_deeply_nested_descendant() {
+        // Setup: form.email = null (object slot, not a primitive), form.errors = "err"
+        // Clear rule: triggers=["form.email"], targets=["form.errors"]
+        //
+        // Action: change form.email.value.user.nested — 4 levels deep under trigger
+        //
+        // Expected: form.errors = null (prefix fires regardless of depth)
+        // This documents that prefix matching is purely string-based — it does not
+        // know whether form.email is a leaf in your schema.
+        // Note: form.email must be null/object in shadow for the nested write to succeed;
+        // writing through a primitive would error at the shadow traversal level.
+        let mut pipeline = setup_pipeline(
+            r#"{"form": {"email": null, "errors": "err"}}"#,
+            vec![(vec!["form.email"], vec!["form.errors"])],
+        );
+        let result = pipeline
+            .process_changes_vec(vec![Change {
+                path: "form.email.value.user.nested".to_owned(),
+                value_json: "\"deep\"".to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
+            }])
+            .unwrap();
+        let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(
+            paths.contains(&"form.errors"),
+            "expected form.errors to be cleared for deep descendant, got: {paths:?}"
+        );
+        let errors_change = result
+            .changes
+            .iter()
+            .find(|c| c.path == "form.errors")
+            .unwrap();
+        assert_eq!(errors_change.value_json, "null");
     }
 
     #[test]
