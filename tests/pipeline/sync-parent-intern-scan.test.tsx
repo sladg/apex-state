@@ -275,3 +275,338 @@ describe('[WASM] Sync parent expansion — intern table scan', () => {
     cleanup()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Failing scenarios — parent set to {} or object lacking the registered key
+// These demonstrate the remaining bug: sync does not fire when source leaf
+// is absent from both shadow (cleared by parent write) and incoming value.
+// ---------------------------------------------------------------------------
+
+describe('[WASM] Sync parent expansion — empty/partial parent write (regression)', () => {
+  it('clears deeply nested peer when source pricing object is reset to {}', () => {
+    // order.items.sku001.pricing.salePrice was set previously (exists in shadow).
+    // A parent reset to {} clears salePrice from shadow AND the incoming value has no key.
+    // Expected: cart peer must receive null to stay in sync.
+    interface State {
+      order: { items: { sku001: { pricing: { salePrice?: number } } } }
+      cart: { lines: { sku001: { pricing: { salePrice?: number } } } }
+    }
+
+    const { storeInstance, processChanges } = createTestStore<State>(
+      {},
+      {
+        order: { items: { sku001: { pricing: { salePrice: 19.99 } } } },
+        cart: { lines: { sku001: { pricing: { salePrice: 19.99 } } } },
+      },
+    )
+
+    const cleanup = registerSideEffects(storeInstance, 'test', {
+      syncPaths: [
+        [
+          'order.items.sku001.pricing.salePrice',
+          'cart.lines.sku001.pricing.salePrice',
+        ],
+      ],
+    })
+
+    // Reset pricing to {} — salePrice is gone from both shadow and incoming
+    processChanges(storeInstance, [
+      ['order.items.sku001.pricing', {}, {} as GenericMeta],
+    ] as unknown as ArrayOfChanges<State, GenericMeta>)
+
+    // Cart peer must be cleared — null, not left stale at 19.99
+    const cartPrice = at(
+      storeInstance.state,
+      'cart',
+      'lines',
+      'sku001',
+      'pricing',
+      'salePrice',
+    )
+    expect(cartPrice).toBeNull()
+
+    expectShadowMatch(storeInstance)
+    cleanup()
+  })
+
+  it('clears deeply nested peer when source object is replaced with sibling-only keys', () => {
+    // catalog.us pricing has basePrice; it is replaced with an object containing only tax.
+    // Expected: catalog.eu basePrice must receive null (not stay at 100.0).
+    interface State {
+      catalog: {
+        us: {
+          products: {
+            sku001: { pricing: { basePrice?: number; tax?: number } }
+          }
+        }
+        eu: {
+          products: {
+            sku001: { pricing: { basePrice?: number; tax?: number } }
+          }
+        }
+      }
+    }
+
+    const { storeInstance, processChanges } = createTestStore<State>(
+      {},
+      {
+        catalog: {
+          us: { products: { sku001: { pricing: { basePrice: 100 } } } },
+          eu: { products: { sku001: { pricing: { basePrice: 100 } } } },
+        },
+      },
+    )
+
+    const cleanup = registerSideEffects(storeInstance, 'test', {
+      syncPaths: [
+        [
+          'catalog.us.products.sku001.pricing.basePrice',
+          'catalog.eu.products.sku001.pricing.basePrice',
+        ],
+      ],
+    })
+
+    // Replace pricing — basePrice absent, only tax present
+    processChanges(storeInstance, [
+      ['catalog.us.products.sku001.pricing', { tax: 0.2 }, {} as GenericMeta],
+    ] as unknown as ArrayOfChanges<State, GenericMeta>)
+
+    const euPrice = at(
+      storeInstance.state,
+      'catalog',
+      'eu',
+      'products',
+      'sku001',
+      'pricing',
+      'basePrice',
+    )
+    // Peer must be cleared — source no longer has basePrice
+    expect(euPrice).toBeNull()
+
+    expectShadowMatch(storeInstance)
+    cleanup()
+  })
+
+  it('syncs null to peer when deeply nested source leaf is first written then cleared via parent', () => {
+    // Two-step: first set the leaf (it goes into shadow), then clear parent to {}.
+    // After clear, peer must reflect null.
+    interface State {
+      warehouse: { sku001: { availability: { inStock?: boolean } } }
+      storefront: { sku001: { availability: { inStock?: boolean } } }
+    }
+
+    const { storeInstance, processChanges } = createTestStore<State>(
+      {},
+      {
+        warehouse: { sku001: { availability: {} } },
+        storefront: { sku001: { availability: {} } },
+      },
+    )
+
+    const cleanup = registerSideEffects(storeInstance, 'test', {
+      syncPaths: [
+        [
+          'warehouse.sku001.availability.inStock',
+          'storefront.sku001.availability.inStock',
+        ],
+      ],
+    })
+
+    // Step 1: set inStock — leaf enters shadow, peer syncs
+    processChanges(storeInstance, [
+      ['warehouse.sku001.availability', { inStock: true }, {} as GenericMeta],
+    ] as unknown as ArrayOfChanges<State, GenericMeta>)
+
+    expect(
+      at(
+        storeInstance.state,
+        'storefront',
+        'sku001',
+        'availability',
+        'inStock',
+      ),
+    ).toBe(true)
+
+    // Step 2: clear availability to {} — inStock gone from shadow AND incoming
+    processChanges(storeInstance, [
+      ['warehouse.sku001.availability', {}, {} as GenericMeta],
+    ] as unknown as ArrayOfChanges<State, GenericMeta>)
+
+    // Peer must be cleared — null, not stale true
+    const storefrontStock = at(
+      storeInstance.state,
+      'storefront',
+      'sku001',
+      'availability',
+      'inStock',
+    )
+    expect(storefrontStock).toBeNull()
+
+    expectShadowMatch(storeInstance)
+    cleanup()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 7-way interconnected sync — all regions in one sync component
+// ---------------------------------------------------------------------------
+
+describe('[WASM] Sync parent expansion — 7 interconnected regional catalogs', () => {
+  /** The 7 regions used across all tests in this suite. */
+  const REGIONS = ['us', 'eu', 'uk', 'au', 'jp', 'ca', 'br'] as const
+  type Region = (typeof REGIONS)[number]
+
+  /** Build the initial state: all regions, pricing containers optional leaf. */
+  const buildState = (
+    salePriceByRegion: Partial<Record<Region, number | null>>,
+  ) => {
+    const catalog = Object.fromEntries(
+      REGIONS.map((r) => {
+        const pricing: Record<string, unknown> =
+          salePriceByRegion[r] !== undefined
+            ? { salePrice: salePriceByRegion[r] }
+            : {}
+        return [r, { products: { sku001: { pricing } } }]
+      }),
+    )
+    return { catalog } as {
+      catalog: Record<
+        Region,
+        { products: { sku001: { pricing: { salePrice?: number | null } } } }
+      >
+    }
+  }
+
+  /** Register star-topology sync pairs: us ↔ every other region. */
+  const registerRegionalSync = (
+    storeInstance: Parameters<typeof registerSideEffects>[0],
+  ) =>
+    registerSideEffects(storeInstance, 'test', {
+      syncPaths: REGIONS.filter((r) => r !== 'us').map((r) => [
+        `catalog.us.products.sku001.pricing.salePrice`,
+        `catalog.${r}.products.sku001.pricing.salePrice`,
+      ]),
+    })
+
+  const peerPrice = (
+    state: ReturnType<typeof buildState>,
+    region: Region,
+  ): unknown =>
+    at(state, 'catalog', region, 'products', 'sku001', 'pricing', 'salePrice')
+
+  it('propagates first-time salePrice write via US parent change to all 6 peers', () => {
+    // None of the 7 regions have salePrice in shadow yet.
+    // US pricing parent is set with salePrice → all 6 peers must receive the value.
+    const { storeInstance, processChanges } = createTestStore(
+      {},
+      buildState({}),
+    )
+    const cleanup = registerRegionalSync(storeInstance)
+
+    processChanges(storeInstance, [
+      [
+        'catalog.us.products.sku001.pricing',
+        { salePrice: 29.99 },
+        {} as GenericMeta,
+      ],
+    ] as unknown as ArrayOfChanges<ReturnType<typeof buildState>, GenericMeta>)
+
+    for (const region of REGIONS.filter((r) => r !== 'us')) {
+      expect(peerPrice(storeInstance.state, region)).toBe(29.99)
+    }
+
+    expectShadowMatch(storeInstance)
+    cleanup()
+  })
+
+  it('clears all 6 peers to null when US pricing is reset to {}', () => {
+    // All regions start with salePrice = 49.99 in shadow.
+    // US pricing cleared to {} → all 6 peers must receive null.
+    const initial = buildState(
+      Object.fromEntries(REGIONS.map((r) => [r, 49.99])) as Record<
+        Region,
+        number
+      >,
+    )
+    const { storeInstance, processChanges } = createTestStore({}, initial)
+    const cleanup = registerRegionalSync(storeInstance)
+
+    processChanges(storeInstance, [
+      ['catalog.us.products.sku001.pricing', {}, {} as GenericMeta],
+    ] as unknown as ArrayOfChanges<ReturnType<typeof buildState>, GenericMeta>)
+
+    for (const region of REGIONS.filter((r) => r !== 'us')) {
+      expect(peerPrice(storeInstance.state, region)).toBeNull()
+    }
+
+    expectShadowMatch(storeInstance)
+    cleanup()
+  })
+
+  it('syncs all peers when some had salePrice in shadow and some did not (mixed state)', () => {
+    // eu/uk/au already have salePrice=39.99 in shadow; jp/ca/br do not.
+    // US parent update → all 6 peers must receive 19.99 regardless of prior state.
+    const initial = buildState({
+      eu: 39.99,
+      uk: 39.99,
+      au: 39.99,
+    })
+    const { storeInstance, processChanges } = createTestStore({}, initial)
+    const cleanup = registerRegionalSync(storeInstance)
+
+    processChanges(storeInstance, [
+      [
+        'catalog.us.products.sku001.pricing',
+        { salePrice: 19.99 },
+        {} as GenericMeta,
+      ],
+    ] as unknown as ArrayOfChanges<ReturnType<typeof buildState>, GenericMeta>)
+
+    for (const region of REGIONS.filter((r) => r !== 'us')) {
+      expect(peerPrice(storeInstance.state, region)).toBe(19.99)
+    }
+
+    expectShadowMatch(storeInstance)
+    cleanup()
+  })
+
+  it('handles two sequential parent writes correctly across all 6 peers', () => {
+    // Write 1: salePrice first appears (leaf absent from shadow)
+    // Write 2: salePrice changes again (leaf now in shadow)
+    // Both writes must propagate to all 6 peers.
+    const { storeInstance, processChanges } = createTestStore(
+      {},
+      buildState({}),
+    )
+    const cleanup = registerRegionalSync(storeInstance)
+
+    // Write 1 — first appearance
+    processChanges(storeInstance, [
+      [
+        'catalog.us.products.sku001.pricing',
+        { salePrice: 49.99 },
+        {} as GenericMeta,
+      ],
+    ] as unknown as ArrayOfChanges<ReturnType<typeof buildState>, GenericMeta>)
+
+    for (const region of REGIONS.filter((r) => r !== 'us')) {
+      expect(peerPrice(storeInstance.state, region)).toBe(49.99)
+    }
+
+    // Write 2 — update (shadow lookup path taken)
+    processChanges(storeInstance, [
+      [
+        'catalog.us.products.sku001.pricing',
+        { salePrice: 34.99 },
+        {} as GenericMeta,
+      ],
+    ] as unknown as ArrayOfChanges<ReturnType<typeof buildState>, GenericMeta>)
+
+    for (const region of REGIONS.filter((r) => r !== 'us')) {
+      expect(peerPrice(storeInstance.state, region)).toBe(34.99)
+    }
+
+    expectShadowMatch(storeInstance)
+    cleanup()
+  })
+})

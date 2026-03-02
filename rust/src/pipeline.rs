@@ -1716,6 +1716,11 @@ impl ProcessingPipeline {
             return;
         }
         let current = shadow.get(peer_path);
+        // If the peer was never written (None) and the new value is null, both sides are
+        // effectively absent — no meaningful sync to perform.
+        if current.is_none() && value_json == "null" {
+            return;
+        }
         let new_value: crate::shadow::ValueRepr = match serde_json::from_str(value_json) {
             Ok(v) => v,
             Err(_) => {
@@ -1830,16 +1835,17 @@ impl ProcessingPipeline {
                         None => continue,
                     };
                     let value_json = if let Some(child_value) = shadow.get(&child_path) {
+                        // Leaf exists in shadow after the parent write — use it
                         serde_json::to_string(&child_value.to_json_value())
                             .unwrap_or_else(|_| "null".to_owned())
                     } else {
-                        // Child not yet in shadow — try to extract it from the incoming value
+                        // Leaf absent from shadow (either never written, or cleared by the
+                        // parent write). Try to extract from the incoming value first.
+                        // If the key is absent there too, emit null — the source was cleared
+                        // and the peer must be updated accordingly.
                         let suffix = &child_path[change.path.len() + 1..];
-                        match extract_nested_value(&change.value_json, suffix) {
-                            Some(v) => v,
-                            // Key absent from both shadow and incoming value — nothing to sync
-                            None => continue,
-                        }
+                        extract_nested_value(&change.value_json, suffix)
+                            .unwrap_or_else(|| "null".to_owned())
                     };
                     for peer_id in child_peers {
                         if peer_id != child_id {
@@ -6147,8 +6153,9 @@ mod tests {
 
     #[test]
     fn sync_parent_with_missing_nested_value() {
-        // Sync pair ["user.name", "profile.name"], change user to {email: "x"} (no name key)
-        // Should NOT sync profile.name since the value doesn't exist in the new object
+        // Sync pair ["user.name", "profile.name"], change user to {email: "x"} (no name key).
+        // user.name was in shadow (old value "old"); the new parent has no name key.
+        // The source leaf is effectively cleared → peer must receive null.
         let mut p = ProcessingPipeline::new();
         p.shadow_init(r#"{"user": {"name": "old"}, "profile": {"name": "old"}}"#)
             .unwrap();
@@ -6160,11 +6167,143 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
+        // profile.name must be cleared to null — source user.name was removed
         let profile_name = parsed.changes.iter().find(|c| c.path == "profile.name");
         assert!(
-            profile_name.is_none(),
-            "profile.name should NOT be synced when source object lacks 'name' key"
+            profile_name.is_some(),
+            "profile.name should be cleared (null) when source object replaces the key with nothing"
         );
+        assert_eq!(profile_name.unwrap().value_json, "null");
+    }
+
+    // --- intern-table scan regression tests (Case 3 parent expansion) ---
+    // These expose failures BEFORE the "emit null when key absent" fix.
+
+    #[test]
+    fn sync_parent_empty_object_clears_deeply_nested_leaf_that_was_in_shadow() {
+        // Shadow has: order.items.sku001.pricing.salePrice = 19.99
+        // Sync pair:  order.items.sku001.pricing.salePrice ↔ cart.lines.sku001.pricing.salePrice
+        // Change:     order.items.sku001.pricing = {}  (clearing the pricing object)
+        // Expected:   cart.lines.sku001.pricing.salePrice synced to null (peer is cleared)
+        //
+        // BUG: with "skip when key absent" logic, salePrice is absent from both shadow
+        // (cleared by the parent write) and the incoming {} value → sync never fires.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "order":  {"items": {"sku001": {"pricing": {"salePrice": 19.99}}}},
+                "cart":   {"lines": {"sku001": {"pricing": {"salePrice": 19.99}}}}
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["order.items.sku001.pricing.salePrice", "cart.lines.sku001.pricing.salePrice"]]"#,
+        )
+        .unwrap();
+
+        // Set pricing to {} — salePrice leaf vanishes from shadow after this write
+        let result = p
+            .process_changes(r#"[{"path": "order.items.sku001.pricing", "value_json": "{}"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let peer = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "cart.lines.sku001.pricing.salePrice");
+        assert!(
+            peer.is_some(),
+            "cart peer should be cleared (null) when source pricing is reset to {{}}"
+        );
+        assert_eq!(
+            peer.unwrap().value_json,
+            "null",
+            "peer value should be null when source leaf is absent from incoming {{}}"
+        );
+    }
+
+    #[test]
+    fn sync_parent_empty_object_clears_leaf_never_in_shadow() {
+        // Shadow has: NO salePrice in either location (leaf was never written)
+        // Sync pair:  order.items.sku001.pricing.salePrice ↔ cart.lines.sku001.pricing.salePrice
+        // Change:     order.items.sku001.pricing = {}
+        // Expected:   no sync emitted (both shadow absent AND incoming absent → already null)
+        //
+        // This is a no-op case — the peer is already null, syncing null changes nothing.
+        // The test documents acceptable behavior: no-op is fine here.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "order": {"items": {"sku001": {"pricing": {}}}},
+                "cart":  {"lines": {"sku001": {"pricing": {}}}}
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["order.items.sku001.pricing.salePrice", "cart.lines.sku001.pricing.salePrice"]]"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "order.items.sku001.pricing", "value_json": "{}"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // Cart peer may or may not appear; if it does it must be null.
+        // It's fine to emit null→null (is_different guard will filter it).
+        let peer = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "cart.lines.sku001.pricing.salePrice");
+        if let Some(p) = peer {
+            assert_eq!(
+                p.value_json, "null",
+                "if a change is emitted, it must be null"
+            );
+        }
+    }
+
+    #[test]
+    fn sync_parent_sibling_key_present_but_registered_key_absent_deeply_nested() {
+        // Shadow: catalog.us.products.sku001.pricing.basePrice = 100.0
+        //         catalog.eu.products.sku001.pricing.basePrice = 100.0
+        // Sync:   catalog.us.products.sku001.pricing.basePrice
+        //         ↔ catalog.eu.products.sku001.pricing.basePrice
+        // Change: catalog.us.products.sku001.pricing = { tax: 0.2 }
+        //         (basePrice key absent from incoming value)
+        // Expected: peer receives null — the source leaf was cleared
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "catalog": {
+                    "us": {"products": {"sku001": {"pricing": {"basePrice": 100.0}}}},
+                    "eu": {"products": {"sku001": {"pricing": {"basePrice": 100.0}}}}
+                }
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["catalog.us.products.sku001.pricing.basePrice", "catalog.eu.products.sku001.pricing.basePrice"]]"#,
+        )
+        .unwrap();
+
+        // Incoming value has 'tax' but NOT 'basePrice'
+        let result = p
+            .process_changes(
+                r#"[{"path": "catalog.us.products.sku001.pricing", "value_json": "{\"tax\": 0.2}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let peer = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "catalog.eu.products.sku001.pricing.basePrice");
+        assert!(
+            peer.is_some(),
+            "EU peer basePrice should be cleared (null) when US pricing replaces it with an object lacking basePrice"
+        );
+        assert_eq!(peer.unwrap().value_json, "null");
     }
 
     #[test]
@@ -6212,15 +6351,11 @@ mod tests {
         let mut p = ProcessingPipeline::new();
         // Shadow: containers exist but NO leaf values
         p.shadow_init(r#"{"src": {}, "dst": {}}"#).unwrap();
-        p.register_sync_batch(
-            r#"[["src.x", "dst.x"], ["src.y", "dst.y"], ["src.z", "dst.z"]]"#,
-        )
-        .unwrap();
+        p.register_sync_batch(r#"[["src.x", "dst.x"], ["src.y", "dst.y"], ["src.z", "dst.z"]]"#)
+            .unwrap();
 
         let result = p
-            .process_changes(
-                r#"[{"path": "src", "value_json": "{\"x\": 1, \"y\": 2, \"z\": 3}"}]"#,
-            )
+            .process_changes(r#"[{"path": "src", "value_json": "{\"x\": 1, \"y\": 2, \"z\": 3}"}]"#)
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
@@ -6255,16 +6390,24 @@ mod tests {
 
         let da = parsed.changes.iter().find(|c| c.path == "dst.a");
         let db = parsed.changes.iter().find(|c| c.path == "dst.b");
-        assert!(da.is_some(), "dst.a should sync (was in shadow, value changed)");
-        assert!(db.is_some(), "dst.b should sync (not in shadow, value from incoming JSON)");
+        assert!(
+            da.is_some(),
+            "dst.a should sync (was in shadow, value changed)"
+        );
+        assert!(
+            db.is_some(),
+            "dst.b should sync (not in shadow, value from incoming JSON)"
+        );
         assert_eq!(da.unwrap().value_json, r#""new""#);
         assert_eq!(db.unwrap().value_json, r#""fresh""#);
     }
 
     #[test]
-    fn sync_parent_skips_key_absent_from_both_shadow_and_incoming() {
+    fn sync_parent_emits_null_for_key_absent_from_both_shadow_and_incoming() {
         // src.b is registered in the sync graph but not present in either shadow or
-        // the incoming parent value. No sync should emit for dst.b.
+        // the incoming parent value. The peer dst.b receives null (peer was also absent —
+        // is_different(None, null) behaviour determines whether a change is emitted).
+        // Either way the registered pair is always evaluated; no silent skips.
         let mut p = ProcessingPipeline::new();
         p.shadow_init(r#"{"src": {}, "dst": {}}"#).unwrap();
         p.register_sync_batch(r#"[["src.a", "dst.a"], ["src.b", "dst.b"]]"#)
@@ -6277,10 +6420,17 @@ mod tests {
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
         let da = parsed.changes.iter().find(|c| c.path == "dst.a");
-        let db = parsed.changes.iter().find(|c| c.path == "dst.b");
-        assert!(da.is_some(), "dst.a should sync (key present in incoming value)");
-        assert!(db.is_none(), "dst.b must NOT sync (key absent from incoming value and shadow)");
+        assert!(
+            da.is_some(),
+            "dst.a should sync (key present in incoming value)"
+        );
         assert_eq!(da.unwrap().value_json, "99");
+
+        // dst.b: null→null, is_different may or may not emit; if it does, must be null
+        let db = parsed.changes.iter().find(|c| c.path == "dst.b");
+        if let Some(db) = db {
+            assert_eq!(db.value_json, "null", "if emitted, dst.b must be null");
+        }
     }
 
     #[test]
@@ -6298,9 +6448,7 @@ mod tests {
 
         // Now set the parent — src.unrelated is interned but NOT sync-registered
         let result = p
-            .process_changes(
-                r#"[{"path": "src", "value_json": "{\"a\": 99, \"unrelated\": 10}"}]"#,
-            )
+            .process_changes(r#"[{"path": "src", "value_json": "{\"a\": 99, \"unrelated\": 10}"}]"#)
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
@@ -6354,6 +6502,170 @@ mod tests {
             "EU peer discount should sync even when the leaf was absent from shadow"
         );
         assert_eq!(peer.unwrap().value_json, "true");
+    }
+
+    #[test]
+    fn sync_parent_seven_interconnected_regions_first_write() {
+        // 7 regional catalog paths all in the same sync component.
+        // The salePrice leaf has never been written to shadow.
+        // Changing the US pricing parent must propagate to all 6 peers.
+        //
+        // Sync pairs (star topology centred on US):
+        //   us ↔ eu, us ↔ uk, us ↔ au, us ↔ jp, us ↔ ca, us ↔ br
+        let mut p = ProcessingPipeline::new();
+        let regions = ["us", "eu", "uk", "au", "jp", "ca", "br"];
+        let init_json = {
+            let entries: Vec<String> = regions
+                .iter()
+                .map(|r| {
+                    format!(
+                        r#""{r}": {{"products": {{"sku001": {{"pricing": {{}}}}}}}}"#,
+                        r = r
+                    )
+                })
+                .collect();
+            format!("{{\"catalog\": {{{}}}}}", entries.join(", "))
+        };
+        p.shadow_init(&init_json).unwrap();
+
+        // Register pairs: us ↔ every other region (star topology → one component)
+        let pairs: Vec<String> = ["eu", "uk", "au", "jp", "ca", "br"]
+            .iter()
+            .map(|r| {
+                format!(
+                    r#"["catalog.us.products.sku001.pricing.salePrice", "catalog.{r}.products.sku001.pricing.salePrice"]"#,
+                    r = r
+                )
+            })
+            .collect();
+        let batch = format!("[{}]", pairs.join(", "));
+        p.register_sync_batch(&batch).unwrap();
+
+        // Change US pricing parent — salePrice absent from shadow (first write)
+        let result = p
+            .process_changes(
+                r#"[{"path": "catalog.us.products.sku001.pricing", "value_json": "{\"salePrice\": 29.99}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        for region in &["eu", "uk", "au", "jp", "ca", "br"] {
+            let peer_path = format!("catalog.{region}.products.sku001.pricing.salePrice");
+            let peer = parsed.changes.iter().find(|c| c.path == peer_path);
+            assert!(
+                peer.is_some(),
+                "region '{region}' should receive salePrice from US parent change"
+            );
+            assert_eq!(
+                peer.unwrap().value_json,
+                "29.99",
+                "region '{region}' value mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn sync_parent_seven_interconnected_regions_parent_cleared_to_empty() {
+        // Same 7-region setup, but salePrice already exists in shadow.
+        // US pricing reset to {} → all 6 peers must receive null.
+        let mut p = ProcessingPipeline::new();
+        let regions = ["us", "eu", "uk", "au", "jp", "ca", "br"];
+        let init_json = {
+            let entries: Vec<String> = regions
+                .iter()
+                .map(|r| {
+                    format!(
+                        r#""{r}": {{"products": {{"sku001": {{"pricing": {{"salePrice": 49.99}}}}}}}}"#,
+                        r = r
+                    )
+                })
+                .collect();
+            format!("{{\"catalog\": {{{}}}}}", entries.join(", "))
+        };
+        p.shadow_init(&init_json).unwrap();
+
+        let pairs: Vec<String> = ["eu", "uk", "au", "jp", "ca", "br"]
+            .iter()
+            .map(|r| {
+                format!(
+                    r#"["catalog.us.products.sku001.pricing.salePrice", "catalog.{r}.products.sku001.pricing.salePrice"]"#,
+                    r = r
+                )
+            })
+            .collect();
+        p.register_sync_batch(&format!("[{}]", pairs.join(", ")))
+            .unwrap();
+
+        // Clear US pricing
+        let result = p
+            .process_changes(
+                r#"[{"path": "catalog.us.products.sku001.pricing", "value_json": "{}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        for region in &["eu", "uk", "au", "jp", "ca", "br"] {
+            let peer_path = format!("catalog.{region}.products.sku001.pricing.salePrice");
+            let peer = parsed.changes.iter().find(|c| c.path == peer_path);
+            assert!(
+                peer.is_some(),
+                "region '{region}' should receive null when US pricing cleared"
+            );
+            assert_eq!(
+                peer.unwrap().value_json,
+                "null",
+                "region '{region}' must be null"
+            );
+        }
+    }
+
+    #[test]
+    fn sync_parent_seven_regions_mixed_leaf_states_partial_update() {
+        // 3 of 7 regions already have salePrice in shadow; 4 do not.
+        // US pricing parent update with salePrice → all 6 peers get the new value.
+        let mut p = ProcessingPipeline::new();
+        // eu, uk, au already have a value; jp, ca, br do not
+        let init_json = r#"{
+            "catalog": {
+                "us": {"products": {"sku001": {"pricing": {}}}},
+                "eu": {"products": {"sku001": {"pricing": {"salePrice": 39.99}}}},
+                "uk": {"products": {"sku001": {"pricing": {"salePrice": 39.99}}}},
+                "au": {"products": {"sku001": {"pricing": {"salePrice": 39.99}}}},
+                "jp": {"products": {"sku001": {"pricing": {}}}},
+                "ca": {"products": {"sku001": {"pricing": {}}}},
+                "br": {"products": {"sku001": {"pricing": {}}}}
+            }
+        }"#;
+        p.shadow_init(init_json).unwrap();
+
+        let pairs: Vec<String> = ["eu", "uk", "au", "jp", "ca", "br"]
+            .iter()
+            .map(|r| {
+                format!(
+                    r#"["catalog.us.products.sku001.pricing.salePrice", "catalog.{r}.products.sku001.pricing.salePrice"]"#,
+                    r = r
+                )
+            })
+            .collect();
+        p.register_sync_batch(&format!("[{}]", pairs.join(", ")))
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "catalog.us.products.sku001.pricing", "value_json": "{\"salePrice\": 19.99}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        for region in &["eu", "uk", "au", "jp", "ca", "br"] {
+            let peer_path = format!("catalog.{region}.products.sku001.pricing.salePrice");
+            let peer = parsed.changes.iter().find(|c| c.path == peer_path);
+            assert!(
+                peer.is_some(),
+                "region '{region}' should receive salePrice (mixed shadow state)"
+            );
+            assert_eq!(peer.unwrap().value_json, "19.99");
+        }
     }
 
     #[test]
