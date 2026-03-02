@@ -1812,35 +1812,46 @@ impl ProcessingPipeline {
             }
 
             // Case 3: Parent expansion — change is shallower than registered pairs
-            // Enumerate leaf paths under this change in shadow, sync any that are registered
+            // Scan the intern table for all paths that are children of change_path AND are
+            // registered in the sync graph. We intentionally do NOT use shadow.affected_paths
+            // here because a registered sync path may not yet exist in shadow state (e.g. the
+            // parent object is being set for the first time).
             if peer_ids.is_empty() {
-                let leaves = shadow.affected_paths(&change.path);
-                for leaf in &leaves {
-                    if let Some(leaf_id) = self.intern.get_id(leaf) {
-                        let leaf_peers = self.sync_graph.get_component_paths_public(leaf_id);
-                        if !leaf_peers.is_empty() {
-                            if let Some(leaf_value) = shadow.get(leaf) {
-                                let value_json = serde_json::to_string(&leaf_value.to_json_value())
-                                    .unwrap_or_else(|_| "null".to_owned());
-                                for peer_id in leaf_peers {
-                                    if peer_id != leaf_id {
-                                        // Skip if peer's anchor is disabled
-                                        if let Some(&aid) = self.anchored_paths.get(&peer_id) {
-                                            if !self.is_anchor_enabled(Some(aid)) {
-                                                continue;
-                                            }
-                                        }
-                                        if let Some(peer_path) = self.intern.resolve(peer_id) {
-                                            let peer_path = peer_path.to_owned();
-                                            Self::emit_sync_change(
-                                                shadow,
-                                                &peer_path,
-                                                &value_json,
-                                                output,
-                                            );
-                                        }
-                                    }
+                let child_ids = self.intern.ids_with_prefix(&change.path);
+                for child_id in child_ids {
+                    let child_peers = self.sync_graph.get_component_paths_public(child_id);
+                    if child_peers.is_empty() {
+                        continue;
+                    }
+                    // Resolve value: prefer shadow (post-write), fall back to the incoming change.
+                    // If neither source has the value, skip — no sync to emit.
+                    let child_path = match self.intern.resolve(child_id) {
+                        Some(p) => p.to_owned(),
+                        None => continue,
+                    };
+                    let value_json = if let Some(child_value) = shadow.get(&child_path) {
+                        serde_json::to_string(&child_value.to_json_value())
+                            .unwrap_or_else(|_| "null".to_owned())
+                    } else {
+                        // Child not yet in shadow — try to extract it from the incoming value
+                        let suffix = &child_path[change.path.len() + 1..];
+                        match extract_nested_value(&change.value_json, suffix) {
+                            Some(v) => v,
+                            // Key absent from both shadow and incoming value — nothing to sync
+                            None => continue,
+                        }
+                    };
+                    for peer_id in child_peers {
+                        if peer_id != child_id {
+                            // Skip if peer's anchor is disabled
+                            if let Some(&aid) = self.anchored_paths.get(&peer_id) {
+                                if !self.is_anchor_enabled(Some(aid)) {
+                                    continue;
                                 }
+                            }
+                            if let Some(peer_path) = self.intern.resolve(peer_id) {
+                                let peer_path = peer_path.to_owned();
+                                Self::emit_sync_change(shadow, &peer_path, &value_json, output);
                             }
                         }
                     }
@@ -2956,6 +2967,16 @@ impl Default for ProcessingPipeline {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Walk a JSON value string by a dot-separated `suffix` and return the serialized sub-value.
+/// Returns `None` if the path doesn't exist in the JSON or parsing fails.
+fn extract_nested_value(value_json: &str, suffix: &str) -> Option<String> {
+    let mut current: serde_json::Value = serde_json::from_str(value_json).ok()?;
+    for key in suffix.split('.') {
+        current = current.get(key)?.clone();
+    }
+    serde_json::to_string(&current).ok()
 }
 
 #[cfg(test)]
@@ -6144,6 +6165,195 @@ mod tests {
             profile_name.is_none(),
             "profile.name should NOT be synced when source object lacks 'name' key"
         );
+    }
+
+    #[test]
+    fn sync_parent_fires_when_leaf_not_yet_in_shadow() {
+        // Regression: registered sync leaf had no prior shadow value (first-time write).
+        // Old code: shadow.affected_paths returned [] → sync never fired.
+        // New code: intern table scan finds registered path regardless of shadow existence.
+        //
+        // Ecommerce scenario: inventory.warehouse.sku001.availability.inStock synced to
+        // storefront.products.sku001.availability.inStock.
+        // Warehouse container exists but inStock leaf was never written.
+        let mut p = ProcessingPipeline::new();
+        // Shadow: containers exist but no 'inStock' leaf yet
+        p.shadow_init(
+            r#"{"inventory": {"warehouse": {"sku001": {"availability": {}}}}, "storefront": {"products": {"sku001": {"availability": {}}}}}"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["inventory.warehouse.sku001.availability.inStock", "storefront.products.sku001.availability.inStock"]]"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "inventory.warehouse.sku001.availability", "value_json": "{\"inStock\": true}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let peer = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "storefront.products.sku001.availability.inStock");
+        assert!(
+            peer.is_some(),
+            "peer sync path should fire even when leaf was absent from shadow before the change"
+        );
+        assert_eq!(peer.unwrap().value_json, "true");
+    }
+
+    #[test]
+    fn sync_parent_multiple_leaves_none_in_shadow() {
+        // Multiple sync pairs, none of the leaf paths exist in shadow yet.
+        // All should fire when parent is set with the corresponding keys.
+        let mut p = ProcessingPipeline::new();
+        // Shadow: containers exist but NO leaf values
+        p.shadow_init(r#"{"src": {}, "dst": {}}"#).unwrap();
+        p.register_sync_batch(
+            r#"[["src.x", "dst.x"], ["src.y", "dst.y"], ["src.z", "dst.z"]]"#,
+        )
+        .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "src", "value_json": "{\"x\": 1, \"y\": 2, \"z\": 3}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let x = parsed.changes.iter().find(|c| c.path == "dst.x");
+        let y = parsed.changes.iter().find(|c| c.path == "dst.y");
+        let z = parsed.changes.iter().find(|c| c.path == "dst.z");
+        assert!(x.is_some(), "dst.x should sync from src.x not in shadow");
+        assert!(y.is_some(), "dst.y should sync from src.y not in shadow");
+        assert!(z.is_some(), "dst.z should sync from src.z not in shadow");
+        assert_eq!(x.unwrap().value_json, "1");
+        assert_eq!(y.unwrap().value_json, "2");
+        assert_eq!(z.unwrap().value_json, "3");
+    }
+
+    #[test]
+    fn sync_parent_mix_some_in_shadow_some_not() {
+        // One leaf exists in shadow, one does not.
+        // Both should fire — the shadow-resident one via shadow lookup, the absent one via incoming JSON.
+        let mut p = ProcessingPipeline::new();
+        // src.a exists in shadow; src.b does not
+        p.shadow_init(r#"{"src": {"a": "old"}, "dst": {"a": "old"}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["src.a", "dst.a"], ["src.b", "dst.b"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(
+                r#"[{"path": "src", "value_json": "{\"a\": \"new\", \"b\": \"fresh\"}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let da = parsed.changes.iter().find(|c| c.path == "dst.a");
+        let db = parsed.changes.iter().find(|c| c.path == "dst.b");
+        assert!(da.is_some(), "dst.a should sync (was in shadow, value changed)");
+        assert!(db.is_some(), "dst.b should sync (not in shadow, value from incoming JSON)");
+        assert_eq!(da.unwrap().value_json, r#""new""#);
+        assert_eq!(db.unwrap().value_json, r#""fresh""#);
+    }
+
+    #[test]
+    fn sync_parent_skips_key_absent_from_both_shadow_and_incoming() {
+        // src.b is registered in the sync graph but not present in either shadow or
+        // the incoming parent value. No sync should emit for dst.b.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"src": {}, "dst": {}}"#).unwrap();
+        p.register_sync_batch(r#"[["src.a", "dst.a"], ["src.b", "dst.b"]]"#)
+            .unwrap();
+
+        // Parent value only has 'a', no 'b'
+        let result = p
+            .process_changes(r#"[{"path": "src", "value_json": "{\"a\": 99}"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let da = parsed.changes.iter().find(|c| c.path == "dst.a");
+        let db = parsed.changes.iter().find(|c| c.path == "dst.b");
+        assert!(da.is_some(), "dst.a should sync (key present in incoming value)");
+        assert!(db.is_none(), "dst.b must NOT sync (key absent from incoming value and shadow)");
+        assert_eq!(da.unwrap().value_json, "99");
+    }
+
+    #[test]
+    fn sync_parent_unregistered_intern_does_not_produce_sync() {
+        // Paths that happen to be in the intern table (from prior processChanges calls)
+        // but are NOT registered in the sync graph must not produce spurious syncs.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"src": {"a": 1, "unrelated": 5}, "dst": {"a": 1}}"#)
+            .unwrap();
+        p.register_sync_batch(r#"[["src.a", "dst.a"]]"#).unwrap();
+
+        // Process a change to src.unrelated — this interns the path in the intern table
+        p.process_changes(r#"[{"path": "src.unrelated", "value_json": "10"}]"#)
+            .unwrap();
+
+        // Now set the parent — src.unrelated is interned but NOT sync-registered
+        let result = p
+            .process_changes(
+                r#"[{"path": "src", "value_json": "{\"a\": 99, \"unrelated\": 10}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let dst_unrelated = parsed.changes.iter().find(|c| c.path == "dst.unrelated");
+        assert!(
+            dst_unrelated.is_none(),
+            "dst.unrelated must NOT appear — src.unrelated is interned but not sync-registered"
+        );
+        // Sanity: registered pair still works
+        let da = parsed.changes.iter().find(|c| c.path == "dst.a");
+        assert!(da.is_some(), "dst.a should still sync");
+    }
+
+    #[test]
+    fn sync_parent_deeply_nested_product_pricing_discount() {
+        // Ecommerce scenario: two catalog regions share a discount flag on a product variant.
+        // Sync pair on a deeply nested leaf; parent change (pricing level) must propagate
+        // the 'discount' field even when it was never in shadow before.
+        //
+        // catalog.us.products.sku-a.variants.red.pricing.discount
+        //   ↔ catalog.eu.products.sku-a.variants.red.pricing.discount
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "catalog": {
+                    "us": {"products": {"sku-a": {"variants": {"red": {"pricing": {}}}}}},
+                    "eu": {"products": {"sku-a": {"variants": {"red": {"pricing": {}}}}}}
+                }
+            }"#,
+        )
+        .unwrap();
+        p.register_sync_batch(
+            r#"[["catalog.us.products.sku-a.variants.red.pricing.discount", "catalog.eu.products.sku-a.variants.red.pricing.discount"]]"#,
+        )
+        .unwrap();
+
+        // Change at pricing level — discount leaf not yet in shadow
+        let result = p
+            .process_changes(
+                r#"[{"path": "catalog.us.products.sku-a.variants.red.pricing", "value_json": "{\"discount\": true}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let peer = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "catalog.eu.products.sku-a.variants.red.pricing.discount");
+        assert!(
+            peer.is_some(),
+            "EU peer discount should sync even when the leaf was absent from shadow"
+        );
+        assert_eq!(peer.unwrap().value_json, "true");
     }
 
     #[test]

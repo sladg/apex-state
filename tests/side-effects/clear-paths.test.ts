@@ -885,9 +885,8 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
   //
   // Action: setValue("toggle", true)
   //
-  // Expected: enabled = null (cleared), flip sees null → not boolean → no flip
-  //   disabled remains false
-  it('should interact correctly with flip (cleared boolean → null is non-boolean)', () => {
+  // Expected: enabled = null (cleared), flip reads old value of enabled (true) → disabled = true
+  it('should interact correctly with flip (clear triggers value rotation to peer)', () => {
     pipeline.shadowInit({ toggle: false, enabled: true, disabled: false })
     pipeline.registerSideEffects({
       registration_id: 'test',
@@ -901,11 +900,14 @@ describe('Pipeline ordering (Step 3.5) — interaction with other side-effects',
     const paths = getPaths(changes)
     expect(paths).toContain('toggle')
     expect(paths).toContain('enabled')
-    // disabled should NOT be in output (null is not boolean, flip skips)
-    expect(paths).not.toContain('disabled')
 
     const enabledChange = findChange(changes, 'enabled')
     expect(enabledChange?.value).toBeNull()
+
+    // disabled receives the old value of enabled (true) via value rotation
+    expect(paths).toContain('disabled')
+    const disabledChange = findChange(changes, 'disabled')
+    expect(disabledChange?.value).toBe(true)
   })
 })
 

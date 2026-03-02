@@ -52,6 +52,16 @@ impl InternTable {
         self.id_to_string.len() as u32
     }
 
+    /// Return all interned IDs whose paths are direct or transitive children of `prefix`.
+    /// A path is a child of `prefix` if it starts with `prefix + "."`.
+    pub(crate) fn ids_with_prefix(&self, prefix: &str) -> Vec<u32> {
+        let needle = format!("{}.", prefix);
+        self.string_to_id
+            .iter()
+            .filter_map(|(path, &id)| path.starts_with(&needle).then_some(id))
+            .collect()
+    }
+
     /// Clear all interned strings. Invalidates all previously issued IDs.
     #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn clear(&mut self) {
