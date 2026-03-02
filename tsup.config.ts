@@ -10,5 +10,6 @@ export default defineConfig({
   sourcemap: true,
   platform: 'browser',
   external: ['react', 'zod', 'valtio', '@testing-library/react'],
+  noExternal: ['@jsbits/deep-clone'],
   esbuildPlugins: [wasmLoader({ mode: 'embedded' })],
 })
