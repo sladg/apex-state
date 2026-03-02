@@ -474,6 +474,9 @@ pub(crate) struct ProcessingPipeline {
     anchored_paths: HashMap<u32, u32>,
     /// Map from registration_id → anchor_path_id, for cleanup on unregister.
     registration_anchor_map: HashMap<String, u32>,
+    /// Per-run set: path IDs whose anchor is currently disabled.
+    /// Rebuilt by update_anchor_states() each pipeline run. Use is_path_dormant() to query.
+    dormant_path_ids: HashSet<u32>,
     /// Map from registration_id → cleanup data, for full unregistration of side effects.
     registration_map: HashMap<String, RegistrationCleanupData>,
 }
@@ -505,6 +508,7 @@ impl ProcessingPipeline {
             anchor_registrations: HashMap::new(),
             anchored_paths: HashMap::new(),
             registration_anchor_map: HashMap::new(),
+            dormant_path_ids: HashSet::new(),
             registration_map: HashMap::new(),
         }
     }
@@ -554,6 +558,13 @@ impl ProcessingPipeline {
                 self.anchor_states.insert(id, is_present);
             }
         }
+        // Rebuild the per-run dormant set: path IDs whose anchor is currently disabled.
+        self.dormant_path_ids.clear();
+        for (&path_id, &anchor_id) in &self.anchored_paths {
+            if !self.anchor_states.get(&anchor_id).copied().unwrap_or(true) {
+                self.dormant_path_ids.insert(path_id);
+            }
+        }
     }
 
     /// Returns true if the anchor is enabled (present in cached anchor_states) or not set (None).
@@ -563,6 +574,12 @@ impl ProcessingPipeline {
             None => true,
             Some(id) => self.anchor_states.get(&id).copied().unwrap_or(true),
         }
+    }
+
+    /// Returns true if this path ID belongs to a registration whose anchor is currently disabled.
+    /// Paths with no anchor registration are never dormant.
+    fn is_path_dormant(&self, path_id: u32) -> bool {
+        self.dormant_path_ids.contains(&path_id)
     }
 
     /// Check anchor presence directly against shadow state (not cached).
@@ -1766,15 +1783,9 @@ impl ProcessingPipeline {
             let peer_ids = self.sync_graph.get_component_paths_public(path_id);
 
             // Case 1: Exact match — change path is directly registered
-            if !peer_ids.is_empty() {
+            if !peer_ids.is_empty() && !self.is_path_dormant(path_id) {
                 for &peer_id in &peer_ids {
-                    if peer_id != path_id {
-                        // Skip if peer's anchor is disabled
-                        if let Some(&aid) = self.anchored_paths.get(&peer_id) {
-                            if !self.is_anchor_enabled(Some(aid)) {
-                                continue;
-                            }
-                        }
+                    if peer_id != path_id && !self.is_path_dormant(peer_id) {
                         if let Some(peer_path) = self.intern.resolve(peer_id) {
                             let peer_path = peer_path.to_owned();
                             Self::emit_sync_change(shadow, &peer_path, &change.value_json, output);
@@ -1791,15 +1802,12 @@ impl ProcessingPipeline {
                 if let Some(ancestor_id) = self.intern.get_id(ancestor) {
                     let ancestor_peers = self.sync_graph.get_component_paths_public(ancestor_id);
                     if !ancestor_peers.is_empty() {
+                        if self.is_path_dormant(ancestor_id) {
+                            break;
+                        }
                         let suffix = &change_path[i..]; // includes leading "."
                         for peer_id in ancestor_peers {
-                            if peer_id != ancestor_id {
-                                // Skip if peer's anchor is disabled
-                                if let Some(&aid) = self.anchored_paths.get(&peer_id) {
-                                    if !self.is_anchor_enabled(Some(aid)) {
-                                        continue;
-                                    }
-                                }
+                            if peer_id != ancestor_id && !self.is_path_dormant(peer_id) {
                                 if let Some(peer_base) = self.intern.resolve(peer_id) {
                                     let peer_path = format!("{}{}", peer_base, suffix);
                                     Self::emit_sync_change(
@@ -1825,7 +1833,7 @@ impl ProcessingPipeline {
                 let child_ids = self.intern.ids_with_prefix(&change.path);
                 for child_id in child_ids {
                     let child_peers = self.sync_graph.get_component_paths_public(child_id);
-                    if child_peers.is_empty() {
+                    if child_peers.is_empty() || self.is_path_dormant(child_id) {
                         continue;
                     }
                     // Resolve value: prefer shadow (post-write), fall back to the incoming change.
@@ -1848,13 +1856,7 @@ impl ProcessingPipeline {
                             .unwrap_or_else(|| "null".to_owned())
                     };
                     for peer_id in child_peers {
-                        if peer_id != child_id {
-                            // Skip if peer's anchor is disabled
-                            if let Some(&aid) = self.anchored_paths.get(&peer_id) {
-                                if !self.is_anchor_enabled(Some(aid)) {
-                                    continue;
-                                }
-                            }
+                        if peer_id != child_id && !self.is_path_dormant(peer_id) {
                             if let Some(peer_path) = self.intern.resolve(peer_id) {
                                 let peer_path = peer_path.to_owned();
                                 Self::emit_sync_change(shadow, &peer_path, &value_json, output);
@@ -1866,17 +1868,20 @@ impl ProcessingPipeline {
 
             // Case 4: Directed sync — exact match: change path is a registered source
             if let Some(targets) = self.directed_sync_edges.get(&path_id) {
-                let targets: Vec<u32> = targets.iter().copied().collect();
-                for tgt_id in targets {
-                    // Skip if target's anchor is disabled
-                    if let Some(&aid) = self.anchored_paths.get(&tgt_id) {
-                        if !self.is_anchor_enabled(Some(aid)) {
-                            continue;
+                if !self.is_path_dormant(path_id) {
+                    let targets: Vec<u32> = targets.iter().copied().collect();
+                    for tgt_id in targets {
+                        if !self.is_path_dormant(tgt_id) {
+                            if let Some(tgt_path) = self.intern.resolve(tgt_id) {
+                                let tgt_path = tgt_path.to_owned();
+                                Self::emit_sync_change(
+                                    shadow,
+                                    &tgt_path,
+                                    &change.value_json,
+                                    output,
+                                );
+                            }
                         }
-                    }
-                    if let Some(tgt_path) = self.intern.resolve(tgt_id) {
-                        let tgt_path = tgt_path.to_owned();
-                        Self::emit_sync_change(shadow, &tgt_path, &change.value_json, output);
                     }
                 }
             }
@@ -1888,23 +1893,22 @@ impl ProcessingPipeline {
                 let ancestor = &change_path[..i];
                 if let Some(ancestor_id) = self.intern.get_id(ancestor) {
                     if let Some(targets) = self.directed_sync_edges.get(&ancestor_id) {
+                        if self.is_path_dormant(ancestor_id) {
+                            break;
+                        }
                         let targets: Vec<u32> = targets.iter().copied().collect();
                         let suffix = &change_path[i..]; // includes leading "."
                         for tgt_id in targets {
-                            // Skip if target's anchor is disabled
-                            if let Some(&aid) = self.anchored_paths.get(&tgt_id) {
-                                if !self.is_anchor_enabled(Some(aid)) {
-                                    continue;
+                            if !self.is_path_dormant(tgt_id) {
+                                if let Some(tgt_base) = self.intern.resolve(tgt_id) {
+                                    let tgt_path = format!("{}{}", tgt_base, suffix);
+                                    Self::emit_sync_change(
+                                        shadow,
+                                        &tgt_path,
+                                        &change.value_json,
+                                        output,
+                                    );
                                 }
-                            }
-                            if let Some(tgt_base) = self.intern.resolve(tgt_id) {
-                                let tgt_path = format!("{}{}", tgt_base, suffix);
-                                Self::emit_sync_change(
-                                    shadow,
-                                    &tgt_path,
-                                    &change.value_json,
-                                    output,
-                                );
                             }
                         }
                         break;
@@ -1920,25 +1924,24 @@ impl ProcessingPipeline {
                 for leaf in &leaves {
                     if let Some(leaf_id) = self.intern.get_id(leaf) {
                         if let Some(targets) = self.directed_sync_edges.get(&leaf_id) {
+                            if self.is_path_dormant(leaf_id) {
+                                continue;
+                            }
                             if let Some(leaf_value) = shadow.get(leaf) {
                                 let value_json = serde_json::to_string(&leaf_value.to_json_value())
                                     .unwrap_or_else(|_| "null".to_owned());
                                 let targets: Vec<u32> = targets.iter().copied().collect();
                                 for tgt_id in targets {
-                                    // Skip if target's anchor is disabled
-                                    if let Some(&aid) = self.anchored_paths.get(&tgt_id) {
-                                        if !self.is_anchor_enabled(Some(aid)) {
-                                            continue;
+                                    if !self.is_path_dormant(tgt_id) {
+                                        if let Some(tgt_path) = self.intern.resolve(tgt_id) {
+                                            let tgt_path = tgt_path.to_owned();
+                                            Self::emit_sync_change(
+                                                shadow,
+                                                &tgt_path,
+                                                &value_json,
+                                                output,
+                                            );
                                         }
-                                    }
-                                    if let Some(tgt_path) = self.intern.resolve(tgt_id) {
-                                        let tgt_path = tgt_path.to_owned();
-                                        Self::emit_sync_change(
-                                            shadow,
-                                            &tgt_path,
-                                            &value_json,
-                                            output,
-                                        );
                                     }
                                 }
                             }
@@ -1999,19 +2002,16 @@ impl ProcessingPipeline {
 
             if !peer_ids.is_empty() {
                 // Case 1: Exact match — peer gets the old value of the source path
+                if self.is_path_dormant(path_id) {
+                    continue;
+                }
                 let old_value_json: Option<String> = self
                     .shadow
                     .get(&change.path)
                     .and_then(|v| serde_json::to_string(&v.to_json_value()).ok());
                 if let Some(old_value_json) = old_value_json {
                     for peer_id in peer_ids {
-                        if peer_id != path_id {
-                            // Skip if peer's anchor is disabled
-                            if let Some(&aid) = self.anchored_paths.get(&peer_id) {
-                                if !self.is_anchor_enabled(Some(aid)) {
-                                    continue;
-                                }
-                            }
+                        if peer_id != path_id && !self.is_path_dormant(peer_id) {
                             if let Some(peer_path) = self.intern.resolve(peer_id) {
                                 let peer_path = peer_path.to_owned();
                                 Self::emit_flip_change(shadow, &peer_path, &old_value_json, output);
@@ -2050,7 +2050,7 @@ impl ProcessingPipeline {
             for leaf in &leaves {
                 if let Some(leaf_id) = self.intern.get_id(leaf) {
                     let leaf_peers = self.flip_graph.get_component_paths_public(leaf_id);
-                    if leaf_peers.is_empty() {
+                    if leaf_peers.is_empty() || self.is_path_dormant(leaf_id) {
                         continue;
                     }
 
@@ -2064,14 +2064,8 @@ impl ProcessingPipeline {
                     };
 
                     for peer_id in &leaf_peers {
-                        if *peer_id == leaf_id {
+                        if *peer_id == leaf_id || self.is_path_dormant(*peer_id) {
                             continue;
-                        }
-                        // Skip if peer's anchor is disabled
-                        if let Some(&aid) = self.anchored_paths.get(peer_id) {
-                            if !self.is_anchor_enabled(Some(aid)) {
-                                continue;
-                            }
                         }
                         // If peer is also a leaf under this parent change and in the
                         // flip graph, both sides are explicitly set → skip flip.
@@ -7798,6 +7792,372 @@ mod tests {
         assert!(
             concern.is_some(),
             "Anchor with null value should be treated as present (not absent)"
+        );
+    }
+
+    // --- Anchor path: dormant registration skips sync ---
+
+    #[test]
+    fn anchor_path_parent_write_removes_product_does_not_null_shared_state() {
+        // Scenario: two products each synced to a shared "selected price" field.
+        // Product A: anchor_path = "cart.items.a", syncs cart.items.a.price → shared.price
+        // Product B: anchor_path = "cart.items.b", syncs cart.items.b.price → shared.price
+        //
+        // When a parent write removes cart.items.a, the Case 3 (parent expansion) sync
+        // for Product A's registration would ordinarily emit null to shared.price because
+        // the leaf no longer exists in shadow. The anchor check must skip that dormant
+        // registration so shared.price keeps its last-written value (Product B's price).
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "cart": {"items": {"a": {"price": 10}, "b": {"price": 20}}},
+                "shared": {"price": 20}
+            }"#,
+        )
+        .unwrap();
+
+        // Product B's sync is active and sets shared.price = 20 at registration time.
+        let reg_b = serde_json::json!({
+            "registration_id": "product-b",
+            "anchor_path": "cart.items.b",
+            "sync_pairs": [["cart.items.b.price", "shared.price"]]
+        });
+        p.register_side_effects(&reg_b.to_string()).unwrap();
+
+        // Product A's sync also points to shared.price, but under anchor cart.items.a.
+        let reg_a = serde_json::json!({
+            "registration_id": "product-a",
+            "anchor_path": "cart.items.a",
+            "sync_pairs": [["cart.items.a.price", "shared.price"]]
+        });
+        p.register_side_effects(&reg_a.to_string()).unwrap();
+
+        // Parent write removes cart.items.a entirely (sets cart.items to only contain b).
+        // Without anchor guards, Case 3 would walk intern IDs with prefix "cart.items.a",
+        // find "cart.items.a.price" in the sync graph, see it's absent from shadow, and
+        // emit null → shared.price. The anchor guard must prevent this.
+        let result = p
+            .process_changes(
+                r#"[{"path": "cart.items", "value_json": "{\"b\": {\"price\": 20}}"}]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let shared_price = parsed.changes.iter().find(|c| c.path == "shared.price");
+        assert!(
+            shared_price.is_none() || shared_price.unwrap().value_json != "null",
+            "shared.price must not be nulled by a dormant (anchor-absent) registration; \
+             got: {:?}",
+            shared_price
+        );
+    }
+
+    #[test]
+    fn anchor_path_exact_change_on_dormant_member_does_not_sync_to_peer() {
+        // When a sync pair member is changed directly but its anchor is absent,
+        // the peer must not receive the change (Case 1 source-side guard).
+        //
+        // Example: form.email ↔ form_copy.email synced under anchor "form.active".
+        // If form.active is absent, writing form.email must not propagate to form_copy.email.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"form": {"email": "a@a.com"}, "form_copy": {"email": "a@a.com"}}"#)
+            .unwrap();
+
+        let reg = serde_json::json!({
+            "registration_id": "form-sync",
+            "anchor_path": "form.active",
+            "sync_pairs": [["form.email", "form_copy.email"]]
+        });
+        p.register_side_effects(&reg.to_string()).unwrap();
+
+        // Anchor "form.active" is absent from shadow → sync must be dormant.
+        let result = p
+            .process_changes(r#"[{"path": "form.email", "value_json": "\"b@b.com\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let copy_change = parsed.changes.iter().find(|c| c.path == "form_copy.email");
+        assert!(
+            copy_change.is_none(),
+            "form_copy.email must not sync when anchor is absent (Case 1 source guard); \
+             got: {:?}",
+            copy_change
+        );
+    }
+
+    #[test]
+    fn anchor_path_child_change_under_dormant_ancestor_does_not_sync() {
+        // When a change path is deeper than a registered sync pair ancestor,
+        // and that ancestor's anchor is absent, peers must not receive the change
+        // (Case 2 ancestor-side guard).
+        //
+        // form.billing ↔ form_copy.billing synced under anchor "form.active".
+        // Changing form.billing.city (child of the registered ancestor) must not
+        // propagate to form_copy.billing.city when the anchor is absent.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(
+            r#"{
+                "form": {"billing": {"city": "Prague"}},
+                "form_copy": {"billing": {"city": "Prague"}}
+            }"#,
+        )
+        .unwrap();
+
+        let reg = serde_json::json!({
+            "registration_id": "billing-sync",
+            "anchor_path": "form.active",
+            "sync_pairs": [["form.billing", "form_copy.billing"]]
+        });
+        p.register_side_effects(&reg.to_string()).unwrap();
+
+        // form.active is absent → Case 2 ancestor sync must be skipped.
+        let result = p
+            .process_changes(r#"[{"path": "form.billing.city", "value_json": "\"Brno\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let peer_change = parsed
+            .changes
+            .iter()
+            .find(|c| c.path == "form_copy.billing.city");
+        assert!(
+            peer_change.is_none(),
+            "form_copy.billing.city must not sync when anchor is absent (Case 2 ancestor guard); \
+             got: {:?}",
+            peer_change
+        );
+    }
+
+    // --- Anchor path: dormant registration skips flip ---
+
+    #[test]
+    fn anchor_path_flip_dormant_source_does_not_invert_peer() {
+        // Case 1 source-side guard: when the changed path has a disabled anchor,
+        // its flip peer must not receive the inverted value.
+        //
+        // panel.collapsed ↔ panel.expanded (flip pair), anchor = "panel.active".
+        // With panel.active absent, writing panel.collapsed must not flip panel.expanded.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"panel": {"collapsed": false, "expanded": true}}"#)
+            .unwrap();
+
+        let reg = serde_json::json!({
+            "registration_id": "panel-flip",
+            "anchor_path": "panel.active",
+            "flip_pairs": [["panel.collapsed", "panel.expanded"]]
+        });
+        p.register_side_effects(&reg.to_string()).unwrap();
+
+        // panel.active is absent → flip must be dormant.
+        let result = p
+            .process_changes(r#"[{"path": "panel.collapsed", "value_json": "true"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let expanded_change = parsed.changes.iter().find(|c| c.path == "panel.expanded");
+        assert!(
+            expanded_change.is_none(),
+            "panel.expanded must not flip when anchor is absent (Case 1 source guard); \
+             got: {:?}",
+            expanded_change
+        );
+    }
+
+    #[test]
+    fn anchor_path_flip_parent_write_on_dormant_does_not_invert_peer() {
+        // Case 2 parent-expansion guard: a parent write that covers a flip leaf
+        // must not propagate the flip when the leaf source's anchor is absent.
+        //
+        // widget.a ↔ widget.b (flip pair), anchor = "widget.enabled".
+        // Writing the parent "widget" while widget.enabled is absent must not
+        // cause widget.b to receive the old value of widget.a.
+        let mut p = ProcessingPipeline::new();
+        p.shadow_init(r#"{"widget": {"a": false, "b": true}}"#)
+            .unwrap();
+
+        let reg = serde_json::json!({
+            "registration_id": "widget-flip",
+            "anchor_path": "widget.enabled",
+            "flip_pairs": [["widget.a", "widget.b"]]
+        });
+        p.register_side_effects(&reg.to_string()).unwrap();
+
+        // Parent write covering both widget.a and widget.b; anchor absent.
+        let result = p
+            .process_changes(r#"[{"path": "widget", "value_json": "{\"a\": true, \"b\": true}"}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        // widget.b should not appear as a flip-driven change (it's in the payload itself,
+        // but no additional flip emission should occur from the dormant registration).
+        let flip_driven = parsed
+            .changes
+            .iter()
+            .any(|c| c.path == "widget.b" && c.value_json == "false");
+        assert!(
+            !flip_driven,
+            "widget.b must not be flipped to false by a dormant registration; \
+             got changes: {:?}",
+            parsed.changes
+        );
+    }
+
+    // --- Anchor path: full multi-registration dormancy test ---
+
+    #[test]
+    fn anchor_path_dormant_registration_suppressed_while_active_registrations_proceed() {
+        // Three registrations, each under a different anchor:
+        //
+        //   reg-alpha  anchor="slot.alpha"  → sync, flip, aggregation, computation, listener(10)
+        //   reg-beta   anchor="slot.beta"   → sync, flip, aggregation, computation, listener(20)
+        //   reg-gamma  anchor="slot.gamma"  → sync, flip, aggregation, computation, listener(30)
+        //
+        // Initial state: slot.alpha and slot.beta exist; slot.gamma is absent.
+        //
+        // We write a change that would trigger all three registrations and assert:
+        //   - Changes produced by reg-alpha and reg-beta appear in the result.
+        //   - Changes that would be produced by reg-gamma are absent (dormant).
+        //   - Listener 30 (reg-gamma) does NOT appear in the dispatch plan.
+        //   - Listeners 10 and 20 (reg-alpha, reg-beta) DO appear in the dispatch plan.
+
+        let mut p = ProcessingPipeline::new();
+
+        // slot.alpha and slot.beta present; slot.gamma absent.
+        // Each slot has:
+        //   .src  — source value that triggers sync/flip/agg/comp
+        //   .dst  — sync peer target
+        //   .inv  — flip peer target
+        //   .sum  — aggregation target (SUM of .src)
+        //   .cpy  — computation target (AVG of .src)
+        p.shadow_init(
+            r#"{
+                "slot": {
+                    "alpha": {"src": 5,  "dst": 0,  "inv": false, "sum": 0, "cpy": 0},
+                    "beta":  {"src": 10, "dst": 0,  "inv": true,  "sum": 0, "cpy": 0}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        // Helper: build a SideEffectsRegistration JSON for one slot.
+        let make_reg = |id: &str, slot: &str, listener_id: u32| -> serde_json::Value {
+            serde_json::json!({
+                "registration_id": id,
+                "anchor_path": format!("slot.{}", slot),
+                "sync_pairs": [[
+                    format!("slot.{}.src", slot),
+                    format!("slot.{}.dst", slot)
+                ]],
+                "flip_pairs": [[
+                    format!("slot.{}.src", slot),
+                    format!("slot.{}.inv", slot)
+                ]],
+                "aggregation_pairs": [[
+                    format!("slot.{}.sum", slot),
+                    format!("slot.{}.src", slot)
+                ]],
+                "computation_pairs": [[
+                    "AVG",
+                    format!("slot.{}.cpy", slot),
+                    format!("slot.{}.src", slot)
+                ]],
+                "listeners": [{
+                    "subscriber_id": listener_id,
+                    "topic_paths": [format!("slot.{}.src", slot)],
+                    "scope_path": format!("slot.{}", slot)
+                }]
+            })
+        };
+
+        let reg_alpha = make_reg("reg-alpha", "alpha", 10);
+        let reg_beta = make_reg("reg-beta", "beta", 20);
+        let reg_gamma = make_reg("reg-gamma", "gamma", 30);
+
+        p.register_side_effects(&reg_alpha.to_string()).unwrap();
+        p.register_side_effects(&reg_beta.to_string()).unwrap();
+        p.register_side_effects(&reg_gamma.to_string()).unwrap();
+
+        // Write src for all three slots simultaneously.
+        // slot.gamma.src doesn't exist in shadow (parent absent), so only alpha and beta have live data.
+        // The key assertion is about anchor: even if slot.gamma.src existed, reg-gamma must be skipped.
+        let result = p
+            .process_changes(
+                r#"[
+                    {"path": "slot.alpha.src", "value_json": "50"},
+                    {"path": "slot.beta.src",  "value_json": "100"}
+                ]"#,
+            )
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        let paths: Vec<&str> = parsed.changes.iter().map(|c| c.path.as_str()).collect();
+
+        // --- reg-alpha outputs must be present ---
+        assert!(
+            paths.contains(&"slot.alpha.dst"),
+            "sync from reg-alpha expected; got: {:?}",
+            paths
+        );
+        assert!(
+            paths.contains(&"slot.alpha.sum"),
+            "aggregation from reg-alpha expected; got: {:?}",
+            paths
+        );
+        assert!(
+            paths.contains(&"slot.alpha.cpy"),
+            "computation from reg-alpha expected; got: {:?}",
+            paths
+        );
+
+        // --- reg-beta outputs must be present ---
+        assert!(
+            paths.contains(&"slot.beta.dst"),
+            "sync from reg-beta expected; got: {:?}",
+            paths
+        );
+        assert!(
+            paths.contains(&"slot.beta.sum"),
+            "aggregation from reg-beta expected; got: {:?}",
+            paths
+        );
+        assert!(
+            paths.contains(&"slot.beta.cpy"),
+            "computation from reg-beta expected; got: {:?}",
+            paths
+        );
+
+        // --- reg-gamma outputs must be absent (anchor slot.gamma is missing) ---
+        assert!(
+            !paths.iter().any(|p| p.starts_with("slot.gamma")),
+            "reg-gamma is dormant; no slot.gamma.* changes expected; got: {:?}",
+            paths
+        );
+
+        // --- Listener dispatch: 10 and 20 must fire, 30 must not ---
+        let plan = p.create_dispatch_plan_vec(&[
+            Change::new("slot.alpha.src".to_string(), "50".to_string()),
+            Change::new("slot.beta.src".to_string(), "100".to_string()),
+        ]);
+        let all_subscribers: Vec<u32> = plan
+            .levels
+            .iter()
+            .flat_map(|level| level.dispatches.iter().map(|d| d.subscriber_id))
+            .collect();
+
+        assert!(
+            all_subscribers.contains(&10),
+            "listener 10 (reg-alpha) should be in dispatch plan; got: {:?}",
+            all_subscribers
+        );
+        assert!(
+            all_subscribers.contains(&20),
+            "listener 20 (reg-beta) should be in dispatch plan; got: {:?}",
+            all_subscribers
+        );
+        assert!(
+            !all_subscribers.contains(&30),
+            "listener 30 (reg-gamma) must NOT be in dispatch plan (dormant); got: {:?}",
+            all_subscribers
         );
     }
 
