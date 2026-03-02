@@ -1936,19 +1936,20 @@ impl ProcessingPipeline {
     fn emit_flip_change(
         shadow: &ShadowState,
         peer_path: &str,
-        inverted_json: &str,
+        value_json: &str,
         output: &mut Vec<Change>,
     ) {
         if !shadow.parent_exists(peer_path) {
             return;
         }
         let current = shadow.get(peer_path);
-        let inverted_bool = inverted_json == "true";
-        let new_value = crate::shadow::ValueRepr::Bool(inverted_bool);
+        let Ok(new_value) = serde_json::from_str::<crate::shadow::ValueRepr>(value_json) else {
+            return;
+        };
         if crate::diff::is_different(&current, &new_value) {
             output.push(Change {
                 path: peer_path.to_owned(),
-                value_json: inverted_json.to_owned(),
+                value_json: value_json.to_owned(),
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
                 audit: None,
@@ -1961,8 +1962,11 @@ impl ProcessingPipeline {
     /// Only adds genuine changes by diffing against shadow state before pushing.
     ///
     /// Handles two cases:
-    /// 1. Exact match: change path is directly in flip graph (must be boolean)
-    /// 2. Parent expansion: change path is shallower — decompose into boolean leaves
+    /// 1. Exact match: change path is directly in flip graph — peer gets the old value of source
+    /// 2. Parent expansion: change path is shallower — decompose into leaves, each peer gets old leaf value
+    ///
+    /// "Flip" for any value type: when A changes, B receives the value A had before the change.
+    /// For booleans this is equivalent to NOT; for enums/strings/numbers it's a value rotation.
     ///
     /// No child expansion for flip (by design).
     fn process_flip_paths_into(
@@ -1977,13 +1981,12 @@ impl ProcessingPipeline {
             let peer_ids = self.flip_graph.get_component_paths_public(path_id);
 
             if !peer_ids.is_empty() {
-                // Case 1: Exact match — flip only if boolean
-                let inverted_value = match change.value_json.trim() {
-                    "true" => Some("false"),
-                    "false" => Some("true"),
-                    _ => None,
-                };
-                if let Some(inverted) = inverted_value {
+                // Case 1: Exact match — peer gets the old value of the source path
+                let old_value_json: Option<String> = self
+                    .shadow
+                    .get(&change.path)
+                    .and_then(|v| serde_json::to_string(&v.to_json_value()).ok());
+                if let Some(old_value_json) = old_value_json {
                     for peer_id in peer_ids {
                         if peer_id != path_id {
                             // Skip if peer's anchor is disabled
@@ -1994,7 +1997,7 @@ impl ProcessingPipeline {
                             }
                             if let Some(peer_path) = self.intern.resolve(peer_id) {
                                 let peer_path = peer_path.to_owned();
-                                Self::emit_flip_change(shadow, &peer_path, inverted, output);
+                                Self::emit_flip_change(shadow, &peer_path, &old_value_json, output);
                             }
                         }
                     }
@@ -2034,12 +2037,13 @@ impl ProcessingPipeline {
                         continue;
                     }
 
-                    // Only flip booleans
-                    let leaf_value = shadow.get(leaf);
-                    let inverted = match leaf_value {
-                        Some(crate::shadow::ValueRepr::Bool(true)) => "false",
-                        Some(crate::shadow::ValueRepr::Bool(false)) => "true",
-                        _ => continue,
+                    // Peer gets the old value of this leaf (value rotation for any type)
+                    let old_value_json: Option<String> = self
+                        .shadow
+                        .get(leaf)
+                        .and_then(|v| serde_json::to_string(&v.to_json_value()).ok());
+                    let Some(old_value_json) = old_value_json else {
+                        continue;
                     };
 
                     for peer_id in &leaf_peers {
@@ -2059,7 +2063,7 @@ impl ProcessingPipeline {
                         }
                         if let Some(peer_path) = self.intern.resolve(*peer_id) {
                             let peer_path = peer_path.to_owned();
-                            Self::emit_flip_change(shadow, &peer_path, inverted, output);
+                            Self::emit_flip_change(shadow, &peer_path, &old_value_json, output);
                         }
                     }
                 }
@@ -4136,23 +4140,25 @@ mod tests {
     }
 
     #[test]
-    fn flip_with_non_boolean_passes_through() {
+    fn flip_string_value_gives_peer_old_source_value() {
         let mut p = make_pipeline();
+        // enabled was true; setting it to a string → disabled gets old value of enabled (true)
         p.shadow_init(r#"{"enabled": true, "disabled": false}"#)
             .unwrap();
         p.register_flip_batch(r#"[["enabled", "disabled"]]"#)
             .unwrap();
 
-        // Try to set a non-boolean value (should pass through unchanged)
         let result = p
             .process_changes(r#"[{"path": "enabled", "value_json": "\"string value\""}]"#)
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should only have the input change, no flip
-        assert_eq!(parsed.changes.len(), 1);
+        // Input change + flip: disabled gets old value of enabled (true)
+        assert_eq!(parsed.changes.len(), 2);
         assert_eq!(parsed.changes[0].path, "enabled");
         assert_eq!(parsed.changes[0].value_json, "\"string value\"");
+        assert_eq!(parsed.changes[1].path, "disabled");
+        assert_eq!(parsed.changes[1].value_json, "true");
     }
 
     #[test]
@@ -4204,8 +4210,9 @@ mod tests {
     }
 
     #[test]
-    fn flip_with_number_value_passes_through() {
+    fn flip_number_value_gives_peer_old_source_value() {
         let mut p = make_pipeline();
+        // count1 was 5; setting it to 42 → count2 gets old value of count1 (5)
         p.shadow_init(r#"{"count1": 5, "count2": 10}"#).unwrap();
         p.register_flip_batch(r#"[["count1", "count2"]]"#).unwrap();
 
@@ -4214,10 +4221,34 @@ mod tests {
             .unwrap();
         let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
 
-        // Should only have the input change, no flip (number is not boolean)
-        assert_eq!(parsed.changes.len(), 1);
+        // Input change + flip: count2 gets old value of count1 (5)
+        assert_eq!(parsed.changes.len(), 2);
         assert_eq!(parsed.changes[0].path, "count1");
         assert_eq!(parsed.changes[0].value_json, "42");
+        assert_eq!(parsed.changes[1].path, "count2");
+        assert_eq!(parsed.changes[1].value_json, "5");
+    }
+
+    #[test]
+    fn flip_swaps_enum_values() {
+        let mut p = make_pipeline();
+        // status = "active", prevStatus = "inactive"
+        // When status changes to "disabled", prevStatus should receive old value of status ("active")
+        p.shadow_init(r#"{"status": "active", "prevStatus": "inactive"}"#)
+            .unwrap();
+        p.register_flip_batch(r#"[["status", "prevStatus"]]"#)
+            .unwrap();
+
+        let result = p
+            .process_changes(r#"[{"path": "status", "value_json": "\"disabled\""}]"#)
+            .unwrap();
+        let parsed: ProcessResult = serde_json::from_str(&result).unwrap();
+
+        assert_eq!(parsed.changes.len(), 2);
+        assert_eq!(parsed.changes[0].path, "status");
+        assert_eq!(parsed.changes[0].value_json, "\"disabled\"");
+        assert_eq!(parsed.changes[1].path, "prevStatus");
+        assert_eq!(parsed.changes[1].value_json, "\"active\"");
     }
 
     // --- Full pipeline integration tests (WASM-015) ---

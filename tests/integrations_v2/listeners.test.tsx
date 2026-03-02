@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest'
 
 import { registerSideEffects as registerSideEffectsWasm } from '~/sideEffects/registration.wasm-impl'
 
+import type { ArrayOfChanges } from '../../src'
 import { createGenericStore } from '../../src'
 import type { BasicTestState, ListenerTestState } from '../mocks'
 import { basicTestFixtures, listenerTestFixtures } from '../mocks'
@@ -1826,6 +1827,151 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       // Second listener must see original 'Diana', not 'FIRST_CORRUPTED'
       expect(secondListenerSaw[0]).toBe('Diana')
       expect(_si.state.user.name).toBe('Diana')
+    })
+  })
+
+  describe('Listener: meta passthrough in output tuples', () => {
+    it('should preserve meta from listener output in subsequent cascaded listener input', async () => {
+      // Two root listeners (path: null) — registration order determines dispatch order.
+      // listener1 fires first, produces a change WITH meta as third tuple element.
+      // listener2 fires second (via same-depth cascading) and receives that cascaded
+      // change — assert it carries the meta from listener1.
+
+      // listener1 watches 'user.name' and produces a change WITH meta.
+      // listener2 is always-on (path: null, scope: null) and receives ALL changes —
+      // including changes cascaded from listener1 within the same pipeline run.
+      const store = createGenericStore<ListenerTestState>(config)
+      const listener2ReceivedChanges: [string, unknown, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user.name',
+                scope: null,
+                fn: () =>
+                  [
+                    ['lastChange', 'triggered', { sender: 'listener1' }],
+                  ] as ArrayOfChanges<ListenerTestState>,
+              },
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    listener2ReceivedChanges.push([
+                      change[0] as string,
+                      change[1],
+                      change[2],
+                    ])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('user.name', 'Diana')
+      await flushSync()
+
+      // listener1's produced change must be applied to state
+      expect(storeInstance.state.lastChange).toBe('triggered')
+
+      // listener2 must see the cascaded 'lastChange' change WITH meta from listener1
+      const cascadedChange = listener2ReceivedChanges.find(
+        ([path]) => path === 'lastChange',
+      )
+      expect(cascadedChange).toBeDefined()
+      expect(cascadedChange![2]).toEqual({ sender: 'listener1' })
+    })
+
+    it('should pass meta: {} when listener returns output tuple without meta', async () => {
+      // listener1 (root) returns a 2-tuple (no meta).
+      // listener2 (root) receives the cascaded change — meta should be {} not undefined.
+
+      const store = createGenericStore<ListenerTestState>(config)
+      const listener2ReceivedChanges: [string, unknown, unknown][] = []
+
+      const { setValue } = mountStore(store, listenerTestFixtures.initial, {
+        sideEffects: {
+          listeners: [
+            {
+              path: null,
+              scope: null,
+              fn: () => {
+                // Return change without meta (2-tuple)
+                return [
+                  ['lastChange', 'triggered'],
+                ] as ArrayOfChanges<ListenerTestState>
+              },
+            },
+            {
+              path: null,
+              scope: null,
+              fn: (changes) => {
+                for (const change of changes) {
+                  listener2ReceivedChanges.push([
+                    change[0] as string,
+                    change[1],
+                    change[2],
+                  ])
+                }
+                return undefined
+              },
+            },
+          ],
+        },
+      })
+
+      setValue('user.name', 'Bob')
+      await flushSync()
+
+      // Cascaded change must arrive with meta: {} (not undefined)
+      const cascadedChange = listener2ReceivedChanges.find(
+        ([path]) => path === 'lastChange',
+      )
+      expect(cascadedChange).toBeDefined()
+      expect(cascadedChange![2]).toEqual({})
+    })
+
+    it('should carry produced change to state when listener returns tuple with meta', async () => {
+      // listener1 returns a change with meta — verify the produced change is applied to state.
+      // Meta flows through the pipeline but is not stored on the state value itself.
+
+      const store = createGenericStore<ListenerTestState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        listenerTestFixtures.initial,
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'user.name',
+                scope: null,
+                fn: () =>
+                  [
+                    [
+                      'lastChange',
+                      'name-changed',
+                      { sender: 'listener1', isProgramaticChange: true },
+                    ],
+                  ] as ArrayOfChanges<ListenerTestState>,
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('user.name', 'Carol')
+      await flushSync()
+
+      // The state change produced by listener1 must have been applied regardless of meta
+      expect(storeInstance.state.lastChange).toBe('name-changed')
     })
   })
 })

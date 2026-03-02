@@ -47,9 +47,11 @@ const normalizeInputChanges = <DATA extends object, META extends GenericMeta>(
 const normalizeWasmChanges = (wasmChanges: Change[]): Change[] =>
   wasmChanges.map(({ path, value, meta }) => ({ path, value, meta }))
 
-/** Normalize raw listener output tuples `[path, value][]` to Change[]. */
-const normalizeListenerOutput = (raw: [string, unknown][]): Change[] =>
-  raw.map(([path, value]) => ({ path, value, meta: {} }))
+/** Normalize raw listener output tuples `[path, value, meta?][]` to Change[]. */
+const normalizeListenerOutput = (
+  raw: [string, unknown, GenericMeta?][],
+): Change[] =>
+  raw.map(([path, value, meta]) => ({ path, value, meta: meta ?? {} }))
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -193,7 +195,7 @@ const executeFullExecutionPlan = <DATA extends object>(
 
     const producedChanges =
       result && (result as unknown[]).length > 0
-        ? normalizeListenerOutput(result as [string, unknown][])
+        ? normalizeListenerOutput(result as [string, unknown, GenericMeta?][])
         : []
 
     listenerLog.push({

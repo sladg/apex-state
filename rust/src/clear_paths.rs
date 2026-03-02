@@ -981,9 +981,9 @@ mod tests {
         // Expected pipeline:
         //   Step 3:   toggle = true
         //   Step 3.5: enabled = null (cleared)
-        //   Step 6-7: flip sees enabled=null, non-boolean → no flip (passes through)
-        // Output: [toggle=true, enabled=null]
-        // Note: flip skips non-boolean values, null is not boolean
+        //   Step 6-7: flip sees enabled→null change, reads old value of enabled (true),
+        //             sets disabled = true (value rotation — works for any type)
+        // Output: [toggle=true, enabled=null, disabled=true]
         let mut pipeline = ProcessingPipeline::new();
         pipeline
             .shadow_init(r#"{"toggle": false, "enabled": true, "disabled": false}"#)
@@ -1008,8 +1008,14 @@ mod tests {
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
         assert!(paths.contains(&"toggle"));
         assert!(paths.contains(&"enabled"));
-        // disabled should NOT be in output (null is not boolean, flip skips)
-        assert!(!paths.contains(&"disabled"));
+        // disabled receives the old value of enabled (true) via value rotation
+        assert!(paths.contains(&"disabled"));
+        let disabled_change = result
+            .changes
+            .iter()
+            .find(|c| c.path == "disabled")
+            .unwrap();
+        assert_eq!(disabled_change.value_json, "true");
     }
 
     #[test]
