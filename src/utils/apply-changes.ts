@@ -4,8 +4,9 @@
  * Applies an array of changes to an object, returning a new object.
  */
 
+import { deepClone } from 'valtio/utils'
+
 import type { DeepKey, DeepValue } from '../types'
-import { deepClone } from './deep-clone'
 import { dot } from './dot'
 
 /** A change tuple: [path, value] or [path, value, anyMeta]. Meta is ignored. */

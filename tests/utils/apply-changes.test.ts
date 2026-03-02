@@ -164,6 +164,85 @@ describe('applyChangesToObject', () => {
     expect(obj.g['123'].p.abc.data).toBe('old-abc')
   })
 
+  it('should remove old keys when object is replaced with entirely different keys', () => {
+    // g starts with numeric-like keys 1, 2, 3.
+    // Replacing g with { a, b, c } must DELETE 1, 2, 3 — not merge them.
+    const obj = {
+      g: { '1': 'one', '2': 'two', '3': 'three' },
+    }
+    const changes: ArrayOfChanges<typeof obj> = [
+      ['g', { a: 'alpha', b: 'beta', c: 'gamma' } as never, {}],
+    ]
+
+    const result = applyChangesToObject(obj, changes)
+
+    // New keys are present
+    const g = result.g as Record<string, unknown>
+    expect(g['a']).toBe('alpha')
+    expect(g['b']).toBe('beta')
+    expect(g['c']).toBe('gamma')
+    // Old keys are gone — full replacement, not merge
+    expect(g['1']).toBeUndefined()
+    expect(g['2']).toBeUndefined()
+    expect(g['3']).toBeUndefined()
+    // Original unchanged
+    expect(obj.g['1']).toBe('one')
+  })
+
+  it('should remove old keys at 30 levels deep when replaced with entirely different keys', () => {
+    // Build a 30-level deep object: root.g.1.2.3...  (alternating 1,2,3 keys)
+    // Replace the deepest node with { a, b, c } and verify old keys are gone at every level.
+    const DEPTH = 30
+
+    // Build deep object: each level has key matching its depth index (1-based, cycling 1/2/3)
+    type DeepObj = Record<string, unknown>
+    const buildDeep = (depth: number): DeepObj => {
+      if (depth === 0) return { '1': 'leaf-1', '2': 'leaf-2', '3': 'leaf-3' }
+      const key = String((depth % 3) + 1)
+      return { [key]: buildDeep(depth - 1) }
+    }
+
+    const obj = { g: buildDeep(DEPTH) }
+
+    // Build the change path: g.2.1.3.2.1.3... (following the same cycling key pattern)
+    const pathSegments = ['g']
+    for (let d = DEPTH; d >= 1; d--) {
+      pathSegments.push(String((d % 3) + 1))
+    }
+    const changePath = pathSegments.join('.')
+
+    const changes: ArrayOfChanges<typeof obj> = [
+      [changePath as never, { a: 'alpha', b: 'beta', c: 'gamma' } as never, {}],
+    ]
+
+    const result = applyChangesToObject(obj, changes)
+
+    // Navigate to the replaced node
+    const navigate = (node: unknown, segs: string[]): unknown =>
+      segs.reduce(
+        (cur, k) =>
+          cur != null && typeof cur === 'object'
+            ? (cur as Record<string, unknown>)[k]
+            : undefined,
+        node,
+      )
+
+    const replaced = navigate(result, pathSegments) as Record<string, unknown>
+
+    // New keys present
+    expect(replaced['a']).toBe('alpha')
+    expect(replaced['b']).toBe('beta')
+    expect(replaced['c']).toBe('gamma')
+    // Old keys gone
+    expect(replaced['1']).toBeUndefined()
+    expect(replaced['2']).toBeUndefined()
+    expect(replaced['3']).toBeUndefined()
+
+    // Original is unchanged — leaf of original still has old keys
+    const originalLeaf = navigate(obj, pathSegments) as Record<string, unknown>
+    expect(originalLeaf['1']).toBe('leaf-1')
+  })
+
   it('should work when a nested object is a Proxy', () => {
     const obj = {
       user: new Proxy({ name: 'Alice', age: 30 }, {}),
