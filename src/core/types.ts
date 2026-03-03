@@ -158,9 +158,11 @@ export interface SinglePathListener<
 > {
   /**
    * Path to watch - only changes under this path will trigger the listener.
-   * null = watch all paths (receives every change)
+   * null = watch all paths (receives every change).
+   * Array = watch multiple paths; listener fires once per run when any match,
+   * receiving all matching changes merged into a single input array.
    */
-  path: DeepKey<DATA, Depth> | null
+  path: DeepKey<DATA, Depth> | DeepKey<DATA, Depth>[] | null
 
   /**
    * Scope for state and changes presentation

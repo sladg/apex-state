@@ -2249,20 +2249,18 @@ impl ProcessingPipeline {
             0.0
         };
 
-        // Working shadow: clone of self.shadow used for all reads/writes during the pipeline.
-        // self.shadow stays untouched until the atomic commit at the end.
-        let mut working = self.shadow.clone();
-
         // Local buffers for sync/flip (avoid storing on struct — they're pure temporaries)
         let mut sync_buf: Vec<Change> = Vec::new();
         let mut flip_buf: Vec<Change> = Vec::new();
         // Local buffer for concern changes produced by BoolLogic/ValueLogic evaluation
         let mut concern_changes: Vec<Change> = Vec::new();
 
-        // Step 0: Diff pre-pass — filter no-op changes early (against working, == self.shadow here)
+        // Step 0: Diff pre-pass — filter no-op changes early against self.shadow directly.
+        // Working shadow is identical to self.shadow at this point, so we avoid cloning it
+        // for inputs that turn out to be no-ops (the common case in large pipelines).
         let t0 = rec.stage_timer();
         let all_input_matched = rec.collect_matched(&input_changes);
-        let input_changes = crate::diff::diff_changes(&working, &input_changes);
+        let input_changes = crate::diff::diff_changes(&self.shadow, &input_changes);
         {
             let matched = rec.collect_matched(&input_changes);
             let skipped = rec.diff_skipped(&all_input_matched, &matched);
@@ -2273,6 +2271,10 @@ impl ProcessingPipeline {
             self.ctx.trace = trace;
             return Ok(false);
         }
+
+        // Working shadow: clone only after diff confirms genuine changes exist.
+        // self.shadow stays untouched until the atomic commit at the end.
+        let mut working = self.shadow.clone();
 
         // Steps 1-2: Process aggregation writes (distribute target → sources)
         // Only report changes that hit a registered aggregation target as MATCHED.
@@ -2410,41 +2412,48 @@ impl ProcessingPipeline {
         // Must process ALL aggregated changes (not just genuine ones) because even if
         // a change is a no-op for path A, it might need to sync to path B that differs.
         // Include clear changes so sync sees cleared paths.
+        // Skipped entirely when no sync pairs are registered (avoids two Vec clones per call).
+        // Covers both bidirectional (sync_graph) and directed (directed_sync_edges) registrations.
         let t0 = rec.stage_timer();
-        let mut changes_for_sync = changes.clone();
-        changes_for_sync.extend(clear_changes.clone());
-        self.process_sync_paths_into(&working, &changes_for_sync, &mut sync_buf);
-        for change in &sync_buf {
-            working.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&working, &change.path);
+        if !self.sync_graph.is_empty() || !self.directed_sync_edges.is_empty() {
+            let mut changes_for_sync = changes.clone();
+            changes_for_sync.extend(clear_changes.clone());
+            self.process_sync_paths_into(&working, &changes_for_sync, &mut sync_buf);
+            for change in &sync_buf {
+                working.set(&change.path, &change.value_json)?;
+                self.mark_affected_logic(&working, &change.path);
+            }
+            self.ctx.changes.extend_from_slice(&sync_buf);
+            rec.stage(
+                Stage::Sync,
+                rec.collect_matched(&changes_for_sync),
+                rec.collect_produced(&sync_buf),
+                Vec::new(),
+            );
         }
-        self.ctx.changes.extend_from_slice(&sync_buf);
-        rec.stage(
-            Stage::Sync,
-            rec.collect_matched(&changes_for_sync),
-            rec.collect_produced(&sync_buf),
-            Vec::new(),
-        );
         rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Steps 6-7: Process flip paths and update working shadow.
         // Must process ALL aggregated changes + clear changes + sync outputs.
+        // Skipped entirely when no flip pairs are registered (avoids two Vec clones per call).
         let t0 = rec.stage_timer();
-        let mut changes_for_flip = changes.clone();
-        changes_for_flip.extend(clear_changes);
-        changes_for_flip.extend_from_slice(&sync_buf);
-        self.process_flip_paths_into(&working, &changes_for_flip, &mut flip_buf);
-        for change in &flip_buf {
-            working.set(&change.path, &change.value_json)?;
-            self.mark_affected_logic(&working, &change.path);
+        if !self.flip_graph.is_empty() {
+            let mut changes_for_flip = changes.clone();
+            changes_for_flip.extend(clear_changes);
+            changes_for_flip.extend_from_slice(&sync_buf);
+            self.process_flip_paths_into(&working, &changes_for_flip, &mut flip_buf);
+            for change in &flip_buf {
+                working.set(&change.path, &change.value_json)?;
+                self.mark_affected_logic(&working, &change.path);
+            }
+            self.ctx.changes.extend_from_slice(&flip_buf);
+            rec.stage(
+                Stage::Flip,
+                rec.collect_matched(&changes_for_flip),
+                rec.collect_produced(&flip_buf),
+                Vec::new(),
+            );
         }
-        self.ctx.changes.extend_from_slice(&flip_buf);
-        rec.stage(
-            Stage::Flip,
-            rec.collect_matched(&changes_for_flip),
-            rec.collect_produced(&flip_buf),
-            Vec::new(),
-        );
         rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Step 7.5: Process aggregation reads (sources → target recomputation).

@@ -279,6 +279,11 @@ impl Graph {
         *self = Self::new();
     }
 
+    /// Returns true if no edges have been registered (fast O(1) check for hot-path guards).
+    pub(crate) fn is_empty(&self) -> bool {
+        self.edges.is_empty()
+    }
+
     /// Dump all edges as resolved string pairs (debug only — not called in hot path).
     pub(crate) fn dump_pairs(&self, intern: &InternTable) -> Vec<[String; 2]> {
         self.edges

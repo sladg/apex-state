@@ -12,10 +12,17 @@ Project key: **WASM**
 | WASM-EP4 | Validation Batching | WASM-021 → WASM-024 | EP2 | **✅ COMPLETE** (2026-02-15) — Tests: placeholders written |
 | ~~WASM-EP5~~ | ~~Streaming Data Gateway~~ | ~~WASM-028 → WASM-031~~ | ~~EP2~~ | **🚫 SUPERSEDED** — Absorbed by EP6; no-op filtering in every pipeline step eliminates the need for a separate streaming gateway |
 | WASM-EP6 | Pipeline Refactor | WASM-032 | EP4 | **✅ COMPLETE** (2026-02-15) |
-| WASM-EP7 | Clean Mode Split | WASM-033 → WASM-037 | EP6 | **⏳ READY** |
+| WASM-EP7 | Clean Mode Split | WASM-033 → WASM-037 | EP6 | **✅ COMPLETE** (2026-03-03) — JS was already WASM-only; `path-groups.ts` + `graph-types.ts` dead code removed |
 | WASM-EP8 | Recency-Based Sync | WASM-038 → WASM-040 | EP6 | **⏳ READY** |
+| WASM-EP15 | Bundle Size Reduction | Story 1 (dual build) + Story 2 (Rust flags) | — | **⏳ READY** |
+| WASM-EP11 | Rust Performance: Huge Objects | WASM-041 → WASM-044 | EP6 | **⏳ READY** |
+| WASM-EP12 | Rust Performance: Many Pipelines | WASM-045 → WASM-048 | EP6 | **⏳ READY** |
+| WASM-EP13 | Rust Deduplication & Abstraction | WASM-049 → WASM-054 | EP6 | **⏳ READY** |
+| WASM-EP14 | Rust Third-Party Crate Adoption | WASM-055 → WASM-060 | EP6 | **⏳ READY** |
+| WASM-EP9 | Pipeline Context Refactor | — | EP6 | **✅ COMPLETE** — Implemented as part of EP6 refactor |
+| WASM-EP10 | Anchor Path + Multi-path Listeners | — | EP6 | **✅ COMPLETE** (2026-03-03) — anchorPath guards, multi-path `topic_paths[]`, dispatch ordering |
 
-EP3, EP4 ran in parallel after EP2. EP6 followed EP4. EP7 follows EP6.
+EP3, EP4 ran in parallel after EP2. EP6 followed EP4. EP7–EP10 complete.
 
 ## Story Map
 
@@ -53,18 +60,44 @@ EP3 Listeners (✅)   EP4 Validation (✅)
                          032 Round-trip refactor ✅ 22199cf
                               │
                               ▼
-                       EP7 Clean Mode Split (⏳)
-                         033 Clean sync registration
-                         034 Clean flip registration
-                         035 Clean listener registration
-                         036 WASM aggregation path
-                         037 Verify no cross-contamination
+                       EP7 Clean Mode Split (✅)
+                         033–037 Complete — codebase is WASM-only;
+                                 path-groups.ts + graph-types.ts removed
                               │
                               ▼
                        EP8 Recency-Based Sync (⏳)
                          038 Add recency tracking infrastructure
                          039 Update sync registration logic
                          040 Integration tests
+                              │
+                              ▼
+                       EP11 Rust Perf: Huge Objects (⏳)
+                         041 Remove subtree clone in shadow.set()
+                         042 affected_paths() → Vec<u32> (intern-first)
+                         043 Shadow state object keys as u32 (interned field names)
+                         044 Hash-based object diff (skip no-op object sets)
+                              │
+                       EP12 Rust Perf: Many Pipelines (⏳)
+                         045 Pre-sort TopicRouter at registration
+                         046 Arc-based RevIndex (remove HashSet clone)
+                         047 Configurable PipelineContext capacity hints
+                         048 Graph merge: drain HashSet instead of tmp Vec
+                              │
+                       EP13 Rust Deduplication & Abstraction (⏳)
+                         049 Generic PathIndexedRegistry<T> trait
+                         050 Shared condition index helper fn
+                         051 Shared get_affected_targets helper fn
+                         052 Unified shadow collect_paths (parameterized)
+                         053 Shadow path resolution guard helper
+                         054 Unified change iteration helper (aggregation/computation)
+                              │
+                       EP14 Rust Third-Party Crate Adoption (⏳)
+                         055 ahash: replace std HashMap everywhere
+                         056 string-interner: replace interning.rs
+                         057 smallvec: hot-path Vec<u32> collections
+                         058 slab: replace InternTable reverse vec
+                         059 petgraph: evaluate replacing graphs.rs
+                         060 indexmap: evaluate for TopicRouter ordering
 ```
 
 ~~EP5 Streaming (SUPERSEDED)~~ — No-op change filtering at every pipeline step makes a separate streaming gateway unnecessary.
@@ -226,6 +259,36 @@ EP3 Listeners (✅)   EP4 Validation (✅)
 | a55c664 | docs(wasm): updated claude.md, added wasm architecture and task for processing | ✅ |
 | 22ee86b | Implement Shadow State as Nested Tree in Rust/WASM (#13) | ✅ |
 | fcfe40e | WASM-004: BoolLogic evaluator with tuple variants (#12) | ✅ |
+
+---
+
+### ⏳ Ready: EP11 Rust Performance — Huge Objects
+
+**Spec**: `tasks/WASM-EP11-PERF-HUGE-OBJECTS.md` (canonical)
+
+- **Depends On**: EP6 (complete)
+- **Stories**: WASM-041 → WASM-044 | **Total**: 16pts
+- **Scope**: Remove subtree clone in `shadow.set()`, intern-first `affected_paths()`, interned object keys, hash-based object diff
+
+### ⏳ Ready: EP12 Rust Performance — Many Pipelines
+
+**Spec**: `tasks/WASM-EP12-PERF-MANY-PIPELINES.md` (canonical)
+
+- **Depends On**: EP6 (complete)
+- **Stories**: WASM-045 → WASM-048 | **Total**: 6pts
+- **Scope**: Pre-sort TopicRouter at registration, Arc-based RevIndex, configurable capacity hints, graph merge drain
+
+### ⏳ Ready: EP13 Rust Deduplication & Abstraction
+
+**Spec**: `tasks/WASM-EP13-DEDUPLICATION.md` (canonical)
+
+### ⏳ Ready: EP14 Rust Third-Party Crate Adoption
+
+**Spec**: `tasks/WASM-EP14-CRATE-ADOPTION.md` (canonical)
+
+- **Depends On**: EP6 (complete)
+- **Stories**: WASM-055 → WASM-060 | **Total**: 8pts
+- **Scope**: `ahash` HashMap replacement, `string-interner` for interning.rs, `smallvec` for hot-path collections, `slab` for intern reverse vec, evaluate `petgraph` for graphs.rs, evaluate `indexmap` for TopicRouter
 
 ---
 
