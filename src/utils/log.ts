@@ -158,8 +158,8 @@ const buildDetail = (data: PipelineLogData): Record<string, unknown> => {
   const listeners =
     trace.listeners.length > 0
       ? Object.fromEntries(
-          trace.listeners.map((e) => [
-            `${e.fnName || '(anonymous)'}  scope:${e.scope}${e.registrationId ? '  [reg: ' + e.registrationId + ']' : ''}`,
+          trace.listeners.map((e, i) => [
+            `[${String(i + 1).padStart(2, '0')}] ${e.fnName || '(anonymous)'}  scope:${e.scope}${e.registrationId ? '  [reg: ' + e.registrationId + ']' : ''}`,
             {
               ms: fmtListenerMs(e.durationMs, trace.listenerTimingEnabled),
               input: [e.input, unwrap(e.currentState)],
@@ -273,7 +273,7 @@ export const buildTraceSummary = (
             const dur =
               entry.durationMs > 0 ? ` ${entry.durationMs.toFixed(2)}ms` : ''
             const slow = entry.slow ? ' [SLOW]' : ''
-            const key = `[${String(li).padStart(2, '0')}] listener:${String(entry.subscriberId)} ${name}${dur}${slow}`
+            const key = `[${String(li + 1).padStart(2, '0')}] listener:${String(entry.subscriberId)} ${name}${dur}${slow}`
             return [
               key,
               {

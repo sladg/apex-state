@@ -28,6 +28,7 @@ struct SubscriberMeta {
     primary_topic_id: u32,
     scope_path: String,
     topic_paths: Vec<String>,
+    anchor_path: Option<String>,
 }
 
 /// Pre-computed downstream route between topics.
@@ -52,6 +53,13 @@ pub(crate) struct TopicRouter {
     path_to_topic: HashMap<String, u32>,
     /// Auto-incrementing topic ID counter.
     next_topic_id: u32,
+    /// All subscriber IDs in pre-computed dispatch order.
+    /// Updated on every register/unregister via sort_subscribers().
+    sorted_subs: Vec<u32>,
+    /// subscriber_id → registration order (FIFO tiebreaker for sort_subscribers).
+    registration_indices: HashMap<u32, u32>,
+    /// Auto-incrementing registration index counter.
+    next_registration_index: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +274,9 @@ impl TopicRouter {
             routes: HashMap::new(),
             path_to_topic: HashMap::new(),
             next_topic_id: 0,
+            sorted_subs: Vec::new(),
+            registration_indices: HashMap::new(),
+            next_registration_index: 0,
         }
     }
 
@@ -285,7 +296,7 @@ impl TopicRouter {
     // ------------------------------------------------------------------
 
     /// Register a batch of listeners. Automatically creates topics as needed,
-    /// sorts topics deepest-first, and recomputes routes.
+    /// recomputes routes, and re-sorts the global dispatch order.
     pub(crate) fn register_listeners_batch(&mut self, listeners_json: &str) -> Result<(), String> {
         let registrations: Vec<ListenerRegistration> = serde_json::from_str(listeners_json)
             .map_err(|e| format!("Listener registration parse error: {}", e))?;
@@ -327,12 +338,18 @@ impl TopicRouter {
                     .push(reg.subscriber_id);
             }
 
+            let reg_idx = self.next_registration_index;
+            self.next_registration_index += 1;
+            self.registration_indices.insert(reg.subscriber_id, reg_idx);
+            self.sorted_subs.push(reg.subscriber_id);
+
             self.subscriber_meta.insert(
                 reg.subscriber_id,
                 SubscriberMeta {
                     primary_topic_id: first_topic_id.unwrap_or(0),
                     scope_path: reg.scope_path,
                     topic_paths: reg.topic_paths,
+                    anchor_path: reg.anchor_path,
                 },
             );
         }
@@ -341,6 +358,7 @@ impl TopicRouter {
             self.sort_topics();
             self.recompute_routes();
         }
+        self.sort_subscribers();
 
         Ok(())
     }
@@ -362,6 +380,9 @@ impl TopicRouter {
                 Some(m) => m,
                 None => continue,
             };
+
+            self.registration_indices.remove(&sub_id);
+            self.sorted_subs.retain(|&id| id != sub_id);
 
             // Remove subscriber from all its registered topics
             for topic_path in &meta.topic_paths {
@@ -387,6 +408,8 @@ impl TopicRouter {
         if topology_changed {
             self.recompute_routes();
         }
+        // Re-sort even without topology change: a removal may affect order of remaining subs.
+        self.sort_subscribers();
 
         Ok(())
     }
@@ -402,6 +425,58 @@ impl TopicRouter {
             let da = meta.get(a).map_or(0, |m| m.depth);
             let db = meta.get(b).map_or(0, |m| m.depth);
             db.cmp(&da) // descending
+        });
+    }
+
+    /// Compute the sort key for a subscriber (transiently — not stored on meta).
+    ///
+    /// Key: (effective_depth DESC, topic_depth DESC, scope_depth DESC, anchor_depth DESC, registration_index ASC)
+    /// effective_depth = max(deepest topic path depth, anchor depth)
+    fn subscriber_sort_key(&self, sub_id: u32) -> (u32, u32, u32, u32, u32) {
+        let meta = match self.subscriber_meta.get(&sub_id) {
+            Some(m) => m,
+            None => return (0, 0, 0, 0, u32::MAX),
+        };
+        let topic_depth = meta
+            .topic_paths
+            .iter()
+            .map(|p| path_depth(p))
+            .max()
+            .unwrap_or(0);
+        let anchor_depth = meta.anchor_path.as_deref().map(path_depth).unwrap_or(0);
+        let scope_depth = path_depth(&meta.scope_path);
+        let effective_depth = topic_depth.max(anchor_depth);
+        let reg_idx = self
+            .registration_indices
+            .get(&sub_id)
+            .copied()
+            .unwrap_or(u32::MAX);
+        (
+            effective_depth,
+            topic_depth,
+            scope_depth,
+            anchor_depth,
+            reg_idx,
+        )
+    }
+
+    /// Re-sort the global dispatch order. Called on every register/unregister.
+    fn sort_subscribers(&mut self) {
+        // Pre-compute sort keys to avoid borrow conflicts inside the sort closure.
+        let keys: HashMap<u32, (u32, u32, u32, u32, u32)> = self
+            .sorted_subs
+            .iter()
+            .map(|&sub_id| (sub_id, self.subscriber_sort_key(sub_id)))
+            .collect();
+        self.sorted_subs.sort_by(|&a, &b| {
+            let ka = keys[&a];
+            let kb = keys[&b];
+            // All components descending except registration_index (ascending)
+            kb.0.cmp(&ka.0) // effective_depth DESC
+                .then(kb.1.cmp(&ka.1)) // topic_depth DESC
+                .then(kb.2.cmp(&ka.2)) // scope_depth DESC
+                .then(kb.3.cmp(&ka.3)) // anchor_depth DESC
+                .then(ka.4.cmp(&kb.4)) // registration_index ASC
         });
     }
 
@@ -498,9 +573,9 @@ impl TopicRouter {
 
     /// Create a dispatch plan for the given changes.
     ///
-    /// 1. Seed matching topics from changes.
-    /// 2. Group by depth (deepest first).
-    /// 3. Build ListenerDispatch entries with relativized changes.
+    /// Iterates `sorted_subs` (pre-sorted at registration time) to preserve the
+    /// correct dispatch order within each effective-depth level. Multi-path
+    /// listeners have their changes merged from all matched topics.
     pub(crate) fn create_dispatch_plan(&self, changes: &[Change]) -> DispatchPlan {
         if changes.is_empty() || self.subscriber_meta.is_empty() {
             return DispatchPlan { levels: Vec::new() };
@@ -511,111 +586,105 @@ impl TopicRouter {
             return DispatchPlan { levels: Vec::new() };
         }
 
-        // Group matched topics by depth (descending)
-        let mut depth_groups: HashMap<u32, Vec<u32>> = HashMap::new();
+        // Build topic_id → matched relevant changes (relativized per-topic).
+        let mut topic_changes: HashMap<u32, Vec<Change>> = HashMap::new();
         for &topic_id in &matched_topics {
-            if let Some(meta) = self.topic_meta.get(&topic_id) {
-                depth_groups.entry(meta.depth).or_default().push(topic_id);
+            let prefix = match self.topic_meta.get(&topic_id) {
+                Some(m) => &m.prefix,
+                None => continue,
+            };
+            let relevant: Vec<Change> = changes
+                .iter()
+                .filter(|c| {
+                    if prefix.is_empty() {
+                        true // root topic matches everything
+                    } else {
+                        c.path == *prefix
+                            || (c.path.starts_with(prefix.as_str())
+                                && c.path.as_bytes().get(prefix.len()) == Some(&b'.'))
+                            || (prefix.starts_with(c.path.as_str())
+                                && prefix.as_bytes().get(c.path.len()) == Some(&b'.'))
+                    }
+                })
+                .map(|c| Change {
+                    path: relativize_path(&c.path, prefix),
+                    value_json: c.value_json.clone(),
+                    kind: c.kind.clone(),
+                    lineage: c.lineage.clone(),
+                    audit: c.audit.clone(),
+                    ..Default::default()
+                })
+                .collect();
+            if !relevant.is_empty() {
+                topic_changes.insert(topic_id, relevant);
             }
         }
 
-        // Sort depths descending
-        let mut depths: Vec<u32> = depth_groups.keys().copied().collect();
-        depths.sort_by(|a, b| b.cmp(a));
+        // Walk sorted_subs in pre-computed order: collect dispatches per effective-depth level.
+        // Within each level the order comes from sorted_subs (registration-time sort), not insertion.
+        let mut level_dispatches: Vec<(u32, Vec<ListenerDispatch>)> = Vec::new(); // (effective_depth, dispatches)
+        let mut level_index: HashMap<u32, usize> = HashMap::new(); // effective_depth → index in level_dispatches
 
-        let mut levels = Vec::with_capacity(depths.len());
-        // Track globally seen subscribers across depth levels (deepest first wins)
-        let mut globally_seen: HashSet<u32> = HashSet::new();
+        for &sub_id in &self.sorted_subs {
+            let sub_meta = match self.subscriber_meta.get(&sub_id) {
+                Some(m) => m,
+                None => continue,
+            };
 
-        for depth in depths {
-            let topic_ids = &depth_groups[&depth];
-            let mut dispatches: Vec<ListenerDispatch> = Vec::new();
-            // Track subscriber -> dispatch index within this depth level for merging
-            let mut seen_at_depth: HashMap<u32, usize> = HashMap::new();
-
-            for &topic_id in topic_ids {
-                let prefix = match self.topic_meta.get(&topic_id) {
-                    Some(m) => &m.prefix,
-                    None => continue,
-                };
-
-                // Filter changes that fall under this topic's prefix.
-                // Three match types:
-                // - Exact: change path == prefix
-                // - Child change: change path is deeper than prefix (e.g., "form.billing.city" for "form.billing")
-                // - Parent change: change path is shallower than prefix (e.g., "form" for "form.billing")
-                let relevant_changes: Vec<Change> = changes
-                    .iter()
-                    .filter(|c| {
-                        if prefix.is_empty() {
-                            true // root topic matches everything
-                        } else {
-                            c.path == *prefix
-                                || (c.path.starts_with(prefix.as_str())
-                                    && c.path.as_bytes().get(prefix.len()) == Some(&b'.'))
-                                || (prefix.starts_with(c.path.as_str())
-                                    && prefix.as_bytes().get(c.path.len()) == Some(&b'.'))
-                        }
-                    })
-                    .map(|c| Change {
-                        path: relativize_path(&c.path, prefix),
-                        value_json: c.value_json.clone(),
-                        kind: c.kind.clone(),
-                        lineage: c.lineage.clone(),
-                        audit: c.audit.clone(),
-                        ..Default::default()
-                    })
-                    .collect();
-
-                if relevant_changes.is_empty() {
-                    continue;
-                }
-
-                // Get subscribers for this topic
-                if let Some(subs) = self.subscribers.get(&topic_id) {
-                    for &sub_id in subs {
-                        // Skip if this subscriber was already dispatched at a deeper depth
-                        if globally_seen.contains(&sub_id) {
-                            continue;
-                        }
-
-                        if let Some(sub_meta) = self.subscriber_meta.get(&sub_id) {
-                            if let Some(&existing_idx) = seen_at_depth.get(&sub_id) {
-                                // Multi-path: subscriber already dispatched at this depth from
-                                // another topic — merge changes into existing dispatch
-                                let existing = &mut dispatches[existing_idx];
-                                for c in &relevant_changes {
-                                    // Avoid duplicate changes (same path)
-                                    if !existing.changes.iter().any(|e| e.path == c.path) {
-                                        existing.changes.push(c.clone());
-                                    }
-                                }
-                            } else {
-                                // New dispatch for this subscriber at this depth
-                                let idx = dispatches.len();
-                                seen_at_depth.insert(sub_id, idx);
-                                let ancestors = build_ancestor_chain(&sub_meta.scope_path);
-                                dispatches.push(ListenerDispatch {
-                                    subscriber_id: sub_id,
-                                    scope_path: sub_meta.scope_path.clone(),
-                                    changes: relevant_changes.clone(),
-                                    ancestors,
-                                });
+            // Collect all matched changes for this subscriber across its topic paths.
+            // Root listeners use topic_paths: [""] — the "" topic matches all changes and is
+            // handled identically to any other topic path via the path_to_topic lookup.
+            let mut merged_changes: Vec<Change> = Vec::new();
+            for topic_path in &sub_meta.topic_paths {
+                if let Some(&topic_id) = self.path_to_topic.get(topic_path) {
+                    if let Some(rel_changes) = topic_changes.get(&topic_id) {
+                        for c in rel_changes {
+                            if !merged_changes.iter().any(|e| e.path == c.path) {
+                                merged_changes.push(c.clone());
                             }
                         }
                     }
                 }
             }
 
-            // After processing this depth level, mark all subscribers as globally seen
-            for &sub_id in seen_at_depth.keys() {
-                globally_seen.insert(sub_id);
+            if merged_changes.is_empty() {
+                continue;
             }
 
-            if !dispatches.is_empty() {
-                levels.push(DispatchLevel { depth, dispatches });
+            // Compute effective_depth transiently for level grouping.
+            let topic_depth = sub_meta
+                .topic_paths
+                .iter()
+                .map(|p| path_depth(p))
+                .max()
+                .unwrap_or(0);
+            let anchor_depth = sub_meta.anchor_path.as_deref().map(path_depth).unwrap_or(0);
+            let effective_depth = topic_depth.max(anchor_depth);
+
+            let ancestors = build_ancestor_chain(&sub_meta.scope_path);
+            let dispatch = ListenerDispatch {
+                subscriber_id: sub_id,
+                scope_path: sub_meta.scope_path.clone(),
+                changes: merged_changes,
+                ancestors,
+            };
+
+            if let Some(&idx) = level_index.get(&effective_depth) {
+                level_dispatches[idx].1.push(dispatch);
+            } else {
+                let idx = level_dispatches.len();
+                level_index.insert(effective_depth, idx);
+                level_dispatches.push((effective_depth, vec![dispatch]));
             }
         }
+
+        // level_dispatches is in sorted_subs order — sort levels by effective_depth descending.
+        level_dispatches.sort_by(|a, b| b.0.cmp(&a.0));
+
+        let levels = level_dispatches
+            .into_iter()
+            .map(|(depth, dispatches)| DispatchLevel { depth, dispatches })
+            .collect();
 
         DispatchPlan { levels }
     }
@@ -1991,5 +2060,146 @@ mod tests {
             plan.levels.is_empty(),
             "form.billing listener should NOT fire when form.shipping changes (sibling)"
         );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Dispatch ordering tests
+    // ---------------------------------------------------------------------------
+
+    /// Register a listener with explicit scope and optional anchor_path.
+    fn register_full(
+        router: &mut TopicRouter,
+        sub_id: u32,
+        topic: &str,
+        scope: &str,
+        anchor: Option<&str>,
+    ) {
+        let anchor_json = match anchor {
+            Some(a) => format!(r#", "anchor_path": "{}""#, a),
+            None => String::new(),
+        };
+        let json = format!(
+            r#"[{{"subscriber_id": {sub_id}, "topic_paths": ["{topic}"], "scope_path": "{scope}"{anchor_json}}}]"#
+        );
+        router.register_listeners_batch(&json).unwrap();
+    }
+
+    /// Returns sorted_subs as a Vec (the pre-computed dispatch order).
+    fn dispatch_order(router: &TopicRouter) -> Vec<u32> {
+        router.sorted_subs.clone()
+    }
+
+    #[test]
+    fn ordering_topic_depth_deepest_first() {
+        // Registered in reverse depth order — sort must correct it.
+        // Sub 1: depth 0, Sub 2: depth 1, Sub 3: depth 3, Sub 4: depth 2
+        // Expected dispatch order: 3 → 4 → 2 → 1
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 1, "", "", None);
+        register_full(&mut router, 2, "user", "", None);
+        register_full(&mut router, 3, "user.profile.email", "", None);
+        register_full(&mut router, 4, "user.profile", "", None);
+
+        assert_eq!(dispatch_order(&router), vec![3, 4, 2, 1]);
+    }
+
+    #[test]
+    fn ordering_scope_depth_tiebreaker() {
+        // Same topic depth (2) — deeper scope runs first.
+        // Sub 1: scope depth 0, Sub 2: scope depth 1, Sub 3: scope depth 2
+        // Expected: 3 → 2 → 1
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 1, "user.profile", "", None);
+        register_full(&mut router, 2, "user.profile", "user", None);
+        register_full(&mut router, 3, "user.profile", "user.profile", None);
+
+        assert_eq!(dispatch_order(&router), vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn ordering_anchor_depth_tiebreaker() {
+        // Same topic depth (2), no scope — deeper anchor runs first.
+        // Sub 1: no anchor (0), Sub 2: anchor depth 1, Sub 3: anchor depth 2
+        // Expected: 3 → 2 → 1
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 1, "user.profile", "", None);
+        register_full(&mut router, 2, "user.profile", "", Some("user"));
+        register_full(&mut router, 3, "user.profile", "", Some("user.profile"));
+
+        assert_eq!(dispatch_order(&router), vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn ordering_anchor_elevates_root_listener() {
+        // L1: topic=some.level.three (effective=3, topic=3)
+        // L2: topic="" root, anchor=some.level.three (effective=3, topic=0)
+        // L3: topic=some.level (effective=2, topic=2)
+        // Expected: L1 → L2 → L3
+        //   Both L1 and L2 have effective_depth=3; topic_depth tiebreaker puts L1 first.
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 1, "some.level.three", "", None);
+        register_full(&mut router, 2, "", "", Some("some.level.three"));
+        register_full(&mut router, 3, "some.level", "", None);
+
+        assert_eq!(dispatch_order(&router), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn ordering_fifo_tiebreaker_for_identical_keys() {
+        // Same sort key for all — registration order (FIFO) must be preserved.
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 10, "user.profile", "user", None);
+        register_full(&mut router, 20, "user.profile", "user", None);
+        register_full(&mut router, 30, "user.profile", "user", None);
+
+        assert_eq!(dispatch_order(&router), vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn ordering_multi_path_uses_deepest_topic() {
+        // Multi-path subscriber: ["user", "user.profile.email"] — deepest is depth 3.
+        // Single-path subscriber at depth 2.
+        // Expected: multi-path (eff=3) → single-path (eff=2)
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 1, "user.profile", "", None); // depth 2
+        let multi = r#"[{"subscriber_id": 2, "topic_paths": ["user", "user.profile.email"], "scope_path": ""}]"#;
+        router.register_listeners_batch(multi).unwrap();
+
+        assert_eq!(dispatch_order(&router), vec![2, 1]);
+    }
+
+    #[test]
+    fn ordering_dispatch_plan_follows_sorted_subs() {
+        // Verify create_dispatch_plan emits dispatches in the pre-sorted order.
+        // Register in "wrong" depth order — sorting must fix it.
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 10, "form", "", None);             // depth 1
+        register_full(&mut router, 20, "form.billing.city", "", None); // depth 3
+        register_full(&mut router, 30, "form.billing", "", None);     // depth 2
+
+        let changes = vec![make_change("form.billing.city", r#""NYC""#)];
+        let plan = router.create_dispatch_plan(&changes);
+
+        let ids: Vec<u32> = plan
+            .levels
+            .iter()
+            .flat_map(|l| l.dispatches.iter().map(|d| d.subscriber_id))
+            .collect();
+
+        assert_eq!(ids, vec![20, 30, 10]);
+    }
+
+    #[test]
+    fn ordering_preserved_after_unregister() {
+        // Unregistering a listener must not disrupt the order of remaining ones.
+        let mut router = TopicRouter::new();
+        register_full(&mut router, 1, "user.profile.email", "", None); // depth 3
+        register_full(&mut router, 2, "user.profile", "", None);       // depth 2
+        register_full(&mut router, 3, "user", "", None);               // depth 1
+
+        // Remove the middle one
+        router.unregister_listeners_batch("[2]").unwrap();
+
+        assert_eq!(dispatch_order(&router), vec![1, 3]);
     }
 }

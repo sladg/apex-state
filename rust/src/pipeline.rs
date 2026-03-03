@@ -1444,11 +1444,15 @@ impl ProcessingPipeline {
                 .listeners
                 .iter()
                 .map(|l| {
+                    // Listener-specific anchor takes precedence; fall back to the registration
+                    // anchor so the router can use it for dispatch ordering.
+                    let effective_anchor =
+                        l.anchor_path.as_deref().or(reg.anchor_path.as_deref());
                     serde_json::json!({
                         "subscriber_id": l.subscriber_id,
                         "topic_paths": l.topic_paths,
                         "scope_path": l.scope_path,
-                        "anchor_path": l.anchor_path,
+                        "anchor_path": effective_anchor,
                     })
                 })
                 .collect();

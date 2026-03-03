@@ -384,8 +384,8 @@ describe('buildConsoleSummary', () => {
       const summary = buildConsoleSummary(data)
       const runs = getListenerRuns(summary)
       const keys = Object.keys(runs).filter((k) => k.includes('listener:'))
-      expect(keys[0]).toContain('[00]')
-      expect(keys[1]).toContain('[01]')
+      expect(keys[0]).toContain('[01]')
+      expect(keys[1]).toContain('[02]')
     })
   })
 
