@@ -27,6 +27,7 @@ import {
 import {
   expectShadowMatch,
   flushEffects,
+  flushSync,
   MODES,
   mountStore,
 } from '../utils/react'
@@ -1274,6 +1275,244 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.callCount).toBe(0)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Meta propagation through derived sync changes
+  //
+  // Bug: WASM's emit_sync_change creates derived changes with meta: None,
+  // dropping the original input change's meta. Listeners should receive sync-
+  // target changes carrying the same meta as the source change that triggered them.
+  // ---------------------------------------------------------------------------
+
+  describe('Meta propagation through derived sync changes', () => {
+    it('should propagate input meta to the derived sync target change received by listeners', async () => {
+      // Setup: sync pair source → target, plus an always-on listener that captures
+      // every change it receives (both the original source and the derived target).
+      //
+      // Steps:
+      //   1. Call setValue('source', 'synced-value', { sender: 'user-action' })
+      //   2. WASM produces a derived change for 'target' (sync)
+      //   3. Both changes are fed to the listener
+      //
+      // Expected (currently FAILING):
+      //   - listener receives source change with meta { sender: 'user-action' }
+      //   - listener receives target change with meta { sender: 'user-action' }
+      //     (meta must propagate from input to the derived sync change)
+      //
+      // Actual (bug):
+      //   - target change arrives with meta {} or undefined — meta was lost in WASM
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const capturedChanges: [string, unknown, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [['source', 'target']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([
+                      change[0] as string,
+                      change[1],
+                      change[2],
+                    ])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('source', 'synced-value', { sender: 'user-action' })
+      await flushSync()
+
+      // Sync target must have received the value
+      expect(storeInstance.state.target).toBe('synced-value')
+
+      // Original source change must carry the meta
+      expect(capturedChanges).toContainEqual([
+        'source',
+        expect.anything(),
+        expect.objectContaining({ sender: 'user-action' }),
+      ])
+
+      // Derived sync target change MUST also carry the same meta — this is the bug
+      expect(capturedChanges).toContainEqual([
+        'target',
+        expect.anything(),
+        expect.objectContaining({ sender: 'user-action' }),
+      ])
+    })
+
+    it('should propagate meta to nested sync target paths', async () => {
+      // Nested sync pair: level1.value → level1.level2.value
+      // Change level1.value with meta { sender: 'form-submit' }
+      // Listener must see level1.level2.value change WITH that meta
+
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const capturedChanges: [string, unknown, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        deeplyNestedFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [['level1.value', 'level1.level2.value']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([
+                      change[0] as string,
+                      change[1],
+                      change[2],
+                    ])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('level1.value', 'nested-sync', { sender: 'form-submit' })
+      await flushSync()
+
+      // Sync must have applied
+      expect(storeInstance.state.level1.level2.value).toBe('nested-sync')
+
+      // Source change carries meta
+      expect(capturedChanges).toContainEqual([
+        'level1.value',
+        expect.anything(),
+        expect.objectContaining({ sender: 'form-submit' }),
+      ])
+
+      // Derived sync target change must also carry the meta
+      expect(capturedChanges).toContainEqual([
+        'level1.level2.value',
+        expect.anything(),
+        expect.objectContaining({ sender: 'form-submit' }),
+      ])
+    })
+
+    it('should propagate meta for directed (one-way) sync', async () => {
+      // Directed sync: source → target (oneWay: '[0]->[1]')
+      // Change source with meta { isProgramaticChange: true }
+      // Listener must receive target change WITH that meta
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const capturedChanges: [string, unknown, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [['source', 'target', { oneWay: '[0]->[1]' }]],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([
+                      change[0] as string,
+                      change[1],
+                      change[2],
+                    ])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('source', 'directed-value', { isProgramaticChange: true })
+      await flushSync()
+
+      // Sync must have applied
+      expect(storeInstance.state.target).toBe('directed-value')
+
+      // Derived directed-sync target change must carry the original meta
+      expect(capturedChanges).toContainEqual([
+        'target',
+        expect.anything(),
+        expect.objectContaining({ isProgramaticChange: true }),
+      ])
+    })
+
+    it('should propagate meta to multiple sync targets in a bidirectional component', async () => {
+      // Three paths in one sync component: source ↔ target ↔ target2
+      // (Two pairs: source↔target and target↔target2)
+      // Changing source with meta { sender: 'bulk-update' } must propagate meta
+      // to BOTH derived target and target2 changes that the listener receives.
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const capturedChanges: [string, unknown, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        syncFlipFixtures.initial,
+        {
+          sideEffects: {
+            syncPaths: [
+              ['source', 'target'],
+              ['target', 'target2'],
+            ],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([
+                      change[0] as string,
+                      change[1],
+                      change[2],
+                    ])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      setValue('source', 'chain-value', { sender: 'bulk-update' })
+      await flushSync()
+
+      // All three paths must converge
+      expect(storeInstance.state.target).toBe('chain-value')
+      expect(storeInstance.state.target2).toBe('chain-value')
+
+      // Both derived changes must carry the original meta
+      expect(capturedChanges).toContainEqual([
+        'target',
+        expect.anything(),
+        expect.objectContaining({ sender: 'bulk-update' }),
+      ])
+      expect(capturedChanges).toContainEqual([
+        'target2',
+        expect.anything(),
+        expect.objectContaining({ sender: 'bulk-update' }),
+      ])
     })
   })
 })

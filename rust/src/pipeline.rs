@@ -1727,6 +1727,7 @@ impl ProcessingPipeline {
         shadow: &ShadowState,
         peer_path: &str,
         value_json: &str,
+        meta: Option<serde_json::Value>,
         output: &mut Vec<Change>,
     ) {
         if !shadow.parent_exists(peer_path) {
@@ -1747,8 +1748,8 @@ impl ProcessingPipeline {
                     value_json: value_json.to_owned(),
                     kind: ChangeKind::Real,
                     lineage: Lineage::Input,
+                    meta,
                     audit: None,
-                    ..Default::default()
                 });
                 return;
             }
@@ -1759,8 +1760,8 @@ impl ProcessingPipeline {
                 value_json: value_json.to_owned(),
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
+                meta,
                 audit: None,
-                ..Default::default()
             });
         }
     }
@@ -1788,7 +1789,13 @@ impl ProcessingPipeline {
                     if peer_id != path_id && !self.is_path_dormant(peer_id) {
                         if let Some(peer_path) = self.intern.resolve(peer_id) {
                             let peer_path = peer_path.to_owned();
-                            Self::emit_sync_change(shadow, &peer_path, &change.value_json, output);
+                            Self::emit_sync_change(
+                                shadow,
+                                &peer_path,
+                                &change.value_json,
+                                change.meta.clone(),
+                                output,
+                            );
                         }
                     }
                 }
@@ -1814,6 +1821,7 @@ impl ProcessingPipeline {
                                         shadow,
                                         &peer_path,
                                         &change.value_json,
+                                        change.meta.clone(),
                                         output,
                                     );
                                 }
@@ -1859,7 +1867,13 @@ impl ProcessingPipeline {
                         if peer_id != child_id && !self.is_path_dormant(peer_id) {
                             if let Some(peer_path) = self.intern.resolve(peer_id) {
                                 let peer_path = peer_path.to_owned();
-                                Self::emit_sync_change(shadow, &peer_path, &value_json, output);
+                                Self::emit_sync_change(
+                                    shadow,
+                                    &peer_path,
+                                    &value_json,
+                                    change.meta.clone(),
+                                    output,
+                                );
                             }
                         }
                     }
@@ -1878,6 +1892,7 @@ impl ProcessingPipeline {
                                     shadow,
                                     &tgt_path,
                                     &change.value_json,
+                                    change.meta.clone(),
                                     output,
                                 );
                             }
@@ -1906,6 +1921,7 @@ impl ProcessingPipeline {
                                         shadow,
                                         &tgt_path,
                                         &change.value_json,
+                                        change.meta.clone(),
                                         output,
                                     );
                                 }
@@ -1939,6 +1955,7 @@ impl ProcessingPipeline {
                                                 shadow,
                                                 &tgt_path,
                                                 &value_json,
+                                                change.meta.clone(),
                                                 output,
                                             );
                                         }
@@ -1957,6 +1974,7 @@ impl ProcessingPipeline {
         shadow: &ShadowState,
         peer_path: &str,
         value_json: &str,
+        meta: Option<serde_json::Value>,
         output: &mut Vec<Change>,
     ) {
         if !shadow.parent_exists(peer_path) {
@@ -1972,8 +1990,8 @@ impl ProcessingPipeline {
                 value_json: value_json.to_owned(),
                 kind: ChangeKind::Real,
                 lineage: Lineage::Input,
+                meta,
                 audit: None,
-                ..Default::default()
             });
         }
     }
@@ -2014,7 +2032,13 @@ impl ProcessingPipeline {
                         if peer_id != path_id && !self.is_path_dormant(peer_id) {
                             if let Some(peer_path) = self.intern.resolve(peer_id) {
                                 let peer_path = peer_path.to_owned();
-                                Self::emit_flip_change(shadow, &peer_path, &old_value_json, output);
+                                Self::emit_flip_change(
+                                    shadow,
+                                    &peer_path,
+                                    &old_value_json,
+                                    change.meta.clone(),
+                                    output,
+                                );
                             }
                         }
                     }
@@ -2074,7 +2098,13 @@ impl ProcessingPipeline {
                         }
                         if let Some(peer_path) = self.intern.resolve(*peer_id) {
                             let peer_path = peer_path.to_owned();
-                            Self::emit_flip_change(shadow, &peer_path, &old_value_json, output);
+                            Self::emit_flip_change(
+                                shadow,
+                                &peer_path,
+                                &old_value_json,
+                                change.meta.clone(),
+                                output,
+                            );
                         }
                     }
                 }
