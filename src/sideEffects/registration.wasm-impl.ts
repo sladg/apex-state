@@ -66,19 +66,25 @@ export const registerSideEffects = <
 
     const originalFn = listener.fn
 
-    // Discriminated union: TypeScript narrows the type based on path structure
-    const topicPaths = isMultiPath(listener)
-      ? listener.path
-      : [listener.path ?? '']
+    // Discriminated union: TypeScript narrows the type based on path structure.
+    // Cast: DeepKey values are always strings at runtime. TypeScript can't simplify
+    // DeepKey<DATA,20> | DeepKey<DATA,20>[] to string[] without the cast.
+    const topicPaths = (
+      isMultiPath(listener) ? listener.path : [listener.path ?? '']
+    ) as string[]
 
     // For single-path: scope defaults to path when NOT explicitly set (undefined).
     // null is an explicit "no scope" value → full state is passed to the handler.
     // For multi-path: scope must be explicitly set (required in type).
-    const effectiveScope = isMultiPath(listener)
-      ? listener.scope
-      : listener.scope === undefined
-        ? listener.path
-        : listener.scope
+    // Cast: isMultiPath is false in the else branch, so path is never an array at runtime.
+    // TypeScript can't narrow SinglePathListener.path to exclude DeepKey[] here.
+    const effectiveScope = (
+      isMultiPath(listener)
+        ? listener.scope
+        : listener.scope === undefined
+          ? listener.path
+          : listener.scope
+    ) as string | null
 
     // Store in handler map for execution
     listenerHandlers.set(subscriberId, {
