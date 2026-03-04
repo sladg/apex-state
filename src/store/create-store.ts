@@ -328,7 +328,7 @@ export const createGenericStore = <
       setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
     } & SelectedConcerns
 
-    const selectionKeys = Object.keys(selection).filter(
+    const selectionKeys = Object.keys(selection ?? {}).filter(
       (k) => (selection as Record<string, boolean | undefined>)[k],
     )
 

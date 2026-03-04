@@ -15,7 +15,7 @@ Project key: **WASM**
 | WASM-EP7 | Clean Mode Split | WASM-033 → WASM-037 | EP6 | **✅ COMPLETE** (2026-03-03) — JS was already WASM-only; `path-groups.ts` + `graph-types.ts` dead code removed |
 | WASM-EP8 | Recency-Based Sync | WASM-038 → WASM-040 | EP6 | **⏳ READY** |
 | WASM-EP15 | Bundle Size Reduction | Story 1 (dual build) + Story 2 (Rust flags) | — | **⏳ READY** |
-| WASM-EP11 | Rust Performance: Huge Objects | WASM-041 → WASM-044 | EP6 | **⏳ READY** |
+| WASM-EP11 | Rust Performance: Huge Objects | WASM-041 → WASM-044 | EP6 | **🔄 IN PROGRESS** (2/4 stories done) |
 | WASM-EP12 | Rust Performance: Many Pipelines | WASM-045 → WASM-048 | EP6 | **✅ COMPLETE** (2026-03-03) |
 | WASM-EP13 | Rust Deduplication & Abstraction | WASM-049 → WASM-054 | EP6 | **✅ COMPLETE** (2026-03-03) |
 | WASM-EP14 | Rust Third-Party Crate Adoption | WASM-055 → WASM-060 | EP6 | **✅ COMPLETE** (2026-03-03) |
@@ -71,11 +71,11 @@ EP3 Listeners (✅)   EP4 Validation (✅)
                          040 Integration tests
                               │
                               ▼
-                       EP11 Rust Perf: Huge Objects (⏳)
-                         041 Remove subtree clone in shadow.set()
-                         042 affected_paths() → Vec<u32> (intern-first)
-                         043 Shadow state object keys as u32 (interned field names)
-                         044 Hash-based object diff (skip no-op object sets)
+                       EP11 Rust Perf: Huge Objects (🔄 2/4)
+                         041 Remove subtree clone in shadow.set() ✅ 2026-03-04
+                         042 affected_paths() → Vec<u32> (intern-first) ✅ 2026-03-04
+                         043 Shadow state object keys as u32 (interned field names) ⏳
+                         044 Hash-based object diff (skip no-op object sets) ⏳
                               │
                        EP12 Rust Perf: Many Pipelines (⏳)
                          045 Pre-sort TopicRouter at registration
@@ -262,21 +262,28 @@ EP3 Listeners (✅)   EP4 Validation (✅)
 
 ---
 
-### ⏳ Ready: EP11 Rust Performance — Huge Objects
+### 🔄 In Progress: EP11 Rust Performance — Huge Objects
 
 **Spec**: `tasks/WASM-EP11-PERF-HUGE-OBJECTS.md` (canonical)
 
 - **Depends On**: EP6 (complete)
 - **Stories**: WASM-041 → WASM-044 | **Total**: 16pts
-- **Scope**: Remove subtree clone in `shadow.set()`, intern-first `affected_paths()`, interned object keys, hash-based object diff
+- **Progress**:
+  - ✅ WASM-041: Remove subtree clone in `shadow.set()` — 2026-03-04
+  - ✅ WASM-042: `affected_path_ids()` returning `Vec<u32>` (intern-first, all 3 callers updated) — 2026-03-04
+  - ⏳ WASM-043: Shadow state object keys as `u32` (interned field names)
+  - ⏳ WASM-044: Hash-based object diff (skip no-op object sets)
 
-### ⏳ Ready: EP12 Rust Performance — Many Pipelines
+### ✅ Completed: EP12 Rust Performance — Many Pipelines
 
-**Spec**: `tasks/WASM-EP12-PERF-MANY-PIPELINES.md` (canonical)
-
-- **Depends On**: EP6 (complete)
+- **Completion Date**: 2026-03-03
+- **Spec**: `tasks/WASM-EP12-PERF-MANY-PIPELINES.md` (canonical)
 - **Stories**: WASM-045 → WASM-048 | **Total**: 6pts
-- **Scope**: Pre-sort TopicRouter at registration, Arc-based RevIndex, configurable capacity hints, graph merge drain
+- **Key Deliverables**:
+  - WASM-045: Pre-sort TopicRouter at registration (cache `effective_depth` etc. in `SubscriberMeta`) ✅
+  - WASM-046: Arc-based RevIndex (`Arc<HashSet<u32>>` — zero deep clone at registration) ✅
+  - WASM-047: `PipelineContext::recalibrate()` capacity hints after register calls ✅
+  - WASM-048: Graph merge: drain HashSet via `.remove()` instead of tmp Vec ✅
 
 ### ✅ Completed: EP13 Rust Deduplication & Abstraction
 

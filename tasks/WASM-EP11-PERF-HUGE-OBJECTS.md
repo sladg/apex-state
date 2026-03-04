@@ -2,7 +2,7 @@
 
 **Epic Key**: WASM-EP11
 **Depends On**: EP6 (Pipeline Refactor)
-**Status**: ⏳ Ready
+**Status**: 🔄 In Progress (2/4 complete)
 **Total Points**: 16pts
 
 ---
@@ -15,7 +15,7 @@ When state contains large nested objects (10k+ nodes), several Rust operations b
 
 ## Story Breakdown
 
-### WASM-041: Remove subtree clone in `shadow.set()` — 3pts
+### WASM-041: Remove subtree clone in `shadow.set()` — 3pts ✅ 2026-03-04
 
 **File**: `rust/src/shadow.rs`
 
@@ -35,7 +35,7 @@ Self::collect_all_paths(&old_value, path, &mut removed);
 
 ---
 
-### WASM-042: `affected_paths()` returns `Vec<u32>` (intern-first) — 5pts
+### WASM-042: `affected_paths()` returns `Vec<u32>` (intern-first) — 5pts ✅ 2026-03-04
 
 **Files**: `rust/src/shadow.rs`, `rust/src/pipeline.rs`, `rust/src/router.rs`, `rust/src/bool_logic.rs`
 
