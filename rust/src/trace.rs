@@ -245,7 +245,7 @@ impl<'a> TraceRecorder<'a> {
     /// Set anchor states on the trace. No-op when disabled.
     pub fn set_anchor_states(
         &mut self,
-        states: &std::collections::HashMap<u32, bool>,
+        states: &crate::prelude::HashMap<u32, bool>,
         intern: &crate::intern::InternTable,
     ) {
         if !self.enabled {

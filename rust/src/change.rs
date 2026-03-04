@@ -1,7 +1,11 @@
+use crate::prelude::HashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use ts_rs::TS;
+
+fn is_empty_map<K, V>(m: &HashMap<K, V>) -> bool {
+    m.is_empty()
+}
 
 /// Canonical names for every pipeline stage.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -180,7 +184,8 @@ pub struct PipelineTrace {
     pub total_duration_us: u64,
     pub stages: Vec<StageTrace>,
     /// Anchor path → present? Gives display layer full context on anchor-dependent resources.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[serde(default, skip_serializing_if = "is_empty_map")]
+    #[ts(type = "Record<string, boolean>")]
     pub anchor_states: HashMap<String, bool>,
 }
 

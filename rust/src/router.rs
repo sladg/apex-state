@@ -7,8 +7,9 @@
 
 use crate::change::Change;
 use crate::pipeline::ListenerRegistration;
+use crate::prelude::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use smallvec::SmallVec;
 
 use ts_rs::TS;
 
@@ -29,6 +30,11 @@ struct SubscriberMeta {
     scope_path: String,
     topic_paths: Vec<String>,
     anchor_path: Option<String>,
+    /// Cached at registration — avoids recomputing path_depth() on every dispatch.
+    effective_depth: u32,
+    topic_depth: u32,
+    scope_depth: u32,
+    anchor_depth: u32,
 }
 
 /// Pre-computed downstream route between topics.
@@ -44,8 +50,9 @@ pub(crate) struct TopicRouter {
     /// Topic IDs sorted deepest-first (re-sorted on registration change).
     topics: Vec<u32>,
     topic_meta: HashMap<u32, TopicMeta>,
-    /// topic_id -> subscriber IDs (insertion order preserved by Vec).
-    subscribers: HashMap<u32, Vec<u32>>,
+    /// topic_id -> subscriber IDs (insertion order preserved).
+    /// SmallVec avoids heap allocation for the common 1–4 subscribers per topic.
+    subscribers: HashMap<u32, SmallVec<[u32; 4]>>,
     subscriber_meta: HashMap<u32, SubscriberMeta>,
     /// topic_id -> downstream routes (topics at shallower depth).
     routes: HashMap<u32, Vec<Route>>,
@@ -343,6 +350,16 @@ impl TopicRouter {
             self.registration_indices.insert(reg.subscriber_id, reg_idx);
             self.sorted_subs.push(reg.subscriber_id);
 
+            let topic_depth = reg
+                .topic_paths
+                .iter()
+                .map(|p| path_depth(p))
+                .max()
+                .unwrap_or(0);
+            let anchor_depth = reg.anchor_path.as_deref().map(path_depth).unwrap_or(0);
+            let scope_depth = path_depth(&reg.scope_path);
+            let effective_depth = topic_depth.max(anchor_depth);
+
             self.subscriber_meta.insert(
                 reg.subscriber_id,
                 SubscriberMeta {
@@ -350,6 +367,10 @@ impl TopicRouter {
                     scope_path: reg.scope_path,
                     topic_paths: reg.topic_paths,
                     anchor_path: reg.anchor_path,
+                    effective_depth,
+                    topic_depth,
+                    scope_depth,
+                    anchor_depth,
                 },
             );
         }
@@ -388,7 +409,7 @@ impl TopicRouter {
             for topic_path in &meta.topic_paths {
                 if let Some(&topic_id) = self.path_to_topic.get(topic_path) {
                     if let Some(subs) = self.subscribers.get_mut(&topic_id) {
-                        subs.retain(|&id| id != sub_id);
+                        subs.retain(|id| *id != sub_id);
 
                         // If topic has no more subscribers, remove it entirely
                         if subs.is_empty() {
@@ -428,34 +449,24 @@ impl TopicRouter {
         });
     }
 
-    /// Compute the sort key for a subscriber (transiently — not stored on meta).
+    /// Compute the sort key for a subscriber using cached depth fields.
     ///
     /// Key: (effective_depth DESC, topic_depth DESC, scope_depth DESC, anchor_depth DESC, registration_index ASC)
-    /// effective_depth = max(deepest topic path depth, anchor depth)
     fn subscriber_sort_key(&self, sub_id: u32) -> (u32, u32, u32, u32, u32) {
         let meta = match self.subscriber_meta.get(&sub_id) {
             Some(m) => m,
             None => return (0, 0, 0, 0, u32::MAX),
         };
-        let topic_depth = meta
-            .topic_paths
-            .iter()
-            .map(|p| path_depth(p))
-            .max()
-            .unwrap_or(0);
-        let anchor_depth = meta.anchor_path.as_deref().map(path_depth).unwrap_or(0);
-        let scope_depth = path_depth(&meta.scope_path);
-        let effective_depth = topic_depth.max(anchor_depth);
         let reg_idx = self
             .registration_indices
             .get(&sub_id)
             .copied()
             .unwrap_or(u32::MAX);
         (
-            effective_depth,
-            topic_depth,
-            scope_depth,
-            anchor_depth,
+            meta.effective_depth,
+            meta.topic_depth,
+            meta.scope_depth,
+            meta.anchor_depth,
             reg_idx,
         )
     }
@@ -651,15 +662,7 @@ impl TopicRouter {
                 continue;
             }
 
-            // Compute effective_depth transiently for level grouping.
-            let topic_depth = sub_meta
-                .topic_paths
-                .iter()
-                .map(|p| path_depth(p))
-                .max()
-                .unwrap_or(0);
-            let anchor_depth = sub_meta.anchor_path.as_deref().map(path_depth).unwrap_or(0);
-            let effective_depth = topic_depth.max(anchor_depth);
+            let effective_depth = sub_meta.effective_depth;
 
             let ancestors = build_ancestor_chain(&sub_meta.scope_path);
             let dispatch = ListenerDispatch {
@@ -1667,8 +1670,7 @@ mod tests {
         assert_eq!(plan.propagation_map.len(), 3);
 
         // Find dispatch IDs by scope
-        let mut id_by_scope: std::collections::HashMap<&str, u32> =
-            std::collections::HashMap::new();
+        let mut id_by_scope: HashMap<&str, u32> = HashMap::default();
         for group in &plan.groups {
             for d in &group.dispatches {
                 id_by_scope.insert(&d.scope_path, d.dispatch_id);
@@ -2173,9 +2175,9 @@ mod tests {
         // Verify create_dispatch_plan emits dispatches in the pre-sorted order.
         // Register in "wrong" depth order — sorting must fix it.
         let mut router = TopicRouter::new();
-        register_full(&mut router, 10, "form", "", None);             // depth 1
+        register_full(&mut router, 10, "form", "", None); // depth 1
         register_full(&mut router, 20, "form.billing.city", "", None); // depth 3
-        register_full(&mut router, 30, "form.billing", "", None);     // depth 2
+        register_full(&mut router, 30, "form.billing", "", None); // depth 2
 
         let changes = vec![make_change("form.billing.city", r#""NYC""#)];
         let plan = router.create_dispatch_plan(&changes);
@@ -2194,8 +2196,8 @@ mod tests {
         // Unregistering a listener must not disrupt the order of remaining ones.
         let mut router = TopicRouter::new();
         register_full(&mut router, 1, "user.profile.email", "", None); // depth 3
-        register_full(&mut router, 2, "user.profile", "", None);       // depth 2
-        register_full(&mut router, 3, "user", "", None);               // depth 1
+        register_full(&mut router, 2, "user.profile", "", None); // depth 2
+        register_full(&mut router, 3, "user", "", None); // depth 1
 
         // Remove the middle one
         router.unregister_listeners_batch("[2]").unwrap();

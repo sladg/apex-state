@@ -16,9 +16,9 @@ Project key: **WASM**
 | WASM-EP8 | Recency-Based Sync | WASM-038 → WASM-040 | EP6 | **⏳ READY** |
 | WASM-EP15 | Bundle Size Reduction | Story 1 (dual build) + Story 2 (Rust flags) | — | **⏳ READY** |
 | WASM-EP11 | Rust Performance: Huge Objects | WASM-041 → WASM-044 | EP6 | **⏳ READY** |
-| WASM-EP12 | Rust Performance: Many Pipelines | WASM-045 → WASM-048 | EP6 | **⏳ READY** |
-| WASM-EP13 | Rust Deduplication & Abstraction | WASM-049 → WASM-054 | EP6 | **⏳ READY** |
-| WASM-EP14 | Rust Third-Party Crate Adoption | WASM-055 → WASM-060 | EP6 | **⏳ READY** |
+| WASM-EP12 | Rust Performance: Many Pipelines | WASM-045 → WASM-048 | EP6 | **✅ COMPLETE** (2026-03-03) |
+| WASM-EP13 | Rust Deduplication & Abstraction | WASM-049 → WASM-054 | EP6 | **✅ COMPLETE** (2026-03-03) |
+| WASM-EP14 | Rust Third-Party Crate Adoption | WASM-055 → WASM-060 | EP6 | **✅ COMPLETE** (2026-03-03) |
 | WASM-EP9 | Pipeline Context Refactor | — | EP6 | **✅ COMPLETE** — Implemented as part of EP6 refactor |
 | WASM-EP10 | Anchor Path + Multi-path Listeners | — | EP6 | **✅ COMPLETE** (2026-03-03) — anchorPath guards, multi-path `topic_paths[]`, dispatch ordering |
 
@@ -83,21 +83,21 @@ EP3 Listeners (✅)   EP4 Validation (✅)
                          047 Configurable PipelineContext capacity hints
                          048 Graph merge: drain HashSet instead of tmp Vec
                               │
-                       EP13 Rust Deduplication & Abstraction (⏳)
-                         049 Generic PathIndexedRegistry<T> trait
-                         050 Shared condition index helper fn
-                         051 Shared get_affected_targets helper fn
-                         052 Unified shadow collect_paths (parameterized)
-                         053 Shadow path resolution guard helper
-                         054 Unified change iteration helper (aggregation/computation)
+                       EP13 Rust Deduplication & Abstraction (✅)
+                         049 PathIndexedRegistry<T> + RegistrySource ✅
+                         050 Shared condition index helper fn ✅
+                         051 Shared get_affected_targets helper fn ✅
+                         052 Unified shadow collect_paths ✅
+                         053 Shadow path resolution guard helper ✅
+                         054 Unified change iteration — N/A (only aggregation has writes)
                               │
-                       EP14 Rust Third-Party Crate Adoption (⏳)
-                         055 ahash: replace std HashMap everywhere
-                         056 string-interner: replace interning.rs
-                         057 smallvec: hot-path Vec<u32> collections
-                         058 slab: replace InternTable reverse vec
-                         059 petgraph: evaluate replacing graphs.rs
-                         060 indexmap: evaluate for TopicRouter ordering
+                       EP14 Rust Third-Party Crate Adoption (✅)
+                         055 ahash: replace std HashMap everywhere ✅
+                         056 string-interner — SKIPPED (Symbol↔u32 friction, lose ids_with_prefix)
+                         057 smallvec: hot-path Vec<u32> collections ✅
+                         058 slab — SKIPPED (depended on 056)
+                         059 petgraph — SKIPPED (custom O(1) lookup better than full traversal)
+                         060 indexmap — SKIPPED (insertion order ≠ depth order)
 ```
 
 ~~EP5 Streaming (SUPERSEDED)~~ — No-op change filtering at every pipeline step makes a separate streaming gateway unnecessary.
@@ -278,17 +278,30 @@ EP3 Listeners (✅)   EP4 Validation (✅)
 - **Stories**: WASM-045 → WASM-048 | **Total**: 6pts
 - **Scope**: Pre-sort TopicRouter at registration, Arc-based RevIndex, configurable capacity hints, graph merge drain
 
-### ⏳ Ready: EP13 Rust Deduplication & Abstraction
+### ✅ Completed: EP13 Rust Deduplication & Abstraction
 
-**Spec**: `tasks/WASM-EP13-DEDUPLICATION.md` (canonical)
+- **Completion Date**: 2026-03-03
+- **Spec**: `tasks/WASM-EP13-DEDUPLICATION.md` (canonical)
+- **Key Deliverables**:
+  - Unified `RegistrySource` type (replaced identical `AggregationSource` + `ComputationSource`)
+  - `PathIndexedRegistry<T>` generic struct with `HasRegistrySources` trait
+  - Composition pattern: domain registries wrap `PathIndexedRegistry<T>` as `inner` field
+  - Shared helper functions: `add_condition_paths`, `remove_condition_paths`, `remove_from_index`, `get_affected_targets`
+  - Unified `shadow.collect_paths()` (parameterized)
+  - Shadow path resolution guard helper
+  - WASM-054 N/A: only aggregation has write direction
 
-### ⏳ Ready: EP14 Rust Third-Party Crate Adoption
+### ✅ Completed: EP14 Rust Third-Party Crate Adoption
 
-**Spec**: `tasks/WASM-EP14-CRATE-ADOPTION.md` (canonical)
-
-- **Depends On**: EP6 (complete)
-- **Stories**: WASM-055 → WASM-060 | **Total**: 8pts
-- **Scope**: `ahash` HashMap replacement, `string-interner` for interning.rs, `smallvec` for hot-path collections, `slab` for intern reverse vec, evaluate `petgraph` for graphs.rs, evaluate `indexmap` for TopicRouter
+- **Completion Date**: 2026-03-03
+- **Spec**: `tasks/WASM-EP14-CRATE-ADOPTION.md` (canonical)
+- **Key Deliverables**:
+  - WASM-055 `ahash`: Replaced std HashMap/HashSet everywhere via `prelude.rs` re-exports ✅
+  - WASM-056 `string-interner`: SKIPPED — Symbol↔u32 impedance at 100+ call sites, loses `ids_with_prefix()`
+  - WASM-057 `smallvec`: Hot-path `SmallVec<[u32; 4]>` in rev_index + router ✅
+  - WASM-058 `slab`: SKIPPED — depended on WASM-056
+  - WASM-059 `petgraph`: SKIPPED — custom O(1) component lookup beats petgraph's full traversal
+  - WASM-060 `indexmap`: SKIPPED — insertion order ≠ depth order; explicit sort still needed
 
 ---
 

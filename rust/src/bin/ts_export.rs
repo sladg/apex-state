@@ -96,10 +96,10 @@ fn collect_all(out: &mut String) {
     append_type!(out, ValueLogicNode);
     append_type!(out, ValueLogicElse);
 
-    // aggregation.rs — public types (AggregationSource inlined)
+    // aggregation.rs — public types (RegistrySource inlined)
     append_type!(out, Aggregation);
 
-    // computation.rs — public types (ComputationSource inlined)
+    // computation.rs — public types (RegistrySource inlined)
     append_type!(out, ComputationOp);
     append_type!(out, Computation);
 }

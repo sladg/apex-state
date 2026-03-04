@@ -1,44 +1,35 @@
-use std::collections::HashMap;
+use lasso::{Key, Rodeo, Spur};
 
 /// Bidirectional string interning table
 ///
 /// Maps string paths to u32 IDs for efficient internal lookups.
 /// All interning is WASM-internal — JS always passes string paths.
 pub(crate) struct InternTable {
-    string_to_id: HashMap<String, u32>,
-    id_to_string: Vec<String>,
+    rodeo: Rodeo<Spur, ahash::RandomState>,
 }
 
 impl InternTable {
     pub(crate) fn new() -> Self {
         Self {
-            string_to_id: HashMap::new(),
-            id_to_string: Vec::new(),
+            rodeo: Rodeo::with_hasher(ahash::RandomState::default()),
         }
     }
 
     /// Intern a path string, returning its ID.
     /// Same path always returns same ID.
     pub(crate) fn intern(&mut self, path: &str) -> u32 {
-        if let Some(&id) = self.string_to_id.get(path) {
-            return id;
-        }
-
-        let id = self.id_to_string.len() as u32;
-        self.id_to_string.push(path.to_owned());
-        self.string_to_id.insert(path.to_owned(), id);
-        id
+        self.rodeo.get_or_intern(path).into_usize() as u32
     }
 
     /// Resolve a path ID back to its string.
     pub(crate) fn resolve(&self, id: u32) -> Option<&str> {
-        self.id_to_string.get(id as usize).map(|s| s.as_str())
+        Spur::try_from_usize(id as usize).and_then(|s| self.rodeo.try_resolve(&s))
     }
 
     /// Get the ID for a path without interning (read-only lookup).
     /// Returns None if the path hasn't been interned yet.
     pub(crate) fn get_id(&self, path: &str) -> Option<u32> {
-        self.string_to_id.get(path).copied()
+        self.rodeo.get(path).map(|s| s.into_usize() as u32)
     }
 
     /// Get the path for an ID (alias for resolve, for API consistency).
@@ -49,24 +40,24 @@ impl InternTable {
     /// Number of unique interned strings.
     #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn count(&self) -> u32 {
-        self.id_to_string.len() as u32
+        self.rodeo.len() as u32
     }
 
     /// Return all interned IDs whose paths are direct or transitive children of `prefix`.
     /// A path is a child of `prefix` if it starts with `prefix + "."`.
     pub(crate) fn ids_with_prefix(&self, prefix: &str) -> Vec<u32> {
         let needle = format!("{}.", prefix);
-        self.string_to_id
+        self.rodeo
             .iter()
-            .filter_map(|(path, &id)| path.starts_with(&needle).then_some(id))
+            .filter(|(_, s)| s.starts_with(needle.as_str()))
+            .map(|(k, _)| k.into_usize() as u32)
             .collect()
     }
 
     /// Clear all interned strings. Invalidates all previously issued IDs.
     #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn clear(&mut self) {
-        self.string_to_id.clear();
-        self.id_to_string.clear();
+        self.rodeo = Rodeo::with_hasher(ahash::RandomState::default());
     }
 }
 

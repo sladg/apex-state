@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect } from 'react'
 
-import { snapshot, useSnapshot } from 'valtio'
+import { snapshot, subscribe, useSnapshot } from 'valtio'
 
 import type { ConcernType } from '../concerns'
 import { defaultConcerns } from '../concerns'
@@ -32,6 +32,7 @@ import type {
 import type { DeepKeyFiltered } from '../types/deep-key-filtered'
 import type { SideEffects } from '../types/side-effects'
 import { dot } from '../utils/dot'
+import { filterConcernsByKeys } from '../utils/filter-concerns'
 import { createProvider } from './provider'
 import { createWarmPairHelpers } from './warm-pair-helpers'
 
@@ -101,7 +102,43 @@ export interface GenericStoreApi<
         ? EvaluatedConcerns<CONCERNS>[K]
         : never
     }
+    /** Reactive snapshot of all concerns matching this selection, keyed by path. Re-renders when any concern changes. */
+    useConcernsSnapshot: () => Record<
+      string,
+      {
+        [K in keyof SELECTION as SELECTION[K] extends true
+          ? K
+          : never]?: K extends keyof EvaluatedConcerns<CONCERNS>
+          ? EvaluatedConcerns<CONCERNS>[K]
+          : never
+      }
+    >
   }
+
+  /**
+   * React hook. Fires callback whenever concerns matching the selection change.
+   * Does NOT trigger re-renders — use useConcernsSnapshot() for reactive UI instead.
+   * Callback is stable across renders (no need to memoize).
+   */
+  useWatchConcerns: <
+    SELECTION extends Partial<
+      Record<Extract<CONCERNS[number], { name: string }>['name'], boolean>
+    >,
+  >(
+    selection: SELECTION,
+    callback: (
+      concerns: Record<
+        string,
+        {
+          [K in keyof SELECTION as SELECTION[K] extends true
+            ? K
+            : never]?: K extends keyof EvaluatedConcerns<CONCERNS>
+            ? EvaluatedConcerns<CONCERNS>[K]
+            : never
+        }
+      >,
+    ) => void,
+  ) => void
 
   withMeta: (presetMeta: Partial<META>) => {
     useFieldStore: <P extends DeepKey<DATA>>(
@@ -291,28 +328,39 @@ export const createGenericStore = <
       setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
     } & SelectedConcerns
 
+    const selectionKeys = Object.keys(selection).filter(
+      (k) => (selection as Record<string, boolean | undefined>)[k],
+    )
+
     return {
       useFieldStore: <P extends DeepKey<DATA>>(
         path: P,
       ): WithConcernsFieldStore<P> => {
         const { store, value, setValue } = _useFieldValue(path)
         const concernsSnap = useSnapshot(store._concerns)
-        const allConcerns = concernsSnap[path] || {}
+        const allConcerns = (concernsSnap[path] || {}) as Record<
+          string,
+          unknown
+        >
+        const selectedConcerns = filterConcernsByKeys(
+          { [path]: allConcerns },
+          selectionKeys,
+        )[path] as SelectedConcerns | undefined
 
-        const selectedConcerns = Object.keys(selection).reduce(
-          (acc, key) => {
-            if (
-              (selection as Record<string, boolean | undefined>)[key] &&
-              Object.prototype.hasOwnProperty.call(allConcerns, key)
-            ) {
-              acc[key] = allConcerns[key]
-            }
-            return acc
-          },
-          {} as Record<string, unknown>,
-        ) as SelectedConcerns
+        return {
+          value,
+          setValue,
+          ...(selectedConcerns ?? {}),
+        } as WithConcernsFieldStore<P>
+      },
 
-        return { value, setValue, ...selectedConcerns }
+      useConcernsSnapshot: () => {
+        const store = useStoreContext<DATA>()
+        const concernsSnap = useSnapshot(store._concerns)
+        return filterConcernsByKeys(
+          concernsSnap as Record<string, Record<string, unknown>>,
+          selectionKeys,
+        ) as Record<string, SelectedConcerns>
       },
     }
   }) as GenericStoreApi<DATA, META, CONCERNS>['withConcerns']
@@ -339,6 +387,38 @@ export const createGenericStore = <
     },
   })
 
+  const useWatchConcerns: GenericStoreApi<
+    DATA,
+    META,
+    CONCERNS
+  >['useWatchConcerns'] = (<
+    SELECTION extends Partial<
+      Record<Extract<CONCERNS[number], { name: string }>['name'], boolean>
+    >,
+  >(
+    selection: SELECTION,
+    callback: (concerns: Record<string, Record<string, unknown>>) => void,
+  ): void => {
+    const store = useStoreContext<DATA>()
+    const selectionKeys = Object.keys(selection).filter(
+      (k) => (selection as Record<string, boolean | undefined>)[k],
+    )
+
+    useLayoutEffect(() => {
+      return subscribe(store._concerns, () => {
+        callback(
+          filterConcernsByKeys(
+            snapshot(store._concerns) as Record<
+              string,
+              Record<string, unknown>
+            >,
+            selectionKeys,
+          ),
+        )
+      })
+    }, [store])
+  }) as GenericStoreApi<DATA, META, CONCERNS>['useWatchConcerns']
+
   return {
     Provider,
     useFieldStore,
@@ -348,6 +428,7 @@ export const createGenericStore = <
     useConcerns,
     withConcerns,
     withMeta,
+    useWatchConcerns,
     ...createWarmPairHelpers<DATA, META>(),
   }
 }

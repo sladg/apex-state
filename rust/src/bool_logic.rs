@@ -10,11 +10,13 @@
 //! - Shorthand (IS_EQUAL only): `["path", value]` — 2-element array, normalized to IsEqual
 
 use crate::intern::InternTable;
+use std::sync::Arc;
+
+use crate::prelude::{HashMap, HashSet};
 use crate::rev_index::ReverseDependencyIndex;
 use crate::shadow::{ShadowState, ValueRepr};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
 
 use ts_rs::TS;
 
@@ -354,7 +356,7 @@ impl BoolLogicRegistry {
         }
 
         // Update reverse index
-        rev_index.add(logic_id, &interned_ids);
+        rev_index.add(logic_id, Arc::new(interned_ids));
 
         // Store metadata
         self.logics.insert(
@@ -383,7 +385,6 @@ impl BoolLogicRegistry {
     }
 
     /// Number of registered expressions.
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.logics.len()
     }
@@ -413,8 +414,8 @@ impl BoolLogicRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::HashMap;
     use serde_json::json;
-    use std::collections::HashMap;
 
     // -----------------------------------------------------------------------
     // Helper: build a simple shadow state for testing
@@ -1309,7 +1310,7 @@ mod tests {
 
         let path_id = intern.intern("user.role");
         let affected = rev.affected_by_path(path_id);
-        assert_eq!(affected, vec![logic_id]);
+        assert_eq!(affected.as_slice(), &[logic_id]);
     }
 
     #[test]
@@ -1329,7 +1330,7 @@ mod tests {
         for path in &["user.role", "user.email", "user.age"] {
             let pid = intern.intern(path);
             let affected = rev.affected_by_path(pid);
-            assert_eq!(affected, vec![logic_id]);
+            assert_eq!(affected.as_slice(), &[logic_id]);
         }
     }
 
@@ -1359,7 +1360,7 @@ mod tests {
         let path_id = intern.intern("user.role");
         let mut affected = rev.affected_by_path(path_id);
         affected.sort();
-        assert_eq!(affected, vec![id0, id1]);
+        assert_eq!(affected.as_slice(), &[id0, id1]);
     }
 
     #[test]
@@ -1393,7 +1394,7 @@ mod tests {
         // Remove one
         registry.unregister(id0, &mut rev);
         let affected = rev.affected_by_path(path_id);
-        assert_eq!(affected, vec![id1]);
+        assert_eq!(affected.as_slice(), &[id1]);
 
         // Remove the other
         registry.unregister(id1, &mut rev);
@@ -1438,7 +1439,7 @@ mod tests {
         // Three distinct paths
         for path in &["stats.views", "user.premium", "user.bio"] {
             let pid = intern.intern(path);
-            assert_eq!(rev.affected_by_path(pid), vec![logic_id]);
+            assert_eq!(rev.affected_by_path(pid).as_slice(), &[logic_id]);
         }
     }
 

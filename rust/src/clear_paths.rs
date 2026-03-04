@@ -8,8 +8,8 @@
 
 use crate::change::{Change, ChangeKind, Lineage};
 use crate::intern::InternTable;
+use crate::prelude::{HashMap, HashSet};
 use crate::shadow::ShadowState;
-use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Types

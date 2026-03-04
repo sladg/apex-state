@@ -12,118 +12,71 @@
 //! 3. If yes: generate changes for all source paths with same value
 //! 4. Remove original target change from output
 
-use crate::bool_logic::BoolLogicNode;
 use crate::change::{Change, ChangeKind, Lineage, UNDEFINED_SENTINEL_JSON};
+use crate::registry_helpers::{HasRegistrySources, PathIndexedRegistry, RegistrySource};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use ts_rs::TS;
-
-/// A single aggregation source with an optional exclude condition.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-pub struct AggregationSource {
-    pub path: String,
-    pub exclude_when: Option<BoolLogicNode>,
-}
 
 /// A single aggregation: target path maps to multiple sources (with optional conditions).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Aggregation {
     pub target: String,
     #[ts(inline)]
-    pub sources: Vec<AggregationSource>,
+    pub sources: Vec<RegistrySource>,
+}
+
+impl HasRegistrySources for Aggregation {
+    fn target(&self) -> &str {
+        &self.target
+    }
+    fn sources(&self) -> &[RegistrySource] {
+        &self.sources
+    }
 }
 
 /// Registry of all registered aggregations, keyed by target path.
 #[derive(Debug)]
 pub(crate) struct AggregationRegistry {
-    aggregations: HashMap<String, Aggregation>,
-    /// Reverse index: source path → target paths (for reactive updates)
-    source_to_targets: HashMap<String, Vec<String>>,
-    /// Reverse index: BoolLogic condition path → target paths (for condition re-evaluation)
-    condition_path_to_targets: HashMap<String, Vec<String>>,
+    inner: PathIndexedRegistry<Aggregation>,
 }
 
 impl AggregationRegistry {
     pub(crate) fn new() -> Self {
         Self {
-            aggregations: HashMap::new(),
-            source_to_targets: HashMap::new(),
-            condition_path_to_targets: HashMap::new(),
+            inner: PathIndexedRegistry::new(),
         }
     }
 
     /// Register a single aggregation.
-    pub(crate) fn register(&mut self, target: String, sources: Vec<AggregationSource>) {
-        // Update reverse index: each source points to this target
-        for source in &sources {
-            self.source_to_targets
-                .entry(source.path.clone())
-                .or_default()
-                .push(target.clone());
+    pub(crate) fn register(&mut self, target: String, sources: Vec<RegistrySource>) {
+        self.inner.register(Aggregation { target, sources });
+    }
 
-            // Extract paths from BoolLogic conditions and index them
-            if let Some(ref condition) = source.exclude_when {
-                for cond_path in condition.extract_paths() {
-                    self.condition_path_to_targets
-                        .entry(cond_path)
-                        .or_default()
-                        .push(target.clone());
-                }
-            }
-        }
-
-        // Register the aggregation
-        self.aggregations
-            .insert(target.clone(), Aggregation { target, sources });
+    /// Number of registered aggregations.
+    pub(crate) fn len(&self) -> usize {
+        self.inner.entries.len()
     }
 
     /// Unregister a single aggregation by target path.
     #[allow(dead_code)] // Called via WASM exports (invisible to clippy)
     pub(crate) fn unregister(&mut self, target: &str) {
-        // Remove from reverse indices
-        if let Some(agg) = self.aggregations.get(target) {
-            for source in &agg.sources {
-                if let Some(targets) = self.source_to_targets.get_mut(&source.path) {
-                    targets.retain(|t| t != target);
-                    if targets.is_empty() {
-                        self.source_to_targets.remove(&source.path);
-                    }
-                }
-
-                // Clean up condition path reverse index
-                if let Some(ref condition) = source.exclude_when {
-                    for cond_path in condition.extract_paths() {
-                        if let Some(targets) = self.condition_path_to_targets.get_mut(&cond_path) {
-                            targets.retain(|t| t != target);
-                            if targets.is_empty() {
-                                self.condition_path_to_targets.remove(&cond_path);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove the aggregation
-        self.aggregations.remove(target);
+        self.inner.unregister(target);
     }
 
     /// Get aggregation by target path.
     pub(crate) fn get(&self, target: &str) -> Option<&Aggregation> {
-        self.aggregations.get(target)
+        self.inner.entries.get(target)
     }
 
     /// Check if a path is an aggregation target (exact match or child).
     pub(crate) fn find_target(&self, path: &str) -> Option<&Aggregation> {
-        // Exact match
-        if let Some(agg) = self.aggregations.get(path) {
+        if let Some(agg) = self.inner.entries.get(path) {
             return Some(agg);
         }
 
-        // Check for child path (path starts with target + '.')
-        for (target, agg) in &self.aggregations {
+        for (target, agg) in &self.inner.entries {
             if crate::is_child_path(path, target) {
                 return Some(agg);
             }
@@ -133,43 +86,14 @@ impl AggregationRegistry {
     }
 
     /// Get affected aggregation targets for a set of changed paths.
-    /// Returns unique target paths that need recomputation.
-    /// Checks both source paths and condition paths.
     pub(crate) fn get_affected_targets(&self, changed_paths: &[String]) -> Vec<String> {
-        let mut targets = std::collections::HashSet::new();
-
-        for path in changed_paths {
-            // Direct match: path is a source
-            if let Some(target_list) = self.source_to_targets.get(path) {
-                targets.extend(target_list.iter().cloned());
-            }
-
-            // Direct match: path is a condition dependency
-            if let Some(target_list) = self.condition_path_to_targets.get(path) {
-                targets.extend(target_list.iter().cloned());
-            }
-
-            // Parent match: path is a child of a source (e.g., "item1.checked" matches source "item1")
-            for (source, target_list) in &self.source_to_targets {
-                if crate::is_child_path(path, source) {
-                    targets.extend(target_list.iter().cloned());
-                }
-            }
-
-            // Parent match for condition paths
-            for (cond_path, target_list) in &self.condition_path_to_targets {
-                if crate::is_child_path(path, cond_path) {
-                    targets.extend(target_list.iter().cloned());
-                }
-            }
-        }
-
-        targets.into_iter().collect()
+        self.inner.get_affected_targets(changed_paths)
     }
 
     /// Dump all registered aggregations as (target, sources) pairs (debug only).
     pub(crate) fn dump_infos(&self) -> Vec<(String, Vec<String>)> {
-        self.aggregations
+        self.inner
+            .entries
             .iter()
             .map(|(target, agg)| {
                 let sources = agg.sources.iter().map(|s| s.path.clone()).collect();
@@ -292,7 +216,7 @@ pub(crate) fn process_aggregation_reads(
             }
 
             // Filter out excluded sources (condition evaluates to true = excluded)
-            let active_sources: Vec<&AggregationSource> = agg
+            let active_sources: Vec<&RegistrySource> = agg
                 .sources
                 .iter()
                 .filter(|s| {
@@ -387,17 +311,18 @@ pub(crate) fn process_aggregation_reads(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bool_logic::BoolLogicNode;
 
-    /// Helper: create simple AggregationSource with no condition
-    fn src(path: &str) -> AggregationSource {
-        AggregationSource {
+    /// Helper: create simple RegistrySource with no condition
+    fn src(path: &str) -> RegistrySource {
+        RegistrySource {
             path: path.to_string(),
             exclude_when: None,
         }
     }
 
-    /// Helper: convert string paths to AggregationSource vec
-    fn srcs(paths: &[&str]) -> Vec<AggregationSource> {
+    /// Helper: convert string paths to RegistrySource vec
+    fn srcs(paths: &[&str]) -> Vec<RegistrySource> {
         paths.iter().map(|p| src(p)).collect()
     }
 
@@ -831,7 +756,7 @@ mod tests {
         registry.register(
             "allUsers".to_string(),
             vec![
-                AggregationSource {
+                RegistrySource {
                     path: "user1".to_string(),
                     exclude_when: Some(BoolLogicNode::IsEqual(
                         "user1_disabled".to_string(),
@@ -871,7 +796,7 @@ mod tests {
             "allChecked".to_string(),
             vec![
                 src("item1"),
-                AggregationSource {
+                RegistrySource {
                     path: "item2".to_string(),
                     exclude_when: Some(BoolLogicNode::IsEqual(
                         "item2_disabled".to_string(),
@@ -901,7 +826,7 @@ mod tests {
         let mut registry = AggregationRegistry::new();
         registry.register(
             "allChecked".to_string(),
-            vec![AggregationSource {
+            vec![RegistrySource {
                 path: "item1".to_string(),
                 exclude_when: Some(BoolLogicNode::IsEqual(
                     "item1_disabled".to_string(),
@@ -930,7 +855,7 @@ mod tests {
             "allChecked".to_string(),
             vec![
                 src("item1"),
-                AggregationSource {
+                RegistrySource {
                     path: "item2".to_string(),
                     exclude_when: Some(BoolLogicNode::IsEqual(
                         "item2_disabled".to_string(),

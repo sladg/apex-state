@@ -12,11 +12,10 @@
 //! 5. AVG: sum/count (null if no valid sources)
 //! 6. No-op filter against current target in shadow
 
-use crate::bool_logic::BoolLogicNode;
 use crate::change::{Change, ChangeKind, Lineage, UNDEFINED_SENTINEL_JSON};
+use crate::registry_helpers::{HasRegistrySources, PathIndexedRegistry, RegistrySource};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use ts_rs::TS;
 
@@ -27,38 +26,34 @@ pub enum ComputationOp {
     Avg,
 }
 
-/// A single computation source with an optional exclude condition.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-pub struct ComputationSource {
-    pub path: String,
-    pub exclude_when: Option<BoolLogicNode>,
-}
-
 /// A single computation: operation + target path + multiple sources.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Computation {
     pub op: ComputationOp,
     pub target: String,
     #[ts(inline)]
-    pub sources: Vec<ComputationSource>,
+    pub sources: Vec<RegistrySource>,
+}
+
+impl HasRegistrySources for Computation {
+    fn target(&self) -> &str {
+        &self.target
+    }
+    fn sources(&self) -> &[RegistrySource] {
+        &self.sources
+    }
 }
 
 /// Registry of all registered computations, keyed by target path.
 #[derive(Debug)]
 pub(crate) struct ComputationRegistry {
-    computations: HashMap<String, Computation>,
-    /// Reverse index: source path → target paths (for reactive updates)
-    source_to_targets: HashMap<String, Vec<String>>,
-    /// Reverse index: BoolLogic condition path → target paths (for condition re-evaluation)
-    condition_path_to_targets: HashMap<String, Vec<String>>,
+    inner: PathIndexedRegistry<Computation>,
 }
 
 impl ComputationRegistry {
     pub(crate) fn new() -> Self {
         Self {
-            computations: HashMap::new(),
-            source_to_targets: HashMap::new(),
-            condition_path_to_targets: HashMap::new(),
+            inner: PathIndexedRegistry::new(),
         }
     }
 
@@ -67,111 +62,40 @@ impl ComputationRegistry {
         &mut self,
         op: ComputationOp,
         target: String,
-        sources: Vec<ComputationSource>,
+        sources: Vec<RegistrySource>,
     ) {
-        // Update reverse index: each source points to this target
-        for source in &sources {
-            self.source_to_targets
-                .entry(source.path.clone())
-                .or_default()
-                .push(target.clone());
+        self.inner.register(Computation {
+            op,
+            target,
+            sources,
+        });
+    }
 
-            // Extract paths from BoolLogic conditions and index them
-            if let Some(ref condition) = source.exclude_when {
-                for cond_path in condition.extract_paths() {
-                    self.condition_path_to_targets
-                        .entry(cond_path)
-                        .or_default()
-                        .push(target.clone());
-                }
-            }
-        }
-
-        // Register the computation
-        self.computations.insert(
-            target.clone(),
-            Computation {
-                op,
-                target,
-                sources,
-            },
-        );
+    /// Number of registered computations.
+    pub(crate) fn len(&self) -> usize {
+        self.inner.entries.len()
     }
 
     /// Unregister a single computation by target path.
     #[allow(dead_code)] // Called via WASM exports (invisible to clippy)
     pub(crate) fn unregister(&mut self, target: &str) {
-        // Remove from reverse indices
-        if let Some(comp) = self.computations.get(target) {
-            for source in &comp.sources {
-                if let Some(targets) = self.source_to_targets.get_mut(&source.path) {
-                    targets.retain(|t| t != target);
-                    if targets.is_empty() {
-                        self.source_to_targets.remove(&source.path);
-                    }
-                }
-
-                // Clean up condition path reverse index
-                if let Some(ref condition) = source.exclude_when {
-                    for cond_path in condition.extract_paths() {
-                        if let Some(targets) = self.condition_path_to_targets.get_mut(&cond_path) {
-                            targets.retain(|t| t != target);
-                            if targets.is_empty() {
-                                self.condition_path_to_targets.remove(&cond_path);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove the computation
-        self.computations.remove(target);
+        self.inner.unregister(target);
     }
 
     /// Check if a path is a computation target.
     pub(crate) fn is_computation_target(&self, path: &str) -> bool {
-        self.computations.contains_key(path)
+        self.inner.entries.contains_key(path)
     }
 
     /// Get affected computation targets for a set of changed paths.
-    /// Returns unique target paths that need recomputation.
-    /// Checks both source paths and condition paths.
     pub(crate) fn get_affected_targets(&self, changed_paths: &[String]) -> Vec<String> {
-        let mut targets = std::collections::HashSet::new();
-
-        for path in changed_paths {
-            // Direct match: path is a source
-            if let Some(target_list) = self.source_to_targets.get(path) {
-                targets.extend(target_list.iter().cloned());
-            }
-
-            // Direct match: path is a condition dependency
-            if let Some(target_list) = self.condition_path_to_targets.get(path) {
-                targets.extend(target_list.iter().cloned());
-            }
-
-            // Parent match: path is a child of a source
-            for (source, target_list) in &self.source_to_targets {
-                if crate::is_child_path(path, source) {
-                    targets.extend(target_list.iter().cloned());
-                }
-            }
-
-            // Parent match for condition paths
-            for (cond_path, target_list) in &self.condition_path_to_targets {
-                if crate::is_child_path(path, cond_path) {
-                    targets.extend(target_list.iter().cloned());
-                }
-            }
-        }
-
-        targets.into_iter().collect()
+        self.inner.get_affected_targets(changed_paths)
     }
 
     /// Dump all registered computations as (target, op_str, sources) triples (debug only).
     pub(crate) fn dump_infos(&self) -> Vec<(String, String, Vec<String>)> {
-        self.computations
+        self.inner
+            .entries
             .iter()
             .map(|(target, comp)| {
                 let op = match comp.op {
@@ -224,9 +148,9 @@ pub(crate) fn process_computation_reads(
     let mut changes = Vec::new();
 
     for target_path in affected_targets {
-        if let Some(comp) = registry.computations.get(&target_path) {
+        if let Some(comp) = registry.inner.entries.get(&target_path) {
             // Filter out excluded sources (condition evaluates to true = excluded)
-            let active_sources: Vec<&ComputationSource> = comp
+            let active_sources: Vec<&RegistrySource> = comp
                 .sources
                 .iter()
                 .filter(|s| {
@@ -299,10 +223,11 @@ fn format_f64(value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bool_logic::BoolLogicNode;
 
-    /// Helper: create simple ComputationSource with no condition
-    fn src(path: &str) -> ComputationSource {
-        ComputationSource {
+    /// Helper: create simple RegistrySource with no condition
+    fn src(path: &str) -> RegistrySource {
+        RegistrySource {
             path: path.to_string(),
             exclude_when: None,
         }
@@ -368,7 +293,7 @@ mod tests {
         registry.register(
             ComputationOp::Sum,
             "total".to_string(),
-            vec![ComputationSource {
+            vec![RegistrySource {
                 path: "price1".to_string(),
                 exclude_when: Some(BoolLogicNode::IsEqual(
                     "disabled".to_string(),
@@ -395,7 +320,7 @@ mod tests {
         registry.register(
             ComputationOp::Avg,
             "average".to_string(),
-            vec![ComputationSource {
+            vec![RegistrySource {
                 path: "score1".to_string(),
                 exclude_when: Some(BoolLogicNode::IsEqual(
                     "disabled".to_string(),
@@ -513,7 +438,7 @@ mod tests {
             "total".to_string(),
             vec![
                 src("price1"),
-                ComputationSource {
+                RegistrySource {
                     path: "price2".to_string(),
                     exclude_when: Some(BoolLogicNode::IsEqual(
                         "price2_disabled".to_string(),

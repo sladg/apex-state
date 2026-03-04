@@ -6,7 +6,7 @@
 //! (input + computed).
 
 use crate::aggregation::{
-    process_aggregation_reads, process_aggregation_writes, AggregationRegistry, AggregationSource,
+    process_aggregation_reads, process_aggregation_writes, AggregationRegistry,
 };
 use crate::bool_logic::{BoolLogicNode, BoolLogicRegistry};
 #[allow(unused_imports)]
@@ -15,19 +15,18 @@ use crate::change::{
     SkippedChange, Stage, StageTrace, UNDEFINED_SENTINEL_JSON,
 };
 use crate::clear_paths::ClearPathsRegistry;
-use crate::computation::{
-    process_computation_reads, ComputationOp, ComputationRegistry, ComputationSource,
-};
+use crate::computation::{process_computation_reads, ComputationOp, ComputationRegistry};
 use crate::functions::{FunctionInput, FunctionRegistry};
 use crate::graphs::Graph;
 use crate::intern::InternTable;
+use crate::prelude::{HashMap, HashSet};
+use crate::registry_helpers::RegistrySource;
 use crate::rev_index::ReverseDependencyIndex;
 use crate::router::{FullExecutionPlan, TopicRouter};
 use crate::shadow::ShadowState;
 use crate::trace::TraceRecorder;
 use crate::value_logic::{ValueLogicNode, ValueLogicRegistry};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 
 use ts_rs::TS;
 
@@ -36,6 +35,7 @@ use ts_rs::TS;
 pub struct ValidatorDispatch {
     pub validator_id: u32,
     pub output_path: String,
+    #[ts(type = "Record<string, string>")]
     pub dependency_values: HashMap<String, String>,
 }
 
@@ -312,6 +312,34 @@ impl PipelineContext {
         self.validators_to_run.clear();
         self.execution_plan = None;
         self.trace.stages.clear();
+    }
+
+    /// Ensure capacity reflects current registration counts.
+    /// Called after registration completes so large pipelines avoid reallocation.
+    /// Never shrinks — Vec/HashSet capacity only grows.
+    pub fn recalibrate(
+        &mut self,
+        bool_logic_count: usize,
+        validator_count: usize,
+        value_logic_count: usize,
+        side_effect_count: usize,
+    ) {
+        let change_hint = side_effect_count.max(bool_logic_count).max(64);
+        if self.changes.capacity() < change_hint {
+            self.changes.reserve(change_hint - self.changes.capacity());
+        }
+        if self.affected_bool_logic.capacity() < bool_logic_count {
+            let used = self.affected_bool_logic.len();
+            self.affected_bool_logic.reserve(bool_logic_count - used);
+        }
+        if self.affected_validators.capacity() < validator_count {
+            let used = self.affected_validators.len();
+            self.affected_validators.reserve(validator_count - used);
+        }
+        if self.affected_value_logics.capacity() < value_logic_count {
+            let used = self.affected_value_logics.len();
+            self.affected_value_logics.reserve(value_logic_count - used);
+        }
     }
 }
 
@@ -727,8 +755,8 @@ impl ProcessingPipeline {
         let mut targets = HashSet::new();
         let mut sources = HashSet::new();
 
-        // Convert typed pairs into (target, AggregationSource)
-        let mut parsed: Vec<(String, AggregationSource)> = Vec::new();
+        // Convert typed pairs into (target, RegistrySource)
+        let mut parsed: Vec<(String, RegistrySource)> = Vec::new();
 
         for pair in pairs {
             let (target, source_path, condition_json) = match pair {
@@ -752,7 +780,7 @@ impl ProcessingPipeline {
 
             parsed.push((
                 target,
-                AggregationSource {
+                RegistrySource {
                     path: source_path,
                     exclude_when,
                 },
@@ -770,7 +798,7 @@ impl ProcessingPipeline {
         }
 
         // Group by target for multi-source aggregations
-        let mut by_target: HashMap<String, Vec<AggregationSource>> = HashMap::new();
+        let mut by_target: HashMap<String, Vec<RegistrySource>> = HashMap::new();
 
         for (target, source) in parsed {
             by_target.entry(target).or_default().push(source);
@@ -829,7 +857,7 @@ impl ProcessingPipeline {
         let mut sources = HashSet::new();
 
         // Convert typed pairs into (op, target, source, optional condition)
-        let mut parsed: Vec<(ComputationOp, String, ComputationSource)> = Vec::new();
+        let mut parsed: Vec<(ComputationOp, String, RegistrySource)> = Vec::new();
 
         for pair in pairs {
             let (op_str, target, source_path, condition_json) = match pair {
@@ -860,7 +888,7 @@ impl ProcessingPipeline {
             parsed.push((
                 op,
                 target,
-                ComputationSource {
+                RegistrySource {
                     path: source_path,
                     exclude_when,
                 },
@@ -878,8 +906,7 @@ impl ProcessingPipeline {
         }
 
         // Group by target for multi-source computations
-        let mut by_target: HashMap<String, (ComputationOp, Vec<ComputationSource>)> =
-            HashMap::new();
+        let mut by_target: HashMap<String, (ComputationOp, Vec<RegistrySource>)> = HashMap::new();
 
         for (op, target, source) in parsed {
             let entry = by_target
@@ -1446,8 +1473,7 @@ impl ProcessingPipeline {
                 .map(|l| {
                     // Listener-specific anchor takes precedence; fall back to the registration
                     // anchor so the router can use it for dispatch ordering.
-                    let effective_anchor =
-                        l.anchor_path.as_deref().or(reg.anchor_path.as_deref());
+                    let effective_anchor = l.anchor_path.as_deref().or(reg.anchor_path.as_deref());
                     serde_json::json!({
                         "subscriber_id": l.subscriber_id,
                         "topic_paths": l.topic_paths,
@@ -1492,6 +1518,13 @@ impl ProcessingPipeline {
                 computation_targets,
                 listener_ids: registered_listener_ids.clone(),
             },
+        );
+
+        self.ctx.recalibrate(
+            self.registry.len(),
+            self.function_registry.len(),
+            self.value_logic_registry.len(),
+            self.function_registry.len() + self.aggregations.len() + self.computations.len(),
         );
 
         Ok(SideEffectsResult {
@@ -1704,6 +1737,13 @@ impl ProcessingPipeline {
                 });
             }
         }
+
+        self.ctx.recalibrate(
+            self.registry.len(),
+            self.function_registry.len(),
+            self.value_logic_registry.len(),
+            self.function_registry.len() + self.aggregations.len() + self.computations.len(),
+        );
 
         Ok(ConcernsResult {
             bool_logic_changes,
@@ -1940,17 +1980,18 @@ impl ProcessingPipeline {
             // Enumerate leaves under the change; for any leaf that is a registered directed source,
             // emit a change to its target(s).
             if !self.directed_sync_edges.is_empty() {
-                let leaves = shadow.affected_paths(&change.path);
-                for leaf in &leaves {
-                    if let Some(leaf_id) = self.intern.get_id(leaf) {
-                        if let Some(targets) = self.directed_sync_edges.get(&leaf_id) {
-                            if self.is_path_dormant(leaf_id) {
-                                continue;
-                            }
-                            if let Some(leaf_value) = shadow.get(leaf) {
+                let leaf_ids = shadow.affected_path_ids(&change.path, &mut self.intern);
+                for leaf_id in leaf_ids {
+                    if let Some(targets) = self.directed_sync_edges.get(&leaf_id) {
+                        if self.is_path_dormant(leaf_id) {
+                            continue;
+                        }
+                        // Collect targets before borrowing intern for leaf_str resolution
+                        let targets: Vec<u32> = targets.iter().copied().collect();
+                        if let Some(leaf_str) = self.intern.resolve(leaf_id) {
+                            if let Some(leaf_value) = shadow.get(leaf_str) {
                                 let value_json = serde_json::to_string(&leaf_value.to_json_value())
                                     .unwrap_or_else(|_| "null".to_owned());
-                                let targets: Vec<u32> = targets.iter().copied().collect();
                                 for tgt_id in targets {
                                     if !self.is_path_dormant(tgt_id) {
                                         if let Some(tgt_path) = self.intern.resolve(tgt_id) {
@@ -2057,59 +2098,56 @@ impl ProcessingPipeline {
                 continue;
             }
 
-            let leaves = shadow.affected_paths(&change.path);
+            let leaf_ids = shadow.affected_path_ids(&change.path, &mut self.intern);
 
             // Collect all leaf paths from this parent change that are in the flip graph.
             // Used to detect when both sides of a flip pair are under the same parent —
             // in that case the user explicitly set both values, so flip should not fire.
             let mut flip_leaf_ids: HashSet<u32> = HashSet::new();
-            for leaf in &leaves {
-                if let Some(leaf_id) = self.intern.get_id(leaf) {
-                    if !self
-                        .flip_graph
-                        .get_component_paths_public(leaf_id)
-                        .is_empty()
-                    {
-                        flip_leaf_ids.insert(leaf_id);
-                    }
+            for &leaf_id in &leaf_ids {
+                if !self
+                    .flip_graph
+                    .get_component_paths_public(leaf_id)
+                    .is_empty()
+                {
+                    flip_leaf_ids.insert(leaf_id);
                 }
             }
 
-            for leaf in &leaves {
-                if let Some(leaf_id) = self.intern.get_id(leaf) {
-                    let leaf_peers = self.flip_graph.get_component_paths_public(leaf_id);
-                    if leaf_peers.is_empty() || self.is_path_dormant(leaf_id) {
+            for &leaf_id in &leaf_ids {
+                let leaf_peers = self.flip_graph.get_component_paths_public(leaf_id);
+                if leaf_peers.is_empty() || self.is_path_dormant(leaf_id) {
+                    continue;
+                }
+
+                // Peer gets the old value of this leaf (value rotation for any type)
+                let old_value_json: Option<String> = self
+                    .intern
+                    .resolve(leaf_id)
+                    .and_then(|leaf_str| self.shadow.get(leaf_str))
+                    .and_then(|v| serde_json::to_string(&v.to_json_value()).ok());
+                let Some(old_value_json) = old_value_json else {
+                    continue;
+                };
+
+                for peer_id in &leaf_peers {
+                    if *peer_id == leaf_id || self.is_path_dormant(*peer_id) {
                         continue;
                     }
-
-                    // Peer gets the old value of this leaf (value rotation for any type)
-                    let old_value_json: Option<String> = self
-                        .shadow
-                        .get(leaf)
-                        .and_then(|v| serde_json::to_string(&v.to_json_value()).ok());
-                    let Some(old_value_json) = old_value_json else {
+                    // If peer is also a leaf under this parent change and in the
+                    // flip graph, both sides are explicitly set → skip flip.
+                    if flip_leaf_ids.contains(peer_id) {
                         continue;
-                    };
-
-                    for peer_id in &leaf_peers {
-                        if *peer_id == leaf_id || self.is_path_dormant(*peer_id) {
-                            continue;
-                        }
-                        // If peer is also a leaf under this parent change and in the
-                        // flip graph, both sides are explicitly set → skip flip.
-                        if flip_leaf_ids.contains(peer_id) {
-                            continue;
-                        }
-                        if let Some(peer_path) = self.intern.resolve(*peer_id) {
-                            let peer_path = peer_path.to_owned();
-                            Self::emit_flip_change(
-                                shadow,
-                                &peer_path,
-                                &old_value_json,
-                                change.meta.clone(),
-                                output,
-                            );
-                        }
+                    }
+                    if let Some(peer_path) = self.intern.resolve(*peer_id) {
+                        let peer_path = peer_path.to_owned();
+                        Self::emit_flip_change(
+                            shadow,
+                            &peer_path,
+                            &old_value_json,
+                            change.meta.clone(),
+                            output,
+                        );
                     }
                 }
             }
@@ -2798,9 +2836,8 @@ impl ProcessingPipeline {
 
     /// Mark all BoolLogic expressions, ValueLogic expressions, and validators affected by a change at the given path.
     fn mark_affected_logic(&mut self, shadow: &ShadowState, path: &str) {
-        let affected_paths = shadow.affected_paths(path);
-        for affected_path in &affected_paths {
-            let path_id = self.intern.intern(affected_path);
+        let affected_ids = shadow.affected_path_ids(path, &mut self.intern);
+        for path_id in affected_ids {
             // Mark affected BoolLogic
             for logic_id in self.rev_index.affected_by_path(path_id) {
                 self.ctx.affected_bool_logic.insert(logic_id);

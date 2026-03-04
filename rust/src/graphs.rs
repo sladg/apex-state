@@ -4,7 +4,7 @@
 //! When a path in a group changes, all peers receive the same (or inverted) value.
 
 use crate::intern::InternTable;
-use std::collections::{HashMap, HashSet};
+use crate::prelude::{HashMap, HashSet};
 
 /// A graph using connected components for O(1) group lookups.
 ///
@@ -103,11 +103,11 @@ impl Graph {
                     (comp2, comp1)
                 };
 
-                let smaller_nodes: Vec<u32> = self.component_to_nodes[&smaller_comp]
-                    .iter()
-                    .copied()
-                    .collect();
-
+                // Drain smaller component directly — no intermediary Vec.
+                let smaller_nodes = self
+                    .component_to_nodes
+                    .remove(&smaller_comp)
+                    .unwrap_or_default();
                 for node in smaller_nodes {
                     self.node_to_component.insert(node, larger_comp);
                     self.component_to_nodes
@@ -115,8 +115,6 @@ impl Graph {
                         .unwrap()
                         .insert(node);
                 }
-
-                self.component_to_nodes.remove(&smaller_comp);
             }
             (Some(_), Some(_)) => {
                 // Same component - already connected, no-op

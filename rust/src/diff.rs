@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn is_different_object_always_true() {
-        use std::collections::HashMap;
+        use crate::prelude::HashMap;
         let current = Some(&ValueRepr::Object(HashMap::new()));
         assert!(is_different(&current, &ValueRepr::Object(HashMap::new())));
     }

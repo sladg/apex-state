@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 pub mod aggregation;
@@ -12,11 +11,15 @@ mod functions;
 mod graphs;
 mod intern;
 pub mod pipeline;
+mod prelude;
+mod registry_helpers;
 mod rev_index;
 pub mod router;
 mod shadow;
 mod trace;
 pub mod value_logic;
+
+use prelude::HashMap;
 
 use change::Change;
 use pipeline::ProcessingPipeline;

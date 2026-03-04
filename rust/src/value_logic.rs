@@ -8,13 +8,15 @@
 //! Conditions reuse `BoolLogicNode` — no new condition evaluator needed.
 //! THEN/ELSE/CASES values are static JSON — not derived from state.
 
+use std::sync::Arc;
+
 use crate::bool_logic::{get_path_value, BoolLogicNode};
 use crate::intern::InternTable;
+use crate::prelude::{HashMap, HashSet};
 use crate::rev_index::ReverseDependencyIndex;
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
 
 use ts_rs::TS;
 
@@ -43,6 +45,7 @@ pub enum ValueLogicNode {
         #[serde(rename = "MATCH")]
         path: String,
         #[serde(rename = "CASES")]
+        #[ts(type = "Record<string, any>")]
         cases: HashMap<String, Value>,
         #[serde(rename = "DEFAULT")]
         default: Value,
@@ -203,7 +206,7 @@ impl ValueLogicRegistry {
         }
 
         // Update reverse index
-        rev_index.add(logic_id, &interned_ids);
+        rev_index.add(logic_id, Arc::new(interned_ids));
 
         // Store metadata
         self.logics.insert(
@@ -233,7 +236,6 @@ impl ValueLogicRegistry {
     }
 
     /// Number of registered expressions.
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.logics.len()
     }
@@ -263,9 +265,9 @@ impl ValueLogicRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::HashMap;
     use crate::shadow::ValueRepr;
     use serde_json::json;
-    use std::collections::HashMap;
 
     // ── Helpers ──────────────────────────────────────────────
 
@@ -772,7 +774,7 @@ mod tests {
         let id = registry.register("out".into(), tree, &mut intern, &mut rev, None, None);
 
         let path_id = intern.intern("user.role");
-        assert_eq!(rev.affected_by_path(path_id), vec![id]);
+        assert_eq!(rev.affected_by_path(path_id).as_slice(), &[id]);
 
         registry.unregister(id, &mut rev);
         assert_eq!(registry.len(), 0);
@@ -801,7 +803,7 @@ mod tests {
         let path_id = intern.intern("user.role");
         let mut affected = rev.affected_by_path(path_id);
         affected.sort();
-        assert_eq!(affected, vec![id0, id1]);
+        assert_eq!(affected.as_slice(), &[id0, id1]);
     }
 
     #[test]

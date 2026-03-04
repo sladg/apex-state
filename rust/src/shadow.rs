@@ -1,6 +1,6 @@
 use crate::change::UNDEFINED_SENTINEL;
+use crate::prelude::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 
 /// Represents a value in the shadow state tree.
 ///
@@ -146,7 +146,7 @@ impl ShadowState {
             if let Some(ValueRepr::Object(_)) = self.get(path) {
                 let old_value = self.get(path).unwrap().clone();
                 let mut removed = Vec::new();
-                Self::collect_all_paths(&old_value, path, &mut removed);
+                Self::collect_paths(&old_value, path, &mut removed, true);
                 self.removed_paths.extend(removed);
             }
         }
@@ -164,13 +164,7 @@ impl ShadowState {
     /// For nested objects/arrays, returns all descendant leaf paths.
     /// For leaf values, returns just the path itself.
     pub(crate) fn affected_paths(&self, path: &str) -> Vec<String> {
-        let value = if path.is_empty() {
-            Some(&self.root)
-        } else {
-            Self::traverse(&self.root, path.split('.'))
-        };
-
-        let Some(value) = value else {
+        let Some(value) = self.get(path) else {
             return vec![];
         };
 
@@ -180,7 +174,7 @@ impl ShadowState {
         } else {
             path.to_owned()
         };
-        Self::collect_leaves(value, &base, &mut result);
+        Self::collect_paths(value, &base, &mut result, false);
         result
     }
 
@@ -299,9 +293,17 @@ impl ShadowState {
         }
     }
 
-    /// Collect ALL paths reachable under `value` (both intermediate objects and leaves).
-    /// Used to populate `removed_paths` when an Object is replaced via `set()`.
-    fn collect_all_paths(value: &ValueRepr, prefix: &str, result: &mut Vec<String>) {
+    /// Collect paths reachable under `value`.
+    /// - `include_intermediate = true`: collects all paths (objects, arrays, and leaves).
+    ///   Used to populate `removed_paths` when an Object is replaced via `set()`.
+    /// - `include_intermediate = false`: collects only leaf paths.
+    ///   Used by `affected_paths()` to enumerate terminal values.
+    fn collect_paths(
+        value: &ValueRepr,
+        prefix: &str,
+        result: &mut Vec<String>,
+        include_intermediate: bool,
+    ) {
         match value {
             ValueRepr::Object(map) => {
                 for (key, child) in map {
@@ -310,8 +312,10 @@ impl ShadowState {
                     } else {
                         crate::join_path(prefix, key)
                     };
-                    result.push(child_path.clone());
-                    Self::collect_all_paths(child, &child_path, result);
+                    if include_intermediate {
+                        result.push(child_path.clone());
+                    }
+                    Self::collect_paths(child, &child_path, result, include_intermediate);
                 }
             }
             ValueRepr::Array(arr) => {
@@ -322,39 +326,16 @@ impl ShadowState {
                     } else {
                         crate::join_path(prefix, &idx_str)
                     };
-                    result.push(child_path.clone());
-                    Self::collect_all_paths(child, &child_path, result);
-                }
-            }
-            _ => {} // leaf — no children to collect
-        }
-    }
-
-    fn collect_leaves(value: &ValueRepr, prefix: &str, result: &mut Vec<String>) {
-        match value {
-            ValueRepr::Object(map) => {
-                for (key, child) in map {
-                    let child_path = if prefix.is_empty() {
-                        key.clone()
-                    } else {
-                        crate::join_path(prefix, key)
-                    };
-                    Self::collect_leaves(child, &child_path, result);
-                }
-            }
-            ValueRepr::Array(arr) => {
-                for (i, child) in arr.iter().enumerate() {
-                    let idx_str = i.to_string();
-                    let child_path = if prefix.is_empty() {
-                        idx_str
-                    } else {
-                        crate::join_path(prefix, &idx_str)
-                    };
-                    Self::collect_leaves(child, &child_path, result);
+                    if include_intermediate {
+                        result.push(child_path.clone());
+                    }
+                    Self::collect_paths(child, &child_path, result, include_intermediate);
                 }
             }
             _ => {
-                result.push(prefix.to_owned());
+                if !include_intermediate {
+                    result.push(prefix.to_owned());
+                }
             }
         }
     }
