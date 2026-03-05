@@ -1515,4 +1515,381 @@ describe.each(MODES)('[$name] Side Effects: Sync Paths', ({ config }) => {
       ])
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // No-op sync filtering
+  //
+  // Bug: When a parent path is set to an object whose leaf matches the sync
+  // source's current value, WASM still emits a sync change to the target —
+  // even when the target already holds that value. This is a redundant write.
+  // ---------------------------------------------------------------------------
+
+  describe('No-op sync filtering (parent-path object assignment)', () => {
+    it('should NOT emit a sync change when target already has the same value', async () => {
+      // Setup: sync pair src.value → dst.value, both start at 'same'
+      // Action: set parent 'src' to { value: 'same' } (no actual leaf change)
+      // Expected: no sync change emitted for dst.value (it's already 'same')
+      interface ParentSyncState {
+        src: { value: string }
+        dst: { value: string }
+      }
+
+      const store = createGenericStore<ParentSyncState>(config)
+      const capturedChanges: [string, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        { src: { value: 'same' }, dst: { value: 'same' } },
+        {
+          sideEffects: {
+            syncPaths: [['src.value', 'dst.value']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      // Clear any registration-time changes
+      capturedChanges.length = 0
+
+      // Set parent to object with identical leaf value
+      setValue('src', { value: 'same' })
+      await flushSync()
+
+      // dst.value should still be 'same' (unchanged)
+      expect(storeInstance.state.dst.value).toBe('same')
+
+      // The listener should NOT have received a dst.value change —
+      // it's a no-op since dst.value was already 'same'
+      const dstChanges = capturedChanges.filter(
+        ([path]) => path === 'dst.value',
+      )
+      expect(dstChanges).toHaveLength(0)
+    })
+
+    it('should NOT emit a sync change when deeply nested parent reassignment produces no leaf diff', async () => {
+      // Sync pair: level1.level2.level3.value → level1.value
+      // Both start with matching values. Reassigning the parent object
+      // level1.level2.level3 to { value: 'L3', level4: ... } is semantically
+      // a no-op at the leaf. Sync should not fire.
+      const store = createGenericStore<DeeplyNestedState>(config)
+      const capturedChanges: [string, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        {
+          ...deeplyNestedFixtures.initial,
+          level1: {
+            ...deeplyNestedFixtures.initial.level1,
+            value: 'L3', // target already matches source leaf
+          },
+        },
+        {
+          sideEffects: {
+            syncPaths: [['level1.level2.level3.value', 'level1.value']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      capturedChanges.length = 0
+
+      // Reassign parent with identical subtree
+      setValue('level1.level2.level3', {
+        value: 'L3',
+        level4: deeplyNestedFixtures.initial.level1.level2.level3.level4,
+      })
+      await flushSync()
+
+      // Target should remain unchanged
+      expect(storeInstance.state.level1.value).toBe('L3')
+
+      // No sync change should have been emitted for level1.value
+      const targetChanges = capturedChanges.filter(
+        ([path]) => path === 'level1.value',
+      )
+      expect(targetChanges).toHaveLength(0)
+    })
+
+    it('should NOT emit a sync change when parent object changes unrelated sibling but synced leaf stays the same', async () => {
+      // Setup: sync pair src.value → dst.value
+      // src has two properties: { value: 'same', other: 'old' }
+      // Action: set parent 'src' to { value: 'same', other: 'changed' }
+      // The synced leaf (src.value) didn't change — only the unrelated sibling did.
+      // Expected: no sync change for dst.value
+      interface SiblingState {
+        src: { value: string; other: string }
+        dst: { value: string }
+      }
+
+      const store = createGenericStore<SiblingState>(config)
+      const capturedChanges: [string, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        { src: { value: 'same', other: 'old' }, dst: { value: 'same' } },
+        {
+          sideEffects: {
+            syncPaths: [['src.value', 'dst.value']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      capturedChanges.length = 0
+
+      // Change unrelated sibling, synced leaf stays the same
+      setValue('src', { value: 'same', other: 'changed' })
+      await flushSync()
+
+      // Unrelated sibling should have changed
+      expect(storeInstance.state.src.other).toBe('changed')
+      // Synced target should remain unchanged
+      expect(storeInstance.state.dst.value).toBe('same')
+
+      // Listener should see src.other change but NOT dst.value
+      const dstChanges = capturedChanges.filter(
+        ([path]) => path === 'dst.value',
+      )
+      expect(dstChanges).toHaveLength(0)
+    })
+
+    it('should NOT emit a sync change when source leaf is set to same value directly', async () => {
+      // Direct leaf assignment: setValue('src.value', 'same') when src.value
+      // and dst.value are already 'same'. Sync should detect the no-op.
+      interface ParentSyncState {
+        src: { value: string }
+        dst: { value: string }
+      }
+
+      const store = createGenericStore<ParentSyncState>(config)
+      const capturedChanges: [string, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        { src: { value: 'same' }, dst: { value: 'same' } },
+        {
+          sideEffects: {
+            syncPaths: [['src.value', 'dst.value']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      capturedChanges.length = 0
+
+      // Direct leaf set with same value
+      setValue('src.value', 'same')
+      await flushSync()
+
+      expect(storeInstance.state.dst.value).toBe('same')
+
+      // No sync change should fire — source didn't actually change
+      const dstChanges = capturedChanges.filter(
+        ([path]) => path === 'dst.value',
+      )
+      expect(dstChanges).toHaveLength(0)
+    })
+
+    it('should NOT emit sync for object-valued path when content is identical', async () => {
+      // Bug: is_different returned true for Object→Object (no deep comparison)
+      // so sync always fired for object-valued paths even when unchanged.
+      // WASM-044 adds structural hash to ValueRepr::Object/Array for O(1) comparison.
+      interface ObjSyncState {
+        src: { config: { currency: string; amount: number } }
+        dst: { config: { currency: string; amount: number } }
+      }
+
+      const store = createGenericStore<ObjSyncState>(config)
+      const capturedChanges: [string, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        {
+          src: { config: { currency: 'USD', amount: 100 } },
+          dst: { config: { currency: 'USD', amount: 100 } },
+        },
+        {
+          sideEffects: {
+            syncPaths: [['src.config', 'dst.config']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      capturedChanges.length = 0
+
+      // Set src.config to identical object content
+      setValue('src.config', { currency: 'USD', amount: 100 })
+      await flushSync()
+
+      // dst.config should remain unchanged — no sync should have fired
+      expect(storeInstance.state.dst.config.currency).toBe('USD')
+      expect(storeInstance.state.dst.config.amount).toBe(100)
+
+      // No dst.config change should have been emitted
+      const dstChanges = capturedChanges.filter(([path]) =>
+        (path as string).startsWith('dst.config'),
+      )
+      expect(dstChanges).toHaveLength(0)
+    })
+
+    it('should emit sync for object-valued path when content differs', async () => {
+      // Sanity check: when the object value DOES change, sync must still fire.
+      interface ObjSyncState {
+        src: { config: { currency: string; amount: number } }
+        dst: { config: { currency: string; amount: number } }
+      }
+
+      const store = createGenericStore<ObjSyncState>(config)
+      const capturedChanges: [string, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        {
+          src: { config: { currency: 'USD', amount: 100 } },
+          dst: { config: { currency: 'USD', amount: 100 } },
+        },
+        {
+          sideEffects: {
+            syncPaths: [['src.config', 'dst.config']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      capturedChanges.length = 0
+
+      // Set src.config to DIFFERENT object content
+      setValue('src.config', { currency: 'EUR', amount: 200 })
+      await flushSync()
+
+      // dst.config should have been updated via sync
+      expect(storeInstance.state.dst.config.currency).toBe('EUR')
+      expect(storeInstance.state.dst.config.amount).toBe(200)
+
+      // Listener SHOULD have received dst.config changes
+      const dstChanges = capturedChanges.filter(([path]) =>
+        (path as string).startsWith('dst.config'),
+      )
+      expect(dstChanges.length).toBeGreaterThan(0)
+    })
+
+    it('should still emit sync change when leaf value actually differs', async () => {
+      // Sanity check: when the parent-path assignment DOES change the leaf,
+      // sync must still fire as expected.
+      interface ParentSyncState {
+        src: { value: string }
+        dst: { value: string }
+      }
+
+      const store = createGenericStore<ParentSyncState>(config)
+      const capturedChanges: [string, unknown][] = []
+
+      const { storeInstance, setValue } = mountStore(
+        store,
+        { src: { value: 'old' }, dst: { value: 'old' } },
+        {
+          sideEffects: {
+            syncPaths: [['src.value', 'dst.value']],
+            listeners: [
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  for (const change of changes) {
+                    capturedChanges.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      capturedChanges.length = 0
+
+      // Parent assignment that DOES change the leaf
+      setValue('src', { value: 'new' })
+      await flushSync()
+
+      // dst.value should be updated
+      expect(storeInstance.state.dst.value).toBe('new')
+
+      // Listener SHOULD have received the dst.value sync change
+      const dstChanges = capturedChanges.filter(
+        ([path]) => path === 'dst.value',
+      )
+      expect(dstChanges).toHaveLength(1)
+      const firstDstChange = dstChanges[0]
+      expect(firstDstChange).toBeDefined()
+      expect(firstDstChange![1]).toBe('new')
+    })
+  })
 })

@@ -173,7 +173,7 @@ impl BoolLogicNode {
 
             BoolLogicNode::ContainsAny(path, elements) => {
                 match get_path_value(state, path, intern) {
-                    Some(ValueRepr::Array(arr)) => elements
+                    Some(ValueRepr::Array(arr, _)) => elements
                         .iter()
                         .any(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
                     _ => false,
@@ -182,7 +182,7 @@ impl BoolLogicNode {
 
             BoolLogicNode::ContainsAll(path, elements) => {
                 match get_path_value(state, path, intern) {
-                    Some(ValueRepr::Array(arr)) => elements
+                    Some(ValueRepr::Array(arr, _)) => elements
                         .iter()
                         .all(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
                     _ => false,
@@ -239,11 +239,11 @@ pub(crate) fn get_path_value<'a>(
     let mut current = state;
     for seg in path.split('.') {
         match current {
-            ValueRepr::Object(map) => {
+            ValueRepr::Object(map, _) => {
                 let seg_id = intern.get_id(seg)?;
                 current = map.get(&seg_id)?;
             }
-            ValueRepr::Array(arr) => {
+            ValueRepr::Array(arr, _) => {
                 let idx: usize = seg.parse().ok()?;
                 current = arr.get(idx)?;
             }
@@ -261,7 +261,7 @@ pub(crate) fn get_path_value<'a>(
 fn resolve_numeric(state: &ValueRepr, path: &str, intern: &InternTable) -> Option<f64> {
     if let Some(parent_path) = path.strip_suffix(".length") {
         let parent = get_path_value(state, parent_path, intern)?;
-        if let ValueRepr::Array(arr) = parent {
+        if let ValueRepr::Array(arr, _) = parent {
             return Some(arr.len() as f64);
         }
         return None;
@@ -280,8 +280,8 @@ fn is_empty(value: &ValueRepr) -> bool {
     match value {
         ValueRepr::Null => true,
         ValueRepr::String(s) => s.is_empty(),
-        ValueRepr::Array(arr) => arr.is_empty(),
-        ValueRepr::Object(obj) => obj.is_empty(),
+        ValueRepr::Array(arr, _) => arr.is_empty(),
+        ValueRepr::Object(obj, _) => obj.is_empty(),
         _ => false,
     }
 }
@@ -307,11 +307,11 @@ fn value_repr_to_json(value: &ValueRepr) -> Value {
             }
         }
         ValueRepr::String(s) => Value::String(s.clone()),
-        ValueRepr::Array(arr) => Value::Array(arr.iter().map(value_repr_to_json).collect()),
+        ValueRepr::Array(arr, _) => Value::Array(arr.iter().map(value_repr_to_json).collect()),
         // Object keys are interned u32s — cannot resolve without InternTable.
         // BoolLogic comparisons (IsEqual, In, etc.) operate on leaf values,
         // not objects, so this branch is rarely hit. Return empty object as placeholder.
-        ValueRepr::Object(_) => Value::Object(serde_json::Map::new()),
+        ValueRepr::Object(..) => Value::Object(serde_json::Map::new()),
     }
 }
 

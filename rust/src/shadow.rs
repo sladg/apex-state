@@ -1,6 +1,7 @@
 use crate::change::UNDEFINED_SENTINEL;
 use crate::intern::InternTable;
 use crate::prelude::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 /// Represents a value in the shadow state tree.
 ///
@@ -9,35 +10,118 @@ use crate::prelude::{HashMap, HashSet};
 ///
 /// Object keys are interned u32 IDs (via InternTable) to deduplicate field names
 /// across arrays of records sharing the same schema.
-#[derive(Debug, Clone, PartialEq, Default)]
+///
+/// Object and Array variants carry a precomputed structural hash (u64) computed
+/// at construction time (`from_json`). This enables O(1) equality checks in
+/// `is_different` — if the hash matches, the subtree is unchanged.
+#[derive(Debug, Clone, Default)]
 pub(crate) enum ValueRepr {
     #[default]
     Null,
     Bool(bool),
     Number(f64),
     String(String),
-    Array(Vec<ValueRepr>),
-    Object(HashMap<u32, ValueRepr>),
+    Array(Vec<ValueRepr>, u64),
+    Object(HashMap<u32, ValueRepr>, u64),
+}
+
+impl PartialEq for ValueRepr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ValueRepr::Null, ValueRepr::Null) => true,
+            (ValueRepr::Bool(a), ValueRepr::Bool(b)) => a == b,
+            (ValueRepr::Number(a), ValueRepr::Number(b)) => a.to_bits() == b.to_bits(),
+            (ValueRepr::String(a), ValueRepr::String(b)) => a == b,
+            (ValueRepr::Array(_, h1), ValueRepr::Array(_, h2)) => h1 == h2,
+            (ValueRepr::Object(_, h1), ValueRepr::Object(_, h2)) => h1 == h2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ValueRepr {}
+
+impl ValueRepr {
+    /// Compute a structural hash for this value.
+    /// Used internally during construction to populate the hash field
+    /// on Array and Object variants.
+    fn hash_into(&self, hasher: &mut impl Hasher) {
+        match self {
+            ValueRepr::Null => 0u8.hash(hasher),
+            ValueRepr::Bool(b) => {
+                1u8.hash(hasher);
+                b.hash(hasher);
+            }
+            ValueRepr::Number(n) => {
+                2u8.hash(hasher);
+                n.to_bits().hash(hasher);
+            }
+            ValueRepr::String(s) => {
+                3u8.hash(hasher);
+                s.hash(hasher);
+            }
+            ValueRepr::Array(arr, _) => {
+                4u8.hash(hasher);
+                for item in arr {
+                    item.hash_into(hasher);
+                }
+            }
+            ValueRepr::Object(map, _) => {
+                5u8.hash(hasher);
+                // XOR per-entry hashes for order independence
+                let mut combined = 0u64;
+                for (&k, v) in map {
+                    let mut entry_hasher = ahash::AHasher::default();
+                    k.hash(&mut entry_hasher);
+                    v.hash_into(&mut entry_hasher);
+                    combined ^= entry_hasher.finish();
+                }
+                combined.hash(hasher);
+            }
+        }
+    }
+
+    /// Compute the structural hash of this value tree.
+    fn structural_hash(&self) -> u64 {
+        let mut hasher = ahash::AHasher::default();
+        self.hash_into(&mut hasher);
+        hasher.finish()
+    }
 }
 
 impl ValueRepr {
     /// Convert a serde_json::Value into a ValueRepr, interning object keys.
+    /// Computes structural hashes for Object and Array variants at construction time.
     pub(crate) fn from_json(v: serde_json::Value, intern: &mut InternTable) -> Self {
         match v {
             serde_json::Value::Null => ValueRepr::Null,
             serde_json::Value::Bool(b) => ValueRepr::Bool(b),
             serde_json::Value::Number(n) => ValueRepr::Number(n.as_f64().unwrap_or(0.0)),
             serde_json::Value::String(s) => ValueRepr::String(s),
-            serde_json::Value::Array(arr) => ValueRepr::Array(
-                arr.into_iter()
+            serde_json::Value::Array(arr) => {
+                let children: Vec<ValueRepr> = arr
+                    .into_iter()
                     .map(|v| ValueRepr::from_json(v, intern))
-                    .collect(),
-            ),
-            serde_json::Value::Object(map) => ValueRepr::Object(
-                map.into_iter()
+                    .collect();
+                let node = ValueRepr::Array(children, 0);
+                let hash = node.structural_hash();
+                match node {
+                    ValueRepr::Array(c, _) => ValueRepr::Array(c, hash),
+                    _ => unreachable!(),
+                }
+            }
+            serde_json::Value::Object(map) => {
+                let fields: HashMap<u32, ValueRepr> = map
+                    .into_iter()
                     .map(|(k, v)| (intern.intern(&k), ValueRepr::from_json(v, intern)))
-                    .collect(),
-            ),
+                    .collect();
+                let node = ValueRepr::Object(fields, 0);
+                let hash = node.structural_hash();
+                match node {
+                    ValueRepr::Object(f, _) => ValueRepr::Object(f, hash),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }
@@ -59,10 +143,10 @@ impl ValueRepr {
                 }
             }
             ValueRepr::String(s) => serde_json::Value::String(s.clone()),
-            ValueRepr::Array(arr) => {
+            ValueRepr::Array(arr, _) => {
                 serde_json::Value::Array(arr.iter().map(|v| v.to_json_value(intern)).collect())
             }
-            ValueRepr::Object(map) => serde_json::Value::Object(
+            ValueRepr::Object(map, _) => serde_json::Value::Object(
                 map.iter()
                     .filter_map(|(&k, v)| {
                         intern
@@ -91,7 +175,7 @@ pub(crate) struct ShadowState {
 impl ShadowState {
     pub(crate) fn new() -> Self {
         Self {
-            root: ValueRepr::Object(HashMap::new()),
+            root: ValueRepr::Object(HashMap::new(), 0),
             removed_paths: HashSet::new(),
         }
     }
@@ -128,7 +212,7 @@ impl ShadowState {
         match path.rsplit_once('.') {
             None => true, // root-level key, parent is root which always exists
             Some((parent, _)) => {
-                if matches!(self.get(parent, intern), Some(ValueRepr::Object(_))) {
+                if matches!(self.get(parent, intern), Some(ValueRepr::Object(..))) {
                     return true;
                 }
                 // Parent not in shadow — allow if it was never explicitly removed.
@@ -165,7 +249,7 @@ impl ShadowState {
         // self.root before mutating self.removed_paths.
         if !path.is_empty() {
             let removed: Vec<String> =
-                if let Some(old @ ValueRepr::Object(_)) = self.get(path, intern) {
+                if let Some(old @ ValueRepr::Object(..)) = self.get(path, intern) {
                     let mut r = Vec::new();
                     Self::collect_paths(old, path, &mut r, true, intern);
                     r
@@ -239,7 +323,7 @@ impl ShadowState {
     /// Returns None if the value is not an object or the path doesn't exist.
     pub(crate) fn get_object_keys(&self, path: &str, intern: &InternTable) -> Option<Vec<String>> {
         match self.get(path, intern) {
-            Some(ValueRepr::Object(map)) => Some(
+            Some(ValueRepr::Object(map, _)) => Some(
                 map.keys()
                     .filter_map(|&k| intern.resolve(k).map(|s| s.to_owned()))
                     .collect(),
@@ -272,11 +356,11 @@ impl ShadowState {
         let mut current = root;
         for seg in segments {
             match current {
-                ValueRepr::Object(map) => {
+                ValueRepr::Object(map, _) => {
                     let seg_id = intern.get_id(seg)?;
                     current = map.get(&seg_id)?;
                 }
-                ValueRepr::Array(arr) => {
+                ValueRepr::Array(arr, _) => {
                     let idx: usize = seg.parse().ok()?;
                     current = arr.get(idx)?;
                 }
@@ -300,7 +384,7 @@ impl ShadowState {
         let (key, rest) = (segments[0], &segments[1..]);
 
         match node {
-            ValueRepr::Object(map) => {
+            ValueRepr::Object(map, _) => {
                 let key_id = intern.intern(key);
                 if rest.is_empty() {
                     map.insert(key_id, value);
@@ -309,11 +393,11 @@ impl ShadowState {
                     // Create intermediate object if missing
                     let child = map
                         .entry(key_id)
-                        .or_insert_with(|| ValueRepr::Object(HashMap::new()));
+                        .or_insert_with(|| ValueRepr::Object(HashMap::new(), 0));
                     Self::set_at(child, rest, value, intern)
                 }
             }
-            ValueRepr::Array(arr) => {
+            ValueRepr::Array(arr, _) => {
                 let idx: usize = key
                     .parse()
                     .map_err(|_| format!("Invalid array index '{}'", key))?;
@@ -335,11 +419,11 @@ impl ShadowState {
                 if rest.is_empty() {
                     map.insert(key_id, value);
                 } else {
-                    let mut child = ValueRepr::Object(HashMap::new());
+                    let mut child = ValueRepr::Object(HashMap::new(), 0);
                     Self::set_at(&mut child, rest, value, intern)?;
                     map.insert(key_id, child);
                 }
-                *node = ValueRepr::Object(map);
+                *node = ValueRepr::Object(map, 0);
                 Ok(())
             }
             _ => Err(format!(
@@ -359,7 +443,7 @@ impl ShadowState {
         result: &mut Vec<u32>,
     ) {
         match value {
-            ValueRepr::Object(map) => {
+            ValueRepr::Object(map, _) => {
                 for (&key_id, child) in map {
                     let key_str = match intern.resolve(key_id) {
                         Some(s) => s.to_owned(),
@@ -373,7 +457,7 @@ impl ShadowState {
                     Self::collect_path_ids(child, &child_path, intern, result);
                 }
             }
-            ValueRepr::Array(arr) => {
+            ValueRepr::Array(arr, _) => {
                 for (i, child) in arr.iter().enumerate() {
                     let idx_str = i.to_string();
                     let child_path = if prefix.is_empty() {
@@ -403,7 +487,7 @@ impl ShadowState {
         intern: &InternTable,
     ) {
         match value {
-            ValueRepr::Object(map) => {
+            ValueRepr::Object(map, _) => {
                 for (&key_id, child) in map {
                     let key_str = match intern.resolve(key_id) {
                         Some(s) => s.to_owned(),
@@ -420,7 +504,7 @@ impl ShadowState {
                     Self::collect_paths(child, &child_path, result, include_intermediate, intern);
                 }
             }
-            ValueRepr::Array(arr) => {
+            ValueRepr::Array(arr, _) => {
                 for (i, child) in arr.iter().enumerate() {
                     let idx_str = i.to_string();
                     let child_path = if prefix.is_empty() {
@@ -484,8 +568,8 @@ mod tests {
         let a_id = intern.get_id("a").unwrap();
         let b_id = intern.get_id("b").unwrap();
         match &v {
-            ValueRepr::Object(map) => match map.get(&a_id) {
-                Some(ValueRepr::Object(inner)) => {
+            ValueRepr::Object(map, _) => match map.get(&a_id) {
+                Some(ValueRepr::Object(inner, _)) => {
                     assert_eq!(inner.get(&b_id), Some(&ValueRepr::Number(1.0)));
                 }
                 other => panic!("Expected Object, got {:?}", other),
@@ -516,7 +600,7 @@ mod tests {
         assert!(matches!(state.get("user.age", &intern), Some(ValueRepr::Number(n)) if *n == 30.0));
         assert!(matches!(
             state.get("user", &intern),
-            Some(ValueRepr::Object(_))
+            Some(ValueRepr::Object(..))
         ));
         assert!(state.get("user.email", &intern).is_none());
         assert!(state.get("missing", &intern).is_none());
@@ -526,7 +610,10 @@ mod tests {
     fn get_empty_path_returns_root() {
         let mut intern = InternTable::new();
         let state = make_state(r#"{"a": 1}"#, &mut intern);
-        assert!(matches!(state.get("", &intern), Some(ValueRepr::Object(_))));
+        assert!(matches!(
+            state.get("", &intern),
+            Some(ValueRepr::Object(..))
+        ));
     }
 
     #[test]

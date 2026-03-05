@@ -151,7 +151,7 @@ fn value_repr_to_case_key(value: &crate::shadow::ValueRepr) -> Option<String> {
             }
         }
         ValueRepr::Bool(b) => Some(b.to_string()),
-        ValueRepr::Null | ValueRepr::Array(_) | ValueRepr::Object(_) => None,
+        ValueRepr::Null | ValueRepr::Array(..) | ValueRepr::Object(..) => None,
     }
 }
 
