@@ -1974,4 +1974,144 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       expect(storeInstance.state.lastChange).toBe('name-changed')
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // Cascading topic isolation
+  //
+  // Bug: multiple listeners with scope: null and distinct path: values.
+  // Listener N produces changes → those changes were blindly injected into
+  // ALL subsequent dispatches without filtering by topic path. Listener N+1
+  // at a different path received a mix of its own changes and unrelated
+  // root-scoped changes from listener N.
+  // ---------------------------------------------------------------------------
+
+  describe('Cascading topic isolation', () => {
+    it('should NOT leak changes from one path-scoped listener into another', async () => {
+      // Two listeners, each with scope: null and a distinct path.
+      // Listener 1 (path: "a") produces a change at "a.result".
+      // Listener 2 (path: "b") should NOT receive "a.result" in its input.
+      interface IsolationState {
+        a: { value: string; result: string }
+        b: { value: string; result: string }
+      }
+
+      const store = createGenericStore<IsolationState>(config)
+      const listener2Input: [string, unknown][] = []
+
+      const { setValue } = mountStore(
+        store,
+        {
+          a: { value: '', result: '' },
+          b: { value: '', result: '' },
+        },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'a',
+                scope: null,
+                fn: (changes) => {
+                  // Listener 1: watches "a", produces a change at "a.result"
+                  const hasValueChange = changes.some(
+                    (c) => c[0] === 'value' || c[0] === 'a.value',
+                  )
+                  if (hasValueChange) {
+                    return [['a.result', 'computed-from-a']]
+                  }
+                  return undefined
+                },
+              },
+              {
+                path: 'b',
+                scope: null,
+                fn: (changes) => {
+                  // Listener 2: watches "b", should ONLY receive b-scoped changes
+                  for (const change of changes) {
+                    listener2Input.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      listener2Input.length = 0
+
+      // Trigger both listeners by changing both paths
+      setValue('a.value', 'trigger-a')
+      setValue('b.value', 'trigger-b')
+      await flushSync()
+
+      // Listener 2 should only see b-scoped changes, never "a.result"
+      const leakedChanges = listener2Input.filter(
+        ([path]) =>
+          (path as string).startsWith('a.') ||
+          (path as string) === 'a.result' ||
+          (path as string) === 'computed-from-a',
+      )
+      expect(leakedChanges).toHaveLength(0)
+
+      // Listener 2 should have received b-scoped change(s)
+      expect(listener2Input.length).toBeGreaterThan(0)
+    })
+
+    it('should still cascade changes to a root-scoped listener', async () => {
+      // A root listener (path: null, scope: null) should still receive
+      // produced changes from other listeners — it watches everything.
+      interface CascadeState {
+        a: { value: string; result: string }
+        log: string
+      }
+
+      const store = createGenericStore<CascadeState>(config)
+      const rootListenerInput: [string, unknown][] = []
+
+      const { setValue } = mountStore(
+        store,
+        { a: { value: '', result: '' }, log: '' },
+        {
+          sideEffects: {
+            listeners: [
+              {
+                path: 'a',
+                scope: null,
+                fn: (changes) => {
+                  const hasValueChange = changes.some(
+                    (c) => c[0] === 'value' || c[0] === 'a.value',
+                  )
+                  if (hasValueChange) {
+                    return [['a.result', 'computed']]
+                  }
+                  return undefined
+                },
+              },
+              {
+                path: null,
+                scope: null,
+                fn: (changes) => {
+                  // Root listener: should see ALL changes including cascaded ones
+                  for (const change of changes) {
+                    rootListenerInput.push([change[0] as string, change[1]])
+                  }
+                  return undefined
+                },
+              },
+            ],
+          },
+        },
+      )
+
+      rootListenerInput.length = 0
+
+      setValue('a.value', 'trigger')
+      await flushSync()
+
+      // Root listener should have received the cascaded "a.result" change
+      const cascaded = rootListenerInput.filter(([path]) => path === 'a.result')
+      expect(cascaded).toHaveLength(1)
+      expect(cascaded[0]![1]).toBe('computed')
+    })
+  })
 })

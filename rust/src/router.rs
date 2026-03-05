@@ -150,7 +150,7 @@ pub struct PropagationTarget {
     pub remap_prefix: String,
 }
 
-/// Pre-computed execution plan with propagation map.
+/// Pre-computed execution plan with propagation map and cascade map.
 /// TS side becomes a trivial loop with map lookups — no ancestor walking needed.
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
 pub struct FullExecutionPlan {
@@ -161,6 +161,9 @@ pub struct FullExecutionPlan {
     /// Flat array indexed by dispatch_id, empty vec = no propagation.
     #[ts(inline)]
     pub propagation_map: Vec<Vec<PropagationTarget>>,
+    /// cascade_map[dispatch_id] = sibling dispatch_ids (same group, later position)
+    /// that should receive this dispatch's produced changes.
+    pub cascade_map: Vec<Vec<u32>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +731,7 @@ impl TopicRouter {
             return FullExecutionPlan {
                 groups: Vec::new(),
                 propagation_map: Vec::new(),
+                cascade_map: Vec::new(),
             };
         }
 
@@ -856,9 +860,23 @@ impl TopicRouter {
             }
         }
 
+        // Step 3: Compute cascade map.
+        // For each dispatch, collect all subsequent dispatches in the same group
+        // that should receive cascaded produced changes.
+        let mut cascade_map: Vec<Vec<u32>> = vec![Vec::new(); total_dispatches];
+
+        for group in &groups {
+            for (i, dispatch) in group.dispatches.iter().enumerate() {
+                for subsequent in &group.dispatches[i + 1..] {
+                    cascade_map[dispatch.dispatch_id as usize].push(subsequent.dispatch_id);
+                }
+            }
+        }
+
         FullExecutionPlan {
             groups,
             propagation_map,
+            cascade_map,
         }
     }
 

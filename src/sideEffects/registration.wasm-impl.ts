@@ -145,11 +145,16 @@ export const registerSideEffects = <
 
   // Log registration with graph snapshot (no-op when log is disabled)
   const graphSnapshot = pipeline.getGraphSnapshot()
+  const listenerNames = new Map<number, string>()
+  for (const [subId, ref] of store._internal.registrations.listenerHandlers) {
+    listenerNames.set(subId, ref.name)
+  }
   store._internal.logger.logRegistration('register', id, graphSnapshot, {
     result,
     appliedChanges,
     stateSnapshot: snapshot(store.state),
     durationMs,
+    listenerNames,
   })
   store._internal.devtools?.notifyRegistration('register', id, graphSnapshot)
 
@@ -159,9 +164,14 @@ export const registerSideEffects = <
     pipeline.unregisterSideEffects(registrationId)
     const unregDurationMs = performance.now() - ut0
     const unregSnapshot = pipeline.getGraphSnapshot()
+    const unregListenerNames = new Map<number, string>()
+    for (const [subId, ref] of store._internal.registrations.listenerHandlers) {
+      unregListenerNames.set(subId, ref.name)
+    }
     store._internal.logger.logRegistration('unregister', id, unregSnapshot, {
       stateSnapshot: snapshot(store.state),
       durationMs: unregDurationMs,
+      listenerNames: unregListenerNames,
     })
     store._internal.devtools?.notifyRegistration(
       'unregister',

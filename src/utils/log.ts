@@ -59,6 +59,8 @@ export interface RegistrationLogData {
   appliedChanges?: Change[]
   stateSnapshot?: unknown
   durationMs?: number
+  /** subscriber_id → function name, for enriching listener entries in the log. */
+  listenerNames?: Map<number, string>
 }
 
 export interface ApexLogger {
@@ -358,7 +360,14 @@ export const createLogger = (config: DebugConfig): ApexLogger => {
       const graphEntries: [string, string, unknown][] = [
         ['syncPairs', COLORS.graph, allSyncPairs],
         ['flipPairs', COLORS.graph, gs.flip_pairs],
-        ['listeners', COLORS.listener, gs.listeners],
+        [
+          'listeners',
+          COLORS.listener,
+          gs.listeners.map((l) => {
+            const name = data?.listenerNames?.get(l.id)
+            return name ? { ...l, name } : l
+          }),
+        ],
         ['boolLogics', COLORS.logic, gs.bool_logics],
         ['valueLogics', COLORS.logic, gs.value_logics],
         ['aggregations', COLORS.transform, gs.aggregations],

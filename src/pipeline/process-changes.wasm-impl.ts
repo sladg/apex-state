@@ -14,6 +14,7 @@ import { snapshot } from 'valtio'
 import type {
   ConcernValues,
   DebugTrackEntry,
+  ListenerHandlerRef,
   StoreInstance,
 } from '../core/types'
 import { type ArrayOfChanges, type GenericMeta } from '../types'
@@ -79,11 +80,39 @@ const remapPath = (path: string, remapPrefix: string | null): string => {
   return path === '' ? remapPrefix : `${remapPrefix}.${path}`
 }
 
+/**
+ * Check if a change path matches a dispatch's topic path.
+ * Mirrors the WASM matching logic in router.rs `create_full_execution_plan`:
+ * - Root topic (empty): matches everything
+ * - Exact match: change.path === topicPath
+ * - Child: change.path starts with topicPath + "."
+ * - Parent: topicPath starts with change.path + "."
+ */
+const changeMatchesTopic = (changePath: string, topicPath: string): boolean => {
+  if (topicPath === '') return true
+  if (changePath === topicPath) return true
+  if (changePath.startsWith(topicPath) && changePath[topicPath.length] === '.')
+    return true
+  if (topicPath.startsWith(changePath) && topicPath[changePath.length] === '.')
+    return true
+  return false
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch helpers
 // ---------------------------------------------------------------------------
 
-/** Append Changes to the extra map for a given dispatch ID (get-or-create). */
+/** Append changes to the extra map for a given dispatch ID (get-or-create). */
+const appendExtra = (
+  extra: Map<number, Change[]>,
+  targetId: number,
+  changes: Change[],
+): void => {
+  const existing = extra.get(targetId) ?? []
+  extra.set(targetId, existing)
+  existing.push(...changes)
+}
+
 /** Build the input tuple array for a single listener invocation. */
 const buildDispatchInput = (
   d: Wasm.FullExecutionPlan['groups'][number]['dispatches'][number],
@@ -107,6 +136,8 @@ const buildDispatchInput = (
   const extraChanges = extra.get(d.dispatch_id)
   if (extraChanges) {
     for (const c of extraChanges) {
+      // Filter cascaded changes by topic match — only include changes relevant to this dispatch
+      if (!changeMatchesTopic(c.path, topicPath)) continue
       input.push([
         relativizePath(c.path, topicPath),
         structuredClone(c.value),
@@ -119,32 +150,84 @@ const buildDispatchInput = (
 }
 
 /**
- * Propagate produced changes to parent dispatches via pre-computed propagation map.
+ * Route produced changes via WASM-precomputed maps.
+ * Cross-depth: propagation_map remaps paths to parent scope.
+ * Same-depth: cascade_map forwards changes to subsequent siblings.
  */
-const propagateChanges = (
+const routeProducedChanges = (
   dispatchId: number,
   producedChanges: Change[],
-  propagationMap: Wasm.FullExecutionPlan['propagation_map'],
+  plan: Wasm.FullExecutionPlan,
   extra: Map<number, Change[]>,
 ): void => {
-  const targets = propagationMap[dispatchId]
-  if (!targets) return
+  // Cross-depth: propagate to parent dispatches via pre-computed propagation map
+  const targets = plan.propagation_map[dispatchId]
+  if (targets) {
+    for (const t of targets) {
+      const remapped = producedChanges.map((c) => ({
+        ...c,
+        path: remapPath(c.path, t.remap_prefix),
+      }))
+      appendExtra(extra, t.target_dispatch_id, remapped)
+    }
+  }
 
-  for (const t of targets) {
-    const remapped = producedChanges.map((c) => ({
-      ...c,
-      path: remapPath(c.path, t.remap_prefix),
-    }))
-    const existing = extra.get(t.target_dispatch_id) ?? []
-    extra.set(t.target_dispatch_id, existing)
-    existing.push(...remapped)
+  // Same-depth: cascade to subsequent dispatches via pre-computed cascade map
+  const cascadeTargets = plan.cascade_map[dispatchId]
+  if (cascadeTargets) {
+    for (const targetId of cascadeTargets) {
+      appendExtra(extra, targetId, producedChanges)
+    }
   }
 }
 
+/** Invoke a single listener handler and record the trace entry. */
+const invokeHandler = (
+  d: Wasm.FullExecutionPlan['groups'][number]['dispatches'][number],
+  registration: ListenerHandlerRef,
+  input: [string, unknown, GenericMeta][],
+  scopedState: unknown,
+  timingEnabled: boolean,
+  timingThreshold: number,
+  listenerLog: ListenerDispatchTrace[],
+): Change[] => {
+  const t0 = timingEnabled ? performance.now() : 0
+  const result = registration.fn(input, scopedState)
+  const durationMs = timingEnabled ? performance.now() - t0 : 0
+  const slow = timingEnabled && durationMs > timingThreshold
+
+  if (slow) {
+    console.warn(
+      `[apex-state] Slow listener: ${registration.name || '(anonymous)'} took ${durationMs.toFixed(2)}ms (threshold: ${timingThreshold}ms)`,
+    )
+  }
+
+  const producedChanges =
+    result && (result as unknown[]).length > 0
+      ? normalizeListenerOutput(result as [string, unknown, GenericMeta?][])
+      : []
+
+  listenerLog.push({
+    dispatchId: d.dispatch_id,
+    subscriberId: d.subscriber_id,
+    fnName: registration.name,
+    scope: (registration.scope ?? '') || '(root)',
+    topic: d.topic_path,
+    registrationId: registration.registrationId,
+    input: input as [string, unknown, unknown][],
+    output: producedChanges,
+    currentState: scopedState,
+    durationMs,
+    slow,
+  })
+
+  return producedChanges
+}
+
 /**
- * Execute a pre-computed execution plan with propagation map.
- * WASM pre-computes all routing; TS just iterates and calls handlers.
- * Returns produced changes and a log of each listener invocation for debug logging.
+ * Execute a pre-computed execution plan.
+ * Both routing paths (cross-depth propagation + same-depth cascading) are
+ * symmetric WASM-precomputed map lookups — TS just iterates and calls handlers.
  */
 const executeFullExecutionPlan = <DATA extends object>(
   plan: Wasm.FullExecutionPlan | null,
@@ -155,81 +238,42 @@ const executeFullExecutionPlan = <DATA extends object>(
     return { produced: [], listenerLog: [] }
   }
 
-  const { listenerHandlers } = store._internal.registrations
   const allProducedChanges: Change[] = []
   const listenerLog: ListenerDispatchTrace[] = []
   const extra = new Map<number, Change[]>()
-  const timingEnabled = store._internal.config.debug.timing ?? false
-  const timingThreshold = store._internal.config.debug.timingThreshold ?? 5
 
+  const { listenerHandlers } = store._internal.registrations
   // Single snapshot of the full state — then slice scoped subtrees from it.
   // snapshot() returns a plain frozen object, so dot.get__unsafe is just
   // regular property access with zero proxy overhead.
   const currentState = snapshot(store.state) as DATA
+  const timingEnabled = store._internal.config.debug.timing ?? false
+  const timingThreshold = store._internal.config.debug.timingThreshold ?? 5
 
-  // Flatten all dispatches in execution order for cascading injection
-  const allDispatches = plan.groups.flatMap((g) => g.dispatches)
+  for (const group of plan.groups) {
+    for (const d of group.dispatches) {
+      const registration = listenerHandlers.get(d.subscriber_id)
+      if (!registration) continue
 
-  for (const [i, d] of allDispatches.entries()) {
-    const registration = listenerHandlers.get(d.subscriber_id)
-    if (!registration) continue
+      const scope = registration.scope ?? ''
+      const scopedState =
+        scope === '' ? currentState : dot.get__unsafe(currentState, scope)
 
-    const scope = registration.scope ?? ''
-    const scopedState =
-      scope === '' ? currentState : dot.get__unsafe(currentState, scope)
-
-    // buildDispatchInput reads from extra — which now includes cascaded changes
-    const input = buildDispatchInput(d, listenerChanges, extra)
-
-    // Inline timing — only pay cost of performance.now() when timing is enabled
-    const t0 = timingEnabled ? performance.now() : 0
-    const result = registration.fn(input, scopedState)
-    const durationMs = timingEnabled ? performance.now() - t0 : 0
-    const slow = timingEnabled && durationMs > timingThreshold
-
-    if (slow) {
-      console.warn(
-        `[apex-state] Slow listener: ${registration.name || '(anonymous)'} took ${durationMs.toFixed(2)}ms (threshold: ${timingThreshold}ms)`,
+      const input = buildDispatchInput(d, listenerChanges, extra)
+      const producedChanges = invokeHandler(
+        d,
+        registration,
+        input,
+        scopedState,
+        timingEnabled,
+        timingThreshold,
+        listenerLog,
       )
-    }
 
-    const producedChanges =
-      result && (result as unknown[]).length > 0
-        ? normalizeListenerOutput(result as [string, unknown, GenericMeta?][])
-        : []
+      if (producedChanges.length === 0) continue
 
-    listenerLog.push({
-      dispatchId: d.dispatch_id,
-      subscriberId: d.subscriber_id,
-      fnName: registration.name,
-      scope: scope || '(root)',
-      topic: d.topic_path,
-      registrationId: registration.registrationId,
-      input: input as [string, unknown, unknown][],
-      output: producedChanges,
-      currentState: scopedState,
-      durationMs,
-      slow,
-    })
-
-    if (producedChanges.length === 0) continue
-
-    allProducedChanges.push(...producedChanges)
-
-    // Propagate to parent dispatches via pre-computed propagation map (cross-depth)
-    propagateChanges(
-      d.dispatch_id,
-      producedChanges,
-      plan.propagation_map,
-      extra,
-    )
-
-    // Same-depth cascading: inject produced changes into extra for ALL subsequent dispatches
-    // buildDispatchInput will pick them up naturally via extra map
-    for (const subsequent of allDispatches.slice(i + 1)) {
-      const existing = extra.get(subsequent.dispatch_id) ?? []
-      extra.set(subsequent.dispatch_id, existing)
-      existing.push(...producedChanges)
+      allProducedChanges.push(...producedChanges)
+      routeProducedChanges(d.dispatch_id, producedChanges, plan, extra)
     }
   }
 

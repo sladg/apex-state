@@ -642,6 +642,19 @@ This is a performance-critical layer. Patterns matter.
 
 ---
 
+## Bug Fixes & Customer-Reported Issues — Test First
+
+**When the user reports a bug, unexpected behavior, or a customer-reported issue:**
+
+1. **Reproduce first** — Write a failing test (vitest for JS, `#[test]` for Rust) that exercises the exact scenario described. The test MUST fail before any fix is applied.
+2. **Confirm the reproduction** — Run the test, show the failure. This proves we understand the bug correctly.
+3. **Then plan the fix** — Only after the failing test exists, plan and implement the code change.
+4. **Verify** — The previously-failing test now passes. No existing tests regressed.
+
+**Why?** A failing test locks in the exact behavior. Without it, we risk fixing the wrong thing, introducing regressions, or not catching edge cases. The test becomes permanent documentation of "this scenario must never break again."
+
+**This applies to:** bug reports, "this doesn't work when...", customer-escalated issues, unexpected behavior during testing, behavioral changes to existing flows. It does NOT apply to new feature requests or refactoring tasks.
+
 ## Your Workflow
 
 1. **Understand** - Use grepai to find relevant code, understand what it does, why it exists
