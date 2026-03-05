@@ -582,7 +582,7 @@ impl ProcessingPipeline {
         let ids: Vec<u32> = self.anchor_path_ids.iter().copied().collect();
         for id in ids {
             if let Some(path) = self.intern.resolve(id) {
-                let is_present = shadow.get(path).is_some();
+                let is_present = shadow.get(path, &self.intern).is_some();
                 self.anchor_states.insert(id, is_present);
             }
         }
@@ -617,7 +617,7 @@ impl ProcessingPipeline {
             None => true,
             Some(id) => {
                 if let Some(path) = self.intern.resolve(id) {
-                    self.shadow.get(path).is_some()
+                    self.shadow.get(path, &self.intern).is_some()
                 } else {
                     true // Can't resolve → treat as present (safe default)
                 }
@@ -697,7 +697,7 @@ impl ProcessingPipeline {
 
     /// Initialize shadow state from a JSON string.
     pub(crate) fn shadow_init(&mut self, state_json: &str) -> Result<(), String> {
-        self.shadow.init(state_json)
+        self.shadow.init(state_json, &mut self.intern)
     }
 
     /// Register a BoolLogic expression. Returns logic_id for later cleanup.
@@ -820,7 +820,7 @@ impl ProcessingPipeline {
         // the caller (JS store) applies these changes to valtio, which then flows back
         // through processChanges and updates shadow correctly.
         let initial_changes =
-            process_aggregation_reads(&self.aggregations, &self.shadow, &all_sources);
+            process_aggregation_reads(&self.aggregations, &self.shadow, &all_sources, &self.intern);
 
         Ok(self.diff_changes(&initial_changes))
     }
@@ -935,13 +935,13 @@ impl ProcessingPipeline {
 
         // Compute initial values
         let initial_changes =
-            process_computation_reads(&self.computations, &self.shadow, &all_sources);
+            process_computation_reads(&self.computations, &self.shadow, &all_sources, &self.intern);
 
         // Diff against shadow — only update shadow and return genuine changes.
         let diffed = self.diff_changes(&initial_changes);
         for change in &diffed {
             self.shadow
-                .set(&change.path, &change.value_json)
+                .set(&change.path, &change.value_json, &mut self.intern)
                 .map_err(|e| format!("Shadow update failed for computation: {}", e))?;
         }
 
@@ -978,7 +978,7 @@ impl ProcessingPipeline {
         let diffed_changes = self.diff_changes(&all_initial_changes);
         for change in &diffed_changes {
             self.shadow
-                .set(&change.path, &change.value_json)
+                .set(&change.path, &change.value_json, &mut self.intern)
                 .map_err(|e| format!("Shadow update failed: {}", e))?;
         }
 
@@ -1007,8 +1007,8 @@ impl ProcessingPipeline {
                 .insert(tgt_id);
 
             // Initial sync: copy source value → target
-            if let Some(src_value) = self.shadow.get(&pair[0]) {
-                let value_json = serde_json::to_string(&src_value.to_json_value())
+            if let Some(src_value) = self.shadow.get(&pair[0], &self.intern) {
+                let value_json = serde_json::to_string(&src_value.to_json_value(&self.intern))
                     .unwrap_or_else(|_| "null".to_owned());
                 // Skip null/undefined — only sync substantive values
                 if value_json != "null" && value_json != "\"__undefined__\"" {
@@ -1028,7 +1028,7 @@ impl ProcessingPipeline {
         let diffed = self.diff_changes(&initial_changes);
         for change in &diffed {
             self.shadow
-                .set(&change.path, &change.value_json)
+                .set(&change.path, &change.value_json, &mut self.intern)
                 .map_err(|e| format!("Shadow update failed (directed sync): {}", e))?;
         }
 
@@ -1096,8 +1096,8 @@ impl ProcessingPipeline {
             let mut value_to_path: HashMap<String, String> = HashMap::new();
 
             for path in &component {
-                let value_json = match self.shadow.get(path) {
-                    Some(v) => serde_json::to_string(&v.to_json_value())
+                let value_json = match self.shadow.get(path, &self.intern) {
+                    Some(v) => serde_json::to_string(&v.to_json_value(&self.intern))
                         .unwrap_or_else(|_| "null".to_string()),
                     None => continue, // Path absent from shadow — skip voting
                 };
@@ -1266,8 +1266,8 @@ impl ProcessingPipeline {
             // Build initial validator dispatch by reading dependency values from shadow
             let mut dependency_values = HashMap::new();
             for dep_path in &validator.dependency_paths {
-                if let Some(value) = self.shadow.get(dep_path) {
-                    let value_json = serde_json::to_string(&value.to_json_value())
+                if let Some(value) = self.shadow.get(dep_path, &self.intern) {
+                    let value_json = serde_json::to_string(&value.to_json_value(&self.intern))
                         .unwrap_or_else(|_| "null".to_owned());
                     dependency_values.insert(dep_path.clone(), value_json);
                 } else {
@@ -1671,7 +1671,7 @@ impl ProcessingPipeline {
 
             // Evaluate BoolLogic with current shadow state to get initial value
             if let Some(meta) = self.registry.get(logic_id) {
-                let result = meta.tree.evaluate(&self.shadow);
+                let result = meta.tree.evaluate(&self.shadow, &self.intern);
                 bool_logic_changes.push(Change {
                     path: bl.output_path.clone(),
                     value_json: if result {
@@ -1726,7 +1726,7 @@ impl ProcessingPipeline {
 
             // Evaluate ValueLogic with current shadow state to get initial value
             if let Some(meta) = self.value_logic_registry.get(vl_id) {
-                let result = meta.tree.evaluate(&self.shadow);
+                let result = meta.tree.evaluate(&self.shadow, &self.intern);
                 value_logic_changes.push(Change {
                     path: vl.output_path.clone(),
                     value_json: serde_json::to_string(&result).unwrap_or_else(|_| "null".into()),
@@ -1769,35 +1769,37 @@ impl ProcessingPipeline {
     /// Emit a sync change to a peer path, with parent_exists and is_different guards.
     fn emit_sync_change(
         shadow: &ShadowState,
+        intern: &mut InternTable,
         peer_path: &str,
         value_json: &str,
         meta: Option<serde_json::Value>,
         output: &mut Vec<Change>,
     ) {
-        if !shadow.parent_exists(peer_path) {
+        if !shadow.parent_exists(peer_path, intern) {
             return;
         }
-        let current = shadow.get(peer_path);
+        let current = shadow.get(peer_path, intern);
         // If the peer was never written (None) and the new value is null, both sides are
         // effectively absent — no meaningful sync to perform.
         if current.is_none() && value_json == "null" {
             return;
         }
-        let new_value: crate::shadow::ValueRepr = match serde_json::from_str(value_json) {
-            Ok(v) => v,
-            Err(_) => {
-                // Can't parse → treat as genuine change
-                output.push(Change {
-                    path: peer_path.to_owned(),
-                    value_json: value_json.to_owned(),
-                    kind: ChangeKind::Real,
-                    lineage: Lineage::Input,
-                    meta,
-                    audit: None,
-                });
-                return;
-            }
-        };
+        let new_value: crate::shadow::ValueRepr =
+            match serde_json::from_str::<serde_json::Value>(value_json) {
+                Ok(v) => crate::shadow::ValueRepr::from_json(v, intern),
+                Err(_) => {
+                    // Can't parse → treat as genuine change
+                    output.push(Change {
+                        path: peer_path.to_owned(),
+                        value_json: value_json.to_owned(),
+                        kind: ChangeKind::Real,
+                        lineage: Lineage::Input,
+                        meta,
+                        audit: None,
+                    });
+                    return;
+                }
+            };
         if crate::diff::is_different(&current, &new_value) {
             output.push(Change {
                 path: peer_path.to_owned(),
@@ -1835,6 +1837,7 @@ impl ProcessingPipeline {
                             let peer_path = peer_path.to_owned();
                             Self::emit_sync_change(
                                 shadow,
+                                &mut self.intern,
                                 &peer_path,
                                 &change.value_json,
                                 change.meta.clone(),
@@ -1863,6 +1866,7 @@ impl ProcessingPipeline {
                                     let peer_path = format!("{}{}", peer_base, suffix);
                                     Self::emit_sync_change(
                                         shadow,
+                                        &mut self.intern,
                                         &peer_path,
                                         &change.value_json,
                                         change.meta.clone(),
@@ -1877,12 +1881,21 @@ impl ProcessingPipeline {
             }
 
             // Case 3: Parent expansion — change is shallower than registered pairs
-            // Scan the intern table for all paths that are children of change_path AND are
-            // registered in the sync graph. We intentionally do NOT use shadow.affected_paths
-            // here because a registered sync path may not yet exist in shadow state (e.g. the
-            // parent object is being set for the first time).
+            // Filter sync graph node IDs for children of change_path. Only registered nodes
+            // are checked — O(sync_nodes) instead of O(all_interned). We intentionally do NOT
+            // use shadow.affected_paths here because a registered sync path may not yet exist
+            // in shadow state (e.g. the parent object is being set for the first time).
             if peer_ids.is_empty() {
-                let child_ids = self.intern.ids_with_prefix(&change.path);
+                let needle = format!("{}.", change.path);
+                let child_ids: Vec<u32> = self
+                    .sync_graph
+                    .all_node_ids()
+                    .filter(|&id| {
+                        self.intern
+                            .resolve(id)
+                            .is_some_and(|s| s.starts_with(needle.as_str()))
+                    })
+                    .collect();
                 for child_id in child_ids {
                     let child_peers = self.sync_graph.get_component_paths_public(child_id);
                     if child_peers.is_empty() || self.is_path_dormant(child_id) {
@@ -1894,25 +1907,27 @@ impl ProcessingPipeline {
                         Some(p) => p.to_owned(),
                         None => continue,
                     };
-                    let value_json = if let Some(child_value) = shadow.get(&child_path) {
-                        // Leaf exists in shadow after the parent write — use it
-                        serde_json::to_string(&child_value.to_json_value())
-                            .unwrap_or_else(|_| "null".to_owned())
-                    } else {
-                        // Leaf absent from shadow (either never written, or cleared by the
-                        // parent write). Try to extract from the incoming value first.
-                        // If the key is absent there too, emit null — the source was cleared
-                        // and the peer must be updated accordingly.
-                        let suffix = &child_path[change.path.len() + 1..];
-                        extract_nested_value(&change.value_json, suffix)
-                            .unwrap_or_else(|| "null".to_owned())
-                    };
+                    let value_json =
+                        if let Some(child_value) = shadow.get(&child_path, &self.intern) {
+                            // Leaf exists in shadow after the parent write — use it
+                            serde_json::to_string(&child_value.to_json_value(&self.intern))
+                                .unwrap_or_else(|_| "null".to_owned())
+                        } else {
+                            // Leaf absent from shadow (either never written, or cleared by the
+                            // parent write). Try to extract from the incoming value first.
+                            // If the key is absent there too, emit null — the source was cleared
+                            // and the peer must be updated accordingly.
+                            let suffix = &child_path[change.path.len() + 1..];
+                            extract_nested_value(&change.value_json, suffix)
+                                .unwrap_or_else(|| "null".to_owned())
+                        };
                     for peer_id in child_peers {
                         if peer_id != child_id && !self.is_path_dormant(peer_id) {
                             if let Some(peer_path) = self.intern.resolve(peer_id) {
                                 let peer_path = peer_path.to_owned();
                                 Self::emit_sync_change(
                                     shadow,
+                                    &mut self.intern,
                                     &peer_path,
                                     &value_json,
                                     change.meta.clone(),
@@ -1934,6 +1949,7 @@ impl ProcessingPipeline {
                                 let tgt_path = tgt_path.to_owned();
                                 Self::emit_sync_change(
                                     shadow,
+                                    &mut self.intern,
                                     &tgt_path,
                                     &change.value_json,
                                     change.meta.clone(),
@@ -1963,6 +1979,7 @@ impl ProcessingPipeline {
                                     let tgt_path = format!("{}{}", tgt_base, suffix);
                                     Self::emit_sync_change(
                                         shadow,
+                                        &mut self.intern,
                                         &tgt_path,
                                         &change.value_json,
                                         change.meta.clone(),
@@ -1989,15 +2006,17 @@ impl ProcessingPipeline {
                         // Collect targets before borrowing intern for leaf_str resolution
                         let targets: Vec<u32> = targets.iter().copied().collect();
                         if let Some(leaf_str) = self.intern.resolve(leaf_id) {
-                            if let Some(leaf_value) = shadow.get(leaf_str) {
-                                let value_json = serde_json::to_string(&leaf_value.to_json_value())
-                                    .unwrap_or_else(|_| "null".to_owned());
+                            if let Some(leaf_value) = shadow.get(leaf_str, &self.intern) {
+                                let value_json =
+                                    serde_json::to_string(&leaf_value.to_json_value(&self.intern))
+                                        .unwrap_or_else(|_| "null".to_owned());
                                 for tgt_id in targets {
                                     if !self.is_path_dormant(tgt_id) {
                                         if let Some(tgt_path) = self.intern.resolve(tgt_id) {
                                             let tgt_path = tgt_path.to_owned();
                                             Self::emit_sync_change(
                                                 shadow,
+                                                &mut self.intern,
                                                 &tgt_path,
                                                 &value_json,
                                                 change.meta.clone(),
@@ -2017,18 +2036,20 @@ impl ProcessingPipeline {
     /// Emit a flip change (inverted boolean) to a peer path, with guards.
     fn emit_flip_change(
         shadow: &ShadowState,
+        intern: &mut InternTable,
         peer_path: &str,
         value_json: &str,
         meta: Option<serde_json::Value>,
         output: &mut Vec<Change>,
     ) {
-        if !shadow.parent_exists(peer_path) {
+        if !shadow.parent_exists(peer_path, intern) {
             return;
         }
-        let current = shadow.get(peer_path);
-        let Ok(new_value) = serde_json::from_str::<crate::shadow::ValueRepr>(value_json) else {
+        let current = shadow.get(peer_path, intern);
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(value_json) else {
             return;
         };
+        let new_value = crate::shadow::ValueRepr::from_json(v, intern);
         if crate::diff::is_different(&current, &new_value) {
             output.push(Change {
                 path: peer_path.to_owned(),
@@ -2070,8 +2091,8 @@ impl ProcessingPipeline {
                 }
                 let old_value_json: Option<String> = self
                     .shadow
-                    .get(&change.path)
-                    .and_then(|v| serde_json::to_string(&v.to_json_value()).ok());
+                    .get(&change.path, &self.intern)
+                    .and_then(|v| serde_json::to_string(&v.to_json_value(&self.intern)).ok());
                 if let Some(old_value_json) = old_value_json {
                     for peer_id in peer_ids {
                         if peer_id != path_id && !self.is_path_dormant(peer_id) {
@@ -2079,6 +2100,7 @@ impl ProcessingPipeline {
                                 let peer_path = peer_path.to_owned();
                                 Self::emit_flip_change(
                                     shadow,
+                                    &mut self.intern,
                                     &peer_path,
                                     &old_value_json,
                                     change.meta.clone(),
@@ -2124,8 +2146,8 @@ impl ProcessingPipeline {
                 let old_value_json: Option<String> = self
                     .intern
                     .resolve(leaf_id)
-                    .and_then(|leaf_str| self.shadow.get(leaf_str))
-                    .and_then(|v| serde_json::to_string(&v.to_json_value()).ok());
+                    .and_then(|leaf_str| self.shadow.get(leaf_str, &self.intern))
+                    .and_then(|v| serde_json::to_string(&v.to_json_value(&self.intern)).ok());
                 let Some(old_value_json) = old_value_json else {
                     continue;
                 };
@@ -2143,6 +2165,7 @@ impl ProcessingPipeline {
                         let peer_path = peer_path.to_owned();
                         Self::emit_flip_change(
                             shadow,
+                            &mut self.intern,
                             &peer_path,
                             &old_value_json,
                             change.meta.clone(),
@@ -2232,9 +2255,9 @@ impl ProcessingPipeline {
                     .iter()
                     .map(|dep_path| {
                         let value_json = shadow
-                            .get(dep_path)
+                            .get(dep_path, &self.intern)
                             .map(|v| {
-                                serde_json::to_string(&v.to_json_value())
+                                serde_json::to_string(&v.to_json_value(&self.intern))
                                     .unwrap_or_else(|_| "null".to_owned())
                             })
                             .unwrap_or_else(|| "null".to_owned());
@@ -2298,7 +2321,8 @@ impl ProcessingPipeline {
         // for inputs that turn out to be no-ops (the common case in large pipelines).
         let t0 = rec.stage_timer();
         let all_input_matched = rec.collect_matched(&input_changes);
-        let input_changes = crate::diff::diff_changes(&self.shadow, &input_changes);
+        let input_changes =
+            crate::diff::diff_changes(&self.shadow, &input_changes, &mut self.intern);
         {
             let matched = rec.collect_matched(&input_changes);
             let skipped = rec.diff_skipped(&all_input_matched, &matched);
@@ -2310,9 +2334,17 @@ impl ProcessingPipeline {
             return Ok(false);
         }
 
-        // Working shadow: clone only after diff confirms genuine changes exist.
-        // self.shadow stays untouched until the atomic commit at the end.
-        let mut working = self.shadow.clone();
+        // Working shadow: avoid a full deep clone when possible.
+        // Flip processing (steps 6-7) reads pre-mutation values from self.shadow,
+        // so when flip pairs are registered we must keep the original intact (clone).
+        // When no flip pairs exist (common case), we move self.shadow into `working`
+        // via mem::take — O(1) instead of O(N). Put it back at the end.
+        let uses_flip = !self.flip_graph.is_empty();
+        let mut working = if uses_flip {
+            self.shadow.clone()
+        } else {
+            std::mem::take(&mut self.shadow)
+        };
 
         // Steps 1-2: Process aggregation writes (distribute target → sources)
         // Only report changes that hit a registered aggregation target as MATCHED.
@@ -2326,7 +2358,8 @@ impl ProcessingPipeline {
         } else {
             Vec::new()
         };
-        let changes = process_aggregation_writes(&self.aggregations, input_changes, &working);
+        let changes =
+            process_aggregation_writes(&self.aggregations, input_changes, &working, &self.intern);
         {
             let input_paths: Vec<&str> = input_matched_for_agg
                 .iter()
@@ -2374,21 +2407,21 @@ impl ProcessingPipeline {
         let t0 = rec.stage_timer();
         let mut genuine_path_ids: Vec<u32> = Vec::new();
         for change in &changes {
-            let current = working.get(&change.path);
-            let new_value: crate::shadow::ValueRepr = match serde_json::from_str(&change.value_json)
-            {
-                Ok(v) => v,
-                Err(_) => {
-                    // Can't parse → treat as genuine change
-                    working.set(&change.path, &change.value_json)?;
-                    self.ctx.changes.push(change.clone());
-                    genuine_path_ids.push(self.intern.intern(&change.path));
-                    self.mark_affected_logic(&working, &change.path);
-                    continue;
-                }
-            };
+            let current = working.get(&change.path, &self.intern);
+            let new_value: crate::shadow::ValueRepr =
+                match serde_json::from_str::<serde_json::Value>(&change.value_json) {
+                    Ok(v) => crate::shadow::ValueRepr::from_json(v, &mut self.intern),
+                    Err(_) => {
+                        // Can't parse → treat as genuine change
+                        working.set(&change.path, &change.value_json, &mut self.intern)?;
+                        self.ctx.changes.push(change.clone());
+                        genuine_path_ids.push(self.intern.intern(&change.path));
+                        self.mark_affected_logic(&working, &change.path);
+                        continue;
+                    }
+                };
             if crate::diff::is_different(&current, &new_value) {
-                working.set(&change.path, &change.value_json)?;
+                working.set(&change.path, &change.value_json, &mut self.intern)?;
                 self.ctx.changes.push(change.clone());
                 genuine_path_ids.push(self.intern.intern(&change.path));
                 self.mark_affected_logic(&working, &change.path);
@@ -2458,7 +2491,7 @@ impl ProcessingPipeline {
             changes_for_sync.extend(clear_changes.clone());
             self.process_sync_paths_into(&working, &changes_for_sync, &mut sync_buf);
             for change in &sync_buf {
-                working.set(&change.path, &change.value_json)?;
+                working.set(&change.path, &change.value_json, &mut self.intern)?;
                 self.mark_affected_logic(&working, &change.path);
             }
             self.ctx.changes.extend_from_slice(&sync_buf);
@@ -2481,7 +2514,7 @@ impl ProcessingPipeline {
             changes_for_flip.extend_from_slice(&sync_buf);
             self.process_flip_paths_into(&working, &changes_for_flip, &mut flip_buf);
             for change in &flip_buf {
-                working.set(&change.path, &change.value_json)?;
+                working.set(&change.path, &change.value_json, &mut self.intern)?;
                 self.mark_affected_logic(&working, &change.path);
             }
             self.ctx.changes.extend_from_slice(&flip_buf);
@@ -2497,8 +2530,6 @@ impl ProcessingPipeline {
         // Step 7.5: Process aggregation reads (sources → target recomputation).
         // After sync/flip, check if any aggregation sources changed and recompute targets.
         let t0 = rec.stage_timer();
-        let all_changed_paths: Vec<String> =
-            self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         // Only report paths that are aggregation sources (or condition deps) as MATCHED.
         let all_changed_matched: Vec<[String; 2]> = if rec.enabled() {
             self.ctx
@@ -2515,8 +2546,14 @@ impl ProcessingPipeline {
         } else {
             Vec::new()
         };
-        let aggregation_reads =
-            process_aggregation_reads(&self.aggregations, &working, &all_changed_paths);
+        let all_changed_paths: Vec<String> =
+            self.ctx.changes.iter().map(|c| c.path.clone()).collect();
+        let aggregation_reads = process_aggregation_reads(
+            &self.aggregations,
+            &working,
+            &all_changed_paths,
+            &self.intern,
+        );
         let mut agg_read_produced: Vec<ProducedChange> = Vec::new();
         let mut agg_read_skipped: Vec<SkippedChange> = Vec::new();
         for change in &aggregation_reads {
@@ -2544,7 +2581,7 @@ impl ProcessingPipeline {
                     source_path: None,
                 });
             }
-            working.set(&change.path, &change.value_json)?;
+            working.set(&change.path, &change.value_json, &mut self.intern)?;
             self.mark_affected_logic(&working, &change.path);
             self.ctx.changes.push(change.clone());
         }
@@ -2557,13 +2594,15 @@ impl ProcessingPipeline {
         rec.set_duration(crate::trace::elapsed_us(t0));
 
         // Step 7.6: Process computation reads (sources → target recomputation).
-        // Sees aggregation-produced changes because we re-collect all_changed_paths.
+        // Sees aggregation-produced changes because we pass the full ctx.changes slice.
         let t0 = rec.stage_timer();
-        let all_changed_paths: Vec<String> =
-            self.ctx.changes.iter().map(|c| c.path.clone()).collect();
         let all_changed_matched_comp = rec.collect_matched(&self.ctx.changes);
-        let computation_reads =
-            process_computation_reads(&self.computations, &working, &all_changed_paths);
+        let computation_reads = process_computation_reads(
+            &self.computations,
+            &working,
+            &all_changed_paths,
+            &self.intern,
+        );
         let mut comp_read_produced: Vec<ProducedChange> = Vec::new();
         let mut comp_read_skipped: Vec<SkippedChange> = Vec::new();
         for change in &computation_reads {
@@ -2591,7 +2630,7 @@ impl ProcessingPipeline {
                     source_path: None,
                 });
             }
-            working.set(&change.path, &change.value_json)?;
+            working.set(&change.path, &change.value_json, &mut self.intern)?;
             self.mark_affected_logic(&working, &change.path);
             self.ctx.changes.push(change.clone());
         }
@@ -2647,7 +2686,7 @@ impl ProcessingPipeline {
                     }
                     continue;
                 }
-                let result = meta.tree.evaluate(&working);
+                let result = meta.tree.evaluate(&working, &self.intern);
                 let result_json = if result {
                     "true".to_owned()
                 } else {
@@ -2707,7 +2746,7 @@ impl ProcessingPipeline {
                     }
                     continue;
                 }
-                let result = meta.tree.evaluate(&working);
+                let result = meta.tree.evaluate(&working, &self.intern);
                 let result_json = serde_json::to_string(&result).unwrap_or_else(|_| "null".into());
                 if rec.enabled() {
                     vl_produced.push(ProducedChange {
@@ -2868,14 +2907,15 @@ impl ProcessingPipeline {
 
     /// Dump shadow state as JSON (debug/testing).
     pub(crate) fn shadow_dump(&self) -> String {
-        self.shadow.dump()
+        self.shadow.dump(&self.intern)
     }
 
     /// Get a value from shadow state at path (debug/testing).
     #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn shadow_get(&self, path: &str) -> Option<String> {
-        self.shadow.get(path).map(|v| {
-            serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_owned())
+        self.shadow.get(path, &self.intern).map(|v| {
+            serde_json::to_string(&v.to_json_value(&self.intern))
+                .unwrap_or_else(|_| "null".to_owned())
         })
     }
 
@@ -2889,8 +2929,8 @@ impl ProcessingPipeline {
     ///
     /// Returns only changes where the value differs from the current shadow state.
     /// Primitives are compared by value, objects/arrays always pass through.
-    pub(crate) fn diff_changes(&self, changes: &[Change]) -> Vec<Change> {
-        crate::diff::diff_changes(&self.shadow, changes)
+    pub(crate) fn diff_changes(&mut self, changes: &[Change]) -> Vec<Change> {
+        crate::diff::diff_changes(&self.shadow, changes, &mut self.intern)
     }
 
     /// Process changes through pipeline: aggregation → sync → flip → BoolLogic → validators.
@@ -2980,7 +3020,8 @@ impl ProcessingPipeline {
         // Only diff JS-produced state changes (from listeners) against current shadow.
         let diffed_js_state = self.diff_changes(&js_state_changes);
         for change in &diffed_js_state {
-            self.shadow.set(&change.path, &change.value_json)?;
+            self.shadow
+                .set(&change.path, &change.value_json, &mut self.intern)?;
         }
         genuine_state.extend(diffed_js_state);
 
@@ -3007,7 +3048,8 @@ impl ProcessingPipeline {
 
         // Update shadow for phase-1 concern changes
         for change in &genuine_concerns {
-            self.shadow.set(&change.path, &change.value_json)?;
+            self.shadow
+                .set(&change.path, &change.value_json, &mut self.intern)?;
         }
 
         // Only diff JS-produced concern changes (from validators) against current shadow.
@@ -3024,7 +3066,8 @@ impl ProcessingPipeline {
             .collect();
         let diffed_js_concerns = self.diff_changes(&js_concerns_prefixed);
         for change in &diffed_js_concerns {
-            self.shadow.set(&change.path, &change.value_json)?;
+            self.shadow
+                .set(&change.path, &change.value_json, &mut self.intern)?;
         }
         genuine_concerns.extend(diffed_js_concerns);
 

@@ -154,7 +154,11 @@ npm run wasm:fmt && npm run wasm:lint && npm run wasm:check
 - ❌ `tsc --noEmit` → ✅ `npm run type-check`
 - ❌ `eslint .` → ✅ `npm run code:check`
 - ❌ `wasm-pack build` → ✅ `npm run wasm:build`
-- ❌ `cargo fmt` → ✅ `npm run wasm:fmt`
+- ❌ `cargo fmt --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:fmt`
+- ❌ `cargo clippy --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:lint`
+- ❌ `cargo check --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:check`
+- ❌ `cargo test --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:test`
+- ❌ `cargo run --manifest-path rust/Cargo.toml --bin ts-export` → ✅ `npm run wasm:generate-types`
 
 ### 1. Functional Programming Only
 

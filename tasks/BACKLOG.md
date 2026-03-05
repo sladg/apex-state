@@ -15,7 +15,7 @@ Project key: **WASM**
 | WASM-EP7 | Clean Mode Split | WASM-033 → WASM-037 | EP6 | **✅ COMPLETE** (2026-03-03) — JS was already WASM-only; `path-groups.ts` + `graph-types.ts` dead code removed |
 | WASM-EP8 | Recency-Based Sync | WASM-038 → WASM-040 | EP6 | **⏳ READY** |
 | WASM-EP15 | Bundle Size Reduction | Story 1 (dual build) + Story 2 (Rust flags) | — | **⏳ READY** |
-| WASM-EP11 | Rust Performance: Huge Objects | WASM-041 → WASM-044 | EP6 | **🔄 IN PROGRESS** (2/4 stories done) |
+| WASM-EP11 | Rust Performance: Huge Objects | WASM-041 → WASM-044 | EP6 | **🔄 IN PROGRESS** (3/4 stories done) |
 | WASM-EP12 | Rust Performance: Many Pipelines | WASM-045 → WASM-048 | EP6 | **✅ COMPLETE** (2026-03-03) |
 | WASM-EP13 | Rust Deduplication & Abstraction | WASM-049 → WASM-054 | EP6 | **✅ COMPLETE** (2026-03-03) |
 | WASM-EP14 | Rust Third-Party Crate Adoption | WASM-055 → WASM-060 | EP6 | **✅ COMPLETE** (2026-03-03) |
@@ -71,10 +71,10 @@ EP3 Listeners (✅)   EP4 Validation (✅)
                          040 Integration tests
                               │
                               ▼
-                       EP11 Rust Perf: Huge Objects (🔄 2/4)
+                       EP11 Rust Perf: Huge Objects (🔄 3/4)
                          041 Remove subtree clone in shadow.set() ✅ 2026-03-04
                          042 affected_paths() → Vec<u32> (intern-first) ✅ 2026-03-04
-                         043 Shadow state object keys as u32 (interned field names) ⏳
+                         043 Shadow state object keys as u32 (interned field names) ✅ 2026-03-04
                          044 Hash-based object diff (skip no-op object sets) ⏳
                               │
                        EP12 Rust Perf: Many Pipelines (⏳)
@@ -271,7 +271,7 @@ EP3 Listeners (✅)   EP4 Validation (✅)
 - **Progress**:
   - ✅ WASM-041: Remove subtree clone in `shadow.set()` — 2026-03-04
   - ✅ WASM-042: `affected_path_ids()` returning `Vec<u32>` (intern-first, all 3 callers updated) — 2026-03-04
-  - ⏳ WASM-043: Shadow state object keys as `u32` (interned field names)
+  - ✅ WASM-043: Shadow state object keys as `u32` (interned field names) — 2026-03-04
   - ⏳ WASM-044: Hash-based object diff (skip no-op object sets)
 
 ### ✅ Completed: EP12 Rust Performance — Many Pipelines

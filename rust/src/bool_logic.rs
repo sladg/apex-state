@@ -121,65 +121,73 @@ impl BoolLogicNode {
     /// Evaluate this expression against a ShadowState.
     ///
     /// Returns `true` if the condition is satisfied.
-    pub(crate) fn evaluate(&self, shadow: &ShadowState) -> bool {
-        self.evaluate_value(shadow.root())
+    pub(crate) fn evaluate(&self, shadow: &ShadowState, intern: &InternTable) -> bool {
+        self.evaluate_value(shadow.root(), intern)
     }
 
     /// Evaluate this expression against a raw ValueRepr tree.
     ///
     /// Used internally and for testing without a full ShadowState.
-    pub(crate) fn evaluate_value(&self, state: &ValueRepr) -> bool {
+    pub(crate) fn evaluate_value(&self, state: &ValueRepr, intern: &InternTable) -> bool {
         match self {
-            BoolLogicNode::IsEqual(path, expected) => match get_path_value(state, path) {
+            BoolLogicNode::IsEqual(path, expected) => match get_path_value(state, path, intern) {
                 Some(value) => value_repr_to_json(value) == *expected,
                 None => expected.is_null(),
             },
 
-            BoolLogicNode::Exists(path) => match get_path_value(state, path) {
+            BoolLogicNode::Exists(path) => match get_path_value(state, path, intern) {
                 Some(value) => !matches!(value, ValueRepr::Null),
                 None => false,
             },
 
-            BoolLogicNode::IsEmpty(path) => match get_path_value(state, path) {
+            BoolLogicNode::IsEmpty(path) => match get_path_value(state, path, intern) {
                 Some(value) => is_empty(value),
                 None => true,
             },
 
-            BoolLogicNode::And(conditions) => conditions.iter().all(|c| c.evaluate_value(state)),
-            BoolLogicNode::Or(conditions) => conditions.iter().any(|c| c.evaluate_value(state)),
-            BoolLogicNode::Not(condition) => !condition.evaluate_value(state),
+            BoolLogicNode::And(conditions) => {
+                conditions.iter().all(|c| c.evaluate_value(state, intern))
+            }
+            BoolLogicNode::Or(conditions) => {
+                conditions.iter().any(|c| c.evaluate_value(state, intern))
+            }
+            BoolLogicNode::Not(condition) => !condition.evaluate_value(state, intern),
 
             BoolLogicNode::Gt(path, threshold) => {
-                resolve_numeric(state, path).is_some_and(|n| n > *threshold)
+                resolve_numeric(state, path, intern).is_some_and(|n| n > *threshold)
             }
             BoolLogicNode::Lt(path, threshold) => {
-                resolve_numeric(state, path).is_some_and(|n| n < *threshold)
+                resolve_numeric(state, path, intern).is_some_and(|n| n < *threshold)
             }
             BoolLogicNode::Gte(path, threshold) => {
-                resolve_numeric(state, path).is_some_and(|n| n >= *threshold)
+                resolve_numeric(state, path, intern).is_some_and(|n| n >= *threshold)
             }
             BoolLogicNode::Lte(path, threshold) => {
-                resolve_numeric(state, path).is_some_and(|n| n <= *threshold)
+                resolve_numeric(state, path, intern).is_some_and(|n| n <= *threshold)
             }
 
-            BoolLogicNode::In(path, allowed) => match get_path_value(state, path) {
+            BoolLogicNode::In(path, allowed) => match get_path_value(state, path, intern) {
                 Some(value) => allowed.contains(&value_repr_to_json(value)),
                 None => false,
             },
 
-            BoolLogicNode::ContainsAny(path, elements) => match get_path_value(state, path) {
-                Some(ValueRepr::Array(arr)) => elements
-                    .iter()
-                    .any(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
-                _ => false,
-            },
+            BoolLogicNode::ContainsAny(path, elements) => {
+                match get_path_value(state, path, intern) {
+                    Some(ValueRepr::Array(arr)) => elements
+                        .iter()
+                        .any(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
+                    _ => false,
+                }
+            }
 
-            BoolLogicNode::ContainsAll(path, elements) => match get_path_value(state, path) {
-                Some(ValueRepr::Array(arr)) => elements
-                    .iter()
-                    .all(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
-                _ => false,
-            },
+            BoolLogicNode::ContainsAll(path, elements) => {
+                match get_path_value(state, path, intern) {
+                    Some(ValueRepr::Array(arr)) => elements
+                        .iter()
+                        .all(|el| arr.iter().any(|item| value_repr_to_json(item) == *el)),
+                    _ => false,
+                }
+            }
         }
     }
 
@@ -223,12 +231,17 @@ impl BoolLogicNode {
 // ---------------------------------------------------------------------------
 
 /// Resolve a dot-notation path in a ValueRepr tree.
-pub(crate) fn get_path_value<'a>(state: &'a ValueRepr, path: &str) -> Option<&'a ValueRepr> {
+pub(crate) fn get_path_value<'a>(
+    state: &'a ValueRepr,
+    path: &str,
+    intern: &InternTable,
+) -> Option<&'a ValueRepr> {
     let mut current = state;
     for seg in path.split('.') {
         match current {
             ValueRepr::Object(map) => {
-                current = map.get(seg)?;
+                let seg_id = intern.get_id(seg)?;
+                current = map.get(&seg_id)?;
             }
             ValueRepr::Array(arr) => {
                 let idx: usize = seg.parse().ok()?;
@@ -245,15 +258,15 @@ pub(crate) fn get_path_value<'a>(state: &'a ValueRepr, path: &str) -> Option<&'a
 /// Handles two cases:
 /// - Regular number paths: `user.age` → the f64 value
 /// - Array length paths: `items.length` → array length as f64
-fn resolve_numeric(state: &ValueRepr, path: &str) -> Option<f64> {
+fn resolve_numeric(state: &ValueRepr, path: &str, intern: &InternTable) -> Option<f64> {
     if let Some(parent_path) = path.strip_suffix(".length") {
-        let parent = get_path_value(state, parent_path)?;
+        let parent = get_path_value(state, parent_path, intern)?;
         if let ValueRepr::Array(arr) = parent {
             return Some(arr.len() as f64);
         }
         return None;
     }
-    match get_path_value(state, path)? {
+    match get_path_value(state, path, intern)? {
         ValueRepr::Number(n) => Some(*n),
         _ => None,
     }
@@ -295,13 +308,10 @@ fn value_repr_to_json(value: &ValueRepr) -> Value {
         }
         ValueRepr::String(s) => Value::String(s.clone()),
         ValueRepr::Array(arr) => Value::Array(arr.iter().map(value_repr_to_json).collect()),
-        ValueRepr::Object(obj) => {
-            let map = obj
-                .iter()
-                .map(|(k, v)| (k.clone(), value_repr_to_json(v)))
-                .collect();
-            Value::Object(map)
-        }
+        // Object keys are interned u32s — cannot resolve without InternTable.
+        // BoolLogic comparisons (IsEqual, In, etc.) operate on leaf values,
+        // not objects, so this branch is rarely hit. Return empty object as placeholder.
+        ValueRepr::Object(_) => Value::Object(serde_json::Map::new()),
     }
 }
 
@@ -414,43 +424,37 @@ impl BoolLogicRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::HashMap;
+    use crate::intern::InternTable;
     use serde_json::json;
 
     // -----------------------------------------------------------------------
     // Helper: build a simple shadow state for testing
     // -----------------------------------------------------------------------
 
-    fn make_state() -> ValueRepr {
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        user.insert("age".to_string(), ValueRepr::Number(25.0));
-        user.insert("active".to_string(), ValueRepr::Bool(true));
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("alice@example.com".to_string()),
-        );
-        user.insert("score".to_string(), ValueRepr::Number(150.0));
-        user.insert(
-            "tags".to_string(),
-            ValueRepr::Array(vec![ValueRepr::String("premium".to_string())]),
-        );
-        user.insert("bio".to_string(), ValueRepr::String("".to_string()));
-        user.insert("deleted".to_string(), ValueRepr::Null);
-
-        let mut profile = HashMap::new();
-        profile.insert("verified".to_string(), ValueRepr::Bool(true));
-        profile.insert("name".to_string(), ValueRepr::String("Alice".to_string()));
-        user.insert("profile".to_string(), ValueRepr::Object(profile));
-
-        let mut document = HashMap::new();
-        document.insert("id".to_string(), ValueRepr::String("doc-456".to_string()));
-        document.insert("status".to_string(), ValueRepr::String("draft".to_string()));
-
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        root.insert("document".to_string(), ValueRepr::Object(document));
-        ValueRepr::Object(root)
+    fn make_state(intern: &mut InternTable) -> ValueRepr {
+        ValueRepr::from_json(
+            json!({
+                "user": {
+                    "role": "admin",
+                    "age": 25,
+                    "active": true,
+                    "email": "alice@example.com",
+                    "score": 150,
+                    "tags": ["premium"],
+                    "bio": "",
+                    "deleted": null,
+                    "profile": {
+                        "verified": true,
+                        "name": "Alice"
+                    }
+                },
+                "document": {
+                    "id": "doc-456",
+                    "status": "draft"
+                }
+            }),
+            intern,
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -754,243 +758,288 @@ mod tests {
 
     #[test]
     fn test_eval_is_equal_match() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEqual("user.role".into(), json!("admin")).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::IsEqual("user.role".into(), json!("admin"))
+            .evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_equal_no_match() {
-        let state = make_state();
-        assert!(!BoolLogicNode::IsEqual("user.role".into(), json!("editor")).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::IsEqual("user.role".into(), json!("editor"))
+            .evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_equal_number() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEqual("user.age".into(), json!(25)).evaluate_value(&state));
-        assert!(!BoolLogicNode::IsEqual("user.age".into(), json!(30)).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(
+            BoolLogicNode::IsEqual("user.age".into(), json!(25)).evaluate_value(&state, &intern)
+        );
+        assert!(
+            !BoolLogicNode::IsEqual("user.age".into(), json!(30)).evaluate_value(&state, &intern)
+        );
     }
 
     #[test]
     fn test_eval_is_equal_bool() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEqual("user.active".into(), json!(true)).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::IsEqual("user.active".into(), json!(true))
+            .evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_equal_null() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEqual("user.deleted".into(), json!(null)).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::IsEqual("user.deleted".into(), json!(null))
+            .evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_equal_missing_path_equals_null() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEqual("user.missing".into(), json!(null)).evaluate_value(&state));
-        assert!(!BoolLogicNode::IsEqual("user.missing".into(), json!("x")).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::IsEqual("user.missing".into(), json!(null))
+            .evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::IsEqual("user.missing".into(), json!("x"))
+            .evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_exists_present() {
-        let state = make_state();
-        assert!(BoolLogicNode::Exists("user.email".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::Exists("user.email".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_exists_null() {
-        let state = make_state();
-        assert!(!BoolLogicNode::Exists("user.deleted".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::Exists("user.deleted".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_exists_missing() {
-        let state = make_state();
-        assert!(!BoolLogicNode::Exists("user.nonexistent".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::Exists("user.nonexistent".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_exists_empty_string_is_true() {
-        let state = make_state();
-        assert!(BoolLogicNode::Exists("user.bio".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::Exists("user.bio".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_empty_null() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEmpty("user.deleted".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::IsEmpty("user.deleted".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_empty_empty_string() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEmpty("user.bio".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::IsEmpty("user.bio".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_empty_non_empty_string() {
-        let state = make_state();
-        assert!(!BoolLogicNode::IsEmpty("user.email".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::IsEmpty("user.email".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_empty_missing_path() {
-        let state = make_state();
-        assert!(BoolLogicNode::IsEmpty("user.nonexistent".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::IsEmpty("user.nonexistent".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_empty_number_not_empty() {
-        let state = make_state();
-        assert!(!BoolLogicNode::IsEmpty("user.age".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::IsEmpty("user.age".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_is_empty_bool_not_empty() {
-        let state = make_state();
-        assert!(!BoolLogicNode::IsEmpty("user.active".into()).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::IsEmpty("user.active".into()).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_and_all_true() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::And(vec![
             BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
             BoolLogicNode::Exists("user.email".into()),
         ]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_and_one_false() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::And(vec![
             BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
             BoolLogicNode::Exists("user.email".into()),
         ]);
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_and_empty_is_true() {
-        let state = make_state();
-        assert!(BoolLogicNode::And(vec![]).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::And(vec![]).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_or_first_true() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::Or(vec![
             BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
             BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
         ]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_or_all_false() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::Or(vec![
             BoolLogicNode::IsEqual("user.role".into(), json!("editor")),
             BoolLogicNode::IsEqual("user.role".into(), json!("viewer")),
         ]);
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_or_empty_is_false() {
-        let state = make_state();
-        assert!(!BoolLogicNode::Or(vec![]).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::Or(vec![]).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_not() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::Not(Box::new(BoolLogicNode::IsEqual(
             "user.role".into(),
             json!("guest"),
         )));
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_not_double_negation() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::Not(Box::new(BoolLogicNode::Not(Box::new(
             BoolLogicNode::IsEqual("user.active".into(), json!(true)),
         ))));
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_gt() {
-        let state = make_state();
-        assert!(BoolLogicNode::Gt("user.age".into(), 18.0).evaluate_value(&state));
-        assert!(!BoolLogicNode::Gt("user.age".into(), 25.0).evaluate_value(&state));
-        assert!(!BoolLogicNode::Gt("user.age".into(), 30.0).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::Gt("user.age".into(), 18.0).evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::Gt("user.age".into(), 25.0).evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::Gt("user.age".into(), 30.0).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_lt() {
-        let state = make_state();
-        assert!(BoolLogicNode::Lt("user.age".into(), 30.0).evaluate_value(&state));
-        assert!(!BoolLogicNode::Lt("user.age".into(), 25.0).evaluate_value(&state));
-        assert!(!BoolLogicNode::Lt("user.age".into(), 20.0).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::Lt("user.age".into(), 30.0).evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::Lt("user.age".into(), 25.0).evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::Lt("user.age".into(), 20.0).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_gte() {
-        let state = make_state();
-        assert!(BoolLogicNode::Gte("user.age".into(), 25.0).evaluate_value(&state));
-        assert!(BoolLogicNode::Gte("user.age".into(), 24.0).evaluate_value(&state));
-        assert!(!BoolLogicNode::Gte("user.age".into(), 26.0).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::Gte("user.age".into(), 25.0).evaluate_value(&state, &intern));
+        assert!(BoolLogicNode::Gte("user.age".into(), 24.0).evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::Gte("user.age".into(), 26.0).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_lte() {
-        let state = make_state();
-        assert!(BoolLogicNode::Lte("user.age".into(), 25.0).evaluate_value(&state));
-        assert!(BoolLogicNode::Lte("user.age".into(), 26.0).evaluate_value(&state));
-        assert!(!BoolLogicNode::Lte("user.age".into(), 24.0).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(BoolLogicNode::Lte("user.age".into(), 25.0).evaluate_value(&state, &intern));
+        assert!(BoolLogicNode::Lte("user.age".into(), 26.0).evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::Lte("user.age".into(), 24.0).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_numeric_non_number_returns_false() {
-        let state = make_state();
-        assert!(!BoolLogicNode::Gt("user.role".into(), 0.0).evaluate_value(&state));
-        assert!(!BoolLogicNode::Lt("user.missing".into(), 0.0).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::Gt("user.role".into(), 0.0).evaluate_value(&state, &intern));
+        assert!(!BoolLogicNode::Lt("user.missing".into(), 0.0).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_in_match() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::In("user.role".into(), vec![json!("admin"), json!("editor")]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_in_no_match() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::In("user.role".into(), vec![json!("editor"), json!("viewer")]);
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_in_empty_list() {
-        let state = make_state();
-        assert!(!BoolLogicNode::In("user.role".into(), vec![]).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::In("user.role".into(), vec![]).evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_in_missing_path() {
-        let state = make_state();
-        assert!(!BoolLogicNode::In("user.missing".into(), vec![json!("x")]).evaluate_value(&state));
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(!BoolLogicNode::In("user.missing".into(), vec![json!("x")])
+            .evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_in_number() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::In("user.age".into(), vec![json!(25), json!(30)]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     // -----------------------------------------------------------------------
@@ -1011,44 +1060,49 @@ mod tests {
 
     #[test]
     fn test_eval_contains_any_match_first() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         // user.tags = ["premium"] — "premium" is in candidates
         let logic =
             BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("premium"), json!("vip")]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_contains_any_match_second() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         // user.tags = ["premium"] — only second candidate matches, first doesn't
         let logic =
             BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("vip"), json!("premium")]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_contains_any_no_match() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic =
             BoolLogicNode::ContainsAny("user.tags".into(), vec![json!("vip"), json!("free")]);
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_contains_any_empty_candidates_returns_false() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::ContainsAny("user.tags".into(), vec![]);
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_contains_any_non_array_path_returns_false() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         // user.role is a string, not an array
         let logic =
             BoolLogicNode::ContainsAny("user.role".into(), vec![json!("admin"), json!("editor")]);
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
@@ -1080,50 +1134,51 @@ mod tests {
     #[test]
     fn test_eval_contains_all_all_present() {
         // Build state with two tags
-        let mut user = HashMap::new();
-        user.insert(
-            "tags".to_string(),
-            ValueRepr::Array(vec![
-                ValueRepr::String("premium".to_string()),
-                ValueRepr::String("verified".to_string()),
-            ]),
+        let mut intern = InternTable::new();
+        let state = ValueRepr::from_json(
+            json!({
+                "user": {
+                    "tags": ["premium", "verified"]
+                }
+            }),
+            &mut intern,
         );
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        let state = ValueRepr::Object(root);
 
         let logic = BoolLogicNode::ContainsAll(
             "user.tags".into(),
             vec![json!("premium"), json!("verified")],
         );
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_contains_all_partial_match_returns_false() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         // user.tags = ["premium"] only — "verified" is missing
         let logic = BoolLogicNode::ContainsAll(
             "user.tags".into(),
             vec![json!("premium"), json!("verified")],
         );
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_contains_all_empty_candidates_returns_true() {
         // vacuously true — all elements of an empty set are present
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::ContainsAll("user.tags".into(), vec![]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_contains_all_non_array_path_returns_false() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic =
             BoolLogicNode::ContainsAll("user.role".into(), vec![json!("admin"), json!("editor")]);
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
@@ -1137,7 +1192,8 @@ mod tests {
 
     #[test]
     fn test_eval_complex_real_world() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::And(vec![
             BoolLogicNode::Or(vec![
                 BoolLogicNode::IsEqual("user.role".into(), json!("admin")),
@@ -1153,7 +1209,7 @@ mod tests {
             BoolLogicNode::Exists("document.id".into()),
             BoolLogicNode::IsEqual("user.profile.verified".into(), json!(true)),
         ]);
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     // -----------------------------------------------------------------------
@@ -1457,25 +1513,26 @@ mod tests {
 
     #[test]
     fn test_get_path_value_simple() {
-        let mut root = HashMap::new();
-        root.insert("role".to_string(), ValueRepr::String("admin".to_string()));
-        let state = ValueRepr::Object(root);
-        let value = get_path_value(&state, "role");
+        let mut intern = InternTable::new();
+        let state = ValueRepr::from_json(json!({"role": "admin"}), &mut intern);
+        let value = get_path_value(&state, "role", &intern);
         assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "admin"));
     }
 
     #[test]
     fn test_get_path_value_nested() {
-        let state = make_state();
-        let value = get_path_value(&state, "user.profile.name");
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        let value = get_path_value(&state, "user.profile.name", &intern);
         assert!(matches!(value, Some(&ValueRepr::String(ref s)) if s == "Alice"));
     }
 
     #[test]
     fn test_get_path_value_missing() {
-        let state = make_state();
-        assert!(get_path_value(&state, "user.nonexistent").is_none());
-        assert!(get_path_value(&state, "missing.path.here").is_none());
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
+        assert!(get_path_value(&state, "user.nonexistent", &intern).is_none());
+        assert!(get_path_value(&state, "missing.path.here", &intern).is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -1593,30 +1650,34 @@ mod tests {
 
     #[test]
     fn test_eval_shorthand_string_match() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::IsEqual("user.role".into(), json!("admin")); // deserialized from shorthand
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_shorthand_string_no_match() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::IsEqual("user.role".into(), json!("editor"));
-        assert!(!logic.evaluate_value(&state));
+        assert!(!logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_shorthand_nested_path() {
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic = BoolLogicNode::IsEqual("user.profile.verified".into(), json!(true));
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 
     #[test]
     fn test_eval_complex_with_shorthand_children() {
         // Mirrors TypeScript "complex AND using shorthand for equality checks"
         // Shorthand children are deserialized from ["path", value] and evaluated as IsEqual
-        let state = make_state();
+        let mut intern = InternTable::new();
+        let state = make_state(&mut intern);
         let logic: BoolLogicNode = serde_json::from_value(json!({
             "AND": [
                 {"OR": [["user.role", "admin"], ["user.role", "editor"]]},
@@ -1629,6 +1690,6 @@ mod tests {
             ]
         }))
         .unwrap();
-        assert!(logic.evaluate_value(&state));
+        assert!(logic.evaluate_value(&state, &intern));
     }
 }

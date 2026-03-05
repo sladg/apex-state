@@ -79,6 +79,10 @@ const createSetup = (sourceCount: number, excludedCount: number) => {
  * | 2026-02-25 | 10 sources, 5 conditions    | 50,698        | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 50 sources, 25 conditions   | 10,329        | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 200 sources, 100 conditions | 2,270         | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 0 conditions    | 77,321        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 53,442        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 11,496        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 2,555         | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Registration: excludeWhen parsing overhead', () => {
   for (const [sources, excluded] of [
@@ -121,6 +125,10 @@ describe('Registration: excludeWhen parsing overhead', () => {
  * | 2026-02-25 | 10 sources, 5 conditions    | 937,107       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 50 sources, 25 conditions   | 932,782       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 200 sources, 100 conditions | 930,469       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 0 conditions    | 615,965       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 608,795       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 611,118       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 609,414       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Read direction: source value change with excludeWhen', () => {
   for (const [sources, excluded] of [
@@ -159,6 +167,9 @@ describe('Read direction: source value change with excludeWhen', () => {
  * | 2026-02-25 | 10 sources, 5 conditions    | 1,115,183     | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 50 sources, 25 conditions   | 1,115,744     | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 200 sources, 100 conditions | 1,117,752     | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 682,367       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 675,361       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 686,883       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Condition path change: re-aggregation trigger', () => {
   for (const [sources, excluded] of [
@@ -198,6 +209,10 @@ describe('Condition path change: re-aggregation trigger', () => {
  * | 2026-02-25 | 10 sources, 5 conditions    | 950,639       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 50 sources, 25 conditions   | 953,831       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
  * | 2026-02-25 | 200 sources, 100 conditions | 951,551       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 0 conditions    | 603,604       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 586,798       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 602,107       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 603,450       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Write direction: target → sources with excludeWhen filtering', () => {
   for (const [sources, excluded] of [

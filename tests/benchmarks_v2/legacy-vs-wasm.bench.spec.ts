@@ -96,6 +96,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 751,968      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 497,837      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'single field change (baseline reference)',
@@ -123,6 +124,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 745,101      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 409,848      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change triggers 10 sync pairs',
@@ -141,6 +143,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 800,338      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 478,027      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change triggers 50 sync pairs',
@@ -168,6 +171,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 1,155,425    | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 664,639      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change triggers 10 flip pairs',
@@ -184,6 +188,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 1,085,100    | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 582,029      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change triggers 50 flip pairs',
@@ -209,6 +214,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 797,707      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 275,076      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change dispatched to 15 listeners',
@@ -227,6 +233,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 760,759      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 264,678      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change dispatched to 50 listeners',
@@ -254,6 +261,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 797,986      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 254,537      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change triggers 20 BoolLogic evaluations',
@@ -272,6 +280,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 805,900      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 447,248      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change triggers 50 BoolLogic evaluations',
@@ -299,6 +308,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 549,194      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 317,224      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '2 changes through 10 sync + 10 flip + 10 listeners',
@@ -318,6 +328,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 303,386      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 166,829      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '4 changes through sync + flip + listeners + BoolLogic',
@@ -349,6 +360,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 104,685      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 60,689       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '10 changes with 20 sync pairs',
@@ -372,6 +384,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 6,385        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 5,085        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '50 changes with 20 sync pairs',
@@ -395,6 +408,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 2,788        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 2,274        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '100 changes with 20 sync pairs',
@@ -429,6 +443,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 771,120      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 495,763      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change with 5 sync pairs',
@@ -447,6 +462,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 766,924      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 483,186      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change with 25 sync pairs',
@@ -465,6 +481,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 770,215      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 484,628      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change with 50 sync pairs',
@@ -483,6 +500,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 767,525      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 476,188      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       '1 change with 100 sync pairs',
@@ -509,6 +527,7 @@ describe('WASM Pipeline: Effect Types & Combinations', () => {
      * | Date       | Hz (ops/sec) | Commit  | Note                          |
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-25 | 537,918      | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 306,347      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'currency change cascades through 15 orders',

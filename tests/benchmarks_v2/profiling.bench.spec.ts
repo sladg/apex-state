@@ -41,6 +41,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 41,497       | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 23,770       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'shadow state update (simple field)',
@@ -63,6 +64,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 16,419       | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 8,396        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'shadow state update (deep nested field)',
@@ -91,6 +93,8 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 2,251        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 1,797        | e56c3a8 | fix: defer shadow clone + guard sync/flip (regression fix) |
+     * | 2026-03-04 | 2,049        | (uncommitted) | EP11: remove subtree clone + affected_path_ids (WASM-041+042) |
      */
     bench(
       'shadow state update (large object)',
@@ -116,6 +120,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 22,063       | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 7,675        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'BoolLogic evaluation (simple: IS_EQUAL)',
@@ -147,6 +152,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 26,163       | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 12,735       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'BoolLogic evaluation (complex: nested AND/OR)',
@@ -192,6 +198,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 1,469        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 968          | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'BoolLogic evaluation (many conditions)',
@@ -216,6 +223,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 18,996       | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 7,509        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'WASM memory allocation per change',
@@ -239,6 +247,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 486          | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 569          | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'WASM memory with 1000 state items',
@@ -261,6 +270,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 1,297        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 869          | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'WASM memory cleanup after processing',
@@ -283,6 +293,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 11,964       | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 5,468        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'regression: processChanges latency baseline',
@@ -305,6 +316,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 9,758        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 5,388        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'regression: batching efficiency ratio',
@@ -333,6 +345,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 74           | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 102          | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'regression: scaling factor (10x items → latency)',
@@ -357,6 +370,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 10,187       | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 5,064        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'profile: changeNormalization time',
@@ -378,6 +392,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 3,232        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 2,485        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'profile: shadowStateUpdate time',
@@ -400,6 +415,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 446          | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 429          | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'profile: pathInterner.intern time',
@@ -427,6 +443,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 4,960        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 2,784        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'profile: graphEvaluation time',
@@ -472,6 +489,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 4,097        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 1,395        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'profile: topicRouter.dispatch time',
@@ -494,6 +512,7 @@ describe('WASM Pipeline: Profiling & Introspection', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 |              | TBD     | baseline — initial measurement |
      * | 2026-02-25 | 3,832        | aa7e7da | baseline — initial measurement |
+     * | 2026-03-03 | 703          | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'profile: listenerExecution time',

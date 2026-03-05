@@ -67,23 +67,23 @@ impl ValueLogicNode {
     /// Evaluate this expression against a ShadowState.
     ///
     /// Returns the selected JSON value.
-    pub(crate) fn evaluate(&self, shadow: &ShadowState) -> Value {
-        self.evaluate_value(shadow.root())
+    pub(crate) fn evaluate(&self, shadow: &ShadowState, intern: &InternTable) -> Value {
+        self.evaluate_value(shadow.root(), intern)
     }
 
     /// Evaluate this expression against a raw ValueRepr tree.
-    fn evaluate_value(&self, state: &crate::shadow::ValueRepr) -> Value {
+    fn evaluate_value(&self, state: &crate::shadow::ValueRepr, intern: &InternTable) -> Value {
         match self {
             ValueLogicNode::IfThenElse {
                 condition,
                 then_value,
                 else_value,
             } => {
-                if condition.evaluate_value(state) {
+                if condition.evaluate_value(state, intern) {
                     then_value.clone()
                 } else {
                     match else_value.as_ref() {
-                        ValueLogicElse::Nested(nested) => nested.evaluate_value(state),
+                        ValueLogicElse::Nested(nested) => nested.evaluate_value(state, intern),
                         ValueLogicElse::Literal(val) => val.clone(),
                     }
                 }
@@ -93,7 +93,7 @@ impl ValueLogicNode {
                 cases,
                 default,
             } => {
-                let key = match get_path_value(state, path) {
+                let key = match get_path_value(state, path, intern) {
                     Some(val) => value_repr_to_case_key(val),
                     None => None,
                 };
@@ -265,51 +265,49 @@ impl ValueLogicRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::HashMap;
     use crate::shadow::ValueRepr;
     use serde_json::json;
 
     // ── Helpers ──────────────────────────────────────────────
 
-    fn make_user_state(role: &str, age: f64) -> ValueRepr {
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::String(role.to_string()));
-        user.insert("age".to_string(), ValueRepr::Number(age));
-        user.insert(
-            "email".to_string(),
-            ValueRepr::String("test@example.com".to_string()),
-        );
-
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        ValueRepr::Object(root)
+    fn make_user_state(role: &str, age: f64, intern: &mut InternTable) -> ValueRepr {
+        ValueRepr::from_json(
+            json!({
+                "user": {
+                    "role": role,
+                    "age": age,
+                    "email": "test@example.com"
+                }
+            }),
+            intern,
+        )
     }
 
-    fn make_priority_state(priority: f64) -> ValueRepr {
-        let mut item = HashMap::new();
-        item.insert("priority".to_string(), ValueRepr::Number(priority));
-
-        let mut root = HashMap::new();
-        root.insert("item".to_string(), ValueRepr::Object(item));
-        ValueRepr::Object(root)
+    fn make_priority_state(priority: f64, intern: &mut InternTable) -> ValueRepr {
+        ValueRepr::from_json(
+            json!({
+                "item": { "priority": priority }
+            }),
+            intern,
+        )
     }
 
-    fn make_bool_state(flag: bool) -> ValueRepr {
-        let mut settings = HashMap::new();
-        settings.insert("active".to_string(), ValueRepr::Bool(flag));
-
-        let mut root = HashMap::new();
-        root.insert("settings".to_string(), ValueRepr::Object(settings));
-        ValueRepr::Object(root)
+    fn make_bool_state(flag: bool, intern: &mut InternTable) -> ValueRepr {
+        ValueRepr::from_json(
+            json!({
+                "settings": { "active": flag }
+            }),
+            intern,
+        )
     }
 
-    fn make_null_role_state() -> ValueRepr {
-        let mut user = HashMap::new();
-        user.insert("role".to_string(), ValueRepr::Null);
-
-        let mut root = HashMap::new();
-        root.insert("user".to_string(), ValueRepr::Object(user));
-        ValueRepr::Object(root)
+    fn make_null_role_state(intern: &mut InternTable) -> ValueRepr {
+        ValueRepr::from_json(
+            json!({
+                "user": { "role": null }
+            }),
+            intern,
+        )
     }
 
     // ── Serde round-trip ────────────────────────────────────
@@ -371,7 +369,8 @@ mod tests {
 
     #[test]
     fn test_eval_if_true_returns_then() {
-        let state = make_user_state("admin", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("admin", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "IF": {"IS_EQUAL": ["user.role", "admin"]},
@@ -381,14 +380,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            node.evaluate_value(&state),
+            node.evaluate_value(&state, &intern),
             json!(["create", "read", "update", "delete"])
         );
     }
 
     #[test]
     fn test_eval_if_false_returns_else() {
-        let state = make_user_state("viewer", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("viewer", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "IF": {"IS_EQUAL": ["user.role", "admin"]},
@@ -397,13 +397,14 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!(["read"]));
+        assert_eq!(node.evaluate_value(&state, &intern), json!(["read"]));
     }
 
     #[test]
     fn test_eval_elif_chain_middle_match() {
         // admin → Full, editor → Edit, else → Read
-        let state = make_user_state("editor", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("editor", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "IF": {"IS_EQUAL": ["user.role", "admin"]},
@@ -416,12 +417,13 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!("Edit Access"));
+        assert_eq!(node.evaluate_value(&state, &intern), json!("Edit Access"));
     }
 
     #[test]
     fn test_eval_elif_chain_fallthrough() {
-        let state = make_user_state("intern", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("intern", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "IF": {"IS_EQUAL": ["user.role", "admin"]},
@@ -434,13 +436,14 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!("Read Only"));
+        assert_eq!(node.evaluate_value(&state, &intern), json!("Read Only"));
     }
 
     #[test]
     fn test_eval_complex_condition_with_and_or() {
         // IF (role == admin AND age > 21) THEN "senior_admin" ELSE "regular"
-        let state = make_user_state("admin", 25.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("admin", 25.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "IF": {"AND": [
@@ -452,17 +455,18 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!("senior_admin"));
+        assert_eq!(node.evaluate_value(&state, &intern), json!("senior_admin"));
 
         // Same condition, age = 18 → false
-        let state2 = make_user_state("admin", 18.0);
-        assert_eq!(node.evaluate_value(&state2), json!("regular"));
+        let state2 = make_user_state("admin", 18.0, &mut intern);
+        assert_eq!(node.evaluate_value(&state2, &intern), json!("regular"));
     }
 
     #[test]
     fn test_eval_object_values() {
         // THEN/ELSE return full objects, not just primitives
-        let state = make_user_state("admin", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("admin", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "IF": {"IS_EQUAL": ["user.role", "admin"]},
@@ -472,7 +476,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            node.evaluate_value(&state),
+            node.evaluate_value(&state, &intern),
             json!({"label": "Admin Panel", "icon": "shield", "permissions": ["all"]})
         );
     }
@@ -480,6 +484,7 @@ mod tests {
     #[test]
     fn test_eval_deeply_nested_elif() {
         // 4-level chain: admin → Full, editor → Edit, moderator → Moderate, else → Read
+        let mut intern = InternTable::new();
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "IF": {"IS_EQUAL": ["user.role", "admin"]},
@@ -498,19 +503,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            node.evaluate_value(&make_user_state("admin", 30.0)),
+            node.evaluate_value(&make_user_state("admin", 30.0, &mut intern), &intern),
             json!("Full")
         );
         assert_eq!(
-            node.evaluate_value(&make_user_state("editor", 30.0)),
+            node.evaluate_value(&make_user_state("editor", 30.0, &mut intern), &intern),
             json!("Edit")
         );
         assert_eq!(
-            node.evaluate_value(&make_user_state("moderator", 30.0)),
+            node.evaluate_value(&make_user_state("moderator", 30.0, &mut intern), &intern),
             json!("Moderate")
         );
         assert_eq!(
-            node.evaluate_value(&make_user_state("viewer", 30.0)),
+            node.evaluate_value(&make_user_state("viewer", 30.0, &mut intern), &intern),
             json!("Read")
         );
     }
@@ -519,7 +524,8 @@ mod tests {
 
     #[test]
     fn test_eval_match_hit() {
-        let state = make_user_state("editor", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("editor", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "MATCH": "user.role",
@@ -532,12 +538,16 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!(["read", "update"]));
+        assert_eq!(
+            node.evaluate_value(&state, &intern),
+            json!(["read", "update"])
+        );
     }
 
     #[test]
     fn test_eval_match_miss_returns_default() {
-        let state = make_user_state("intern", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("intern", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "MATCH": "user.role",
@@ -549,12 +559,13 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!([]));
+        assert_eq!(node.evaluate_value(&state, &intern), json!([]));
     }
 
     #[test]
     fn test_eval_match_null_path_returns_default() {
-        let state = make_null_role_state();
+        let mut intern = InternTable::new();
+        let state = make_null_role_state(&mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "MATCH": "user.role",
@@ -563,12 +574,13 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!("no"));
+        assert_eq!(node.evaluate_value(&state, &intern), json!("no"));
     }
 
     #[test]
     fn test_eval_match_numeric_key() {
-        let state = make_priority_state(2.0);
+        let mut intern = InternTable::new();
+        let state = make_priority_state(2.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "MATCH": "item.priority",
@@ -577,12 +589,13 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!("medium"));
+        assert_eq!(node.evaluate_value(&state, &intern), json!("medium"));
     }
 
     #[test]
     fn test_eval_match_boolean_key() {
-        let state = make_bool_state(true);
+        let mut intern = InternTable::new();
+        let state = make_bool_state(true, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "MATCH": "settings.active",
@@ -591,12 +604,13 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!("enabled"));
+        assert_eq!(node.evaluate_value(&state, &intern), json!("enabled"));
     }
 
     #[test]
     fn test_eval_match_missing_path_returns_default() {
-        let state = make_user_state("admin", 30.0);
+        let mut intern = InternTable::new();
+        let state = make_user_state("admin", 30.0, &mut intern);
         let node: ValueLogicNode = serde_json::from_str(
             r#"{
             "MATCH": "user.nonexistent",
@@ -605,7 +619,7 @@ mod tests {
         }"#,
         )
         .unwrap();
-        assert_eq!(node.evaluate_value(&state), json!("not_found"));
+        assert_eq!(node.evaluate_value(&state, &intern), json!("not_found"));
     }
 
     // ── Path extraction ─────────────────────────────────────

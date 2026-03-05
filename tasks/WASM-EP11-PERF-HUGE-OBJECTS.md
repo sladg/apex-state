@@ -2,7 +2,7 @@
 
 **Epic Key**: WASM-EP11
 **Depends On**: EP6 (Pipeline Refactor)
-**Status**: 🔄 In Progress (2/4 complete)
+**Status**: 🔄 In Progress (3/4 complete)
 **Total Points**: 16pts
 
 ---
@@ -60,9 +60,9 @@ For a 10k-node subtree dispatch, this is 10k heap allocations.
 
 ---
 
-### WASM-043: Shadow state object keys stored as `u32` — 5pts
+### WASM-043: Shadow state object keys stored as `u32` — 5pts ✅ 2026-03-04
 
-**File**: `rust/src/shadow.rs`
+**Files**: `rust/src/shadow.rs`, `rust/src/bool_logic.rs`, `rust/src/diff.rs`, `rust/src/value_logic.rs`, `rust/src/aggregation.rs`, `rust/src/computation.rs`, `rust/src/clear_paths.rs`, `rust/src/pipeline.rs`
 
 **Problem**: Object nodes use `HashMap<String, ValueRepr>` where keys are owned `String`s. For arrays of records sharing the same schema (e.g., 1000 users each with `name`, `email`, `id`), each instance stores separate `String` copies of the same field names.
 

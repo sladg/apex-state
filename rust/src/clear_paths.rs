@@ -136,6 +136,7 @@ pub(crate) fn resolve_wildcard_target(
     shadow: &ShadowState,
     segments: &[PathSegment],
     captures: &[String],
+    intern: &InternTable,
 ) -> Vec<String> {
     // We build paths incrementally, branching at WildcardAll.
     let mut prefixes: Vec<(String, usize)> = vec![(String::new(), 0)]; // (prefix, capture_index)
@@ -165,7 +166,7 @@ pub(crate) fn resolve_wildcard_target(
                 }
                 PathSegment::WildcardAll => {
                     // Enumerate all keys at the current prefix in shadow
-                    if let Some(keys) = shadow.get_object_keys(prefix) {
+                    if let Some(keys) = shadow.get_object_keys(prefix, intern) {
                         for key in keys {
                             let new_prefix = if prefix.is_empty() {
                                 key.clone()
@@ -425,8 +426,8 @@ fn resolve_and_clear(
                 if seen.insert(*target_id) {
                     if let Some(path) = intern.resolve(*target_id) {
                         let path = path.to_owned();
-                        if !shadow.is_null(&path) {
-                            let _ = shadow.set(&path, "null");
+                        if !shadow.is_null(&path, intern) {
+                            let _ = shadow.set(&path, "null", intern);
                             clears.push(Change {
                                 path,
                                 value_json: "null".to_owned(),
@@ -440,11 +441,11 @@ fn resolve_and_clear(
                 }
             }
             ClearTarget::Wildcard(segments) => {
-                let concrete_paths = resolve_wildcard_target(shadow, segments, captures);
+                let concrete_paths = resolve_wildcard_target(shadow, segments, captures, intern);
                 for path in concrete_paths {
                     let id = intern.intern(&path);
-                    if seen.insert(id) && !shadow.is_null(&path) {
-                        let _ = shadow.set(&path, "null");
+                    if seen.insert(id) && !shadow.is_null(&path, intern) {
+                        let _ = shadow.set(&path, "null", intern);
                         clears.push(Change {
                             path,
                             value_json: "null".to_owned(),
@@ -473,9 +474,9 @@ mod tests {
     // Test helpers
     // =========================================================================
 
-    fn make_shadow(json: &str) -> ShadowState {
+    fn make_shadow(json: &str, intern: &mut InternTable) -> ShadowState {
         let mut s = ShadowState::new();
-        s.init(json).unwrap();
+        s.init(json, intern).unwrap();
         s
     }
 
@@ -617,8 +618,8 @@ mod tests {
         // Shadow: { form: { errors: "some error" } }
         // Target: "form.errors" (direct, interned ID)
         // → clears form.errors to null, returns one Change
-        let mut shadow = make_shadow(r#"{"form": {"errors": "some error"}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"errors": "some error"}}"#, &mut intern);
         let target_id = intern.intern("form.errors");
         let targets = vec![ClearTarget::Direct(target_id)];
         let mut clears = Vec::new();
@@ -634,7 +635,7 @@ mod tests {
         assert_eq!(clears.len(), 1);
         assert_eq!(clears[0].path, "form.errors");
         assert_eq!(clears[0].value_json, "null");
-        assert!(shadow.is_null("form.errors"));
+        assert!(shadow.is_null("form.errors", &intern));
     }
 
     #[test]
@@ -642,8 +643,8 @@ mod tests {
         // Shadow: { form: { errors: null } }
         // Target: "form.errors" (direct)
         // → already null, no Change produced (deduplication)
-        let mut shadow = make_shadow(r#"{"form": {"errors": null}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"errors": null}}"#, &mut intern);
         let target_id = intern.intern("form.errors");
         let targets = vec![ClearTarget::Direct(target_id)];
         let mut clears = Vec::new();
@@ -667,9 +668,11 @@ mod tests {
         // Target segments: [Literal("form"), Literal("fields"), WildcardBind, Literal("error")]
         // Captures: ["email"]
         // → resolves to "form.fields.email.error", clears to null
-        let mut shadow =
-            make_shadow(r#"{"form": {"fields": {"email": {"error": "required", "value": "x"}}}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(
+            r#"{"form": {"fields": {"email": {"error": "required", "value": "x"}}}}"#,
+            &mut intern,
+        );
         let target_segs = parse_segments("form.fields.[*].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["email".to_owned()];
@@ -694,9 +697,11 @@ mod tests {
         // Target segments: [Literal("form"), WildcardBind, WildcardBind, Literal("error")]
         // Captures: ["billing", "address"]
         // → resolves to "form.billing.address.error"
-        let mut shadow =
-            make_shadow(r#"{"form": {"billing": {"address": {"error": "bad", "value": "123"}}}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(
+            r#"{"form": {"billing": {"address": {"error": "bad", "value": "123"}}}}"#,
+            &mut intern,
+        );
         let target_segs = parse_segments("form.[*].[*].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["billing".to_owned(), "address".to_owned()];
@@ -725,10 +730,11 @@ mod tests {
         //   "form.fields.email.error" → null (was "e1")
         //   "form.fields.name.error"  → null (was "e2")
         //   "form.fields.age.error"   → skip (already null)
+        let mut intern = InternTable::new();
         let mut shadow = make_shadow(
             r#"{"form": {"fields": {"email": {"error": "e1"}, "name": {"error": "e2"}, "age": {"error": null}}}}"#,
+            &mut intern,
         );
-        let mut intern = InternTable::new();
         let target_segs = parse_segments("form.fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let mut clears = Vec::new();
@@ -753,8 +759,8 @@ mod tests {
         // Shadow: { form: { fields: {} } }
         // Target segments with [**] at fields level
         // → no keys to expand, produces zero changes
-        let mut shadow = make_shadow(r#"{"form": {"fields": {}}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"fields": {}}}"#, &mut intern);
         let target_segs = parse_segments("form.fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let mut clears = Vec::new();
@@ -775,8 +781,8 @@ mod tests {
         // Shadow: { form: { fields: "not an object" } }
         // Target segments with [**] at fields level
         // → fields is a string, not an object, produces zero changes
-        let mut shadow = make_shadow(r#"{"form": {"fields": "not an object"}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"fields": "not an object"}}"#, &mut intern);
         let target_segs = parse_segments("form.fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let mut clears = Vec::new();
@@ -809,10 +815,11 @@ mod tests {
         // → [**] expands to all keys under form.billing.fields
         // → produces: "form.billing.fields.street.error" → null
         //             "form.billing.fields.city.error"   → null
+        let mut intern = InternTable::new();
         let mut shadow = make_shadow(
             r#"{"form": {"billing": {"fields": {"street": {"error": "e1"}, "city": {"error": "e2"}}}}}"#,
+            &mut intern,
         );
-        let mut intern = InternTable::new();
         let target_segs = parse_segments("form.[*].fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["billing".to_owned()];
@@ -846,10 +853,11 @@ mod tests {
         // → [*] substituted with "street"
         // → produces: "form.billing.fields.street.error"  → null
         //             "form.shipping.fields.street.error" → null
+        let mut intern = InternTable::new();
         let mut shadow = make_shadow(
             r#"{"form": {"billing": {"fields": {"street": {"error": "e1"}}}, "shipping": {"fields": {"street": {"error": "e2"}}}}}"#,
+            &mut intern,
         );
-        let mut intern = InternTable::new();
         let target_segs = parse_segments("form.[**].fields.[*].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["street".to_owned()];

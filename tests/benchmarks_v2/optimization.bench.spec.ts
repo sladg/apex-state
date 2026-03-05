@@ -69,6 +69,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 806,850      | 4de0ee8 | baseline — measure JS→WASM serialization overhead |
      * | 2026-02-25 | 803,011      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+     * | 2026-03-03 | 469,157      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'processChanges call overhead (JS → WASM serialization)',
@@ -91,6 +92,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,618      | 4de0ee8 | baseline — WASM→JS result serialization + listener dispatch |
      * | 2026-02-25 | 797,834      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+     * | 2026-03-03 | 479,676      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'returning results (WASM → JS + listener dispatch)',
@@ -113,6 +115,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,159      | 4de0ee8 | baseline — full round-trip with sync + flip + listeners |
      * | 2026-02-25 | 789,653      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+     * | 2026-03-03 | 503,381      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'round-trip latency (full JS ↔ WASM ↔ JS)',
@@ -140,6 +143,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 794,448      | 4de0ee8 | baseline — path interning table lookups remain O(1) |
      * | 2026-02-25 | 797,138      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+     * | 2026-03-03 | 475,870      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'path interning efficiency (string → ID lookup)',
@@ -166,6 +170,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,710      | 4de0ee8 | baseline — pre-computed graph lookup vs runtime evaluation |
      * | 2026-02-25 | 794,641      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+     * | 2026-03-03 | 471,443      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'pre-computed sync/flip graphs (lookup vs evaluation)',
@@ -192,6 +197,7 @@ describe('WASM Pipeline: Optimization Validation', () => {
      * |------------|--------------|---------|-------------------------------|
      * | 2026-02-22 | 793,120      | 4de0ee8 | baseline — pre-computed topic router avoids O(n) listener scanning |
      * | 2026-02-25 | 794,897      | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+     * | 2026-03-03 | 493,411      | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
      */
     bench(
       'topic router pre-computation (listener routing)',

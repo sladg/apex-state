@@ -282,6 +282,11 @@ impl Graph {
         self.edges.is_empty()
     }
 
+    /// Iterate all registered node IDs (for prefix scans scoped to this graph).
+    pub(crate) fn all_node_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.node_to_component.keys().copied()
+    }
+
     /// Dump all edges as resolved string pairs (debug only — not called in hot path).
     pub(crate) fn dump_pairs(&self, intern: &InternTable) -> Vec<[String; 2]> {
         self.edges

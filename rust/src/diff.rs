@@ -4,6 +4,7 @@
 //! shadow state. Used by streaming data gateway to minimize pipeline work.
 
 use crate::change::Change;
+use crate::intern::InternTable;
 use crate::shadow::{ShadowState, ValueRepr};
 
 /// Compare two f64 values for bitwise equality (handles NaN, -0/+0).
@@ -56,22 +57,27 @@ pub(crate) fn is_different(current: &Option<&ValueRepr>, new: &ValueRepr) -> boo
 /// Primitives are compared by value, objects/arrays always pass through.
 ///
 /// Zero allocations on the fast path when all changes are no-ops.
-pub(crate) fn diff_changes(shadow: &ShadowState, changes: &[Change]) -> Vec<Change> {
+pub(crate) fn diff_changes(
+    shadow: &ShadowState,
+    changes: &[Change],
+    intern: &mut InternTable,
+) -> Vec<Change> {
     let mut genuine_changes = Vec::new();
 
     for change in changes {
         // Get current value from shadow state
-        let current = shadow.get(&change.path);
+        let current = shadow.get(&change.path, intern);
 
         // Parse incoming value
-        let new_value: ValueRepr = match serde_json::from_str(&change.value_json) {
-            Ok(v) => v,
-            Err(_) => {
-                // Can't parse → treat as different (keep the change)
-                genuine_changes.push(change.clone());
-                continue;
-            }
-        };
+        let new_value: ValueRepr =
+            match serde_json::from_str::<serde_json::Value>(&change.value_json) {
+                Ok(v) => ValueRepr::from_json(v, intern),
+                Err(_) => {
+                    // Can't parse → treat as different (keep the change)
+                    genuine_changes.push(change.clone());
+                    continue;
+                }
+            };
 
         // Compare
         if is_different(&current, &new_value) {
@@ -87,10 +93,11 @@ mod tests {
     use super::*;
     use crate::change::{ChangeKind, Lineage};
 
-    fn make_shadow(json: &str) -> ShadowState {
+    fn make_shadow(json: &str) -> (ShadowState, InternTable) {
         let mut s = ShadowState::new();
-        s.init(json).unwrap();
-        s
+        let mut intern = InternTable::new();
+        s.init(json, &mut intern).unwrap();
+        (s, intern)
     }
 
     fn make_change(path: &str, value_json: &str) -> Change {
@@ -191,17 +198,17 @@ mod tests {
 
     #[test]
     fn diff_changes_all_unchanged() {
-        let shadow = make_shadow(r#"{"a": 1, "b": "hello"}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 1, "b": "hello"}"#);
         let changes = vec![make_change("a", "1"), make_change("b", r#""hello""#)];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 0); // All filtered out
     }
 
     #[test]
     fn diff_changes_all_changed() {
-        let shadow = make_shadow(r#"{"a": 1, "b": "hello"}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 1, "b": "hello"}"#);
         let changes = vec![make_change("a", "2"), make_change("b", r#""world""#)];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 2); // All kept
         assert_eq!(result[0].path, "a");
         assert_eq!(result[1].path, "b");
@@ -209,80 +216,80 @@ mod tests {
 
     #[test]
     fn diff_changes_partial() {
-        let shadow = make_shadow(r#"{"a": 1, "b": "hello", "c": true}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 1, "b": "hello", "c": true}"#);
         let changes = vec![
             make_change("a", "1"),          // unchanged → drop
             make_change("b", r#""world""#), // changed → keep
             make_change("c", "true"),       // unchanged → drop
         ];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].path, "b");
     }
 
     #[test]
     fn diff_changes_new_path() {
-        let shadow = make_shadow(r#"{"a": 1}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 1}"#);
         let changes = vec![make_change("b", "2")];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 1); // New path → keep
         assert_eq!(result[0].path, "b");
     }
 
     #[test]
     fn diff_changes_object_always_keeps() {
-        let shadow = make_shadow(r#"{"obj": {"x": 1}}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"obj": {"x": 1}}"#);
         // Same object content
         let changes = vec![make_change("obj", r#"{"x": 1}"#)];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 1); // Object → always kept
     }
 
     #[test]
     fn diff_changes_array_always_keeps() {
-        let shadow = make_shadow(r#"{"arr": [1, 2, 3]}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"arr": [1, 2, 3]}"#);
         // Same array content
         let changes = vec![make_change("arr", "[1, 2, 3]")];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 1); // Array → always kept
     }
 
     #[test]
     fn diff_changes_nested_path() {
-        let shadow = make_shadow(r#"{"user": {"name": "Alice", "age": 30}}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"user": {"name": "Alice", "age": 30}}"#);
         let changes = vec![
             make_change("user.name", r#""Alice""#), // unchanged → drop
             make_change("user.age", "31"),          // changed → keep
         ];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].path, "user.age");
     }
 
     #[test]
     fn diff_changes_number_edge_cases() {
-        let shadow = make_shadow(r#"{"a": 0, "b": null}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 0, "b": null}"#);
         let changes = vec![
             make_change("a", "-0.0"), // -0 != +0 → keep
             make_change("b", "0"),    // null != 0 (type mismatch) → keep
         ];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 2);
     }
 
     #[test]
     fn diff_changes_invalid_json_kept() {
-        let shadow = make_shadow(r#"{"a": 1}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 1}"#);
         let changes = vec![make_change("a", "not json")];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 1); // Invalid JSON → kept
     }
 
     #[test]
     fn diff_changes_empty_input() {
-        let shadow = make_shadow(r#"{"a": 1}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 1}"#);
         let changes = vec![];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 0);
     }
 
@@ -290,13 +297,13 @@ mod tests {
     fn diff_changes_zero_allocations_fast_path() {
         // This test verifies behavior, not allocations directly.
         // The fast path (all unchanged) should return an empty Vec.
-        let shadow = make_shadow(r#"{"a": 1, "b": 2, "c": 3}"#);
+        let (shadow, mut intern) = make_shadow(r#"{"a": 1, "b": 2, "c": 3}"#);
         let changes = vec![
             make_change("a", "1"),
             make_change("b", "2"),
             make_change("c", "3"),
         ];
-        let result = diff_changes(&shadow, &changes);
+        let result = diff_changes(&shadow, &changes, &mut intern);
         assert_eq!(result.len(), 0);
     }
 }

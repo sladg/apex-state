@@ -101,6 +101,23 @@ impl<T: HasRegistrySources> PathIndexedRegistry<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Ancestor path iterator
+// ---------------------------------------------------------------------------
+
+/// Yields ancestor paths from most-specific to least-specific.
+/// e.g. "user.profile.name" -> ["user.profile", "user"]
+fn ancestors_of(path: &str) -> impl Iterator<Item = &str> {
+    let mut end = path.len();
+    std::iter::from_fn(move || {
+        let sub = &path[..end];
+        sub.rfind('.').map(|pos| {
+            end = pos;
+            &path[..pos]
+        })
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Free helper functions (still useful independently)
 // ---------------------------------------------------------------------------
 
@@ -160,22 +177,24 @@ pub(crate) fn get_affected_targets(
     let mut targets = HashSet::default();
 
     for path in changed_paths {
-        if let Some(target_list) = source_to_targets.get(path) {
+        if let Some(target_list) = source_to_targets.get(path.as_str()) {
             targets.extend(target_list.iter().cloned());
         }
 
-        if let Some(target_list) = condition_path_to_targets.get(path) {
+        if let Some(target_list) = condition_path_to_targets.get(path.as_str()) {
             targets.extend(target_list.iter().cloned());
         }
 
-        for (source, target_list) in source_to_targets {
-            if crate::is_child_path(path, source) {
+        // Child-of-source: walk ancestors of changed path, O(D) where D = path depth
+        for ancestor in ancestors_of(path) {
+            if let Some(target_list) = source_to_targets.get(ancestor) {
                 targets.extend(target_list.iter().cloned());
             }
         }
 
-        for (cond_path, target_list) in condition_path_to_targets {
-            if crate::is_child_path(path, cond_path) {
+        // Child-of-condition: walk ancestors of changed path, O(D)
+        for ancestor in ancestors_of(path) {
+            if let Some(target_list) = condition_path_to_targets.get(ancestor) {
                 targets.extend(target_list.iter().cloned());
             }
         }

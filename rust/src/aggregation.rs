@@ -13,6 +13,7 @@
 //! 4. Remove original target change from output
 
 use crate::change::{Change, ChangeKind, Lineage, UNDEFINED_SENTINEL_JSON};
+use crate::intern::InternTable;
 use crate::registry_helpers::{HasRegistrySources, PathIndexedRegistry, RegistrySource};
 use crate::shadow::ShadowState;
 use serde::{Deserialize, Serialize};
@@ -105,34 +106,26 @@ impl AggregationRegistry {
 
 /// Process aggregation writes: distribute target writes to source paths.
 ///
-/// Algorithm:
-/// 1. Iterate changes in reverse (so we can safely remove)
-/// 2. For each change, check if path matches aggregation target
-/// 3. If exact match: generate changes for all non-excluded sources with same value
-/// 4. If child path: generate changes for all non-excluded sources with child path appended
-/// 5. Remove original target change
+/// Algorithm (single-pass partition):
+/// 1. For each change, check if path matches aggregation target
+/// 2. If yes: generate changes for all non-excluded sources (drop original)
+/// 3. If no: keep the change as-is (move, no clone)
 pub(crate) fn process_aggregation_writes(
     registry: &AggregationRegistry,
     changes: Vec<Change>,
     shadow: &ShadowState,
+    intern: &InternTable,
 ) -> Vec<Change> {
-    let mut output: Vec<Change> = changes.clone();
+    let mut output = Vec::with_capacity(changes.len());
 
-    // Process in reverse order so we can safely remove items
-    let mut i = output.len();
-    while i > 0 {
-        i -= 1;
-        let change = &output[i];
-
+    for change in changes {
         if let Some(agg) = registry.find_target(&change.path) {
             let is_exact_match = change.path == agg.target;
 
-            // Generate changes for all non-excluded source paths
-            let mut new_changes = Vec::new();
             for source in &agg.sources {
                 // Skip excluded sources
                 if let Some(ref condition) = source.exclude_when {
-                    if condition.evaluate(shadow) {
+                    if condition.evaluate(shadow, intern) {
                         continue;
                     }
                 }
@@ -145,7 +138,7 @@ pub(crate) fn process_aggregation_writes(
                     crate::join_path(&source.path, relative)
                 };
 
-                new_changes.push(Change {
+                output.push(Change {
                     path: final_path,
                     value_json: change.value_json.clone(),
                     kind: ChangeKind::Real,
@@ -154,12 +147,9 @@ pub(crate) fn process_aggregation_writes(
                     ..Default::default()
                 });
             }
-
-            // Remove original target change
-            output.remove(i);
-
-            // Add distributed changes
-            output.extend(new_changes);
+            // Original target change is dropped (not pushed to output)
+        } else {
+            output.push(change); // move, not clone
         }
     }
 
@@ -182,8 +172,8 @@ pub(crate) fn process_aggregation_reads(
     registry: &AggregationRegistry,
     shadow: &ShadowState,
     changed_paths: &[String],
+    intern: &InternTable,
 ) -> Vec<Change> {
-    // Get affected targets
     let affected_targets = registry.get_affected_targets(changed_paths);
 
     if affected_targets.is_empty() {
@@ -198,8 +188,9 @@ pub(crate) fn process_aggregation_reads(
             // Skip empty sources
             if agg.sources.is_empty() {
                 let desired_value = "null".to_string();
-                let current_target = shadow.get(&agg.target).map(|v| {
-                    serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_string())
+                let current_target = shadow.get(&agg.target, intern).map(|v| {
+                    serde_json::to_string(&v.to_json_value(intern))
+                        .unwrap_or_else(|_| "null".to_string())
                 });
 
                 if current_target.as_ref() != Some(&desired_value) {
@@ -222,15 +213,16 @@ pub(crate) fn process_aggregation_reads(
                 .filter(|s| {
                     s.exclude_when
                         .as_ref()
-                        .is_none_or(|cond| !cond.evaluate(shadow))
+                        .is_none_or(|cond| !cond.evaluate(shadow, intern))
                 })
                 .collect();
 
             // If ALL sources excluded → target = undefined sentinel
             if active_sources.is_empty() {
                 let desired_value = UNDEFINED_SENTINEL_JSON.to_string();
-                let current_target = shadow.get(&agg.target).map(|v| {
-                    serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_string())
+                let current_target = shadow.get(&agg.target, intern).map(|v| {
+                    serde_json::to_string(&v.to_json_value(intern))
+                        .unwrap_or_else(|_| "null".to_string())
                 });
 
                 if current_target.as_ref() != Some(&desired_value) {
@@ -250,8 +242,8 @@ pub(crate) fn process_aggregation_reads(
             let source_values: Vec<Option<String>> = active_sources
                 .iter()
                 .map(|s| {
-                    shadow.get(&s.path).map(|v| {
-                        serde_json::to_string(&v.to_json_value())
+                    shadow.get(&s.path, intern).map(|v| {
+                        serde_json::to_string(&v.to_json_value(intern))
                             .unwrap_or_else(|_| "null".to_string())
                     })
                 })
@@ -288,8 +280,9 @@ pub(crate) fn process_aggregation_reads(
                 }
             };
 
-            let current_target = shadow.get(&agg.target).map(|v| {
-                serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_string())
+            let current_target = shadow.get(&agg.target, intern).map(|v| {
+                serde_json::to_string(&v.to_json_value(intern))
+                    .unwrap_or_else(|_| "null".to_string())
             });
 
             if current_target.as_ref() != Some(&desired_value) {
@@ -334,6 +327,7 @@ mod tests {
     #[test]
     fn test_exact_match_aggregation() {
         let shadow = ShadowState::new();
+        let intern = InternTable::new();
         let mut registry = AggregationRegistry::new();
         registry.register("allUsers".to_string(), srcs(&["user1", "user2", "user3"]));
 
@@ -346,7 +340,7 @@ mod tests {
             ..Default::default()
         }];
 
-        let result = process_aggregation_writes(&registry, changes, &shadow);
+        let result = process_aggregation_writes(&registry, changes, &shadow, &intern);
 
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].path, "user1");
@@ -360,6 +354,7 @@ mod tests {
     #[test]
     fn test_child_path_aggregation() {
         let shadow = ShadowState::new();
+        let intern = InternTable::new();
         let mut registry = AggregationRegistry::new();
         registry.register("form.allChecked".to_string(), srcs(&["item1", "item2"]));
 
@@ -372,7 +367,7 @@ mod tests {
             ..Default::default()
         }];
 
-        let result = process_aggregation_writes(&registry, changes, &shadow);
+        let result = process_aggregation_writes(&registry, changes, &shadow, &intern);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].path, "item1");
@@ -384,6 +379,7 @@ mod tests {
     #[test]
     fn test_child_path_of_aggregation_target() {
         let shadow = ShadowState::new();
+        let intern = InternTable::new();
         let mut registry = AggregationRegistry::new();
         registry.register("allUsers".to_string(), srcs(&["user1", "user2"]));
 
@@ -397,7 +393,7 @@ mod tests {
             ..Default::default()
         }];
 
-        let result = process_aggregation_writes(&registry, changes, &shadow);
+        let result = process_aggregation_writes(&registry, changes, &shadow, &intern);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].path, "user1.email");
@@ -409,6 +405,7 @@ mod tests {
     #[test]
     fn test_mixed_changes_some_aggregated() {
         let shadow = ShadowState::new();
+        let intern = InternTable::new();
         let mut registry = AggregationRegistry::new();
         registry.register("allUsers".to_string(), srcs(&["user1", "user2"]));
 
@@ -439,7 +436,7 @@ mod tests {
             },
         ];
 
-        let result = process_aggregation_writes(&registry, changes, &shadow);
+        let result = process_aggregation_writes(&registry, changes, &shadow, &intern);
 
         // Should have: otherField + 2 distributed users + anotherField
         assert_eq!(result.len(), 4);
@@ -455,6 +452,7 @@ mod tests {
     #[test]
     fn test_no_aggregation_match() {
         let shadow = ShadowState::new();
+        let intern = InternTable::new();
         let registry = AggregationRegistry::new();
 
         let changes = vec![
@@ -476,11 +474,12 @@ mod tests {
             },
         ];
 
-        let result = process_aggregation_writes(&registry, changes.clone(), &shadow);
+        let result = process_aggregation_writes(&registry, changes, &shadow, &intern);
 
         // No changes should be aggregated
         assert_eq!(result.len(), 2);
-        assert_eq!(result, changes);
+        assert_eq!(result[0].path, "user.name");
+        assert_eq!(result[1].path, "user.email");
     }
 
     // --- Tests for read direction (sources → target) ---
@@ -488,16 +487,24 @@ mod tests {
     #[test]
     fn test_initial_values_all_equal() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": null, "item1": true, "item2": true, "item3": true}"#)
+            .init(
+                r#"{"allChecked": null, "item1": true, "item2": true, "item3": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Use reactive logic with source paths
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["item1", "item2", "item3"]),
+            &intern,
+        );
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -507,15 +514,23 @@ mod tests {
     #[test]
     fn test_initial_values_different() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item3": true}"#)
+            .init(
+                r#"{"allChecked": null, "item1": true, "item2": false, "item3": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["item1", "item2", "item3"]),
+            &intern,
+        );
 
         // Values differ → target was null, now becomes undefined (sources disagree → clear target)
         assert_eq!(changes.len(), 1);
@@ -526,15 +541,23 @@ mod tests {
     #[test]
     fn test_initial_values_all_null() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": false, "item1": null, "item2": null, "item3": null}"#)
+            .init(
+                r#"{"allChecked": false, "item1": null, "item2": null, "item3": null}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["item1", "item2", "item3"]),
+            &intern,
+        );
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -544,15 +567,20 @@ mod tests {
     #[test]
     fn test_initial_values_missing_sources() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": null, "item1": true}"#)
+            .init(r#"{"allChecked": null, "item1": true}"#, &mut intern)
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["item1", "item2", "item3"]),
+            &intern,
+        );
 
         // Missing sources → target set to undefined sentinel
         assert_eq!(changes.len(), 1);
@@ -563,12 +591,13 @@ mod tests {
     #[test]
     fn test_initial_values_empty_sources() {
         let mut shadow = ShadowState::new();
-        shadow.init(r#"{"allChecked": true}"#).unwrap();
+        let mut intern = InternTable::new();
+        shadow.init(r#"{"allChecked": true}"#, &mut intern).unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), vec![]);
 
-        let changes = process_aggregation_reads(&registry, &shadow, &[]);
+        let changes = process_aggregation_reads(&registry, &shadow, &[], &intern);
 
         // Empty sources with empty changed_paths → no affected targets → no changes
         assert_eq!(changes.len(), 0);
@@ -577,15 +606,23 @@ mod tests {
     #[test]
     fn test_initial_values_strings() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allNames": null, "name1": "alice", "name2": "alice", "name3": "alice"}"#)
+            .init(
+                r#"{"allNames": null, "name1": "alice", "name2": "alice", "name3": "alice"}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allNames".to_string(), srcs(&["name1", "name2", "name3"]));
 
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["name1", "name2", "name3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["name1", "name2", "name3"]),
+            &intern,
+        );
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allNames");
@@ -595,16 +632,24 @@ mod tests {
     #[test]
     fn test_initial_values_no_op_filter() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         // Target already has the correct value
         shadow
-            .init(r#"{"allChecked": true, "item1": true, "item2": true, "item3": true}"#)
+            .init(
+                r#"{"allChecked": true, "item1": true, "item2": true, "item3": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["item1", "item2", "item3"]),
+            &intern,
+        );
 
         // Should not create a change if target already has the correct value
         assert_eq!(changes.len(), 0);
@@ -613,18 +658,24 @@ mod tests {
     #[test]
     fn test_initial_values_no_op_filter_undefined() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         // Target already undefined (sentinel), sources differ
         shadow
             .init(
                 r#"{"allChecked": "__APEX_UNDEFINED__", "item1": true, "item2": false, "item3": true}"#,
+                &mut intern,
             )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["item1", "item2", "item3"]),
+            &intern,
+        );
 
         // Target already undefined, sources differ → computed = undefined → no-op
         assert_eq!(changes.len(), 0);
@@ -635,18 +686,22 @@ mod tests {
     #[test]
     fn test_reactive_read_source_change_makes_equal() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         // Start: sources differ, target is null
         shadow
-            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item3": true}"#)
+            .init(
+                r#"{"allChecked": null, "item1": true, "item2": false, "item3": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Simulate item2 changing to true (now all equal)
-        shadow.set("item2", "true").unwrap();
+        shadow.set("item2", "true", &mut intern).unwrap();
 
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2"]));
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2"]), &intern);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -656,18 +711,22 @@ mod tests {
     #[test]
     fn test_reactive_read_source_change_makes_differ() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         // Start: all sources true, target is true
         shadow
-            .init(r#"{"allChecked": true, "item1": true, "item2": true, "item3": true}"#)
+            .init(
+                r#"{"allChecked": true, "item1": true, "item2": true, "item3": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Simulate item2 changing to false (now sources differ)
-        shadow.set("item2", "false").unwrap();
+        shadow.set("item2", "false", &mut intern).unwrap();
 
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2"]));
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2"]), &intern);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
@@ -678,15 +737,20 @@ mod tests {
     #[test]
     fn test_reactive_read_no_affected_aggregations() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": null, "item1": true, "unrelated": "value"}"#)
+            .init(
+                r#"{"allChecked": null, "item1": true, "unrelated": "value"}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1"]));
 
         // Change unrelated path
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["unrelated"]));
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["unrelated"]), &intern);
 
         // Should not create any changes
         assert_eq!(changes.len(), 0);
@@ -695,6 +759,7 @@ mod tests {
     #[test]
     fn test_reactive_read_child_path_change() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         // Start: nested values all true
         shadow
             .init(
@@ -704,6 +769,7 @@ mod tests {
                 "item2": {"checked": true},
                 "item3": {"checked": true}
             }"#,
+                &mut intern,
             )
             .unwrap();
 
@@ -712,9 +778,10 @@ mod tests {
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Change a child path (item2.checked)
-        shadow.set("item2.checked", "false").unwrap();
+        shadow.set("item2.checked", "false", &mut intern).unwrap();
 
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2.checked"]));
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item2.checked"]), &intern);
 
         // Should detect that a child of item2 changed and recompute
         // Note: The aggregation compares item1, item2, item3 objects (not their children)
@@ -728,16 +795,20 @@ mod tests {
     #[test]
     fn test_reactive_read_no_op_already_correct() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         // Target already correct
         shadow
-            .init(r#"{"allChecked": true, "item1": true, "item2": true, "item3": true}"#)
+            .init(
+                r#"{"allChecked": true, "item1": true, "item2": true, "item3": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
         registry.register("allChecked".to_string(), srcs(&["item1", "item2", "item3"]));
 
         // Simulate a change that doesn't affect equality (all still true)
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1"]));
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1"]), &intern);
 
         // Should not create a change (target already correct)
         assert_eq!(changes.len(), 0);
@@ -748,8 +819,12 @@ mod tests {
     #[test]
     fn test_exclude_when_write_skips_excluded_source() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allUsers": null, "user1": null, "user2": null, "user1_disabled": true}"#)
+            .init(
+                r#"{"allUsers": null, "user1": null, "user2": null, "user1_disabled": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
@@ -776,7 +851,7 @@ mod tests {
             ..Default::default()
         }];
 
-        let result = process_aggregation_writes(&registry, changes, &shadow);
+        let result = process_aggregation_writes(&registry, changes, &shadow, &intern);
 
         // user1 is excluded (user1_disabled=true), only user2 should receive the write
         assert_eq!(result.len(), 1);
@@ -787,8 +862,9 @@ mod tests {
     #[test]
     fn test_exclude_when_read_skips_excluded_source() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item3": true, "item2_disabled": true}"#)
+            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item3": true, "item2_disabled": true}"#, &mut intern)
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
@@ -807,8 +883,12 @@ mod tests {
             ],
         );
 
-        let changes =
-            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2", "item3"]));
+        let changes = process_aggregation_reads(
+            &registry,
+            &shadow,
+            &paths(&["item1", "item2", "item3"]),
+            &intern,
+        );
 
         // item2 is excluded, item1 and item3 are both true → target = true
         assert_eq!(changes.len(), 1);
@@ -819,8 +899,12 @@ mod tests {
     #[test]
     fn test_exclude_when_all_excluded_gives_undefined() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": true, "item1": true, "item1_disabled": true}"#)
+            .init(
+                r#"{"allChecked": true, "item1": true, "item1_disabled": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
@@ -835,7 +919,7 @@ mod tests {
             }],
         );
 
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1"]));
+        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1"]), &intern);
 
         // All sources excluded → target = undefined
         assert_eq!(changes.len(), 1);
@@ -846,8 +930,12 @@ mod tests {
     #[test]
     fn test_condition_path_change_triggers_recomputation() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"allChecked": null, "item1": true, "item2": false, "item2_disabled": false}"#)
+            .init(
+                r#"{"allChecked": null, "item1": true, "item2": false, "item2_disabled": false}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = AggregationRegistry::new();
@@ -866,16 +954,20 @@ mod tests {
         );
 
         // Initially both active, values differ → undefined
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2"]));
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item1", "item2"]), &intern);
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].value_json, UNDEFINED_SENTINEL_JSON);
 
         // Now disable item2 by changing condition path
-        shadow.set("item2_disabled", "true").unwrap();
-        shadow.set("allChecked", UNDEFINED_SENTINEL_JSON).unwrap();
+        shadow.set("item2_disabled", "true", &mut intern).unwrap();
+        shadow
+            .set("allChecked", UNDEFINED_SENTINEL_JSON, &mut intern)
+            .unwrap();
 
         // Changing the condition path should trigger recomputation
-        let changes = process_aggregation_reads(&registry, &shadow, &paths(&["item2_disabled"]));
+        let changes =
+            process_aggregation_reads(&registry, &shadow, &paths(&["item2_disabled"]), &intern);
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "allChecked");
         // item2 now excluded, only item1 (true) → target = true

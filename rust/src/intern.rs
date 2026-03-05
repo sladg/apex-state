@@ -45,6 +45,7 @@ impl InternTable {
 
     /// Return all interned IDs whose paths are direct or transitive children of `prefix`.
     /// A path is a child of `prefix` if it starts with `prefix + "."`.
+    #[allow(dead_code)] // Kept as general utility; hot-path callers use graph-scoped filters
     pub(crate) fn ids_with_prefix(&self, prefix: &str) -> Vec<u32> {
         let needle = format!("{}.", prefix);
         self.rodeo
