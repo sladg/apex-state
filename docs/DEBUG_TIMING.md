@@ -1,120 +1,122 @@
 ---
-title: Debug & Timing Guide
-updated: 2026-02-05
-audience: contributors debugging performance
+title: Debug & Logging Guide
+updated: 2026-02-27
+audience: contributors debugging performance and understanding pipeline behavior
 ---
 
-# Debug & Timing
+# Debug & Logging
 
-Apex-state includes built-in timing instrumentation for detecting slow concerns and listeners during development.
+Apex-state includes built-in console logging for pipeline runs, registrations, and slow-operation warnings during development.
 
-## Enabling Debug Timing
+## Enabling Debug Options
 
 Pass `debug` config when creating the store:
 
 ```typescript
 const store = createGenericStore<MyState>({
   debug: {
-    timing: true, // enable measurement (default: false)
-    timingThreshold: 16, // ms threshold for "slow" warnings (default: 16)
+    log: true,            // enable console logging (default: false)
+    timing: true,         // enable slow-operation warnings (default: false)
+    timingThreshold: 16,  // ms threshold for "slow" warnings (default: 16)
+    track: true,          // enable debug tracking for tests/tooling (default: false)
+    devtools: true,       // enable Redux DevTools integration (default: false)
   },
 })
 ```
 
-When `timing` is enabled, every concern evaluation, listener execution, and registration call is wrapped in `performance.now()` measurements. Operations exceeding the threshold trigger a `console.warn`.
+All flags are optional and default to `false`.
 
-## What Gets Measured
+## Console Logging (`debug.log`)
 
-| Operation          | When it fires                                         | Threshold applies to                      |
-| ------------------ | ----------------------------------------------------- | ----------------------------------------- |
-| Concern evaluation | Each `evaluate()` call inside `effect()`              | Single concern on a single path           |
-| Listener execution | Each listener `fn()` call during pipeline             | Single listener invocation                |
-| Registration       | Each `registerConcernEffects` / `registerSideEffects` | Full registration batch for one component |
+When `log: true`, every pipeline run and registration emits a grouped `console.log` entry.
 
-## Console Output
+### Pipeline log (per `processChanges` call)
 
-When a slow operation is detected:
+A single collapsed group shows:
 
 ```
-[apex-state] Slow concerns: user.email/validationState took 18.42ms (threshold: 16ms)
-[apex-state] Slow registration: my-form-id/sideEffects took 12.50ms (threshold: 16ms)
+▶ apex-state · user.email, user.name  4.21ms
 ```
 
-After a batch of operations, a summary is logged if any were slow or total time exceeded 16ms:
+Expanding it reveals:
+
+- **Input changes** — what triggered this run
+- **WASM pipeline stages** — each stage (sync, flip, listeners, etc.) with duration, matched paths, produced/skipped changes
+- **Listener dispatches** — which listeners fired, their input/output/state, duration
+- **Applied changes** — final set written to valtio
+- **State snapshot** — frozen state after apply
+
+### Registration log (per register/unregister call)
+
+Emitted after each `useSideEffects` or `useConcerns` mount/unmount:
 
 ```
-[apex-state] concerns: 12 ops in 24.50ms (1 slow)
+▶ apex-state · [register] sideEffects-my-form  2.10ms
 ```
 
-## API Reference
+Expanding shows the full graph snapshot:
 
-All utilities live in `src/utils/timing.ts`.
+- **syncPairs** — all registered sync edges (bidirectional shown as `↔`, directed as `→`)
+- **flipPairs** — all flip edges
+- **listeners** — registered listener topics and scopes
+- **boolLogics** — registered BoolLogic output paths
+- **valueLogics** — registered ValueLogic output paths
 
-### Types
+## Timing Warnings (`debug.timing`)
+
+When `timing: true`, listener execution is measured. If a listener exceeds `timingThreshold` (default 16ms), a warning is emitted inside the pipeline log group.
+
+The `slow: true` flag is also set on the corresponding `ListenerDispatchTrace` entry.
+
+## Debug Tracking (`debug.track`)
+
+When `track: true`, the store exposes `store._debug` with an append-only log of all `processChanges` calls and their applied changes. Useful for assertions in tests:
 
 ```typescript
-interface TimingEvent {
-  type: "concerns" | "listeners" | "registration"
-  path: string
-  name: string
-  duration: number
-  threshold: number
-}
-
-interface TimingSummary {
-  type: "concerns" | "listeners" | "registration"
-  totalDuration: number
-  operationCount: number
-  slowOperations: TimingEvent[]
-}
-
-type OnSlowOperation = (event: TimingEvent) => void
-type OnTimingSummary = (summary: TimingSummary) => void
+const changes = store._debug?.changes
+store._debug?.reset()
 ```
 
-### Functions
+## Logger API
 
-**`measureTiming(fn, debug, event, context?, onSlowOperation?)`**
+The logger is created once per store via `createLogger(config)` in `src/utils/log.ts`. It returns an `ApexLogger` with two methods:
 
-Wraps a function call with timing measurement. If `debug.timing` is `false`, the function runs without overhead.
+```typescript
+interface ApexLogger {
+  logPipeline: (data: PipelineLogData) => void
+  logRegistration: (
+    type: 'register' | 'unregister',
+    id: string,
+    snapshot: GraphSnapshot,
+    data?: RegistrationLogData,
+  ) => void
+  destroy: () => void
+}
+```
 
-- `fn` — function to measure
-- `debug` — resolved debug config
-- `event` — metadata (type, path, name, threshold) without duration
-- `context` — optional `TimingContext` to accumulate results across a batch
-- `onSlowOperation` — callback when threshold exceeded (defaults to `console.warn`)
+When `log: false`, `createLogger` returns a zero-overhead no-op singleton — no closures, no work.
 
-**`createTimingContext(type)`**
-
-Creates a context for accumulating measurements across multiple operations in a single batch.
-
-**`reportTimingSummary(context, onSummary?)`**
-
-Reports the accumulated timing summary from a context.
-
-## StoreConfig Reference
+## `DebugConfig` Reference
 
 ```typescript
 interface DebugConfig {
-  timing?: boolean // default: false
-  timingThreshold?: number // default: 16 (ms)
-}
-
-interface StoreConfig {
-  maxIterations?: number // default: 100
-  debug?: DebugConfig
+  log?: boolean              // console logging (default: false)
+  timing?: boolean           // slow-operation warnings (default: false)
+  timingThreshold?: number   // ms threshold (default: 16)
+  track?: boolean            // debug tracking via store._debug (default: false)
+  devtools?: boolean         // Redux DevTools integration (default: false)
 }
 ```
 
 ## Key Files
 
-| File                              | Role                                                      |
-| --------------------------------- | --------------------------------------------------------- |
-| `src/utils/timing.ts`             | Timing utilities, types, default handlers                 |
-| `src/core/types.ts`               | `DebugConfig`, `ResolvedDebugConfig`, `StoreConfig`       |
-| `src/concerns/registration.ts`    | Uses `timing.run` for concern evaluation and registration |
-| `src/sideEffects/registration.ts` | Uses `timing.run` for side effect registration            |
+| File                              | Role                                                           |
+| --------------------------------- | -------------------------------------------------------------- |
+| `src/utils/log.ts`                | `createLogger()`, `ApexLogger`, `PipelineLogData`, trace types |
+| `src/core/types.ts`               | `DebugConfig`, `DebugTrack`, `StoreInstance._debug`            |
+| `src/pipeline/process-changes.wasm-impl.ts` | Calls `logger.logPipeline` after each `processChanges`  |
+| `src/sideEffects/registration.wasm-impl.ts` | Calls `logger.logRegistration` after register/unregister |
 
 ## Testing
 
-- `tests/utils/timing.test.ts` — unit tests for timing utilities
+- Logging integration tests: `tests/integrations_v2/logging.test.tsx`

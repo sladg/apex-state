@@ -4,8 +4,8 @@
 
 `clearPaths` is a new side-effect alongside sync, flip, and aggregations. It allows declarative "when X changes, clear Y" rules with wildcard support for dynamic hashmap keys.
 
-**Test placeholders**: `tests/side-effects/clear-paths.test.ts` (19 vitest `it.todo()` tests)
-**Rust test stubs**: `rust/src/clear_paths.rs` (35 `todo!()` unit tests)
+**Tests**: `tests/side-effects/clear-paths.test.ts` (32 vitest tests)
+**Rust tests**: `rust/src/clear_paths.rs` (48 unit tests)
 
 ## Public API
 
@@ -22,19 +22,38 @@ type ClearPathRule<T> = [
 - **`false`** (default) — `[*]` is **correlated**: the key matched in the trigger is substituted into the target at the same positional `[*]`
 - **`true`** — `[*]` in target **expands** to all keys at that level (independent of trigger match)
 
+### Trigger Matching — Prefix Semantics
+
+Concrete (non-wildcard) triggers use **prefix matching**: a trigger fires when the changed path equals the trigger path **or is a descendant** of it.
+
+- `form.fields` fires for: `form.fields`, `form.fields.email`, `form.fields.email.value`, etc.
+- Segment boundary is respected: `form.fields` does **not** fire for `form.fieldset` (different segment after the prefix).
+
+This means non-leaf paths are natural triggers — specifying a parent path watches the entire subtree.
+
 ### Wildcard Semantics
 
-- `[*]` in triggers: matches any single key, captures it positionally
+- `[*]` in triggers: matches any single key, captures it positionally (exact segment count match)
 - `[*]` in targets: substitutes the captured key from trigger (correlated)
 - `[**]` in targets: expands to ALL keys at that object level in shadow state (independent)
 - TypeScript only exposes `[*]` in `DeepKey<T>`. The `expandMatch: true` flag causes TS to rewrite target `[*]` → `[**]` before sending to WASM
+
+Note: wildcard triggers (`[*]`) still use exact segment-count matching, not prefix semantics. Prefix matching applies to concrete triggers only.
 
 ### Examples
 
 ```typescript
 clearPaths: [
-  // Concrete — no wildcards
+  // Concrete trigger — fires for form.email AND any descendant, regardless of depth.
+  // e.g. form.email, form.email.value, form.email.value.user.nested all fire this rule.
+  // Prefix matching is string-based — it does not know whether form.email is a leaf.
+  // Note: writing a descendant like form.email.value requires form.email to be null/object
+  // in shadow state; writing through a primitive errors at the shadow traversal level.
   [["form.email"], ["form.errors"]],
+
+  // Non-leaf trigger — same semantics, explicitly used for subtree watching.
+  // Fires for form.fields, form.fields.email, form.fields.email.value, etc.
+  [["form.fields"], ["form.errors"]],
 
   // Correlated (default): changing email's value clears only email's error
   [["form.fields.[*].value"], ["form.fields.[*].error"]],
@@ -42,7 +61,7 @@ clearPaths: [
   // Expand: changing any field's value clears ALL field errors
   [["form.fields.[*].value"], ["form.fields.[*].error"], { expandMatch: true }],
 
-  // Multiple triggers: any of these changing clears the targets
+  // Multiple triggers: any of these (or descendants) changing clears the targets
   [["form.email", "form.name"], ["form.errors", "form.touched"]],
 
   // Multi-level correlated
@@ -90,24 +109,41 @@ enum ClearTarget {
 }
 ```
 
-### Registry — Dual Index
+### Registry — Triple Index
 
 ```rust
 pub(crate) struct ClearPathsRegistry {
-    /// Fast path: concrete trigger path_id → targets
-    direct_triggers: HashMap<u32, Vec<ClearTarget>>,
+    /// Fast path: concrete trigger path_id → targets (exact match, O(1))
+    direct_triggers: HashMap<u32, Vec<DirectEntry>>,
+
+    /// Prefix path: concrete triggers that also fire for descendant changes.
+    /// Checked via `changed_path.starts_with(trigger_path + ".")`.
+    prefix_triggers: Vec<PrefixEntry>,
 
     /// Slow path: wildcard trigger patterns, matched against each changed path
     wildcard_triggers: Vec<WildcardTrigger>,
 }
 
+struct PrefixEntry {
+    trigger_path: String,   // e.g. "form.fields"
+    targets: Vec<ClearTarget>,
+    registration_id: String,
+}
+
 struct WildcardTrigger {
     segments: Vec<PathSegment>,   // only Literal + WildcardBind
     targets: Vec<ClearTarget>,
+    registration_id: String,
 }
 ```
 
-Dual index ensures concrete triggers (the common case) are O(1) lookups. Wildcard triggers are scanned only when `wildcard_triggers` is non-empty.
+**Three-tier lookup per changed path:**
+
+1. `direct_triggers` — O(1) HashMap lookup for exact match
+2. `prefix_triggers` — linear scan, fires when changed path starts with `trigger + "."`
+3. `wildcard_triggers` — linear scan, only when non-empty
+
+Every concrete trigger registers in both `direct_triggers` (exact) and `prefix_triggers` (descendants). The `seen: HashSet<u32>` deduplicator prevents double-clearing if somehow both fire for the same target.
 
 ## Pipeline Position: Step 3.5
 
@@ -155,14 +191,27 @@ fn process_clear_paths(&mut self, changed_path_ids: &[u32]) -> Vec<Change> {
     let mut seen = HashSet::new(); // deduplicate targets
 
     for &path_id in changed_path_ids {
-        // --- Fast path: direct triggers ---
-        if let Some(targets) = self.clear_registry.direct_triggers.get(&path_id) {
-            self.resolve_and_clear(targets, &HashMap::new(), &mut clears, &mut seen);
+        // --- Fast path: direct triggers (exact match) ---
+        if let Some(entries) = self.clear_registry.direct_triggers.get(&path_id) {
+            for entry in entries {
+                self.resolve_and_clear(&entry.targets, &[], &mut clears, &mut seen);
+            }
+        }
+
+        // --- Prefix path: concrete triggers firing for descendants ---
+        if !self.clear_registry.prefix_triggers.is_empty() {
+            let path = self.intern.resolve(path_id).to_owned();
+            for pt in &self.clear_registry.prefix_triggers {
+                let prefix_dot = format!("{}.", pt.trigger_path);
+                if path.starts_with(&prefix_dot) {
+                    self.resolve_and_clear(&pt.targets, &[], &mut clears, &mut seen);
+                }
+            }
         }
 
         // --- Slow path: wildcard triggers ---
         if !self.clear_registry.wildcard_triggers.is_empty() {
-            let path = self.intern.resolve(path_id);
+            let path = self.intern.resolve(path_id).to_owned();
             for wt in &self.clear_registry.wildcard_triggers {
                 if let Some(bindings) = match_trigger(&path, &wt.segments) {
                     self.resolve_and_clear(&wt.targets, &bindings, &mut clears, &mut seen);
@@ -174,12 +223,12 @@ fn process_clear_paths(&mut self, changed_path_ids: &[u32]) -> Vec<Change> {
 }
 ```
 
-### Trigger Matching (captures positional bindings)
+### Trigger Matching — Wildcard (exact segment count)
 
 ```rust
 fn match_trigger(path: &str, pattern: &[PathSegment]) -> Option<Vec<String>> {
     let parts: Vec<&str> = path.split('.').collect();
-    if parts.len() != pattern.len() { return None; }
+    if parts.len() != pattern.len() { return None; }  // exact segment count required
 
     let mut captures = Vec::new();
     for (part, seg) in parts.iter().zip(pattern) {
@@ -191,6 +240,15 @@ fn match_trigger(path: &str, pattern: &[PathSegment]) -> Option<Vec<String>> {
     }
     Some(captures)
 }
+```
+
+### Trigger Matching — Concrete prefix
+
+```rust
+// Fires when changed path is a strict descendant of the registered trigger path.
+// Segment boundary enforced by checking for the "." separator after the prefix.
+let prefix_dot = format!("{}.", pt.trigger_path);
+if path.starts_with(&prefix_dot) { /* fire */ }
 ```
 
 ### Target Resolution
@@ -294,12 +352,13 @@ TypeScript performs the `[*]` → `[**]` rewrite on targets when `expandMatch: t
 | Scenario | Runtime per changed path |
 |----------|--------------------------|
 | No clear rules registered | Zero overhead (empty registry check) |
-| Concrete trigger → concrete target | O(1) lookup + O(1) resolve |
-| Concrete trigger → wildcard target | O(1) lookup + O(keys at [**] level) |
-| Wildcard trigger → concrete target | O(wildcard_trigger_count x path_segments) |
-| Wildcard trigger → wildcard target | O(wildcard_trigger_count x path_segments x keys at [**] level) |
+| Concrete trigger, exact match → concrete target | O(1) lookup + O(1) resolve |
+| Concrete trigger, descendant match → concrete target | O(prefix_trigger_count) scan |
+| Concrete trigger → wildcard target | O(1) or O(prefix_count) + O(keys at [**] level) |
+| Wildcard trigger → concrete target | O(wildcard_trigger_count × path_segments) |
+| Wildcard trigger → wildcard target | O(wildcard_trigger_count × path_segments × keys at [**] level) |
 
-The `!wildcard_triggers.is_empty()` guard skips the slow path entirely when no wildcard triggers are registered.
+Guards skip inactive paths: `!prefix_triggers.is_empty()` and `!wildcard_triggers.is_empty()` avoid string resolution entirely when those indexes are empty.
 
 ---
 

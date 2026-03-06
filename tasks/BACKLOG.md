@@ -12,10 +12,17 @@ Project key: **WASM**
 | WASM-EP4 | Validation Batching | WASM-021 → WASM-024 | EP2 | **✅ COMPLETE** (2026-02-15) — Tests: placeholders written |
 | ~~WASM-EP5~~ | ~~Streaming Data Gateway~~ | ~~WASM-028 → WASM-031~~ | ~~EP2~~ | **🚫 SUPERSEDED** — Absorbed by EP6; no-op filtering in every pipeline step eliminates the need for a separate streaming gateway |
 | WASM-EP6 | Pipeline Refactor | WASM-032 | EP4 | **✅ COMPLETE** (2026-02-15) |
-| WASM-EP7 | Clean Mode Split | WASM-033 → WASM-037 | EP6 | **⏳ READY** |
+| WASM-EP7 | Clean Mode Split | WASM-033 → WASM-037 | EP6 | **✅ COMPLETE** (2026-03-03) — JS was already WASM-only; `path-groups.ts` + `graph-types.ts` dead code removed |
 | WASM-EP8 | Recency-Based Sync | WASM-038 → WASM-040 | EP6 | **⏳ READY** |
+| WASM-EP15 | Bundle Size Reduction | Story 1 (dual build) + Story 2 (Rust flags) | — | **⏳ READY** |
+| WASM-EP11 | Rust Performance: Huge Objects | WASM-041 → WASM-044 | EP6 | **🔄 IN PROGRESS** (3/4 stories done) |
+| WASM-EP12 | Rust Performance: Many Pipelines | WASM-045 → WASM-048 | EP6 | **✅ COMPLETE** (2026-03-03) |
+| WASM-EP13 | Rust Deduplication & Abstraction | WASM-049 → WASM-054 | EP6 | **✅ COMPLETE** (2026-03-03) |
+| WASM-EP14 | Rust Third-Party Crate Adoption | WASM-055 → WASM-060 | EP6 | **✅ COMPLETE** (2026-03-03) |
+| WASM-EP9 | Pipeline Context Refactor | — | EP6 | **✅ COMPLETE** — Implemented as part of EP6 refactor |
+| WASM-EP10 | Anchor Path + Multi-path Listeners | — | EP6 | **✅ COMPLETE** (2026-03-03) — anchorPath guards, multi-path `topic_paths[]`, dispatch ordering |
 
-EP3, EP4 ran in parallel after EP2. EP6 followed EP4. EP7 follows EP6.
+EP3, EP4 ran in parallel after EP2. EP6 followed EP4. EP7–EP10 complete.
 
 ## Story Map
 
@@ -53,18 +60,44 @@ EP3 Listeners (✅)   EP4 Validation (✅)
                          032 Round-trip refactor ✅ 22199cf
                               │
                               ▼
-                       EP7 Clean Mode Split (⏳)
-                         033 Clean sync registration
-                         034 Clean flip registration
-                         035 Clean listener registration
-                         036 WASM aggregation path
-                         037 Verify no cross-contamination
+                       EP7 Clean Mode Split (✅)
+                         033–037 Complete — codebase is WASM-only;
+                                 path-groups.ts + graph-types.ts removed
                               │
                               ▼
                        EP8 Recency-Based Sync (⏳)
                          038 Add recency tracking infrastructure
                          039 Update sync registration logic
                          040 Integration tests
+                              │
+                              ▼
+                       EP11 Rust Perf: Huge Objects (🔄 3/4)
+                         041 Remove subtree clone in shadow.set() ✅ 2026-03-04
+                         042 affected_paths() → Vec<u32> (intern-first) ✅ 2026-03-04
+                         043 Shadow state object keys as u32 (interned field names) ✅ 2026-03-04
+                         044 Hash-based object diff (skip no-op object sets) ⏳
+                              │
+                       EP12 Rust Perf: Many Pipelines (⏳)
+                         045 Pre-sort TopicRouter at registration
+                         046 Arc-based RevIndex (remove HashSet clone)
+                         047 Configurable PipelineContext capacity hints
+                         048 Graph merge: drain HashSet instead of tmp Vec
+                              │
+                       EP13 Rust Deduplication & Abstraction (✅)
+                         049 PathIndexedRegistry<T> + RegistrySource ✅
+                         050 Shared condition index helper fn ✅
+                         051 Shared get_affected_targets helper fn ✅
+                         052 Unified shadow collect_paths ✅
+                         053 Shadow path resolution guard helper ✅
+                         054 Unified change iteration — N/A (only aggregation has writes)
+                              │
+                       EP14 Rust Third-Party Crate Adoption (✅)
+                         055 ahash: replace std HashMap everywhere ✅
+                         056 string-interner — SKIPPED (Symbol↔u32 friction, lose ids_with_prefix)
+                         057 smallvec: hot-path Vec<u32> collections ✅
+                         058 slab — SKIPPED (depended on 056)
+                         059 petgraph — SKIPPED (custom O(1) lookup better than full traversal)
+                         060 indexmap — SKIPPED (insertion order ≠ depth order)
 ```
 
 ~~EP5 Streaming (SUPERSEDED)~~ — No-op change filtering at every pipeline step makes a separate streaming gateway unnecessary.
@@ -226,6 +259,56 @@ EP3 Listeners (✅)   EP4 Validation (✅)
 | a55c664 | docs(wasm): updated claude.md, added wasm architecture and task for processing | ✅ |
 | 22ee86b | Implement Shadow State as Nested Tree in Rust/WASM (#13) | ✅ |
 | fcfe40e | WASM-004: BoolLogic evaluator with tuple variants (#12) | ✅ |
+
+---
+
+### 🔄 In Progress: EP11 Rust Performance — Huge Objects
+
+**Spec**: `tasks/WASM-EP11-PERF-HUGE-OBJECTS.md` (canonical)
+
+- **Depends On**: EP6 (complete)
+- **Stories**: WASM-041 → WASM-044 | **Total**: 16pts
+- **Progress**:
+  - ✅ WASM-041: Remove subtree clone in `shadow.set()` — 2026-03-04
+  - ✅ WASM-042: `affected_path_ids()` returning `Vec<u32>` (intern-first, all 3 callers updated) — 2026-03-04
+  - ✅ WASM-043: Shadow state object keys as `u32` (interned field names) — 2026-03-04
+  - ⏳ WASM-044: Hash-based object diff (skip no-op object sets)
+
+### ✅ Completed: EP12 Rust Performance — Many Pipelines
+
+- **Completion Date**: 2026-03-03
+- **Spec**: `tasks/WASM-EP12-PERF-MANY-PIPELINES.md` (canonical)
+- **Stories**: WASM-045 → WASM-048 | **Total**: 6pts
+- **Key Deliverables**:
+  - WASM-045: Pre-sort TopicRouter at registration (cache `effective_depth` etc. in `SubscriberMeta`) ✅
+  - WASM-046: Arc-based RevIndex (`Arc<HashSet<u32>>` — zero deep clone at registration) ✅
+  - WASM-047: `PipelineContext::recalibrate()` capacity hints after register calls ✅
+  - WASM-048: Graph merge: drain HashSet via `.remove()` instead of tmp Vec ✅
+
+### ✅ Completed: EP13 Rust Deduplication & Abstraction
+
+- **Completion Date**: 2026-03-03
+- **Spec**: `tasks/WASM-EP13-DEDUPLICATION.md` (canonical)
+- **Key Deliverables**:
+  - Unified `RegistrySource` type (replaced identical `AggregationSource` + `ComputationSource`)
+  - `PathIndexedRegistry<T>` generic struct with `HasRegistrySources` trait
+  - Composition pattern: domain registries wrap `PathIndexedRegistry<T>` as `inner` field
+  - Shared helper functions: `add_condition_paths`, `remove_condition_paths`, `remove_from_index`, `get_affected_targets`
+  - Unified `shadow.collect_paths()` (parameterized)
+  - Shadow path resolution guard helper
+  - WASM-054 N/A: only aggregation has write direction
+
+### ✅ Completed: EP14 Rust Third-Party Crate Adoption
+
+- **Completion Date**: 2026-03-03
+- **Spec**: `tasks/WASM-EP14-CRATE-ADOPTION.md` (canonical)
+- **Key Deliverables**:
+  - WASM-055 `ahash`: Replaced std HashMap/HashSet everywhere via `prelude.rs` re-exports ✅
+  - WASM-056 `string-interner`: SKIPPED — Symbol↔u32 impedance at 100+ call sites, loses `ids_with_prefix()`
+  - WASM-057 `smallvec`: Hot-path `SmallVec<[u32; 4]>` in rev_index + router ✅
+  - WASM-058 `slab`: SKIPPED — depended on WASM-056
+  - WASM-059 `petgraph`: SKIPPED — custom O(1) component lookup beats petgraph's full traversal
+  - WASM-060 `indexmap`: SKIPPED — insertion order ≠ depth order; explicit sort still needed
 
 ---
 

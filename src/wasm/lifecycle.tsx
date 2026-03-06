@@ -59,10 +59,11 @@ export const isWasmLoaded = (): boolean => wasmInstance !== null
 
 /** Create a per-store WASM pipeline and initialize its shadow state. */
 export const initPipeline = (
-  internal: InternalState<any, any>,
+  internal: InternalState,
   initialState: object,
+  options?: { debug?: boolean },
 ): void => {
-  const pipeline = createWasmPipeline()
+  const pipeline = createWasmPipeline(options)
   pipeline.shadowInit(initialState)
   internal.pipeline = pipeline
 }

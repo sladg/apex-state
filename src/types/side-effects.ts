@@ -144,4 +144,12 @@ export interface SideEffects<
    * Accepts direct `ListenerRegistration<T>[]` or pre-validated result from `listeners()`.
    */
   listeners?: ListenerRegistration<DATA, META>[]
+
+  /**
+   * Anchor path - guard for all resources in this registration.
+   * When the anchor path is structurally absent from shadow state, all listeners,
+   * BoolLogics, and validators silently skip execution for that pipeline run
+   * (no unregistration — they resume when the path reappears).
+   */
+  anchorPath?: DeepKey<DATA, Depth>
 }

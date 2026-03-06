@@ -14,7 +14,13 @@ import { describe, expect, it } from 'vitest'
 import type { ArrayOfChanges, GenericMeta } from '~/types'
 
 import { createGenericStore } from '../../src'
-import { flushEffects, flushSync, MODES, mountStore } from '../utils/react'
+import {
+  expectShadowMatch,
+  flushEffects,
+  flushSync,
+  MODES,
+  mountStore,
+} from '../utils/react'
 
 // Type uses non-optional objects so DeepKey generates nested paths like
 // "shippingAddress.street". At runtime we set the parent to undefined
@@ -46,6 +52,7 @@ describe.each(MODES)('[$name] Undefined sentinel traversal', ({ config }) => {
     await flushEffects()
 
     expect(storeInstance.state.shippingAddress.street).toBe('456 Oak Ave')
+    expectShadowMatch(storeInstance)
   })
 
   it('should set deeply nested child after parent becomes undefined', async () => {
@@ -68,6 +75,7 @@ describe.each(MODES)('[$name] Undefined sentinel traversal', ({ config }) => {
     await flushEffects()
 
     expect(storeInstance.state.order.payment.method).toBe('paypal')
+    expectShadowMatch(storeInstance)
   })
 
   it('should handle field that starts as undefined', async () => {
@@ -83,6 +91,7 @@ describe.each(MODES)('[$name] Undefined sentinel traversal', ({ config }) => {
     await flushEffects()
 
     expect(storeInstance.state.shippingAddress.street).toBe('789 Elm Blvd')
+    expectShadowMatch(storeInstance)
   })
 })
 
@@ -132,6 +141,7 @@ describe.each(MODES)(
       await flushSync()
 
       expect(storeInstance.state.shippingAddress.street).toBe('200 Second St')
+      expectShadowMatch(storeInstance)
     })
 
     it('should recover synced field after undefined round-trip', async () => {
@@ -172,6 +182,7 @@ describe.each(MODES)(
         street: '300 Third Blvd',
         city: 'Chicago',
       })
+      expectShadowMatch(storeInstance)
     })
   },
 )

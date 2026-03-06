@@ -54,7 +54,7 @@ const buildAggregationSetup = (sourceCount: number, excludedCount: number) => {
 const createSetup = (sourceCount: number, excludedCount: number) => {
   const { state, pairs } = buildAggregationSetup(sourceCount, excludedCount)
   const pipeline = createWasmPipeline()
-  pipeline.shadowInit(state as Record<string, unknown>)
+  pipeline.shadowInit(state)
   pipeline.registerSideEffects({
     registration_id: 'bench',
     aggregation_pairs: pairs,
@@ -75,6 +75,14 @@ const createSetup = (sourceCount: number, excludedCount: number) => {
  * | 2026-02-22 | 10 sources, 5 conditions    | 53,409        | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 50 sources, 25 conditions   | 10,922        | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 200 sources, 100 conditions | 2,401         | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-25 | 10 sources, 0 conditions    | 69,980        | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 10 sources, 5 conditions    | 50,698        | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 50 sources, 25 conditions   | 10,329        | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 200 sources, 100 conditions | 2,270         | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 0 conditions    | 77,321        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 53,442        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 11,496        | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 2,555         | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Registration: excludeWhen parsing overhead', () => {
   for (const [sources, excluded] of [
@@ -88,7 +96,7 @@ describe('Registration: excludeWhen parsing overhead', () => {
       () => {
         const { state, pairs } = buildAggregationSetup(sources, excluded)
         const pipeline = createWasmPipeline()
-        pipeline.shadowInit(state as Record<string, unknown>)
+        pipeline.shadowInit(state)
         pipeline.registerSideEffects({
           registration_id: 'bench',
           aggregation_pairs: pairs,
@@ -113,6 +121,14 @@ describe('Registration: excludeWhen parsing overhead', () => {
  * | 2026-02-22 | 10 sources, 5 conditions    | 906,741       | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 50 sources, 25 conditions   | 931,031       | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 200 sources, 100 conditions | 942,601       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-25 | 10 sources, 0 conditions    | 927,286       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 10 sources, 5 conditions    | 937,107       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 50 sources, 25 conditions   | 932,782       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 200 sources, 100 conditions | 930,469       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 0 conditions    | 615,965       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 608,795       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 611,118       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 609,414       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Read direction: source value change with excludeWhen', () => {
   for (const [sources, excluded] of [
@@ -127,7 +143,7 @@ describe('Read direction: source value change with excludeWhen', () => {
       `processChanges: ${sources} sources, ${excluded} conditions`,
       () => {
         const changes: Change[] = [
-          { path: `source_${sources - 1}`, value: 999 },
+          { path: `source_${sources - 1}`, value: 999, meta: {} },
         ]
         pipeline.processChanges(changes)
       },
@@ -148,6 +164,12 @@ describe('Read direction: source value change with excludeWhen', () => {
  * | 2026-02-22 | 10 sources, 5 conditions    | 1,106,931     | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 50 sources, 25 conditions   | 1,118,466     | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 200 sources, 100 conditions | 1,103,534     | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-25 | 10 sources, 5 conditions    | 1,115,183     | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 50 sources, 25 conditions   | 1,115,744     | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 200 sources, 100 conditions | 1,117,752     | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 682,367       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 675,361       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 686,883       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Condition path change: re-aggregation trigger', () => {
   for (const [sources, excluded] of [
@@ -160,7 +182,9 @@ describe('Condition path change: re-aggregation trigger', () => {
     bench(
       `condition change: ${sources} sources, ${excluded} conditions`,
       () => {
-        const changes: Change[] = [{ path: 'disabled_0', value: false }]
+        const changes: Change[] = [
+          { path: 'disabled_0', value: false, meta: {} },
+        ]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,
@@ -181,6 +205,14 @@ describe('Condition path change: re-aggregation trigger', () => {
  * | 2026-02-22 | 10 sources, 5 conditions    | 913,295       | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 50 sources, 25 conditions   | 908,792       | 4de0ee8 | baseline — initial measurement |
  * | 2026-02-22 | 200 sources, 100 conditions | 919,062       | 4de0ee8 | baseline — initial measurement |
+ * | 2026-02-25 | 10 sources, 0 conditions    | 957,429       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 10 sources, 5 conditions    | 950,639       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 50 sources, 25 conditions   | 953,831       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-02-25 | 200 sources, 100 conditions | 951,551       | aa7e7da | simplified compute_sync_initial_changes; delegate no-op filter to diff_changes |
+ * | 2026-03-03 | 10 sources, 0 conditions    | 603,604       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 10 sources, 5 conditions    | 586,798       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 50 sources, 25 conditions   | 602,107       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
+ * | 2026-03-03 | 200 sources, 100 conditions | 603,450       | e56c3a8  | fix: defer shadow clone + guard sync/flip (regression fix) |
  */
 describe('Write direction: target → sources with excludeWhen filtering', () => {
   for (const [sources, excluded] of [
@@ -194,7 +226,7 @@ describe('Write direction: target → sources with excludeWhen filtering', () =>
     bench(
       `write distribution: ${sources} sources, ${excluded} conditions`,
       () => {
-        const changes: Change[] = [{ path: 'target', value: 42 }]
+        const changes: Change[] = [{ path: 'target', value: 42, meta: {} }]
         pipeline.processChanges(changes)
       },
       BENCH_OPTIONS,

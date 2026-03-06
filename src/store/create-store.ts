@@ -1,17 +1,14 @@
 import { useCallback, useLayoutEffect } from 'react'
 
-import { snapshot, useSnapshot } from 'valtio'
+import { snapshot, subscribe, useSnapshot } from 'valtio'
 
 import type { ConcernType } from '../concerns'
 import { defaultConcerns } from '../concerns'
-import { registerConcernEffects as registerConcernEffectsLegacy } from '../concerns/registration'
-import { registerConcernEffects as registerConcernEffectsWasm } from '../concerns/registration.wasm-impl'
+import { registerConcernEffects } from '../concerns/registration.wasm-impl'
 import { useStoreContext } from '../core/context'
 import type { ProviderProps, StoreConfig } from '../core/types'
-import { processChangesLegacy } from '../pipeline/process-changes'
-import { processChangesWasm } from '../pipeline/process-changes.wasm-impl'
-import { registerSideEffects as registerSideEffectsLegacy } from '../sideEffects/registration'
-import { registerSideEffects as registerSideEffectsWasm } from '../sideEffects/registration.wasm-impl'
+import { processChangesWasm as processChanges } from '../pipeline/process-changes.wasm-impl'
+import { registerSideEffects } from '../sideEffects/registration.wasm-impl'
 import type {
   ArrayOfChanges,
   BoolLogic,
@@ -35,6 +32,7 @@ import type {
 import type { DeepKeyFiltered } from '../types/deep-key-filtered'
 import type { SideEffects } from '../types/side-effects'
 import { dot } from '../utils/dot'
+import { filterConcernsByKeys } from '../utils/filter-concerns'
 import { createProvider } from './provider'
 import { createWarmPairHelpers } from './warm-pair-helpers'
 
@@ -104,7 +102,43 @@ export interface GenericStoreApi<
         ? EvaluatedConcerns<CONCERNS>[K]
         : never
     }
+    /** Reactive snapshot of all concerns matching this selection, keyed by path. Re-renders when any concern changes. */
+    useConcernsSnapshot: () => Record<
+      string,
+      {
+        [K in keyof SELECTION as SELECTION[K] extends true
+          ? K
+          : never]?: K extends keyof EvaluatedConcerns<CONCERNS>
+          ? EvaluatedConcerns<CONCERNS>[K]
+          : never
+      }
+    >
   }
+
+  /**
+   * React hook. Fires callback whenever concerns matching the selection change.
+   * Does NOT trigger re-renders — use useConcernsSnapshot() for reactive UI instead.
+   * Callback is stable across renders (no need to memoize).
+   */
+  useWatchConcerns: <
+    SELECTION extends Partial<
+      Record<Extract<CONCERNS[number], { name: string }>['name'], boolean>
+    >,
+  >(
+    selection: SELECTION,
+    callback: (
+      concerns: Record<
+        string,
+        {
+          [K in keyof SELECTION as SELECTION[K] extends true
+            ? K
+            : never]?: K extends keyof EvaluatedConcerns<CONCERNS>
+            ? EvaluatedConcerns<CONCERNS>[K]
+            : never
+        }
+      >,
+    ) => void,
+  ) => void
 
   withMeta: (presetMeta: Partial<META>) => {
     useFieldStore: <P extends DeepKey<DATA>>(
@@ -116,7 +150,16 @@ export interface GenericStoreApi<
   }
 
   // Pre-warmed pair helpers from createWarmPairHelpers
-  syncPairs: <T extends [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>][]>(
+  syncPairs: <
+    T extends (
+      | [ResolvableDeepKey<DATA>, ResolvableDeepKey<DATA>]
+      | [
+          ResolvableDeepKey<DATA>,
+          ResolvableDeepKey<DATA>,
+          { oneWay: '[0]->[1]' | '[1]->[0]' },
+        ]
+    )[],
+  >(
     pairs: CheckSyncPairs<DATA, T>,
   ) => ValidatedSyncPairs<DATA>
 
@@ -170,11 +213,11 @@ export const createGenericStore = <
 >(
   config?: StoreConfig,
 ): GenericStoreApi<DATA, META, CONCERNS> => {
-  const Provider = createProvider<DATA, META>(config)
+  const Provider = createProvider<DATA>(config)
 
   // Internal helper hook for field state access
   const _useFieldValue = <P extends DeepKey<DATA>>(path: P) => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     const snap = useSnapshot(store.state) as DATA
     const value = dot.get(snap, path)
 
@@ -183,10 +226,6 @@ export const createGenericStore = <
         const changes: ArrayOfChanges<DATA, META> = [
           [path, newValue, (meta || {}) as META],
         ]
-
-        const processChanges = store._internal.config.useLegacyImplementation
-          ? processChangesLegacy
-          : processChangesWasm
 
         processChanges(store, changes)
       },
@@ -221,16 +260,11 @@ export const createGenericStore = <
     setChanges: (changes: ArrayOfChanges<DATA, META>) => void
     getState: () => DATA
   } => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     const proxyValue = useSnapshot(store.state) as DATA
 
     const setChanges = useCallback(
       (changes: ArrayOfChanges<DATA, META>) => {
-        // WASM gateway: dispatch to WASM or legacy implementation
-        const processChanges = store._internal.config.useLegacyImplementation
-          ? processChangesLegacy
-          : processChangesWasm
-
         processChanges(store, changes)
       },
       [store],
@@ -247,13 +281,8 @@ export const createGenericStore = <
     id: string,
     effects: SideEffects<DATA, META>,
   ): void => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     useLayoutEffect(() => {
-      // WASM gateway: dispatch to WASM or legacy implementation
-      const registerSideEffects = store._internal.config.useLegacyImplementation
-        ? registerSideEffectsLegacy
-        : registerSideEffectsWasm
-
       return registerSideEffects(store, id, effects)
     }, [store, id, effects])
   }
@@ -269,17 +298,11 @@ export const createGenericStore = <
     >,
     customConcerns?: readonly ConcernType<string, any, any>[],
   ): void => {
-    const store = useStoreContext<DATA, META>()
+    const store = useStoreContext<DATA>()
     const concerns = (customConcerns ||
       defaultConcerns) as readonly ConcernType<any, any, any>[]
 
     useLayoutEffect(() => {
-      // WASM gateway: dispatch to WASM or legacy implementation
-      const registerConcernEffects = store._internal.config
-        .useLegacyImplementation
-        ? registerConcernEffectsLegacy
-        : registerConcernEffectsWasm
-
       return registerConcernEffects(store, registration, concerns)
     }, [store, id, registration, customConcerns])
   }) as GenericStoreApi<DATA, META, CONCERNS>['useConcerns']
@@ -305,28 +328,39 @@ export const createGenericStore = <
       setValue: (newValue: DeepValue<DATA, P>, meta?: META) => void
     } & SelectedConcerns
 
+    const selectionKeys = Object.keys(selection ?? {}).filter(
+      (k) => (selection as Record<string, boolean | undefined>)[k],
+    )
+
     return {
       useFieldStore: <P extends DeepKey<DATA>>(
         path: P,
       ): WithConcernsFieldStore<P> => {
         const { store, value, setValue } = _useFieldValue(path)
         const concernsSnap = useSnapshot(store._concerns)
-        const allConcerns = concernsSnap[path] || {}
+        const allConcerns = (concernsSnap[path] || {}) as Record<
+          string,
+          unknown
+        >
+        const selectedConcerns = filterConcernsByKeys(
+          { [path]: allConcerns },
+          selectionKeys,
+        )[path] as SelectedConcerns | undefined
 
-        const selectedConcerns = Object.keys(selection).reduce(
-          (acc, key) => {
-            if (
-              (selection as Record<string, boolean | undefined>)[key] &&
-              Object.prototype.hasOwnProperty.call(allConcerns, key)
-            ) {
-              acc[key] = allConcerns[key]
-            }
-            return acc
-          },
-          {} as Record<string, unknown>,
-        ) as SelectedConcerns
+        return {
+          value,
+          setValue,
+          ...(selectedConcerns ?? {}),
+        } as WithConcernsFieldStore<P>
+      },
 
-        return { value, setValue, ...selectedConcerns }
+      useConcernsSnapshot: () => {
+        const store = useStoreContext<DATA>()
+        const concernsSnap = useSnapshot(store._concerns)
+        return filterConcernsByKeys(
+          concernsSnap as Record<string, Record<string, unknown>>,
+          selectionKeys,
+        ) as Record<string, SelectedConcerns>
       },
     }
   }) as GenericStoreApi<DATA, META, CONCERNS>['withConcerns']
@@ -353,6 +387,38 @@ export const createGenericStore = <
     },
   })
 
+  const useWatchConcerns: GenericStoreApi<
+    DATA,
+    META,
+    CONCERNS
+  >['useWatchConcerns'] = (<
+    SELECTION extends Partial<
+      Record<Extract<CONCERNS[number], { name: string }>['name'], boolean>
+    >,
+  >(
+    selection: SELECTION,
+    callback: (concerns: Record<string, Record<string, unknown>>) => void,
+  ): void => {
+    const store = useStoreContext<DATA>()
+    const selectionKeys = Object.keys(selection).filter(
+      (k) => (selection as Record<string, boolean | undefined>)[k],
+    )
+
+    useLayoutEffect(() => {
+      return subscribe(store._concerns, () => {
+        callback(
+          filterConcernsByKeys(
+            snapshot(store._concerns) as Record<
+              string,
+              Record<string, unknown>
+            >,
+            selectionKeys,
+          ),
+        )
+      })
+    }, [store])
+  }) as GenericStoreApi<DATA, META, CONCERNS>['useWatchConcerns']
+
   return {
     Provider,
     useFieldStore,
@@ -362,6 +428,7 @@ export const createGenericStore = <
     useConcerns,
     withConcerns,
     withMeta,
+    useWatchConcerns,
     ...createWarmPairHelpers<DATA, META>(),
   }
 }

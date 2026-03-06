@@ -105,7 +105,11 @@ type SheetKey = DeepKey<SheetState>
 
 export const sideEffects: SideEffects<SheetState, GenericMeta> = {
   // ① Sync — contact ↔ notification email (bidirectional)
-  syncPaths: [['header.contactEmail', 'header.notificationEmail']],
+  //         showNotes → showPriority (one-way: toggling notes also enables priority, not vice-versa)
+  syncPaths: [
+    ['header.contactEmail', 'header.notificationEmail'],
+    ['settings.showNotes', 'settings.showPriority', { oneWay: '[0]->[1]' }],
+  ],
 
   // ② Flip — approved ↔ rejected (inverse booleans)
   flipPaths: [
@@ -230,7 +234,7 @@ const boolEquals = (
   path: DeepKey<SheetState>,
   value: boolean | string,
 ): { boolLogic: SheetBool } => ({
-  boolLogic: { IS_EQUAL: [path, value] },
+  boolLogic: { IS_EQUAL: [path, value] as never },
 })
 
 const quarterConcern = (row: RowKey, q: string) => ({
@@ -346,4 +350,10 @@ export const {
   useFieldStore,
   useSideEffects,
   useConcerns,
-} = createGenericStore<SheetState>()
+} = createGenericStore<SheetState>({
+  debug: {
+    devtools: true,
+    log: true,
+    track: true
+  }
+})

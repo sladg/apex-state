@@ -617,6 +617,85 @@ describe.each(MODES)('[$name] Side Effects: Flip Paths', ({ config }) => {
     })
   })
 
+  describe('Flip with enum/string values', () => {
+    it('should give peer the old value of source when source changes (value rotation)', async () => {
+      // Create store with: source = 'active', target = 'inactive'
+      // Register flipPaths: [['source', 'target']]
+      // Set source to 'disabled'
+      // Assert source === 'disabled'
+      // Assert target === 'active' (received old value of source)
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        { ...syncFlipFixtures.allFalse, source: 'active', target: 'inactive' },
+        {
+          sideEffects: {
+            flipPaths: [['source', 'target']],
+          },
+        },
+      )
+      await flushSync()
+
+      setValue('source', 'disabled')
+      await flushSync()
+
+      expect(storeInstance.state.source).toBe('disabled')
+      expect(storeInstance.state.target).toBe('active')
+    })
+
+    it('should rotate values on each successive change', async () => {
+      // source = 'A', target = 'B'
+      // Set source = 'C' → target gets 'A' (old source)
+      // Set source = 'D' → target gets 'C' (old source)
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        { ...syncFlipFixtures.allFalse, source: 'A', target: 'B' },
+        {
+          sideEffects: {
+            flipPaths: [['source', 'target']],
+          },
+        },
+      )
+      await flushSync()
+
+      setValue('source', 'C')
+      await flushSync()
+      expect(storeInstance.state.source).toBe('C')
+      expect(storeInstance.state.target).toBe('A')
+
+      setValue('source', 'D')
+      await flushSync()
+      expect(storeInstance.state.source).toBe('D')
+      expect(storeInstance.state.target).toBe('C')
+    })
+
+    it('should be bidirectional — target change also gives source the old target value', async () => {
+      // source = 'active', target = 'inactive'
+      // Set target = 'disabled' → source gets 'inactive' (old target)
+
+      const store = createGenericStore<SyncFlipState>(config)
+      const { storeInstance, setValue } = mountStore(
+        store,
+        { ...syncFlipFixtures.allFalse, source: 'active', target: 'inactive' },
+        {
+          sideEffects: {
+            flipPaths: [['source', 'target']],
+          },
+        },
+      )
+      await flushSync()
+
+      setValue('target', 'disabled')
+      await flushSync()
+
+      expect(storeInstance.state.target).toBe('disabled')
+      expect(storeInstance.state.source).toBe('inactive')
+    })
+  })
+
   describe('Flip semantics', () => {
     it('should use NOT logic (!value)', async () => {
       // Test: true → false, false → true

@@ -8,7 +8,4 @@
  * - listeners: React to path changes
  */
 
-export { registerFlipPair } from './prebuilts/flip'
-export { registerListenerLegacy } from './prebuilts/listeners'
-export { registerSyncPairsBatch } from './prebuilts/sync'
-export { registerSideEffects } from './registration'
+export { registerSideEffects } from './registration.wasm-impl'

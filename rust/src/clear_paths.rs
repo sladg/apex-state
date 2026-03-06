@@ -6,10 +6,10 @@
 //!
 //! See docs/CLEAR_PATHS.md for full architecture.
 
+use crate::change::{Change, ChangeKind, Lineage};
 use crate::intern::InternTable;
-use crate::pipeline::Change;
+use crate::prelude::{HashMap, HashSet};
 use crate::shadow::ShadowState;
-use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,8 +47,18 @@ struct DirectEntry {
 pub(crate) struct ClearPathsRegistry {
     /// Fast path: concrete trigger path_id → targets.
     direct_triggers: HashMap<u32, Vec<DirectEntry>>,
+    /// Prefix path: concrete triggers that also fire for descendant path changes.
+    /// Stored as strings so we can do `starts_with(trigger + ".")` checks.
+    prefix_triggers: Vec<PrefixEntry>,
     /// Slow path: wildcard trigger patterns, matched against each changed path.
     wildcard_triggers: Vec<WildcardTrigger>,
+}
+
+#[derive(Debug, Clone)]
+struct PrefixEntry {
+    trigger_path: String, // e.g. "form.fields"
+    targets: Vec<ClearTarget>,
+    registration_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +136,7 @@ pub(crate) fn resolve_wildcard_target(
     shadow: &ShadowState,
     segments: &[PathSegment],
     captures: &[String],
+    intern: &InternTable,
 ) -> Vec<String> {
     // We build paths incrementally, branching at WildcardAll.
     let mut prefixes: Vec<(String, usize)> = vec![(String::new(), 0)]; // (prefix, capture_index)
@@ -155,7 +166,7 @@ pub(crate) fn resolve_wildcard_target(
                 }
                 PathSegment::WildcardAll => {
                     // Enumerate all keys at the current prefix in shadow
-                    if let Some(keys) = shadow.get_object_keys(prefix) {
+                    if let Some(keys) = shadow.get_object_keys(prefix, intern) {
                         for key in keys {
                             let new_prefix = if prefix.is_empty() {
                                 key.clone()
@@ -183,6 +194,7 @@ impl ClearPathsRegistry {
     pub(crate) fn new() -> Self {
         Self {
             direct_triggers: HashMap::new(),
+            prefix_triggers: Vec::new(),
             wildcard_triggers: Vec::new(),
         }
     }
@@ -262,6 +274,13 @@ impl ClearPathsRegistry {
                         targets: clear_targets.clone(),
                         registration_id: registration_id.to_owned(),
                     });
+                // Also register for descendant (prefix) matching:
+                // fires when any path starting with "trigger." changes.
+                self.prefix_triggers.push(PrefixEntry {
+                    trigger_path: trigger.clone(),
+                    targets: clear_targets.clone(),
+                    registration_id: registration_id.to_owned(),
+                });
             }
         }
 
@@ -277,6 +296,10 @@ impl ClearPathsRegistry {
         // Remove empty entries
         self.direct_triggers.retain(|_, v| !v.is_empty());
 
+        // Remove from prefix_triggers
+        self.prefix_triggers
+            .retain(|pt| pt.registration_id != registration_id);
+
         // Remove from wildcard_triggers
         self.wildcard_triggers
             .retain(|wt| wt.registration_id != registration_id);
@@ -284,13 +307,39 @@ impl ClearPathsRegistry {
 
     /// Check if registry is empty (no rules registered).
     pub(crate) fn is_empty(&self) -> bool {
-        self.direct_triggers.is_empty() && self.wildcard_triggers.is_empty()
+        self.direct_triggers.is_empty()
+            && self.prefix_triggers.is_empty()
+            && self.wildcard_triggers.is_empty()
+    }
+
+    /// Returns true if the given interned path ID has any registered clear-path triggers.
+    /// Used by the trace recorder to filter MATCHED entries to only relevant paths.
+    pub(crate) fn has_trigger_for_path_id(&self, path_id: u32, path: &str) -> bool {
+        if self.direct_triggers.contains_key(&path_id) {
+            return true;
+        }
+        // Check prefix triggers — fires for descendants of registered concrete paths
+        if self.prefix_triggers.iter().any(|pt| {
+            let prefix_dot = format!("{}.", pt.trigger_path);
+            path.starts_with(&prefix_dot)
+        }) {
+            return true;
+        }
+        // Check wildcard triggers
+        self.wildcard_triggers
+            .iter()
+            .any(|wt| match_trigger(path, &wt.segments).is_some())
     }
 
     /// Process changed paths and produce clear changes.
     ///
-    /// For each changed path_id: check direct_triggers (O(1)), then scan wildcard_triggers.
-    /// Deduplicates targets via HashSet<u32>. Returns clear changes.
+    /// For each changed path_id:
+    ///
+    /// 1. Exact match via direct_triggers (O(1))
+    /// 2. Prefix match via prefix_triggers (fires for descendants of registered paths)
+    /// 3. Wildcard pattern match via wildcard_triggers
+    ///
+    /// Deduplicates targets via `HashSet<u32>`. Returns clear changes.
     pub(crate) fn process(
         &self,
         changed_path_ids: &[u32],
@@ -305,10 +354,30 @@ impl ClearPathsRegistry {
         let mut seen: HashSet<u32> = HashSet::new();
 
         for &path_id in changed_path_ids {
-            // --- Fast path: direct triggers ---
+            // --- Fast path: direct triggers (exact match) ---
             if let Some(entries) = self.direct_triggers.get(&path_id) {
                 for entry in entries {
                     resolve_and_clear(&entry.targets, &[], intern, shadow, &mut clears, &mut seen);
+                }
+            }
+
+            // --- Prefix path: concrete triggers that fire for descendants ---
+            if !self.prefix_triggers.is_empty() {
+                if let Some(path) = intern.resolve(path_id) {
+                    let path = path.to_owned(); // avoid borrow conflict
+                    for pt in &self.prefix_triggers {
+                        let prefix_dot = format!("{}.", pt.trigger_path);
+                        if path.starts_with(&prefix_dot) {
+                            resolve_and_clear(
+                                &pt.targets,
+                                &[],
+                                intern,
+                                shadow,
+                                &mut clears,
+                                &mut seen,
+                            );
+                        }
+                    }
                 }
             }
 
@@ -357,27 +426,33 @@ fn resolve_and_clear(
                 if seen.insert(*target_id) {
                     if let Some(path) = intern.resolve(*target_id) {
                         let path = path.to_owned();
-                        if !shadow.is_null(&path) {
-                            let _ = shadow.set(&path, "null");
+                        if !shadow.is_null(&path, intern) {
+                            let _ = shadow.set(&path, "null", intern);
                             clears.push(Change {
                                 path,
                                 value_json: "null".to_owned(),
-                                origin: Some("clear".to_owned()),
+                                kind: ChangeKind::Real,
+                                lineage: Lineage::Input,
+                                audit: None,
+                                ..Default::default()
                             });
                         }
                     }
                 }
             }
             ClearTarget::Wildcard(segments) => {
-                let concrete_paths = resolve_wildcard_target(shadow, segments, captures);
+                let concrete_paths = resolve_wildcard_target(shadow, segments, captures, intern);
                 for path in concrete_paths {
                     let id = intern.intern(&path);
-                    if seen.insert(id) && !shadow.is_null(&path) {
-                        let _ = shadow.set(&path, "null");
+                    if seen.insert(id) && !shadow.is_null(&path, intern) {
+                        let _ = shadow.set(&path, "null", intern);
                         clears.push(Change {
                             path,
                             value_json: "null".to_owned(),
-                            origin: Some("clear".to_owned()),
+                            kind: ChangeKind::Real,
+                            lineage: Lineage::Input,
+                            audit: None,
+                            ..Default::default()
                         });
                     }
                 }
@@ -391,13 +466,17 @@ mod tests {
     use super::*;
     use crate::pipeline::ProcessingPipeline;
 
+    fn agg_pairs(json: &str) -> Vec<crate::pipeline::AggregationPairInput> {
+        serde_json::from_str(json).unwrap()
+    }
+
     // =========================================================================
     // Test helpers
     // =========================================================================
 
-    fn make_shadow(json: &str) -> ShadowState {
+    fn make_shadow(json: &str, intern: &mut InternTable) -> ShadowState {
         let mut s = ShadowState::new();
-        s.init(json).unwrap();
+        s.init(json, intern).unwrap();
         s
     }
 
@@ -539,8 +618,8 @@ mod tests {
         // Shadow: { form: { errors: "some error" } }
         // Target: "form.errors" (direct, interned ID)
         // → clears form.errors to null, returns one Change
-        let mut shadow = make_shadow(r#"{"form": {"errors": "some error"}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"errors": "some error"}}"#, &mut intern);
         let target_id = intern.intern("form.errors");
         let targets = vec![ClearTarget::Direct(target_id)];
         let mut clears = Vec::new();
@@ -556,7 +635,7 @@ mod tests {
         assert_eq!(clears.len(), 1);
         assert_eq!(clears[0].path, "form.errors");
         assert_eq!(clears[0].value_json, "null");
-        assert!(shadow.is_null("form.errors"));
+        assert!(shadow.is_null("form.errors", &intern));
     }
 
     #[test]
@@ -564,8 +643,8 @@ mod tests {
         // Shadow: { form: { errors: null } }
         // Target: "form.errors" (direct)
         // → already null, no Change produced (deduplication)
-        let mut shadow = make_shadow(r#"{"form": {"errors": null}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"errors": null}}"#, &mut intern);
         let target_id = intern.intern("form.errors");
         let targets = vec![ClearTarget::Direct(target_id)];
         let mut clears = Vec::new();
@@ -589,9 +668,11 @@ mod tests {
         // Target segments: [Literal("form"), Literal("fields"), WildcardBind, Literal("error")]
         // Captures: ["email"]
         // → resolves to "form.fields.email.error", clears to null
-        let mut shadow =
-            make_shadow(r#"{"form": {"fields": {"email": {"error": "required", "value": "x"}}}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(
+            r#"{"form": {"fields": {"email": {"error": "required", "value": "x"}}}}"#,
+            &mut intern,
+        );
         let target_segs = parse_segments("form.fields.[*].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["email".to_owned()];
@@ -616,9 +697,11 @@ mod tests {
         // Target segments: [Literal("form"), WildcardBind, WildcardBind, Literal("error")]
         // Captures: ["billing", "address"]
         // → resolves to "form.billing.address.error"
-        let mut shadow =
-            make_shadow(r#"{"form": {"billing": {"address": {"error": "bad", "value": "123"}}}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(
+            r#"{"form": {"billing": {"address": {"error": "bad", "value": "123"}}}}"#,
+            &mut intern,
+        );
         let target_segs = parse_segments("form.[*].[*].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["billing".to_owned(), "address".to_owned()];
@@ -647,10 +730,11 @@ mod tests {
         //   "form.fields.email.error" → null (was "e1")
         //   "form.fields.name.error"  → null (was "e2")
         //   "form.fields.age.error"   → skip (already null)
+        let mut intern = InternTable::new();
         let mut shadow = make_shadow(
             r#"{"form": {"fields": {"email": {"error": "e1"}, "name": {"error": "e2"}, "age": {"error": null}}}}"#,
+            &mut intern,
         );
-        let mut intern = InternTable::new();
         let target_segs = parse_segments("form.fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let mut clears = Vec::new();
@@ -675,8 +759,8 @@ mod tests {
         // Shadow: { form: { fields: {} } }
         // Target segments with [**] at fields level
         // → no keys to expand, produces zero changes
-        let mut shadow = make_shadow(r#"{"form": {"fields": {}}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"fields": {}}}"#, &mut intern);
         let target_segs = parse_segments("form.fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let mut clears = Vec::new();
@@ -697,8 +781,8 @@ mod tests {
         // Shadow: { form: { fields: "not an object" } }
         // Target segments with [**] at fields level
         // → fields is a string, not an object, produces zero changes
-        let mut shadow = make_shadow(r#"{"form": {"fields": "not an object"}}"#);
         let mut intern = InternTable::new();
+        let mut shadow = make_shadow(r#"{"form": {"fields": "not an object"}}"#, &mut intern);
         let target_segs = parse_segments("form.fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let mut clears = Vec::new();
@@ -731,10 +815,11 @@ mod tests {
         // → [**] expands to all keys under form.billing.fields
         // → produces: "form.billing.fields.street.error" → null
         //             "form.billing.fields.city.error"   → null
+        let mut intern = InternTable::new();
         let mut shadow = make_shadow(
             r#"{"form": {"billing": {"fields": {"street": {"error": "e1"}, "city": {"error": "e2"}}}}}"#,
+            &mut intern,
         );
-        let mut intern = InternTable::new();
         let target_segs = parse_segments("form.[*].fields.[**].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["billing".to_owned()];
@@ -768,10 +853,11 @@ mod tests {
         // → [*] substituted with "street"
         // → produces: "form.billing.fields.street.error"  → null
         //             "form.shipping.fields.street.error" → null
+        let mut intern = InternTable::new();
         let mut shadow = make_shadow(
             r#"{"form": {"billing": {"fields": {"street": {"error": "e1"}}}, "shipping": {"fields": {"street": {"error": "e2"}}}}}"#,
+            &mut intern,
         );
-        let mut intern = InternTable::new();
         let target_segs = parse_segments("form.[**].fields.[*].error");
         let targets = vec![ClearTarget::Wildcard(target_segs)];
         let captures = vec!["street".to_owned()];
@@ -830,7 +916,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -860,7 +949,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"same\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         assert!(result.changes.is_empty());
@@ -881,7 +973,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         assert_eq!(result.changes.len(), 1);
@@ -921,7 +1016,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"b\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -947,9 +1045,9 @@ mod tests {
         // Expected pipeline:
         //   Step 3:   toggle = true
         //   Step 3.5: enabled = null (cleared)
-        //   Step 6-7: flip sees enabled=null, non-boolean → no flip (passes through)
-        // Output: [toggle=true, enabled=null]
-        // Note: flip skips non-boolean values, null is not boolean
+        //   Step 6-7: flip sees enabled→null change, reads old value of enabled (true),
+        //             sets disabled = true (value rotation — works for any type)
+        // Output: [toggle=true, enabled=null, disabled=true]
         let mut pipeline = ProcessingPipeline::new();
         pipeline
             .shadow_init(r#"{"toggle": false, "enabled": true, "disabled": false}"#)
@@ -965,14 +1063,23 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "toggle".to_owned(),
                 value_json: "true".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
         assert!(paths.contains(&"toggle"));
         assert!(paths.contains(&"enabled"));
-        // disabled should NOT be in output (null is not boolean, flip skips)
-        assert!(!paths.contains(&"disabled"));
+        // disabled receives the old value of enabled (true) via value rotation
+        assert!(paths.contains(&"disabled"));
+        let disabled_change = result
+            .changes
+            .iter()
+            .find(|c| c.path == "disabled")
+            .unwrap();
+        assert_eq!(disabled_change.value_json, "true");
     }
 
     #[test]
@@ -1006,7 +1113,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         // BoolLogic concern should be in output
@@ -1043,16 +1153,19 @@ mod tests {
             )
             .unwrap();
         pipeline
-            .register_aggregation_batch(
+            .register_aggregation_batch(&agg_pairs(
                 r#"[["totals.price", "items.a.price"], ["totals.price", "items.b.price"]]"#,
-            )
+            ))
             .unwrap();
 
         let result = pipeline
             .process_changes_vec(vec![Change {
                 path: "items.a.price".to_owned(),
                 value_json: "20".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1082,7 +1195,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "a".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1118,7 +1234,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.fields.email.value".to_owned(),
                 value_json: "\"new@b.com\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1159,7 +1278,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.fields.email.value".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1187,7 +1309,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "other.fields.email.value".to_owned(),
                 value_json: "\"z\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         assert_eq!(result.changes.len(), 1);
@@ -1212,7 +1337,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1225,7 +1353,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.name".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths2: Vec<&str> = result2.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1252,12 +1383,18 @@ mod tests {
                 Change {
                     path: "a".to_owned(),
                     value_json: "\"x2\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 },
                 Change {
                     path: "b".to_owned(),
                     value_json: "\"y2\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 },
             ])
             .unwrap();
@@ -1290,7 +1427,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "form.email".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let errors_change = result.changes.iter().find(|c| c.path == "form.errors");
@@ -1329,7 +1469,10 @@ mod tests {
             .process_changes_vec(vec![Change {
                 path: "app.section1.fieldA.value".to_owned(),
                 value_json: "\"new\"".to_owned(),
-                origin: None,
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
             }])
             .unwrap();
         let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
@@ -1362,12 +1505,18 @@ mod tests {
                 Change {
                     path: "form.fields.email.value".to_owned(),
                     value_json: "\"new1\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 },
                 Change {
                     path: "form.fields.name.value".to_owned(),
                     value_json: "\"new2\"".to_owned(),
-                    origin: None,
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 },
             ])
             .unwrap();
@@ -1485,6 +1634,129 @@ mod tests {
             &mut intern,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn registration_concrete_rule_also_adds_prefix_entry() {
+        // Register: triggers=["form.fields"], targets=["form.errors"]
+        // Verify: direct_triggers has "form.fields" entry AND prefix_triggers has one entry
+        let mut registry = ClearPathsRegistry::new();
+        let mut intern = InternTable::new();
+        registry
+            .register(
+                "test",
+                &["form.fields".to_owned()],
+                &["form.errors".to_owned()],
+                &mut intern,
+            )
+            .unwrap();
+        let id = intern.get_id("form.fields").unwrap();
+        assert!(registry.direct_triggers.contains_key(&id));
+        assert_eq!(registry.prefix_triggers.len(), 1);
+        assert_eq!(registry.prefix_triggers[0].trigger_path, "form.fields");
+    }
+
+    #[test]
+    fn pipeline_concrete_trigger_fires_for_descendant_path() {
+        // Setup: form.fields = { email: { value: "old" } }, form.errors = "err"
+        // Clear rule: triggers=["form.fields"], targets=["form.errors"]
+        //
+        // Action: change form.fields.email.value (a descendant of form.fields)
+        //
+        // Expected: form.errors = null (prefix match fired)
+        let mut pipeline = setup_pipeline(
+            r#"{"form": {"fields": {"email": {"value": "old"}}, "errors": "err"}}"#,
+            vec![(vec!["form.fields"], vec!["form.errors"])],
+        );
+        let result = pipeline
+            .process_changes_vec(vec![Change {
+                path: "form.fields.email.value".to_owned(),
+                value_json: "\"new\"".to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
+            }])
+            .unwrap();
+        let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(
+            paths.contains(&"form.errors"),
+            "expected form.errors to be cleared, got: {paths:?}"
+        );
+        let errors_change = result
+            .changes
+            .iter()
+            .find(|c| c.path == "form.errors")
+            .unwrap();
+        assert_eq!(errors_change.value_json, "null");
+    }
+
+    #[test]
+    fn pipeline_concrete_trigger_does_not_fire_for_sibling_prefix() {
+        // Setup: form.fields.email = "old", form.fieldset = "x", form.errors = "err"
+        // Clear rule: triggers=["form.fields"], targets=["form.errors"]
+        //
+        // Action: change form.fieldset — shares "form.fields" prefix but is NOT a descendant
+        //
+        // Expected: form.errors NOT cleared (segment boundary respected)
+        let mut pipeline = setup_pipeline(
+            r#"{"form": {"fields": {"email": "old"}, "fieldset": "x", "errors": "err"}}"#,
+            vec![(vec!["form.fields"], vec!["form.errors"])],
+        );
+        let result = pipeline
+            .process_changes_vec(vec![Change {
+                path: "form.fieldset".to_owned(),
+                value_json: "\"y\"".to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
+            }])
+            .unwrap();
+        let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(
+            !paths.contains(&"form.errors"),
+            "form.errors should NOT be cleared for sibling path, got: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn pipeline_concrete_trigger_fires_for_deeply_nested_descendant() {
+        // Setup: form.email = null (object slot, not a primitive), form.errors = "err"
+        // Clear rule: triggers=["form.email"], targets=["form.errors"]
+        //
+        // Action: change form.email.value.user.nested — 4 levels deep under trigger
+        //
+        // Expected: form.errors = null (prefix fires regardless of depth)
+        // This documents that prefix matching is purely string-based — it does not
+        // know whether form.email is a leaf in your schema.
+        // Note: form.email must be null/object in shadow for the nested write to succeed;
+        // writing through a primitive would error at the shadow traversal level.
+        let mut pipeline = setup_pipeline(
+            r#"{"form": {"email": null, "errors": "err"}}"#,
+            vec![(vec!["form.email"], vec!["form.errors"])],
+        );
+        let result = pipeline
+            .process_changes_vec(vec![Change {
+                path: "form.email.value.user.nested".to_owned(),
+                value_json: "\"deep\"".to_owned(),
+                kind: ChangeKind::Real,
+                lineage: Lineage::Input,
+                audit: None,
+                ..Default::default()
+            }])
+            .unwrap();
+        let paths: Vec<&str> = result.changes.iter().map(|c| c.path.as_str()).collect();
+        assert!(
+            paths.contains(&"form.errors"),
+            "expected form.errors to be cleared for deep descendant, got: {paths:?}"
+        );
+        let errors_change = result
+            .changes
+            .iter()
+            .find(|c| c.path == "form.errors")
+            .unwrap();
+        assert_eq!(errors_change.value_json, "null");
     }
 
     #[test]

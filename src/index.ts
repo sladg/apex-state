@@ -22,7 +22,6 @@ export type {
   StoreInstance,
 } from './core/types'
 export { createGenericStore, type GenericStoreApi } from './store/create-store'
-export type { PipelineObserver } from './utils/debug-log'
 
 // Standalone hooks - composable field utilities
 export {
@@ -51,12 +50,7 @@ export type {
   ListenerRegistration,
   OnStateListener,
 } from './core/types'
-export {
-  registerFlipPair,
-  registerListenerLegacy,
-  registerSideEffects,
-  registerSyncPairsBatch,
-} from './sideEffects'
+export { registerSideEffects } from './sideEffects'
 
 // Type utilities
 export type {

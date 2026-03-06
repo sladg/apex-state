@@ -19,10 +19,10 @@ export declare const VALIDATED: unique symbol
 export declare const STORE_DATA: unique symbol
 
 /** Pre-validated sync pair array. Returned by `syncPairs()`. Branded with DATA to prevent cross-store use. */
-export type ValidatedSyncPairs<DATA extends object = object> = [
-  string,
-  string,
-][] & { [VALIDATED]: 'sync'; [STORE_DATA]: DATA }
+export type ValidatedSyncPairs<DATA extends object = object> = (
+  | [string, string]
+  | [string, string, { oneWay: '[0]->[1]' | '[1]->[0]' }]
+)[] & { [VALIDATED]: 'sync'; [STORE_DATA]: DATA }
 
 /** Pre-validated flip pair array. Returned by `flipPairs()`. Branded with DATA to prevent cross-store use. */
 export type ValidatedFlipPairs<DATA extends object = object> = [

@@ -12,7 +12,12 @@ import { describe, expect, it } from 'vitest'
 import { createGenericStore } from '../../src'
 import type { AggregationTestState } from '../mocks'
 import { aggregationTestFixtures } from '../mocks'
-import { flushEffects, MODES, mountStore } from '../utils/react'
+import {
+  expectShadowMatch,
+  flushEffects,
+  MODES,
+  mountStore,
+} from '../utils/react'
 
 describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
   describe('Read direction: sources → target', () => {
@@ -40,6 +45,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBe('shared')
+      expectShadowMatch(storeInstance)
     })
 
     it('should set target to undefined when sources differ', async () => {
@@ -66,6 +72,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBeUndefined()
+      expectShadowMatch(storeInstance)
     })
 
     it('should keep target unchanged when 0 source paths exist', async () => {
@@ -109,6 +116,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBe('single-value')
+      expectShadowMatch(storeInstance)
     })
 
     it('should reactively update target when source changes to match others', async () => {
@@ -142,6 +150,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBe('value')
+      expectShadowMatch(storeInstance)
     })
 
     it('should reactively update target when source changes to differ', async () => {
@@ -198,6 +207,9 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBe('initial')
+      // NOTE: Shadow state desync here — registration-time aggregation changes
+      // update valtio directly but don't round-trip through processChanges,
+      // so shadow still has the old initial value. This is a known limitation.
     })
 
     it('should handle all sources being null', async () => {
@@ -287,6 +299,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
 
       expect(storeInstance.state.sourceA).toBe('distributed')
       expect(storeInstance.state.sourceB).toBe('distributed')
+      expectShadowMatch(storeInstance)
     })
 
     it('should handle write distribution with many sources', async () => {
@@ -315,6 +328,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       expect(storeInstance.state.sourceA).toBe('distributed-to-all')
       expect(storeInstance.state.sourceB).toBe('distributed-to-all')
       expect(storeInstance.state.sourceC).toBe('distributed-to-all')
+      expectShadowMatch(storeInstance)
     })
   })
 
@@ -424,6 +438,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.numTotal).toBe(10)
+      expectShadowMatch(storeInstance)
     })
 
     it('should handle multiple aggregations reactively', async () => {
@@ -496,6 +511,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.target).toBe('synced')
+      expectShadowMatch(storeInstance)
     })
 
     it('should work alongside flip paths', async () => {
@@ -640,6 +656,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.numTotal).toBe(42)
+      expectShadowMatch(storeInstance)
     })
 
     it('should handle zero as valid aggregation value', async () => {
@@ -666,6 +683,7 @@ describe.each(MODES)('[$name] Side Effects: Aggregation', ({ config }) => {
       await flushEffects()
 
       expect(storeInstance.state.numTotal).toBe(0)
+      expectShadowMatch(storeInstance)
     })
   })
 

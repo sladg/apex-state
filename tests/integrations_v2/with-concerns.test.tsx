@@ -5,7 +5,7 @@
  * Used to selectively enable concern types in components.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createGenericStore } from '../../src'
 import type { BasicTestState } from '../mocks'
@@ -1045,6 +1045,307 @@ describe.each(MODES)(
         // Test with undefined
         const filtered2 = store.withConcerns(undefined as any)
         expect(filtered2).toBeDefined()
+      })
+    })
+
+    describe('useConcernsSnapshot()', () => {
+      it('should be available on withConcerns() return', () => {
+        // Create store and call withConcerns
+        // Assert useConcernsSnapshot exists on returned object
+        const store = createGenericStore<BasicTestState>(config)
+        const filtered = store.withConcerns({ validationState: true })
+
+        expect(filtered.useConcernsSnapshot).toBeDefined()
+        expect(typeof filtered.useConcernsSnapshot).toBe('function')
+      })
+
+      it('should return empty object before concerns are registered', async () => {
+        // Mount store with no concerns registered
+        // Call useConcernsSnapshot()
+        // Assert returns {}
+        const store = createGenericStore<BasicTestState>(config)
+        const filtered = store.withConcerns({ validationState: true })
+
+        let snapshot: Record<string, unknown> = {}
+        mountStore(store, basicTestFixtures.empty, {
+          customRender: (_state) => {
+            snapshot = filtered.useConcernsSnapshot()
+            return <span />
+          },
+        })
+
+        await flushSync()
+
+        expect(snapshot).toEqual({})
+      })
+
+      it('should return all paths keyed by path with selected concerns', async () => {
+        // Register validationState on fieldA and fieldB
+        // Call useConcernsSnapshot() with { validationState: true }
+        // Assert returns { fieldA: { validationState: ... }, fieldB: { validationState: ... } }
+        const store = createGenericStore<BasicTestState>(config)
+        const filtered = store.withConcerns({ validationState: true })
+
+        let snapshot: Record<string, any> = {}
+        const { setValue } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              validationState: { evaluate: () => ({ status: 'valid' }) },
+            },
+            fieldB: {
+              validationState: { evaluate: () => ({ status: 'invalid' }) },
+            },
+          },
+          customRender: (_state) => {
+            snapshot = filtered.useConcernsSnapshot()
+            return <span />
+          },
+        })
+
+        setValue('fieldA', 'x')
+        await flushEffects()
+
+        expect(snapshot).toHaveProperty('fieldA')
+        expect(snapshot).toHaveProperty('fieldB')
+        expect(snapshot['fieldA']).toMatchObject({
+          validationState: { status: 'valid' },
+        })
+        expect(snapshot['fieldB']).toMatchObject({
+          validationState: { status: 'invalid' },
+        })
+      })
+
+      it('should exclude paths with no matching selected concern', async () => {
+        // Register validationState on fieldA, disabledWhen on fieldB
+        // Call useConcernsSnapshot() with { validationState: true }
+        // Assert fieldA is included, fieldB is NOT (no validationState on it)
+        const store = createGenericStore<BasicTestState>(config)
+        const filtered = store.withConcerns({ validationState: true })
+
+        let snapshot: Record<string, any> = {}
+        const { setValue } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              validationState: { evaluate: () => ({ status: 'valid' }) },
+            },
+            fieldB: { disabledWhen: { evaluate: () => true } },
+          },
+          customRender: (_state) => {
+            snapshot = filtered.useConcernsSnapshot()
+            return <span />
+          },
+        })
+
+        setValue('fieldA', 'x')
+        await flushEffects()
+
+        expect(snapshot).toHaveProperty('fieldA')
+        expect(snapshot).not.toHaveProperty('fieldB')
+      })
+
+      it('should only include selected concern keys per path', async () => {
+        // Register validationState + disabledWhen on fieldA
+        // Call useConcernsSnapshot() with { validationState: true }
+        // Assert fieldA.validationState is present, fieldA.disabledWhen is NOT
+        const store = createGenericStore<BasicTestState>(config)
+        const filtered = store.withConcerns({ validationState: true })
+
+        let snapshot: Record<string, any> = {}
+        const { setValue } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              validationState: { evaluate: () => ({ status: 'valid' }) },
+              disabledWhen: { evaluate: () => true },
+            },
+          },
+          customRender: (_state) => {
+            snapshot = filtered.useConcernsSnapshot()
+            return <span />
+          },
+        })
+
+        setValue('fieldA', 'x')
+        await flushEffects()
+
+        expect(snapshot['fieldA']).toHaveProperty('validationState')
+        expect(snapshot['fieldA']).not.toHaveProperty('disabledWhen')
+      })
+
+      it('should update reactively when concern value changes', async () => {
+        // Register a concern that starts false, then becomes true when fieldA = 'locked'
+        // Capture snapshot before and after change
+        // Assert snapshot reflects new value after re-render
+        const store = createGenericStore<BasicTestState>(config)
+        const filtered = store.withConcerns({ disabledWhen: true })
+
+        let renderCount = 0
+        let lastSnapshot: Record<string, any> = {}
+        const { setValue } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              disabledWhen: {
+                boolLogic: { IS_EQUAL: ['fieldA', 'locked'] },
+              },
+            },
+          },
+          customRender: (_state) => {
+            renderCount++
+            lastSnapshot = filtered.useConcernsSnapshot()
+            return <span />
+          },
+        })
+
+        await flushEffects()
+        const renderCountBefore = renderCount
+
+        // Change fieldA to 'locked' — disabledWhen should become true
+        setValue('fieldA', 'locked')
+        await flushEffects()
+
+        expect(renderCount).toBeGreaterThan(renderCountBefore)
+        expect(lastSnapshot['fieldA']?.disabledWhen).toBe(true)
+      })
+    })
+
+    describe('useWatchConcerns()', () => {
+      it('should be available on the store', () => {
+        // Create store
+        // Assert useWatchConcerns exists
+        const store = createGenericStore<BasicTestState>(config)
+
+        expect(store.useWatchConcerns).toBeDefined()
+        expect(typeof store.useWatchConcerns).toBe('function')
+      })
+
+      it('should fire callback when a concern value changes', async () => {
+        // Register a concern
+        // Call useWatchConcerns({ validationState: true }, callback)
+        // Trigger state change that changes the concern
+        // Assert callback was called with the new concerns snapshot
+        const store = createGenericStore<BasicTestState>(config)
+        const callback = vi.fn()
+
+        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              validationState: { evaluate: () => ({ status: 'valid' }) },
+            },
+          },
+          customRender: (_state) => {
+            store.useWatchConcerns({ validationState: true }, callback)
+            return <span />
+          },
+        })
+
+        await flushEffects()
+        callback.mockClear()
+
+        storeInstance.state.fieldA = 'changed'
+        await flushEffects()
+
+        expect(callback).toHaveBeenCalled()
+      })
+
+      it('callback should receive concerns keyed by path with selected keys only', async () => {
+        // Register validationState + disabledWhen on fieldA
+        // Watch with { validationState: true }
+        // Assert callback receives { fieldA: { validationState: ... } }
+        // Assert callback does NOT include disabledWhen in the snapshot
+        const store = createGenericStore<BasicTestState>(config)
+        let lastConcerns: Record<string, any> = {}
+        const callback = vi.fn((c) => {
+          lastConcerns = c
+        })
+
+        const { storeInstance } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              validationState: { evaluate: () => ({ status: 'valid' }) },
+              disabledWhen: { evaluate: () => true },
+            },
+          },
+          customRender: (_state) => {
+            store.useWatchConcerns({ validationState: true }, callback)
+            return <span />
+          },
+        })
+
+        storeInstance.state.fieldA = 'changed'
+        await flushEffects()
+
+        expect(lastConcerns).toHaveProperty('fieldA')
+        expect(lastConcerns['fieldA']).toHaveProperty('validationState')
+        expect(lastConcerns['fieldA']).not.toHaveProperty('disabledWhen')
+      })
+
+      it('should fire callback but not re-render for concern changes', async () => {
+        // useWatchConcerns uses valtio subscribe (not useSnapshot) so changes to _concerns
+        // do not cause component re-renders through this hook.
+        // Verify: callback fires, but component render count stays stable between concern changes.
+        // Note: state changes via customRender wrapper still cause renders via useSnapshot(state).
+        // We verify callback received the latest values independently of render count.
+        const store = createGenericStore<BasicTestState>(config)
+        const callbackValues: Record<string, any>[] = []
+
+        const { setValue } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              disabledWhen: { boolLogic: { IS_EQUAL: ['fieldA', 'locked'] } },
+            },
+          },
+          customRender: (_state) => {
+            store.useWatchConcerns({ disabledWhen: true }, (c) => {
+              callbackValues.push(c)
+            })
+            return <span />
+          },
+        })
+
+        await flushEffects()
+        const countBeforeChange = callbackValues.length
+
+        setValue('fieldA', 'locked')
+        await flushEffects()
+
+        // Callback fired with updated concern values
+        expect(callbackValues.length).toBeGreaterThan(countBeforeChange)
+        const last = callbackValues[callbackValues.length - 1]!
+        expect(last['fieldA']?.disabledWhen).toBe(true)
+      })
+
+      it('snapshot passed to callback should not include unselected concern keys', async () => {
+        // Register validationState + disabledWhen on fieldA
+        // Watch with { validationState: true } only
+        // Trigger a change — callback may fire
+        // Assert snapshot passed to callback never includes disabledWhen
+        const store = createGenericStore<BasicTestState>(config)
+        const receivedSnapshots: Record<string, any>[] = []
+
+        const { setValue } = mountStore(store, basicTestFixtures.empty, {
+          concerns: {
+            fieldA: {
+              validationState: { evaluate: () => ({ status: 'valid' }) },
+              disabledWhen: { boolLogic: { IS_EQUAL: ['fieldA', 'locked'] } },
+            },
+          },
+          customRender: (_state) => {
+            store.useWatchConcerns({ validationState: true }, (c) => {
+              receivedSnapshots.push(c)
+            })
+            return <span />
+          },
+        })
+
+        setValue('fieldA', 'locked')
+        await flushEffects()
+
+        // Every snapshot the callback received should only contain validationState
+        for (const snap of receivedSnapshots) {
+          if (snap['fieldA']) {
+            expect(snap['fieldA']).toHaveProperty('validationState')
+            expect(snap['fieldA']).not.toHaveProperty('disabledWhen')
+          }
+        }
       })
     })
   },

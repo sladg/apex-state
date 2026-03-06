@@ -42,6 +42,7 @@ export const buildBatch = (count: number): Change[] =>
   Array.from({ length: count }, (_, i) => ({
     path: `field_${i}`,
     value: `batch_${i}`,
+    meta: {},
   }))
 
 /** Build a deeply nested state object (N levels deep). */
@@ -111,7 +112,7 @@ export const createListenerPipeline = (listenerCount: number) => {
   for (let i = 0; i < listenerCount; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: 'field_0',
+      topic_paths: ['field_0'],
       scope_path: '',
     })
   }
@@ -131,7 +132,7 @@ export const createMultiPathListenerPipeline = (listenerCount: number) => {
   for (let i = 0; i < listenerCount; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: `field_${i}`,
+      topic_paths: [`field_${i}`],
       scope_path: '',
     })
   }
@@ -171,7 +172,7 @@ export const createCombinedPipeline = (
   for (let i = 0; i < listenerCount; i++) {
     listeners.push({
       subscriber_id: i,
-      topic_path: `field_0`,
+      topic_paths: ['field_0'],
       scope_path: '',
     })
   }

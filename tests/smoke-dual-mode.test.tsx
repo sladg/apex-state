@@ -1,8 +1,7 @@
 /**
- * DUAL-MODE SMOKE TESTS: Legacy TypeScript vs. WASM
+ * SMOKE TESTS: WASM implementation
  *
- * These tests run the same scenarios in both legacy and WASM modes to ensure
- * feature parity and catch integration bugs early.
+ * These tests validate core scenarios with the WASM implementation.
  *
  * Tests cover:
  * - Basic state mutations and React re-renders
@@ -10,8 +9,6 @@
  * - Concerns: validationState, disabledWhen
  * - Aggregations (write coordination)
  * - Listeners (onChange callbacks)
- *
- * Each test runs twice: once with useLegacyImplementation: true, once with false.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -57,15 +54,6 @@ interface ListenerState {
 }
 
 // ---------------------------------------------------------------------------
-// Mode Configuration
-// ---------------------------------------------------------------------------
-
-const MODES = [
-  { name: 'Legacy', config: { useLegacyImplementation: true } },
-  { name: 'WASM', config: { useLegacyImplementation: false } },
-] as const
-
-// ---------------------------------------------------------------------------
 // Test Suite
 // ---------------------------------------------------------------------------
 
@@ -73,9 +61,9 @@ const MODES = [
 // Test Suite: Basic State Mutations
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Basic State Mutations', ({ config }) => {
+describe('Basic State Mutations', () => {
   it('should mutate state and trigger React re-render', async () => {
-    const store = createGenericStore<BasicState>(config)
+    const store = createGenericStore<BasicState>({})
 
     const { storeInstance, setValue } = mountStore(store, {
       count: 0,
@@ -97,7 +85,7 @@ describe.each(MODES)('[$name] Basic State Mutations', ({ config }) => {
   })
 
   it('should handle multiple field updates', async () => {
-    const store = createGenericStore<BasicState>(config)
+    const store = createGenericStore<BasicState>({})
 
     const { storeInstance, setValue } = mountStore(store, {
       count: 0,
@@ -122,9 +110,9 @@ describe.each(MODES)('[$name] Basic State Mutations', ({ config }) => {
 // Test Suite: Side Effects - syncPaths
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Side Effects: syncPaths', ({ config }) => {
+describe('Side Effects: syncPaths', () => {
   it('should synchronize source to target', async () => {
-    const store = createGenericStore<SyncFlipState>(config)
+    const store = createGenericStore<SyncFlipState>({})
 
     const Component = () => {
       store.useSideEffects('sync-test', {
@@ -151,7 +139,7 @@ describe.each(MODES)('[$name] Side Effects: syncPaths', ({ config }) => {
   })
 
   it('should handle bidirectional sync', async () => {
-    const store = createGenericStore<SyncFlipState>(config)
+    const store = createGenericStore<SyncFlipState>({})
 
     const Component = () => {
       store.useSideEffects('sync-test', {
@@ -188,9 +176,9 @@ describe.each(MODES)('[$name] Side Effects: syncPaths', ({ config }) => {
 // Test Suite: Side Effects - flipPaths
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Side Effects: flipPaths', ({ config }) => {
+describe('Side Effects: flipPaths', () => {
   it('should flip boolean paths', async () => {
-    const store = createGenericStore<SyncFlipState>(config)
+    const store = createGenericStore<SyncFlipState>({})
 
     const Component = () => {
       store.useSideEffects('flip-test', {
@@ -220,7 +208,7 @@ describe.each(MODES)('[$name] Side Effects: flipPaths', ({ config }) => {
   })
 
   it('should handle bidirectional flip', async () => {
-    const store = createGenericStore<SyncFlipState>(config)
+    const store = createGenericStore<SyncFlipState>({})
 
     const Component = () => {
       store.useSideEffects('flip-test', {
@@ -259,9 +247,9 @@ describe.each(MODES)('[$name] Side Effects: flipPaths', ({ config }) => {
 // Test Suite: Concerns - validationState
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Concerns: validationState', ({ config }) => {
+describe('Concerns: validationState', () => {
   it('should validate email with Zod schema', async () => {
-    const store = createGenericStore<ValidationState>(config)
+    const store = createGenericStore<ValidationState>({})
 
     const { storeInstance, setValue } = mountStore(
       store,
@@ -294,7 +282,7 @@ describe.each(MODES)('[$name] Concerns: validationState', ({ config }) => {
   })
 
   it('should validate age with min constraint', async () => {
-    const store = createGenericStore<ValidationState>(config)
+    const store = createGenericStore<ValidationState>({})
 
     const { storeInstance, setValue } = mountStore(
       store,
@@ -330,9 +318,9 @@ describe.each(MODES)('[$name] Concerns: validationState', ({ config }) => {
 // Test Suite: Concerns - disabledWhen
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Concerns: disabledWhen', ({ config }) => {
+describe('Concerns: disabledWhen', () => {
   it('should evaluate simple boolean logic', async () => {
-    const store = createGenericStore<ValidationState>(config)
+    const store = createGenericStore<ValidationState>({})
 
     const { storeInstance, setValue } = mountStore(
       store,
@@ -359,7 +347,7 @@ describe.each(MODES)('[$name] Concerns: disabledWhen', ({ config }) => {
   })
 
   it('should evaluate AND logic', async () => {
-    const store = createGenericStore<ValidationState>(config)
+    const store = createGenericStore<ValidationState>({})
 
     const { storeInstance, setValue } = mountStore(
       store,
@@ -403,9 +391,9 @@ describe.each(MODES)('[$name] Concerns: disabledWhen', ({ config }) => {
 // Test Suite: Aggregations
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Aggregations', ({ config }) => {
+describe('Aggregations', () => {
   it('should aggregate array item prices to total', async () => {
-    const store = createGenericStore<AggregationState>(config)
+    const store = createGenericStore<AggregationState>({})
 
     const Component = () => {
       store.useSideEffects('agg-test', {
@@ -455,9 +443,9 @@ describe.each(MODES)('[$name] Aggregations', ({ config }) => {
 // Test Suite: Listeners (onChange callbacks)
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Listeners', ({ config }) => {
+describe('Listeners', () => {
   it('should trigger listener on nested path change', async () => {
-    const store = createGenericStore<ListenerState>(config)
+    const store = createGenericStore<ListenerState>({})
 
     let callbackFired = false
 
@@ -496,7 +484,7 @@ describe.each(MODES)('[$name] Listeners', ({ config }) => {
   })
 
   it('should provide scoped state to listener', async () => {
-    const store = createGenericStore<ListenerState>(config)
+    const store = createGenericStore<ListenerState>({})
 
     let listenerCallCount = 0
     let lastReceivedName: string | null = null
@@ -537,8 +525,7 @@ describe.each(MODES)('[$name] Listeners', ({ config }) => {
     // Verify listener was called with the change
     expect(listenerCallCount).toBeGreaterThan(initialCallCount)
     // Listener receives scoped state and changes array.
-    // Legacy mode provides PRE-CHANGE state ('Alice'), WASM provides POST-CHANGE state ('Bob').
-    // In both cases, the listener is called and receives valid state.
+    // WASM provides POST-CHANGE state ('Bob').
     expect(lastReceivedName).toBeDefined()
     // The changes array contains the incoming delta
     expect(lastReceivedChanges.length).toBeGreaterThan(0)
@@ -549,12 +536,12 @@ describe.each(MODES)('[$name] Listeners', ({ config }) => {
 // Test Suite: Fixture Contamination Guard
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Fixture Contamination Guard', ({ config }) => {
+describe('Fixture Contamination Guard', () => {
   // These two tests MUST run sequentially. The first mutates state through
   // valtio proxy; the second verifies the original fixture is untouched.
 
   it('should use shared fixture and mutate state via proxy', async () => {
-    const store = createGenericStore<typeof basicTestFixtures.empty>(config)
+    const store = createGenericStore<typeof basicTestFixtures.empty>({})
 
     const { storeInstance, setValue } = mountStore(
       store,
@@ -587,7 +574,7 @@ describe.each(MODES)('[$name] Fixture Contamination Guard', ({ config }) => {
 // Test Suite: Cross-Feature Integration
 // ---------------------------------------------------------------------------
 
-describe.each(MODES)('[$name] Cross-Feature Integration', ({ config }) => {
+describe('Cross-Feature Integration', () => {
   it('should handle sync + validation + disabledWhen together', async () => {
     interface ComplexState {
       email: string
@@ -595,7 +582,7 @@ describe.each(MODES)('[$name] Cross-Feature Integration', ({ config }) => {
       isValid: boolean
     }
 
-    const store = createGenericStore<ComplexState>(config)
+    const store = createGenericStore<ComplexState>({})
 
     const Component = () => {
       store.useSideEffects('complex-test', {

@@ -67,7 +67,7 @@ Key functions in `src/core/pathGroups.ts`:
 
 ```typescript
 interface SideEffects<DATA, META> {
-  syncPaths?: SyncPair<DATA>[]           // [path1, path2] — bidirectional sync
+  syncPaths?: SyncPair<DATA>[]           // [path1, path2] or [path1, path2, { oneWay: ... }]
   flipPaths?: FlipPair<DATA>[]           // [path1, path2] — inverse booleans
   aggregations?: AggregationPair<DATA>[] // [target, source] — target always first
   listeners?: ListenerRegistration<DATA, META>[]
@@ -76,10 +76,15 @@ interface SideEffects<DATA, META> {
 
 ### Sync Paths
 
-- Multiple sync pairs form groups via PathGroups
-- On registration, all paths in a group sync to the most common non-null value
-- During pipeline processing, a change to any path propagates to all group members
-- **IMPORTANT**: Bulk registration uses `registerSyncPairsBatch` (single `processChanges` call), NOT a loop over `registerSyncPair`. This is a 10x perf optimization at 150 fields. See `docs/SIDE_EFFECTS_GUIDE.md` "Batched Registration" section. Do not revert `registerSideEffects` to per-pair loop.
+Two modes:
+
+- **Bidirectional** `[path1, path2]` — either change propagates to the other. Multiple pairs form connected groups via PathGroups (change any member → all members update).
+- **Directed / one-way** `[path1, path2, { oneWay: '[0]->[1]' | '[1]->[0]' }]` — change flows from source to target only. Directed pairs are sent as `directed_sync_pairs` to WASM and use the directed sync graph (not the bidirectional sync graph).
+
+`pairs.syncToWasm()` in `src/types/pairs.ts` splits the user-facing array into `{ bidirectional, directed }` before the WASM call.
+
+- On registration, bidirectional groups sync to the most common non-null value. Directed pairs write source → target.
+- **IMPORTANT**: Bulk registration uses a single WASM `registerSideEffects` call (not a loop). This is a 10x perf optimization at 150 fields. See `docs/SIDE_EFFECTS_GUIDE.md` "Batched Registration" section.
 
 ### Flip Paths
 

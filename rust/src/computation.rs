@@ -12,50 +12,49 @@
 //! 5. AVG: sum/count (null if no valid sources)
 //! 6. No-op filter against current target in shadow
 
-use crate::bool_logic::BoolLogicNode;
-use crate::pipeline::{Change, UNDEFINED_SENTINEL_JSON};
-use crate::shadow::ShadowState;
+use crate::change::{Change, ChangeKind, Lineage, UNDEFINED_SENTINEL_JSON};
+use crate::intern::InternTable;
+use crate::registry_helpers::{HasRegistrySources, PathIndexedRegistry, RegistrySource};
+use crate::shadow::{ShadowState, ValueRepr};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
+use ts_rs::TS;
 
 /// Supported computation operations.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) enum ComputationOp {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+pub enum ComputationOp {
     Sum,
     Avg,
 }
 
-/// A single computation source with an optional exclude condition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ComputationSource {
-    pub path: String,
-    pub exclude_when: Option<BoolLogicNode>,
-}
-
 /// A single computation: operation + target path + multiple sources.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Computation {
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct Computation {
     pub op: ComputationOp,
     pub target: String,
-    pub sources: Vec<ComputationSource>,
+    #[ts(inline)]
+    pub sources: Vec<RegistrySource>,
+}
+
+impl HasRegistrySources for Computation {
+    fn target(&self) -> &str {
+        &self.target
+    }
+    fn sources(&self) -> &[RegistrySource] {
+        &self.sources
+    }
 }
 
 /// Registry of all registered computations, keyed by target path.
 #[derive(Debug)]
 pub(crate) struct ComputationRegistry {
-    computations: HashMap<String, Computation>,
-    /// Reverse index: source path → target paths (for reactive updates)
-    source_to_targets: HashMap<String, Vec<String>>,
-    /// Reverse index: BoolLogic condition path → target paths (for condition re-evaluation)
-    condition_path_to_targets: HashMap<String, Vec<String>>,
+    inner: PathIndexedRegistry<Computation>,
 }
 
 impl ComputationRegistry {
     pub(crate) fn new() -> Self {
         Self {
-            computations: HashMap::new(),
-            source_to_targets: HashMap::new(),
-            condition_path_to_targets: HashMap::new(),
+            inner: PathIndexedRegistry::new(),
         }
     }
 
@@ -64,123 +63,60 @@ impl ComputationRegistry {
         &mut self,
         op: ComputationOp,
         target: String,
-        sources: Vec<ComputationSource>,
+        sources: Vec<RegistrySource>,
     ) {
-        // Update reverse index: each source points to this target
-        for source in &sources {
-            self.source_to_targets
-                .entry(source.path.clone())
-                .or_default()
-                .push(target.clone());
+        self.inner.register(Computation {
+            op,
+            target,
+            sources,
+        });
+    }
 
-            // Extract paths from BoolLogic conditions and index them
-            if let Some(ref condition) = source.exclude_when {
-                for cond_path in condition.extract_paths() {
-                    self.condition_path_to_targets
-                        .entry(cond_path)
-                        .or_default()
-                        .push(target.clone());
-                }
-            }
-        }
-
-        // Register the computation
-        self.computations.insert(
-            target.clone(),
-            Computation {
-                op,
-                target,
-                sources,
-            },
-        );
+    /// Number of registered computations.
+    pub(crate) fn len(&self) -> usize {
+        self.inner.entries.len()
     }
 
     /// Unregister a single computation by target path.
     #[allow(dead_code)] // Called via WASM exports (invisible to clippy)
     pub(crate) fn unregister(&mut self, target: &str) {
-        // Remove from reverse indices
-        if let Some(comp) = self.computations.get(target) {
-            for source in &comp.sources {
-                if let Some(targets) = self.source_to_targets.get_mut(&source.path) {
-                    targets.retain(|t| t != target);
-                    if targets.is_empty() {
-                        self.source_to_targets.remove(&source.path);
-                    }
-                }
-
-                // Clean up condition path reverse index
-                if let Some(ref condition) = source.exclude_when {
-                    for cond_path in condition.extract_paths() {
-                        if let Some(targets) = self.condition_path_to_targets.get_mut(&cond_path) {
-                            targets.retain(|t| t != target);
-                            if targets.is_empty() {
-                                self.condition_path_to_targets.remove(&cond_path);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove the computation
-        self.computations.remove(target);
+        self.inner.unregister(target);
     }
 
     /// Check if a path is a computation target.
     pub(crate) fn is_computation_target(&self, path: &str) -> bool {
-        self.computations.contains_key(path)
+        self.inner.entries.contains_key(path)
     }
 
     /// Get affected computation targets for a set of changed paths.
-    /// Returns unique target paths that need recomputation.
-    /// Checks both source paths and condition paths.
     pub(crate) fn get_affected_targets(&self, changed_paths: &[String]) -> Vec<String> {
-        let mut targets = std::collections::HashSet::new();
+        self.inner.get_affected_targets(changed_paths)
+    }
 
-        for path in changed_paths {
-            // Direct match: path is a source
-            if let Some(target_list) = self.source_to_targets.get(path) {
-                targets.extend(target_list.iter().cloned());
-            }
-
-            // Direct match: path is a condition dependency
-            if let Some(target_list) = self.condition_path_to_targets.get(path) {
-                targets.extend(target_list.iter().cloned());
-            }
-
-            // Parent match: path is a child of a source
-            for (source, target_list) in &self.source_to_targets {
-                if crate::is_child_path(path, source) {
-                    targets.extend(target_list.iter().cloned());
-                }
-            }
-
-            // Parent match for condition paths
-            for (cond_path, target_list) in &self.condition_path_to_targets {
-                if crate::is_child_path(path, cond_path) {
-                    targets.extend(target_list.iter().cloned());
-                }
-            }
-        }
-
-        targets.into_iter().collect()
+    /// Dump all registered computations as (target, op_str, sources) triples (debug only).
+    pub(crate) fn dump_infos(&self) -> Vec<(String, String, Vec<String>)> {
+        self.inner
+            .entries
+            .iter()
+            .map(|(target, comp)| {
+                let op = match comp.op {
+                    ComputationOp::Sum => "SUM".to_owned(),
+                    ComputationOp::Avg => "AVG".to_owned(),
+                };
+                let sources = comp.sources.iter().map(|s| s.path.clone()).collect();
+                (target.clone(), op, sources)
+            })
+            .collect()
     }
 }
 
 /// Try to extract an f64 from a shadow value.
 /// Returns None for missing, null, undefined sentinel, and non-numeric values.
-fn try_extract_f64(shadow: &ShadowState, path: &str) -> Option<f64> {
-    let value_repr = shadow.get(path)?;
-    let json_str =
-        serde_json::to_string(&value_repr.to_json_value()).unwrap_or_else(|_| "null".to_string());
-
-    // Skip undefined sentinel and null
-    if json_str == UNDEFINED_SENTINEL_JSON || json_str == "null" {
-        return None;
+fn try_extract_f64(shadow: &ShadowState, path: &str, intern: &InternTable) -> Option<f64> {
+    match shadow.get(path, intern)? {
+        ValueRepr::Number(n) => Some(*n),
+        _ => None,
     }
-
-    // Try parsing as f64
-    json_str.parse::<f64>().ok()
 }
 
 /// Process computation reads: recompute target values when sources change.
@@ -196,6 +132,7 @@ pub(crate) fn process_computation_reads(
     registry: &ComputationRegistry,
     shadow: &ShadowState,
     changed_paths: &[String],
+    intern: &InternTable,
 ) -> Vec<Change> {
     let affected_targets = registry.get_affected_targets(changed_paths);
 
@@ -206,22 +143,22 @@ pub(crate) fn process_computation_reads(
     let mut changes = Vec::new();
 
     for target_path in affected_targets {
-        if let Some(comp) = registry.computations.get(&target_path) {
+        if let Some(comp) = registry.inner.entries.get(&target_path) {
             // Filter out excluded sources (condition evaluates to true = excluded)
-            let active_sources: Vec<&ComputationSource> = comp
+            let active_sources: Vec<&RegistrySource> = comp
                 .sources
                 .iter()
                 .filter(|s| {
                     s.exclude_when
                         .as_ref()
-                        .is_none_or(|cond| !cond.evaluate(shadow))
+                        .is_none_or(|cond| !cond.evaluate(shadow, intern))
                 })
                 .collect();
 
             // Collect numeric values from active sources
             let values: Vec<f64> = active_sources
                 .iter()
-                .filter_map(|s| try_extract_f64(shadow, &s.path))
+                .filter_map(|s| try_extract_f64(shadow, &s.path, intern))
                 .collect();
 
             let desired_value = match comp.op {
@@ -248,15 +185,19 @@ pub(crate) fn process_computation_reads(
             };
 
             // Filter no-op: only create change if target value actually differs
-            let current_target = shadow.get(&comp.target).map(|v| {
-                serde_json::to_string(&v.to_json_value()).unwrap_or_else(|_| "null".to_string())
+            let current_target = shadow.get(&comp.target, intern).map(|v| {
+                serde_json::to_string(&v.to_json_value(intern))
+                    .unwrap_or_else(|_| "null".to_string())
             });
 
             if current_target.as_ref() != Some(&desired_value) {
                 changes.push(Change {
                     path: comp.target.clone(),
                     value_json: desired_value,
-                    origin: Some("computation".to_owned()),
+                    kind: ChangeKind::Real,
+                    lineage: Lineage::Input,
+                    audit: None,
+                    ..Default::default()
                 });
             }
         }
@@ -278,10 +219,11 @@ fn format_f64(value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bool_logic::BoolLogicNode;
 
-    /// Helper: create simple ComputationSource with no condition
-    fn src(path: &str) -> ComputationSource {
-        ComputationSource {
+    /// Helper: create simple RegistrySource with no condition
+    fn src(path: &str) -> RegistrySource {
+        RegistrySource {
             path: path.to_string(),
             exclude_when: None,
         }
@@ -295,8 +237,12 @@ mod tests {
     #[test]
     fn test_sum_basic() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"total": 0, "price1": 10, "price2": 20, "price3": 30}"#)
+            .init(
+                r#"{"total": 0, "price1": 10, "price2": 20, "price3": 30}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = ComputationRegistry::new();
@@ -306,8 +252,12 @@ mod tests {
             vec![src("price1"), src("price2"), src("price3")],
         );
 
-        let changes =
-            process_computation_reads(&registry, &shadow, &paths(&["price1", "price2", "price3"]));
+        let changes = process_computation_reads(
+            &registry,
+            &shadow,
+            &paths(&["price1", "price2", "price3"]),
+            &intern,
+        );
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "total");
@@ -317,8 +267,12 @@ mod tests {
     #[test]
     fn test_avg_basic() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"average": 0, "score1": 10, "score2": 20, "score3": 30}"#)
+            .init(
+                r#"{"average": 0, "score1": 10, "score2": 20, "score3": 30}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = ComputationRegistry::new();
@@ -328,8 +282,12 @@ mod tests {
             vec![src("score1"), src("score2"), src("score3")],
         );
 
-        let changes =
-            process_computation_reads(&registry, &shadow, &paths(&["score1", "score2", "score3"]));
+        let changes = process_computation_reads(
+            &registry,
+            &shadow,
+            &paths(&["score1", "score2", "score3"]),
+            &intern,
+        );
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "average");
@@ -339,15 +297,19 @@ mod tests {
     #[test]
     fn test_sum_all_excluded_gives_zero() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"total": 100, "price1": 10, "disabled": true}"#)
+            .init(
+                r#"{"total": 100, "price1": 10, "disabled": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = ComputationRegistry::new();
         registry.register(
             ComputationOp::Sum,
             "total".to_string(),
-            vec![ComputationSource {
+            vec![RegistrySource {
                 path: "price1".to_string(),
                 exclude_when: Some(BoolLogicNode::IsEqual(
                     "disabled".to_string(),
@@ -356,7 +318,7 @@ mod tests {
             }],
         );
 
-        let changes = process_computation_reads(&registry, &shadow, &paths(&["price1"]));
+        let changes = process_computation_reads(&registry, &shadow, &paths(&["price1"]), &intern);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "total");
@@ -366,15 +328,19 @@ mod tests {
     #[test]
     fn test_avg_all_excluded_gives_undefined() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"average": 50, "score1": 10, "disabled": true}"#)
+            .init(
+                r#"{"average": 50, "score1": 10, "disabled": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = ComputationRegistry::new();
         registry.register(
             ComputationOp::Avg,
             "average".to_string(),
-            vec![ComputationSource {
+            vec![RegistrySource {
                 path: "score1".to_string(),
                 exclude_when: Some(BoolLogicNode::IsEqual(
                     "disabled".to_string(),
@@ -383,7 +349,7 @@ mod tests {
             }],
         );
 
-        let changes = process_computation_reads(&registry, &shadow, &paths(&["score1"]));
+        let changes = process_computation_reads(&registry, &shadow, &paths(&["score1"]), &intern);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "average");
@@ -393,8 +359,12 @@ mod tests {
     #[test]
     fn test_sum_skips_non_numeric() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"total": 0, "price1": 10, "price2": "not_a_number", "price3": 30}"#)
+            .init(
+                r#"{"total": 0, "price1": 10, "price2": "not_a_number", "price3": 30}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = ComputationRegistry::new();
@@ -404,8 +374,12 @@ mod tests {
             vec![src("price1"), src("price2"), src("price3")],
         );
 
-        let changes =
-            process_computation_reads(&registry, &shadow, &paths(&["price1", "price2", "price3"]));
+        let changes = process_computation_reads(
+            &registry,
+            &shadow,
+            &paths(&["price1", "price2", "price3"]),
+            &intern,
+        );
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "total");
@@ -415,8 +389,12 @@ mod tests {
     #[test]
     fn test_no_op_filter() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"total": 60, "price1": 10, "price2": 20, "price3": 30}"#)
+            .init(
+                r#"{"total": 60, "price1": 10, "price2": 20, "price3": 30}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = ComputationRegistry::new();
@@ -426,8 +404,12 @@ mod tests {
             vec![src("price1"), src("price2"), src("price3")],
         );
 
-        let changes =
-            process_computation_reads(&registry, &shadow, &paths(&["price1", "price2", "price3"]));
+        let changes = process_computation_reads(
+            &registry,
+            &shadow,
+            &paths(&["price1", "price2", "price3"]),
+            &intern,
+        );
 
         // Target already has the correct value
         assert_eq!(changes.len(), 0);
@@ -450,12 +432,15 @@ mod tests {
     #[test]
     fn test_single_source() {
         let mut shadow = ShadowState::new();
-        shadow.init(r#"{"total": 0, "price1": 42}"#).unwrap();
+        let mut intern = InternTable::new();
+        shadow
+            .init(r#"{"total": 0, "price1": 42}"#, &mut intern)
+            .unwrap();
 
         let mut registry = ComputationRegistry::new();
         registry.register(ComputationOp::Sum, "total".to_string(), vec![src("price1")]);
 
-        let changes = process_computation_reads(&registry, &shadow, &paths(&["price1"]));
+        let changes = process_computation_reads(&registry, &shadow, &paths(&["price1"]), &intern);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].value_json, "42");
@@ -464,7 +449,10 @@ mod tests {
     #[test]
     fn test_avg_single_source() {
         let mut shadow = ShadowState::new();
-        shadow.init(r#"{"average": 0, "score1": 42}"#).unwrap();
+        let mut intern = InternTable::new();
+        shadow
+            .init(r#"{"average": 0, "score1": 42}"#, &mut intern)
+            .unwrap();
 
         let mut registry = ComputationRegistry::new();
         registry.register(
@@ -473,7 +461,7 @@ mod tests {
             vec![src("score1")],
         );
 
-        let changes = process_computation_reads(&registry, &shadow, &paths(&["score1"]));
+        let changes = process_computation_reads(&registry, &shadow, &paths(&["score1"]), &intern);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].value_json, "42");
@@ -482,8 +470,12 @@ mod tests {
     #[test]
     fn test_exclude_when_partial() {
         let mut shadow = ShadowState::new();
+        let mut intern = InternTable::new();
         shadow
-            .init(r#"{"total": 0, "price1": 10, "price2": 20, "price2_disabled": true}"#)
+            .init(
+                r#"{"total": 0, "price1": 10, "price2": 20, "price2_disabled": true}"#,
+                &mut intern,
+            )
             .unwrap();
 
         let mut registry = ComputationRegistry::new();
@@ -492,7 +484,7 @@ mod tests {
             "total".to_string(),
             vec![
                 src("price1"),
-                ComputationSource {
+                RegistrySource {
                     path: "price2".to_string(),
                     exclude_when: Some(BoolLogicNode::IsEqual(
                         "price2_disabled".to_string(),
@@ -502,7 +494,8 @@ mod tests {
             ],
         );
 
-        let changes = process_computation_reads(&registry, &shadow, &paths(&["price1", "price2"]));
+        let changes =
+            process_computation_reads(&registry, &shadow, &paths(&["price1", "price2"]), &intern);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "total");

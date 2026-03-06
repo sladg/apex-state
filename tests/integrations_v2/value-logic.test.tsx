@@ -26,8 +26,8 @@ interface ValueLogicTestState {
   }
 }
 
-/** ValueLogic is WASM-only — no legacy mode support. */
-const WASM_CONFIG: StoreConfig = { useLegacyImplementation: false }
+/** ValueLogic runs with the WASM implementation. */
+const WASM_CONFIG: StoreConfig = {}
 
 describe('[WASM] ValueLogic Engine', () => {
   const config = WASM_CONFIG

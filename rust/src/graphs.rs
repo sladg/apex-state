@@ -3,7 +3,8 @@
 //! Uses connected components for O(1) group lookup.
 //! When a path in a group changes, all peers receive the same (or inverted) value.
 
-use std::collections::{HashMap, HashSet};
+use crate::intern::InternTable;
+use crate::prelude::{HashMap, HashSet};
 
 /// A graph using connected components for O(1) group lookups.
 ///
@@ -102,11 +103,11 @@ impl Graph {
                     (comp2, comp1)
                 };
 
-                let smaller_nodes: Vec<u32> = self.component_to_nodes[&smaller_comp]
-                    .iter()
-                    .copied()
-                    .collect();
-
+                // Drain smaller component directly — no intermediary Vec.
+                let smaller_nodes = self
+                    .component_to_nodes
+                    .remove(&smaller_comp)
+                    .unwrap_or_default();
                 for node in smaller_nodes {
                     self.node_to_component.insert(node, larger_comp);
                     self.component_to_nodes
@@ -114,8 +115,6 @@ impl Graph {
                         .unwrap()
                         .insert(node);
                 }
-
-                self.component_to_nodes.remove(&smaller_comp);
             }
             (Some(_), Some(_)) => {
                 // Same component - already connected, no-op
@@ -276,6 +275,28 @@ impl Graph {
     #[allow(dead_code)] // Called via WASM export chain
     pub(crate) fn clear(&mut self) {
         *self = Self::new();
+    }
+
+    /// Returns true if no edges have been registered (fast O(1) check for hot-path guards).
+    pub(crate) fn is_empty(&self) -> bool {
+        self.edges.is_empty()
+    }
+
+    /// Iterate all registered node IDs (for prefix scans scoped to this graph).
+    pub(crate) fn all_node_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.node_to_component.keys().copied()
+    }
+
+    /// Dump all edges as resolved string pairs (debug only — not called in hot path).
+    pub(crate) fn dump_pairs(&self, intern: &InternTable) -> Vec<[String; 2]> {
+        self.edges
+            .iter()
+            .filter_map(|(id1, id2)| {
+                let p1 = intern.resolve(*id1)?.to_owned();
+                let p2 = intern.resolve(*id2)?.to_owned();
+                Some([p1, p2])
+            })
+            .collect()
     }
 }
 

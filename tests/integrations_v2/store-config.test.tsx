@@ -4,7 +4,6 @@
  * Validates that store creation:
  * - Works with default config
  * - Respects all StoreConfig options
- * - Handles useLegacyImplementation flag
  * - Respects maxIterations limit
  * - Supports debug config
  */
@@ -56,12 +55,12 @@ describe.each(MODES)('[$name] Store Creation & Configuration', ({ config }) => {
 
     it('should default to WASM implementation', () => {
       // Create store with defaults (no config)
-      // Assert useLegacyImplementation === false when using default
+      // Assert pipeline is initialized (WASM is the only implementation)
       const store = createGenericStore<BasicTestState>()
       const { storeInstance } = mountStore(store, basicTestFixtures.empty)
 
-      // When no config is passed, WASM is the default (useLegacyImplementation = false)
-      expect(storeInstance._internal.config.useLegacyImplementation).toBeFalsy()
+      // Pipeline must be non-null — WASM is the only implementation
+      expect(storeInstance._internal.pipeline).not.toBeNull()
     })
 
     it('should default to debug disabled', () => {
@@ -140,59 +139,6 @@ describe.each(MODES)('[$name] Store Creation & Configuration', ({ config }) => {
       const { storeInstance } = mountStore(store, basicTestFixtures.empty)
 
       expect(storeInstance._internal.config.maxIterations).toBe(1)
-    })
-  })
-
-  describe('useLegacyImplementation flag', () => {
-    it('should use JS fallback when useLegacyImplementation = true', () => {
-      // Create store with config: { useLegacyImplementation: true }
-      // Assert processChanges uses JS implementation
-      const store = createGenericStore<BasicTestState>({
-        useLegacyImplementation: true,
-      })
-      const { storeInstance } = mountStore(store, basicTestFixtures.empty)
-
-      expect(storeInstance._internal.config.useLegacyImplementation).toBe(true)
-    })
-
-    it('should use WASM when useLegacyImplementation = false', () => {
-      // Create store with config: { useLegacyImplementation: false }
-      // Assert processChanges uses WASM implementation
-      const store = createGenericStore<BasicTestState>({
-        useLegacyImplementation: false,
-      })
-      const { storeInstance } = mountStore(store, basicTestFixtures.empty)
-
-      expect(storeInstance._internal.config.useLegacyImplementation).toBe(false)
-    })
-
-    it('should produce same results in both modes', () => {
-      // Create two stores: one legacy, one WASM
-      // Apply same changes to both
-      // Assert final state identical
-      const legacyStore = createGenericStore<BasicTestState>({
-        useLegacyImplementation: true,
-      })
-      const wasmStore = createGenericStore<BasicTestState>({
-        useLegacyImplementation: false,
-      })
-
-      const legacyInitial = {
-        ...basicTestFixtures.empty,
-        fieldA: 'test-value',
-      }
-      const wasmInitial = {
-        ...basicTestFixtures.empty,
-        fieldA: 'test-value',
-      }
-
-      const { storeInstance: legacyInstance } = mountStore(
-        legacyStore,
-        legacyInitial,
-      )
-      const { storeInstance: wasmInstance } = mountStore(wasmStore, wasmInitial)
-
-      expect(legacyInstance.state.fieldA).toBe(wasmInstance.state.fieldA)
     })
   })
 
@@ -374,9 +320,6 @@ describe.each(MODES)('[$name] Store Creation & Configuration', ({ config }) => {
       const { storeInstance } = mountStore(store, basicTestFixtures.empty)
 
       expect(storeInstance._internal.config.maxIterations).toBe(50)
-      expect(storeInstance._internal.config.useLegacyImplementation).toBe(
-        config.useLegacyImplementation,
-      )
     })
 
     it('should handle empty config object', () => {

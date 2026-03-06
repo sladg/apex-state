@@ -48,7 +48,7 @@ const UserForm = () => {
         onChange={(e) => setValue(e.target.value)}
         className={validationState?.isError ? 'error' : ''}
       />
-      {validationState?.isError && <span>{validationState.errors[0]}</span>}
+      {validationState?.isError && <span>{validationState.errors[0]?.message}</span>}
     </div>
   )
 }
@@ -203,7 +203,7 @@ const ProfileForm = () => {
       <div>
         <input value={email.value} onChange={(e) => email.setValue(e.target.value)} />
         {email.validationState?.isError && (
-          <ul>{email.validationState.errors.map((err, i) => <li key={i}>{err}</li>)}</ul>
+          <ul>{email.validationState.errors.map((err, i) => <li key={i}>{err.message}</li>)}</ul>
         )}
       </div>
       <div>
@@ -212,7 +212,7 @@ const ProfileForm = () => {
           value={age.value}
           onChange={(e) => age.setValue(Number(e.target.value))}
         />
-        {age.validationState?.isError && <span>{age.validationState.errors[0]}</span>}
+        {age.validationState?.isError && <span>{age.validationState.errors[0]?.message}</span>}
       </div>
     </form>
   )
@@ -330,7 +330,7 @@ store.useConcerns('dynamic-text', {
   },
 })
 
-const { dynamicTooltip, dynamicLabel } = store.useFieldConcerns('legs.0.strike')
+const { dynamicTooltip, dynamicLabel } = store.useFieldStore('legs.0.strike')
 // dynamicTooltip -> "Current strike: 105"
 // dynamicLabel -> "Strike for AAPL"
 ```
@@ -510,30 +510,18 @@ it('tracks concern and side effect registrations', () => {
 })
 ```
 
-## WASM vs Legacy Mode
-
-WASM is the default. Pass `{ useLegacyImplementation: true }` for pure JS:
-
-```tsx
-// WASM (default) — Rust-powered pipeline, faster for complex state
-const wasmStore = createGenericStore<MyState>()
-
-// Legacy JS — pure JavaScript, no WASM binary needed
-const legacyStore = createGenericStore<MyState>({ useLegacyImplementation: true })
-```
-
-### Performance
+## Performance
 
 Benchmarked with 60 variants across 3 Record layers, 75 syncs, 40 flips, 100 BoolLogic conditions, 85 listeners:
 
-| Operation | Legacy | WASM | Winner |
-|---|---|---|---|
-| Single field edit | **0.5us** | 1.4us | Legacy 2.6x |
-| 7 changes + cascading listeners | 41.8ms | **0.11ms** | WASM 367x |
-| 60 bulk price changes | 596ms | **2.9ms** | WASM 207x |
-| 135 changes (full catalog refresh) | 621ms | **2.99ms** | WASM 208x |
+| Operation | Duration |
+|---|---|
+| Single field edit | 1.4µs |
+| 7 changes + cascading listeners | 0.11ms |
+| 60 bulk price changes | 2.9ms |
+| 135 changes (full catalog refresh) | 2.99ms |
 
-Both modes produce **identical state** — verified across all 16 benchmark scenarios. See [Benchmark Comparison](docs/BENCHMARK_COMPARISON.md) for the full analysis.
+See [Benchmark Comparison](docs/BENCHMARK_COMPARISON.md) for the full analysis.
 
 ## API Overview
 
@@ -549,8 +537,8 @@ Both modes produce **identical state** — verified across all 16 benchmark scen
 | `useJitStore()` | `{ proxyValue, setChanges, getState }` | Bulk updates, non-reactive reads |
 | `useConcerns(id, config)` | `void` | Register validation/BoolLogic/dynamic text |
 | `useSideEffects(id, config)` | `void` | Register sync/flip/aggregation/listeners |
-| `useFieldConcerns(path)` | `EvaluatedConcerns` | Read concern results for a path |
 | `withConcerns(selection)` | `{ useFieldStore }` | Scoped field store with selected concerns |
+| `withMeta(presetMeta)` | `{ useFieldStore }` | Field store with preset META values |
 
 ### Built-in Concerns
 
@@ -573,15 +561,14 @@ Both modes produce **identical state** — verified across all 16 benchmark scen
 ```
 setValue("email", "alice@example.com")
   |
-  +--[WASM/Rust]--> shadow state + sync + flip + BoolLogic (Rust)
-  |                   |
-  |                   v
-  |                 execute listeners + Zod validators (JS)
-  |                   |
-  |                   v
-  |                 pipelineFinalize -> diff -> final changes (Rust)
+  v
+[WASM/Rust] shadow state + sync + flip + BoolLogic evaluation
   |
-  +--[Legacy JS]--> sync -> flip -> listeners -> applyBatch
+  v
+[JS] execute listeners + Zod validators
+  |
+  v
+[WASM/Rust] diff -> compute final changes
   |
   v
 valtio proxy -> React re-render
@@ -618,11 +605,10 @@ cargo install wasm-pack
 | [Concerns Guide](docs/guides/CONCERNS_GUIDE.md) | Concern lifecycle, built-ins, custom concerns |
 | [Side Effects Guide](docs/SIDE_EFFECTS_GUIDE.md) | Sync, flip, aggregation, listener API |
 | [WASM Architecture](docs/WASM_ARCHITECTURE.md) | JS/WASM boundary, data flow, ownership model |
-| [Benchmark Comparison](docs/BENCHMARK_COMPARISON.md) | Legacy vs WASM across 16 scenarios |
+| [Benchmark Comparison](docs/BENCHMARK_COMPARISON.md) | Detailed benchmark analysis across 16 scenarios |
 | [Wildcard Paths](docs/WILD_FUNCTION_GUIDE.md) | `_()` hash key utility for Record types |
 | [String Interpolation](docs/INTERPOLATION.md) | Template helpers for dynamic text concerns |
 | [Testing Mock](docs/TESTING_MOCK.md) | Mock module for consumer tests (`vi.mock`) |
-| [Record Migration](docs/RECORD_MIGRATION.md) | Migration patterns for dynamic Record types |
 | [Debug Timing](docs/DEBUG_TIMING.md) | Performance debugging utilities |
 | [Full Index](docs/README.md) | Complete documentation index |
 

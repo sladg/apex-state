@@ -93,7 +93,8 @@ Single call registers all side effect types:
 ```typescript
 interface SideEffectsRegistration {
   registration_id: string
-  sync_pairs?: [source: string, target: string][]
+  sync_pairs?: [source: string, target: string][]           // bidirectional sync
+  directed_sync_pairs?: [source: string, target: string][]  // one-way sync (source → target)
   flip_pairs?: [source: string, target: string][]
   aggregation_pairs?: [target: string, source: string, condition?: string][]
   computation_pairs?: [op: string, target: string, source: string, condition?: string][]

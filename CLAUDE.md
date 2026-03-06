@@ -154,7 +154,11 @@ npm run wasm:fmt && npm run wasm:lint && npm run wasm:check
 - ❌ `tsc --noEmit` → ✅ `npm run type-check`
 - ❌ `eslint .` → ✅ `npm run code:check`
 - ❌ `wasm-pack build` → ✅ `npm run wasm:build`
-- ❌ `cargo fmt` → ✅ `npm run wasm:fmt`
+- ❌ `cargo fmt --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:fmt`
+- ❌ `cargo clippy --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:lint`
+- ❌ `cargo check --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:check`
+- ❌ `cargo test --manifest-path rust/Cargo.toml` → ✅ `npm run wasm:test`
+- ❌ `cargo run --manifest-path rust/Cargo.toml --bin ts-export` → ✅ `npm run wasm:generate-types`
 
 ### 1. Functional Programming Only
 
@@ -637,6 +641,19 @@ This is a performance-critical layer. Patterns matter.
 15. **Document public, not private** - Doc comments only on `#[wasm_bindgen]` exports
 
 ---
+
+## Bug Fixes & Customer-Reported Issues — Test First
+
+**When the user reports a bug, unexpected behavior, or a customer-reported issue:**
+
+1. **Reproduce first** — Write a failing test (vitest for JS, `#[test]` for Rust) that exercises the exact scenario described. The test MUST fail before any fix is applied.
+2. **Confirm the reproduction** — Run the test, show the failure. This proves we understand the bug correctly.
+3. **Then plan the fix** — Only after the failing test exists, plan and implement the code change.
+4. **Verify** — The previously-failing test now passes. No existing tests regressed.
+
+**Why?** A failing test locks in the exact behavior. Without it, we risk fixing the wrong thing, introducing regressions, or not catching edge cases. The test becomes permanent documentation of "this scenario must never break again."
+
+**This applies to:** bug reports, "this doesn't work when...", customer-escalated issues, unexpected behavior during testing, behavioral changes to existing flows. It does NOT apply to new feature requests or refactoring tasks.
 
 ## Your Workflow
 

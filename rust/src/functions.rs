@@ -12,10 +12,12 @@
 //!
 //! BoolLogic concerns are NOT in this registry - they're statically evaluated in WASM.
 
+use std::sync::Arc;
+
 use crate::intern::InternTable;
+use crate::prelude::{HashMap, HashSet};
 use crate::rev_index::ReverseDependencyIndex;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Data structures
@@ -27,7 +29,8 @@ pub(crate) struct FunctionMetadata {
     /// JS-assigned function ID.
     pub function_id: u32,
     /// Interned path IDs that this function depends on.
-    pub dependency_path_ids: HashSet<u32>,
+    /// Arc-shared with the reverse dependency index — zero deep clone at registration.
+    pub dependency_path_ids: Arc<HashSet<u32>>,
     /// Original path strings (for debugging/logging).
     pub dependency_paths: Vec<String>,
     /// Scope for state presentation ("" = full state).
@@ -76,8 +79,11 @@ impl FunctionRegistry {
             interned_ids.insert(path_id);
         }
 
+        // Wrap in Arc so rev_index and metadata share the same set — no deep clone.
+        let interned_ids = Arc::new(interned_ids);
+
         // Update reverse index
-        rev_index.add(function_id, &interned_ids);
+        rev_index.add(function_id, Arc::clone(&interned_ids));
 
         // Store metadata
         self.functions.insert(
@@ -107,7 +113,6 @@ impl FunctionRegistry {
     }
 
     /// Number of registered functions.
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.functions.len()
     }
@@ -166,7 +171,7 @@ mod tests {
         // Verify reverse index
         let email_id = intern.get_id("user.email").unwrap();
         let affected = rev_index.affected_by_path(email_id);
-        assert_eq!(affected, vec![1]);
+        assert_eq!(affected.as_slice(), &[1]);
 
         // Unregister
         registry.unregister(1, &mut rev_index);
@@ -206,11 +211,11 @@ mod tests {
         let email_id = intern.get_id("user.email").unwrap();
         let mut affected = rev_index.affected_by_path(email_id);
         affected.sort();
-        assert_eq!(affected, vec![1, 2]);
+        assert_eq!(affected.as_slice(), &[1, 2]);
 
         let name_id = intern.get_id("user.name").unwrap();
         let affected = rev_index.affected_by_path(name_id);
-        assert_eq!(affected, vec![2]);
+        assert_eq!(affected.as_slice(), &[2]);
     }
 
     #[test]
