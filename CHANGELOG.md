@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v4.0.0](https://github.com/sladg/apex-state/compare/v3.11.4...v4.0.0)
+
+* feat(wasm): full migration, legacy removal, simplification of typescript (#14) [[f4d42034e501d76d0f4d2916e8b1168b4c7d53f3](https://github.com/sladg/apex-state/commit/f4d42034e501d76d0f4d2916e8b1168b4c7d53f3))]
+
+
 ## [v3.11.4](https://github.com/sladg/apex-state/compare/v3.11.2...v3.11.4)
 
 * 🐛 fix(wasm): formatting [[aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8](https://github.com/sladg/apex-state/commit/aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8))]
@@ -194,6 +199,7 @@
 
 ## [v0.0.1](https://github.com/sladg/apex-state/compare/v0.0.1)
 
+* feat(wasm): full migration, legacy removal, simplification of typescript (#14) [[f4d42034e501d76d0f4d2916e8b1168b4c7d53f3](https://github.com/sladg/apex-state/commit/f4d42034e501d76d0f4d2916e8b1168b4c7d53f3))]
 * 🐛 fix(wasm): formatting [[aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8](https://github.com/sladg/apex-state/commit/aa7e7dac96ffdbd6f335a2326e38ce3c369e36f8))]
 * fix: root listeners (path/scope null) receive all changes and cascade [[5f97256142c7ac72d2d2cd421f09be891bce56cd](https://github.com/sladg/apex-state/commit/5f97256142c7ac72d2d2cd421f09be891bce56cd))]
 * fix: use parent_exists guard for sync/flip stale path detection [[44332140d8d1ebdd4168781189a77e8399d34145](https://github.com/sladg/apex-state/commit/44332140d8d1ebdd4168781189a77e8399d34145))]
