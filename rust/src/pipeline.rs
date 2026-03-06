@@ -2997,15 +2997,15 @@ impl ProcessingPipeline {
 
         for change in js_changes {
             if change.path.starts_with("_concerns.") {
-                // Strip prefix for concern bucket
+                // Strip prefix for concern bucket, preserving all metadata
                 let stripped_path = change.path["_concerns.".len()..].to_owned();
                 js_concern_changes.push(Change {
                     path: stripped_path,
                     value_json: change.value_json,
+                    meta: change.meta,
                     kind: change.kind,
                     lineage: change.lineage,
                     audit: change.audit,
-                    ..Default::default()
                 });
             } else {
                 js_state_changes.push(change);
@@ -3037,10 +3037,10 @@ impl ProcessingPipeline {
                     Change {
                         path: crate::join_path("_concerns", &c.path),
                         value_json: c.value_json,
+                        meta: c.meta,
                         kind: c.kind,
                         lineage: c.lineage,
                         audit: c.audit,
-                        ..Default::default()
                     }
                 }
             })
@@ -3058,10 +3058,10 @@ impl ProcessingPipeline {
             .map(|c| Change {
                 path: crate::join_path("_concerns", &c.path),
                 value_json: c.value_json,
+                meta: c.meta,
                 kind: c.kind,
                 lineage: c.lineage,
                 audit: c.audit,
-                ..Default::default()
             })
             .collect();
         let diffed_js_concerns = self.diff_changes(&js_concerns_prefixed);

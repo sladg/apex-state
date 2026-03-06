@@ -1890,9 +1890,10 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       expect(cascadedChange![2]).toEqual({ sender: 'listener1' })
     })
 
-    it('should pass meta: {} when listener returns output tuple without meta', async () => {
+    it('should pass meta with sender when listener returns output tuple without meta', async () => {
       // listener1 (root) returns a 2-tuple (no meta).
-      // listener2 (root) receives the cascaded change — meta should be {} not undefined.
+      // listener2 (root) receives the cascaded change — meta should include sender: 'fn'
+      // (automatically assigned by invokeHandler if not already set).
 
       const store = createGenericStore<ListenerTestState>(config)
       const listener2ReceivedChanges: [string, unknown, unknown][] = []
@@ -1931,12 +1932,15 @@ describe.each(MODES)('[$name] Side Effects: Listeners', ({ config }) => {
       setValue('user.name', 'Bob')
       await flushSync()
 
-      // Cascaded change must arrive with meta: {} (not undefined)
+      // Cascaded change must arrive with meta containing sender
       const cascadedChange = listener2ReceivedChanges.find(
         ([path]) => path === 'lastChange',
       )
       expect(cascadedChange).toBeDefined()
-      expect(cascadedChange![2]).toEqual({})
+      // sender should be automatically assigned from function name
+      expect(cascadedChange![2]).toEqual(
+        expect.objectContaining({ sender: expect.any(String) }),
+      )
     })
 
     it('should carry produced change to state when listener returns tuple with meta', async () => {

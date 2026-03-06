@@ -57,7 +57,13 @@ export interface GenericMeta {
 
   /**
    * Identifies the originator of the change.
-   * Can be a user ID, component name, or any identifier string.
+   * Can be a user ID, component name, listener function name, or any identifier string.
    */
   sender?: string
+
+  /**
+   * The pipeline stage that produced this change (e.g., 'sync', 'flip', 'aggregation_write', 'listeners').
+   * Used for debugging to understand the source of a change.
+   */
+  stage?: string
 }

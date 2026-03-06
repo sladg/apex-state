@@ -204,7 +204,16 @@ const invokeHandler = (
 
   const producedChanges =
     result && (result as unknown[]).length > 0
-      ? normalizeListenerOutput(result as [string, unknown, GenericMeta?][])
+      ? normalizeListenerOutput(
+          result as [string, unknown, GenericMeta?][],
+        ).map((c) => ({
+          ...c,
+          meta: {
+            ...c.meta,
+            // Only set sender if not already defined by listener
+            ...(c.meta?.sender ? {} : { sender: registration.name }),
+          },
+        }))
       : []
 
   listenerLog.push({
@@ -530,6 +539,8 @@ export const processChangesWasm = <
     initialChanges: pipelineChanges,
     trace: unifiedTrace,
     appliedChanges: allApplied,
+    /** Pre-finalize changes (listener + validator output before WASM merge/dedup). */
+    preFinalizableChanges: jsChanges,
     stateSnapshot: snapshot(store.state),
   }
   logger.logPipeline(logData)

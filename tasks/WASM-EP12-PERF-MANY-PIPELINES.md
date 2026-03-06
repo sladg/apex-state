@@ -24,6 +24,7 @@ When many `createStore()` instances exist or many listeners/BoolLogics are regis
 **Fix**: Maintain a `BTreeMap<(depth_desc, topic_id), Vec<u32>>` at registration time, keeping topics in deepest-first order. Dispatch iterates the map in pre-sorted order with zero sort cost at runtime.
 
 **Acceptance criteria**:
+
 - No sort operation during `processChanges()`
 - Dispatch order is identical to current behavior (deepest-first)
 - All listener dispatch tests pass
@@ -43,6 +44,7 @@ self.entity_to_paths.insert(entity_id, path_ids.clone());
 **Fix**: Switch to `Arc<HashSet<u32>>` for shared ownership between `path_to_entities` and `entity_to_paths`. The clone becomes a cheap `Arc::clone()` (reference count increment only).
 
 **Acceptance criteria**:
+
 - No `HashSet::clone()` during registration
 - Cleanup (`unregister`) still works correctly — `Arc` ownership drops when both sides release
 - All rev_index tests pass
@@ -65,6 +67,7 @@ For large pipelines (100+ BoolLogics), these sizes are too small and trigger rea
 **Fix**: After `initPipeline()` completes all registrations, compute capacity hints from actual registration counts (e.g., `bool_logic_count * 2`). Pass hints into `PipelineContext::new(hints)`.
 
 **Acceptance criteria**:
+
 - Capacity hints derived from registered entity counts
 - No behavior change
 - Benchmark shows fewer reallocations for large pipelines
@@ -87,8 +90,49 @@ let smaller_nodes: Vec<u32> = self.component_to_nodes[&smaller_comp]
 **Fix**: Drain the `HashSet` directly from `component_to_nodes` using `.remove()` + iterate, avoiding the intermediary `Vec`.
 
 **Acceptance criteria**:
+
 - No temporary `Vec` allocated during component merge
 - Graph connectivity tests pass unchanged
+
+---
+
+### WASM-049: Pre-compile BoolLogic/ValueLogic paths to segment ID arrays — 2pts
+
+**Files**: `rust/src/bool_logic.rs`, `rust/src/value_logic.rs`
+
+**Problem**: `BoolLogicNode` and `ValueLogicNode` store string paths (e.g.,
+`IsEqual("user.profile.spot", v)`). On every `evaluate_value()` call, `get_path_value`
+does `path.split('.')` and one `intern.get_id(seg)` string-HashMap lookup per segment.
+For `"user.profile.spot"`: 3 string lookups per eval. At 200 logic entries per tick,
+that's hundreds of avoidable string HashMap lookups per `processChanges` call.
+
+**Fix**: At registration time, walk the deserialized tree and replace every `String` path
+with a pre-resolved `Vec<u32>` of segment IDs. Introduce a compiled node type:
+
+```rust
+enum CompiledBoolLogicNode {
+    IsEqual(Vec<u32>, Value),
+    Exists(Vec<u32>),
+    IsEmpty(Vec<u32>),
+    Lt(Vec<u32>, f64),
+    Gt(Vec<u32>, f64),
+    // ... all leaf variants use Vec<u32> instead of String
+    And(Vec<CompiledBoolLogicNode>),
+    Or(Vec<CompiledBoolLogicNode>),
+    Not(Box<CompiledBoolLogicNode>),
+}
+```
+
+`LogicRegistry::register()` calls `compile_tree(node, intern)` after deserialization.
+`evaluate_value` drops the `intern: &InternTable` parameter — the compiled tree has no
+string lookups. Same transform applies to `ValueLogicNode`.
+
+**Acceptance criteria**:
+
+- `BoolLogicNode` and `ValueLogicNode` no longer stored in registries — only compiled forms
+- `evaluate_value` / `evaluate` take no `intern` parameter
+- `get_path_value` replaced with segment-ID traversal in hot path
+- All existing bool_logic and value_logic tests pass unchanged
 
 ---
 
@@ -98,6 +142,7 @@ let smaller_nodes: Vec<u32> = self.component_to_nodes[&smaller_comp]
 - `rust/src/rev_index.rs` — WASM-046
 - `rust/src/pipeline.rs` — WASM-047
 - `rust/src/graphs.rs` — WASM-048
+- `rust/src/bool_logic.rs`, `rust/src/value_logic.rs` — WASM-049
 
 ---
 
@@ -109,7 +154,8 @@ let smaller_nodes: Vec<u32> = self.component_to_nodes[&smaller_comp]
 | WASM-046 | 2pts | Half day — Arc RevIndex |
 | WASM-047 | 1pt | < 2h — Capacity hints |
 | WASM-048 | 1pt | < 2h — Graph drain |
-| **Total** | **6pts** | **~2 days** |
+| WASM-049 | 2pts | Half day — Pre-compiled path segment IDs |
+| **Total** | **8pts** | **~2.5 days** |
 
 ---
 

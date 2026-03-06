@@ -48,7 +48,9 @@ export interface UnifiedPipelineTrace {
 export interface PipelineLogData {
   initialChanges: Change[]
   trace: UnifiedPipelineTrace | null
-  /** All state + concern changes passed to applyBatch (early + late). */
+  /** Pre-finalize changes: listener output + validator output before WASM merge/dedup. */
+  preFinalizableChanges?: Change[]
+  /** Final applied changes: after WASM finalization, partitioned to state + concerns. */
   appliedChanges?: Change[]
   /** Frozen valtio snapshot of state after all changes applied. */
   stateSnapshot?: unknown
@@ -146,15 +148,28 @@ const buildDetail = (data: PipelineLogData): Record<string, unknown> => {
 
   const displayStages = trace.wasm.stages.filter((s) => s.stage !== 'input')
   const stages = Object.fromEntries(
-    displayStages.map((s, i) => [
-      `[${String(i).padStart(2, '0')}] ${s.stage}`,
-      {
-        ms: fmtMs(s.duration_us / 1000),
-        matched: s.matched,
-        ...(s.produced.length > 0 ? { produced: s.produced } : {}),
-        ...(s.skipped.length > 0 ? { skipped: s.skipped } : {}),
-      },
-    ]),
+    displayStages.map((s, i) => {
+      // Filter matched to only show paths that produced downstream changes
+      const producedSourcePaths = new Set(
+        s.produced
+          .map((p) => p.source_path)
+          .filter((sp): sp is string => sp != null),
+      )
+      const usefulMatched = s.matched.filter((m) =>
+        producedSourcePaths.has(m[0]),
+      )
+
+      return [
+        `[${String(i).padStart(2, '0')}] ${s.stage}`,
+        {
+          ms: fmtMs(s.duration_us / 1000),
+          // Only show matched if they contributed to produced changes
+          ...(usefulMatched.length > 0 ? { matched: usefulMatched } : {}),
+          ...(s.produced.length > 0 ? { produced: s.produced } : {}),
+          ...(s.skipped.length > 0 ? { skipped: s.skipped } : {}),
+        },
+      ]
+    }),
   )
 
   const listeners =
@@ -185,13 +200,30 @@ const buildDetail = (data: PipelineLogData): Record<string, unknown> => {
       ? trace.wasm.anchor_states
       : undefined
 
+  const preFinalizableChanges = data.preFinalizableChanges ?? []
+  const appliedChanges = data.appliedChanges ?? []
+
+  // Show pre-finalize if different from post-finalize (indicates merging/dedup)
+  const showPreFinalize =
+    preFinalizableChanges.length > 0 &&
+    preFinalizableChanges.length !== appliedChanges.length
+
   return {
     inputChanges: unwrap(data.initialChanges),
     stages,
     ...(listeners ? { listeners } : {}),
-    ...(data.appliedChanges && data.appliedChanges.length > 0
+    ...(showPreFinalize
       ? {
-          finalChanges: data.appliedChanges.map((c) => [
+          preFinalizableChanges: preFinalizableChanges.map((c) => [
+            c.path,
+            unwrap(c.value),
+            ...(c.meta ? [unwrap(c.meta)] : []),
+          ]),
+        }
+      : {}),
+    ...(appliedChanges.length > 0
+      ? {
+          finalChanges: appliedChanges.map((c) => [
             c.path,
             unwrap(c.value),
             ...(c.meta ? [unwrap(c.meta)] : []),
@@ -224,6 +256,7 @@ const renderTrace = (data: PipelineLogData): void => {
     inputChanges: COLORS.input,
     stages: COLORS.label,
     listeners: COLORS.listener,
+    preFinalizableChanges: COLORS.transform,
     finalChanges: COLORS.produced,
     finalState: COLORS.graph,
     anchors: COLORS.logic,

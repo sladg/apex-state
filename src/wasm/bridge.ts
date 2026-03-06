@@ -59,25 +59,28 @@ const changesToWasm = (changes: Change[]) =>
     meta,
   }))
 
-/** Map a WASM lineage stage to the appropriate GenericMeta boolean flag. */
+/** Map a WASM lineage stage to the appropriate GenericMeta boolean flag + stage name. */
 const lineageToMeta = (lineage: Wasm.Lineage): Partial<GenericMeta> => {
   if (lineage === 'Input') return {}
-  switch (lineage.Derived.via) {
+  const via = lineage.Derived.via
+  const stageName = via.replace(/_/g, '_')
+  switch (via) {
     case 'sync':
-      return { isSyncPathChange: true }
+      return { isSyncPathChange: true, stage: 'sync' }
     case 'flip':
-      return { isFlipPathChange: true }
+      return { isFlipPathChange: true, stage: 'flip' }
     case 'aggregation_write':
+      return { isAggregationChange: true, stage: 'aggregation_write' }
     case 'aggregation_read':
-      return { isAggregationChange: true }
+      return { isAggregationChange: true, stage: 'aggregation_read' }
     case 'listeners':
-      return { isListenerChange: true }
+      return { isListenerChange: true, stage: 'listeners' }
     case 'clear_path':
-      return { isClearPathChange: true }
+      return { isClearPathChange: true, stage: 'clear_path' }
     case 'computation':
-      return { isComputationChange: true }
+      return { isComputationChange: true, stage: 'computation' }
     default:
-      return { isProgramaticChange: true }
+      return { isProgramaticChange: true, stage: stageName }
   }
 }
 
